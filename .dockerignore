@@ -8,3 +8,14 @@ prototypes
 tasks
 tests
 *.log
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+id_rsa*
+id_ed25519*
+.ssh
