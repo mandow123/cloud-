@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import "./globals.css";
+import "./kai-cloud.css";
 
 const displayFont = DM_Sans({
   variable: "--font-display",
@@ -43,7 +44,7 @@ export async function generateMetadata(): Promise<Metadata> {
       siteName: "KAI Cloud",
       title,
       description,
-      images: [{ url: "/og.png", width: 1730, height: 909, alt: "KAI Cloud 中国 Token 学院算力市场" }],
+      images: [{ url: "/og.png", width: 1744, height: 909, alt: "KAI Cloud 算力行情与资源撮合视觉示意" }],
     },
     twitter: {
       card: "summary_large_image",
@@ -78,7 +79,7 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body className={`${displayFont.variable} ${textFont.variable} ${chineseFont.variable}`}>
+      <body className={`kai-root ${displayFont.variable} ${textFont.variable} ${chineseFont.variable}`}>
         <a className="skip-link" href="#main-content">
           跳到主要内容
         </a>

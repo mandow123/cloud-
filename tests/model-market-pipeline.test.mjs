@@ -394,3 +394,22 @@ test("stage and promote CLI commands share the validated pending/snapshot contra
   assert.equal(promoted.quoteCount, 36);
   assert.equal(promoted.index, 100);
 });
+
+test("update CLI command stages and promotes in one scheduler-safe run", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "kai-model-update-cli-"));
+  const pendingPath = join(directory, "model-market.pending.json");
+  const snapshotPath = join(directory, "model-market.snapshot.json");
+  const sources = await sourceFixtures();
+  const cliRegistry = registry();
+  cliRegistry[1].litellmCandidates = [];
+  const result = await runCli("update", {
+    registryModule: { modelRegistry: cliRegistry, USD_CNY_FALLBACK: 7 },
+    pendingPath,
+    snapshotPath,
+    now: STAGED_AT,
+    fetchImpl: fixtureFetch(sources),
+  });
+  assert.equal(result.command, "update");
+  assert.equal(result.quoteCount, 36);
+  assert.equal(result.index, 100);
+});

@@ -3,7 +3,7 @@ import { MemberWorkspace } from "@/components/member-workspace";
 
 export const metadata: Metadata = {
   title: "演示会员中心",
-  description: "体验 KAI Cloud 需求方与供应方工作台；无需密码，所有操作仅保存在当前浏览器。",
+  description: "体验 KAI Cloud 需求方与供应方工作台；无需密码，需求、草稿与报价由演示服务端保存。",
 };
 
 export default function MemberPage() {
@@ -18,8 +18,8 @@ export default function MemberPage() {
               <p className="section-lead">需求方查看关注、需求与标准化方案；供应方维护草稿、匹配需求并提交演示报价。</p>
             </div>
             <div className="border-l-2 border-[var(--accent)] pl-5 text-sm text-[var(--text)]">
-              <strong className="block text-[var(--ink)]">无密码演示</strong>
-              没有真实账号、后台或消息发送。请勿输入任何个人资料或商业机密。
+              <strong className="block text-[var(--ink)]">无密码联机演示</strong>
+              需求、草稿与报价由演示服务器共享，关注与角色偏好留在本机。请勿输入个人资料、商业机密或访问凭据。
             </div>
           </div>
         </div>

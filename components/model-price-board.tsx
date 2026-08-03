@@ -137,7 +137,7 @@ function priceStatusLabel(value: number | null) {
 function SourceBadge({ status }: { status: ModelPriceSourceStatus }) {
   return (
     <span
-      className={`inline-flex min-h-7 items-center border px-2 py-1 text-[11px] font-semibold ${SOURCE_STYLES[status]}`}
+      className={`inline-flex min-h-8 items-center border px-2 py-1 text-xs font-semibold ${SOURCE_STYLES[status]}`}
     >
       {SOURCE_LABELS[status]}
     </span>
@@ -147,17 +147,17 @@ function SourceBadge({ status }: { status: ModelPriceSourceStatus }) {
 function FreshnessBadge({ quote }: { quote: ModelTokenPriceQuote }) {
   if (quote.freshness?.state === "official_only") {
     return (
-      <span className="inline-flex min-h-7 items-center border border-[var(--border)] bg-[var(--info-bg)] px-2 py-1 text-[11px] font-semibold text-[var(--muted)]">
+      <span className="inline-flex min-h-8 items-center border border-[var(--border)] bg-[var(--info-bg)] px-2 py-1 text-xs font-semibold text-[var(--muted)]">
         官方审核基线
       </span>
     );
   }
   return quote.isStale ? (
-    <span className="inline-flex min-h-7 items-center border border-[var(--border-strong)] bg-[var(--warning-bg)] px-2 py-1 text-[11px] font-semibold text-[var(--warning)]">
+    <span className="inline-flex min-h-8 items-center border border-[var(--border-strong)] bg-[var(--warning-bg)] px-2 py-1 text-xs font-semibold text-[var(--warning)]">
       需人工复核
     </span>
   ) : (
-    <span className="inline-flex min-h-7 items-center border border-[var(--border)] bg-[var(--success-bg)] px-2 py-1 text-[11px] font-semibold text-[var(--success)]">
+    <span className="inline-flex min-h-8 items-center border border-[var(--border)] bg-[var(--success-bg)] px-2 py-1 text-xs font-semibold text-[var(--success)]">
       已通过自动校验
     </span>
   );
@@ -168,7 +168,7 @@ function CapabilityTags({ categories }: { categories: readonly ModelCapability[]
     <span className="flex flex-wrap gap-1.5">
       {categories.map((category) => (
         <span
-          className="border border-[var(--border)] bg-[var(--info-bg)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text)]"
+          className="border border-[var(--border)] bg-[var(--info-bg)] px-2 py-1 text-xs font-semibold text-[var(--text)]"
           key={category}
         >
           {CAPABILITY_LABELS[category]}
@@ -266,7 +266,7 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
           <p className="mt-3 mb-0 text-xs leading-5 text-[var(--muted)]">
             该指数仅表达固定模型篮子相对基期 100 的成本{indexDirection}趋势，不是跨模型人民币均价，也不能替代任一模型的实际报价。
           </p>
-          <p className="mt-2 mb-0 text-[11px] text-[var(--muted)]">
+          <p className="mt-2 mb-0 text-xs text-[var(--muted)]">
             基期 {index.baseDate} · 更新 {formatDateTime(index.updatedAt)}
             {index.sampleSize !== undefined ? ` · 样本 ${index.sampleSize}` : ""}
           </p>
@@ -361,7 +361,7 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
                       <span className="block text-xs font-semibold text-[var(--accent)]">{quote.vendor}</span>
                       <span className="mt-1 block text-base text-[var(--ink)]">{quote.model}</span>
                       {quote.availabilityNote ? (
-                        <span className="mt-1 block max-w-60 text-[11px] font-normal leading-4 text-[var(--muted)]">
+                        <span className="mt-1 block max-w-60 text-xs font-normal text-[var(--muted)]">
                           {quote.availabilityNote}
                         </span>
                       ) : null}
@@ -408,7 +408,7 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
                   <MobilePrice label="缓存输入" value={quote.cachedInputCnyPerMillion} bordered />
                   <MobilePrice label="输出" value={quote.outputCnyPerMillion} />
                 </dl>
-                <p className="mt-2 mb-0 text-center text-[11px] text-[var(--muted)]">人民币元 / 百万 Token</p>
+                <p className="mt-2 mb-0 text-center text-xs text-[var(--muted)]">人民币元 / 百万 Token</p>
                 <div className="mt-5 grid gap-4 sm:grid-cols-2">
                   <div>
                     <p className="m-0 text-xs font-semibold text-[var(--ink)]">原币种 / 百万 Token</p>
@@ -438,7 +438,7 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
 function PriceCell({ value }: { value: number | null }) {
   return (
     <td className="num min-w-36">
-      <span className="font-mono text-base font-semibold tabular-nums text-[var(--ink)]" title={priceStatusLabel(value)}>
+      <span className="font-mono text-xl font-semibold tabular-nums text-[var(--ink)]" title={priceStatusLabel(value)}>
         {formatCnyPrice(value)}
       </span>
     </td>
@@ -448,8 +448,8 @@ function PriceCell({ value }: { value: number | null }) {
 function MobilePrice({ label, value, bordered = false }: { label: string; value: number | null; bordered?: boolean }) {
   return (
     <div className={`min-w-0 px-2 py-4 ${bordered ? "border-x border-[var(--border)]" : ""}`}>
-      <dt className="text-[11px] text-[var(--muted)]">{label}</dt>
-      <dd className="mt-1 truncate font-mono text-sm font-semibold tabular-nums text-[var(--ink)]" title={priceStatusLabel(value)}>
+      <dt className="text-xs text-[var(--muted)]">{label}</dt>
+      <dd className="mt-1 truncate font-mono text-lg font-semibold tabular-nums text-[var(--ink)]" title={priceStatusLabel(value)}>
         {formatCnyPrice(value)}
       </dd>
     </div>

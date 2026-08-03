@@ -1,50 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { resourceListings } from "@/lib/data";
-import type { DealMode, PricingUnit, ResourceCategory, ResourceListing } from "@/lib/types";
+import type {
+  MarketplaceDraftRecord,
+  MarketplaceListResponse,
+  MarketplaceQuoteRecord,
+  MarketplaceRequestRecord,
+} from "@/lib/marketplace";
+import type { ResourceCategory, ResourceListing } from "@/lib/types";
 
 type MemberRole = "buyer" | "supplier";
-
-type LocalRequestRecord = {
-  id: string;
-  kind: DealMode;
-  title: string;
-  category: ResourceCategory;
-  region: string;
-  pricingUnit: PricingUnit;
-  quantity: number;
-  createdAt: string;
-  status: string;
-  summary: string;
-};
-
-type ResourceDraft = {
-  id: string;
-  title: string;
-  category: ResourceCategory;
-  capacity: string;
-  status: "草稿";
-};
-
-type QuoteResponse = {
-  id: string;
-  demandId: string;
-  demandTitle: string;
-  unitPrice: number;
-  pricingUnit: PricingUnit;
-  leadTime: string;
-  validDays: number;
-  scopeNote: string;
-  createdAt: string;
-  status: "已保存在本机";
-};
-
-type StoredMemberState = {
-  drafts: ResourceDraft[];
-  responses: QuoteResponse[];
-};
 
 type QuoteValues = {
   demandId: string;
@@ -56,8 +23,6 @@ type QuoteValues = {
 };
 
 const WATCHLIST_KEY = "kai-cloud-demo-watchlist-v1";
-const REQUESTS_KEY = "kai-cloud-demo-requests-v1";
-const MEMBER_KEY = "kai-cloud-demo-member-v1";
 const ROLE_KEY = "kai-cloud-demo-role-v1";
 const DEFAULT_WATCHLIST_IDS = resourceListings.slice(0, 3).map((listing) => listing.id);
 
@@ -68,47 +33,56 @@ const categoryLabel: Record<ResourceCategory, string> = {
   cloud_vendor: "云厂商资源",
 };
 
-const seededRequests: LocalRequestRecord[] = [
+const seededRequests: MarketplaceRequestRecord[] = [
   {
     id: "KAI-R-DEMO-7F21",
+    requestType: "procurement",
     kind: "rental",
     title: "GPU 算力 · 8 卡时",
     category: "gpu",
     region: "华北",
     pricingUnit: "卡时",
     quantity: 8,
+    durationHours: 168,
+    deliveryDate: "2026-08-10",
+    offered: null,
+    wanted: null,
+    cashDirection: "none",
+    cashAmount: null,
     createdAt: "2026-07-31T09:20:00.000Z",
+    updatedAt: "2026-07-31T09:20:00.000Z",
     status: "标准化中",
     summary: "演示：容器交付，要求明确电费、网络与 99.9% SLA。",
   },
   {
     id: "KAI-X-DEMO-3C08",
+    requestType: "swap",
     kind: "swap",
     title: "GPU 算力 → Token / 模型 双边置换",
     category: "token_model",
     region: "多区域",
     pricingUnit: "百万 Token",
     quantity: 120,
+    durationHours: null,
+    deliveryDate: null,
+    offered: {
+      category: "gpu",
+      pricingUnit: "卡时",
+      quantity: 80,
+      description: "离峰 GPU 容量",
+    },
+    wanted: {
+      category: "token_model",
+      pricingUnit: "百万 Token",
+      quantity: 120,
+      description: "模型推理用量",
+    },
+    cashDirection: "none",
+    cashAmount: null,
     createdAt: "2026-07-29T06:10:00.000Z",
+    updatedAt: "2026-07-29T06:10:00.000Z",
     status: "方案待确认",
     summary: "演示：以离峰 GPU 容量置换模型推理用量。",
-  },
-];
-
-const defaultDrafts: ResourceDraft[] = [
-  {
-    id: "KAI-D-001",
-    title: "华北 GPU 弹性池",
-    category: "gpu",
-    capacity: "演示容量：16 卡，可按 8 小时窗口交付",
-    status: "草稿",
-  },
-  {
-    id: "KAI-D-002",
-    title: "华东模型实例预留",
-    category: "token_model",
-    capacity: "演示容量：12 实例，支持按周排期",
-    status: "草稿",
   },
 ];
 
@@ -123,40 +97,6 @@ function readStringArray(key: string, fallback: string[]) {
   } catch {
     return fallback;
   }
-}
-
-function isLocalRequest(value: unknown): value is LocalRequestRecord {
-  if (!value || typeof value !== "object") return false;
-  const request = value as Partial<LocalRequestRecord>;
-  return (
-    typeof request.id === "string" &&
-    typeof request.title === "string" &&
-    typeof request.category === "string" &&
-    typeof request.pricingUnit === "string" &&
-    typeof request.region === "string" &&
-    typeof request.createdAt === "string"
-  );
-}
-
-function readRequests() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(REQUESTS_KEY) ?? "[]") as unknown;
-    return Array.isArray(parsed) ? parsed.filter(isLocalRequest) : [];
-  } catch {
-    return [];
-  }
-}
-
-function readMemberState(): StoredMemberState {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(MEMBER_KEY) ?? "null") as Partial<StoredMemberState> | null;
-    if (parsed && Array.isArray(parsed.drafts) && Array.isArray(parsed.responses)) {
-      return { drafts: parsed.drafts, responses: parsed.responses };
-    }
-  } catch {
-    // Fall through to deterministic demo state.
-  }
-  return { drafts: defaultDrafts, responses: [] };
 }
 
 function formatCurrency(value: number) {
@@ -174,20 +114,18 @@ function shortDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit" }).format(date);
 }
 
-function localId(prefix: string, seed: string) {
-  const hash = seed.split("").reduce((sum, char) => (sum * 33 + char.charCodeAt(0)) >>> 0, 5381);
-  return `${prefix}-${hash.toString(36).toUpperCase().slice(0, 7).padStart(7, "0")}`;
-}
-
 export function MemberWorkspace() {
   const [role, setRole] = useState<MemberRole>("buyer");
   const [watchlistIds, setWatchlistIds] = useState<string[]>(DEFAULT_WATCHLIST_IDS);
-  const [localRequests, setLocalRequests] = useState<LocalRequestRecord[]>([]);
-  const [memberState, setMemberState] = useState<StoredMemberState>({ drafts: defaultDrafts, responses: [] });
+  const [serverRequests, setServerRequests] = useState<MarketplaceRequestRecord[]>([]);
+  const [serverDrafts, setServerDrafts] = useState<MarketplaceDraftRecord[]>([]);
+  const [serverQuotes, setServerQuotes] = useState<MarketplaceQuoteRecord[]>([]);
+  const [loadingRecords, setLoadingRecords] = useState(true);
+  const [serverError, setServerError] = useState<string | null>(null);
   const [draftValues, setDraftValues] = useState({ title: "", category: "gpu" as ResourceCategory, capacity: "" });
   const [draftError, setDraftError] = useState<string | null>(null);
   const [quoteValues, setQuoteValues] = useState<QuoteValues>({
-    demandId: seededRequests[0].id,
+    demandId: "",
     unitPrice: "",
     leadTime: "",
     validDays: "7",
@@ -196,36 +134,64 @@ export function MemberWorkspace() {
   });
   const [quoteErrors, setQuoteErrors] = useState<Partial<Record<keyof QuoteValues, string>>>({});
   const [quoteReceipt, setQuoteReceipt] = useState<string | null>(null);
+  const [draftSubmitting, setDraftSubmitting] = useState(false);
+  const [quoteSubmitting, setQuoteSubmitting] = useState(false);
 
   useEffect(() => {
     const syncLocalData = () => {
       setWatchlistIds(readStringArray(WATCHLIST_KEY, DEFAULT_WATCHLIST_IDS));
-      setLocalRequests(readRequests());
-      setMemberState(readMemberState());
       const savedRole = sessionStorage.getItem(ROLE_KEY);
       if (savedRole === "buyer" || savedRole === "supplier") setRole(savedRole);
     };
+    const loadServerRecords = async () => {
+      setLoadingRecords(true);
+      try {
+        const [requestsResponse, quotesResponse, draftsResponse] = await Promise.all([
+          fetch("/api/requests", { cache: "no-store" }),
+          fetch("/api/quotes", { cache: "no-store" }),
+          fetch("/api/drafts", { cache: "no-store" }),
+        ]);
+        if (!requestsResponse.ok || !quotesResponse.ok || !draftsResponse.ok) {
+          throw new Error("演示后端暂时不可用。");
+        }
+        const requests = (await requestsResponse.json()) as MarketplaceListResponse<MarketplaceRequestRecord>;
+        const quotes = (await quotesResponse.json()) as MarketplaceListResponse<MarketplaceQuoteRecord>;
+        const drafts = (await draftsResponse.json()) as MarketplaceListResponse<MarketplaceDraftRecord>;
+        setServerRequests(requests.items);
+        setServerQuotes(quotes.items);
+        setServerDrafts(drafts.items);
+        setServerError(null);
+      } catch (error) {
+        setServerError(error instanceof Error ? error.message : "演示后端暂时不可用。");
+      } finally {
+        setLoadingRecords(false);
+      }
+    };
     syncLocalData();
+    void loadServerRecords();
 
     window.addEventListener("storage", syncLocalData);
     window.addEventListener("kai-watchlist-changed", syncLocalData);
-    window.addEventListener("kai-demo-requests-changed", syncLocalData);
+    window.addEventListener("kai-server-records-changed", loadServerRecords);
     return () => {
       window.removeEventListener("storage", syncLocalData);
       window.removeEventListener("kai-watchlist-changed", syncLocalData);
-      window.removeEventListener("kai-demo-requests-changed", syncLocalData);
+      window.removeEventListener("kai-server-records-changed", loadServerRecords);
     };
   }, []);
 
-  const allRequests = useMemo(() => {
-    const existingIds = new Set(localRequests.map((request) => request.id));
-    return [...localRequests, ...seededRequests.filter((request) => !existingIds.has(request.id))];
-  }, [localRequests]);
+  useEffect(() => {
+    if (serverRequests.length === 0) return;
+    if (!serverRequests.some((request) => request.id === quoteValues.demandId)) {
+      setQuoteValues((current) => ({ ...current, demandId: serverRequests[0].id }));
+    }
+  }, [quoteValues.demandId, serverRequests]);
+
+  const buyerRequests = serverRequests.length > 0 ? serverRequests : seededRequests;
   const watchlist = watchlistIds
     .map((id) => resourceListings.find((listing) => listing.id === id))
     .filter((listing): listing is ResourceListing => Boolean(listing));
-  const quoteListings = (watchlist.length > 0 ? watchlist : resourceListings).slice(0, 3);
-  const selectedDemand = allRequests.find((request) => request.id === quoteValues.demandId) ?? allRequests[0];
+  const selectedDemand = serverRequests.find((request) => request.id === quoteValues.demandId) ?? serverRequests[0];
 
   function chooseRole(nextRole: MemberRole) {
     setRole(nextRole);
@@ -255,31 +221,33 @@ export function MemberWorkspace() {
     }
   }
 
-  function persistMemberState(next: StoredMemberState) {
-    setMemberState(next);
-    try {
-      localStorage.setItem(MEMBER_KEY, JSON.stringify(next));
-    } catch {
-      // Session UI remains usable when storage is unavailable.
-    }
-  }
-
-  function addDraft(event: FormEvent<HTMLFormElement>) {
+  async function addDraft(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (draftValues.title.trim().length < 3 || draftValues.capacity.trim().length < 8) {
       setDraftError("资源名称至少 3 个字，容量说明至少 8 个字。请只使用演示信息。");
       return;
     }
-    const draft: ResourceDraft = {
-      id: localId("KAI-D", `${draftValues.title}-${draftValues.category}-${draftValues.capacity}`),
-      title: draftValues.title.trim(),
-      category: draftValues.category,
-      capacity: draftValues.capacity.trim(),
-      status: "草稿",
-    };
-    persistMemberState({ ...memberState, drafts: [draft, ...memberState.drafts] });
-    setDraftValues({ title: "", category: "gpu", capacity: "" });
-    setDraftError(null);
+    setDraftSubmitting(true);
+    try {
+      const response = await fetch("/api/drafts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title: draftValues.title.trim(),
+          category: draftValues.category,
+          capacity: draftValues.capacity.trim(),
+        }),
+      });
+      const result = (await response.json()) as { record?: MarketplaceDraftRecord; error?: { message?: string } };
+      if (!response.ok || !result.record) throw new Error(result.error?.message || "资源草稿保存失败。");
+      setServerDrafts((current) => [result.record!, ...current]);
+      setDraftValues({ title: "", category: "gpu", capacity: "" });
+      setDraftError(null);
+    } catch (error) {
+      setDraftError(error instanceof Error ? error.message : "资源草稿保存失败。");
+    } finally {
+      setDraftSubmitting(false);
+    }
   }
 
   function updateQuote<Key extends keyof QuoteValues>(key: Key, value: QuoteValues[Key]) {
@@ -288,7 +256,7 @@ export function MemberWorkspace() {
     setQuoteReceipt(null);
   }
 
-  function submitQuote(event: FormEvent<HTMLFormElement>) {
+  async function submitQuote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextErrors: Partial<Record<keyof QuoteValues, string>> = {};
     const price = Number(quoteValues.unitPrice);
@@ -298,36 +266,45 @@ export function MemberWorkspace() {
     if (!quoteValues.leadTime) nextErrors.leadTime = "请选择交付周期。";
     if (!Number.isInteger(validDays) || validDays < 1 || validDays > 90) nextErrors.validDays = "有效期应为 1–90 天。";
     if (quoteValues.scopeNote.trim().length < 8) nextErrors.scopeNote = "请用至少 8 个字说明费用口径。";
-    if (!quoteValues.consent) nextErrors.consent = "请确认本机演示说明。";
+    if (!quoteValues.consent) nextErrors.consent = "请确认演示服务器提交说明。";
     setQuoteErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0 || !selectedDemand) return;
 
-    const response: QuoteResponse = {
-      id: localId("KAI-Q", `${selectedDemand.id}-${quoteValues.unitPrice}-${quoteValues.leadTime}-${quoteValues.scopeNote}`),
-      demandId: selectedDemand.id,
-      demandTitle: selectedDemand.title,
-      unitPrice: price,
-      pricingUnit: selectedDemand.pricingUnit,
-      leadTime: quoteValues.leadTime,
-      validDays,
-      scopeNote: quoteValues.scopeNote.trim(),
-      createdAt: new Date().toISOString(),
-      status: "已保存在本机",
-    };
-    persistMemberState({ ...memberState, responses: [response, ...memberState.responses].slice(0, 20) });
-    setQuoteReceipt(response.id);
-    setQuoteValues((current) => ({ ...current, unitPrice: "", leadTime: "", scopeNote: "", consent: false }));
+    setQuoteSubmitting(true);
+    try {
+      const response = await fetch("/api/quotes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          demandId: selectedDemand.id,
+          unitPrice: price,
+          leadTime: quoteValues.leadTime,
+          validDays,
+          scopeNote: quoteValues.scopeNote.trim(),
+        }),
+      });
+      const result = (await response.json()) as { record?: MarketplaceQuoteRecord; error?: { message?: string } };
+      if (!response.ok || !result.record) throw new Error(result.error?.message || "报价提交失败。");
+      setServerQuotes((current) => [result.record!, ...current]);
+      setServerRequests((current) => current.map((request) => (
+        request.id === selectedDemand.id
+          ? { ...request, status: "报价已收到", updatedAt: result.record!.createdAt }
+          : request
+      )));
+      setQuoteReceipt(result.record.id);
+      setQuoteValues((current) => ({ ...current, unitPrice: "", leadTime: "", scopeNote: "", consent: false }));
+    } catch (error) {
+      setQuoteErrors((current) => ({ ...current, scopeNote: error instanceof Error ? error.message : "报价提交失败。" }));
+    } finally {
+      setQuoteSubmitting(false);
+    }
   }
 
-  function resetDemo() {
+  function resetLocalPreferences() {
     setWatchlistIds(DEFAULT_WATCHLIST_IDS);
-    setLocalRequests([]);
-    setMemberState({ drafts: defaultDrafts, responses: [] });
     setQuoteReceipt(null);
     try {
       localStorage.removeItem(WATCHLIST_KEY);
-      localStorage.removeItem(REQUESTS_KEY);
-      localStorage.removeItem(MEMBER_KEY);
       sessionStorage.removeItem(ROLE_KEY);
       window.dispatchEvent(new CustomEvent("kai-watchlist-changed"));
     } catch {
@@ -343,7 +320,7 @@ export function MemberWorkspace() {
           <h2 className="mt-2 text-xl" id="member-workspace-heading">
             选择演示身份
           </h2>
-          <p className="m-0 text-sm text-[var(--text)]">没有登录或真实账户。角色保存在当前标签会话，操作保存在本机浏览器。</p>
+          <p className="m-0 text-sm text-[var(--text)]">没有真实账户。角色保存在当前标签页；需求、草稿和报价读取同一套演示后端。</p>
         </div>
         <div aria-label="会员演示身份" className="inline-grid grid-cols-2 border border-[var(--border-strong)]" role="tablist">
           <RoleButton active={role === "buyer"} controls="buyer-workspace" id="buyer-role" label="需求方" onClick={() => chooseRole("buyer")} onKeyDown={moveRole} />
@@ -351,17 +328,21 @@ export function MemberWorkspace() {
         </div>
       </div>
 
+      {serverError ? <p className="mb-8 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-4 text-base text-[var(--error)]" role="alert">{serverError}</p> : null}
+      {loadingRecords ? <p className="mb-8 border border-[var(--border)] bg-[var(--info-bg)] p-4 text-base text-[var(--text)]" role="status">正在读取演示后端记录…</p> : null}
+
       {role === "buyer" ? (
         <div aria-labelledby="buyer-role" className="grid gap-14" id="buyer-workspace" role="tabpanel">
           <BuyerWatchlist listings={watchlist} onRemove={removeWatchlist} />
-          <BuyerRequests requests={allRequests} />
-          <StandardizedQuotes listings={quoteListings} />
+          <BuyerRequests requests={buyerRequests} showingSeeded={serverRequests.length === 0} />
+          <BuyerQuotes quotes={serverQuotes} />
         </div>
       ) : (
         <div aria-labelledby="supplier-role" className="grid gap-14" id="supplier-workspace" role="tabpanel">
           <SupplierDrafts
             draftError={draftError}
-            drafts={memberState.drafts}
+            drafts={serverDrafts}
+            submitting={draftSubmitting}
             values={draftValues}
             onSubmit={addDraft}
             onUpdate={(next) => {
@@ -369,24 +350,25 @@ export function MemberWorkspace() {
               setDraftError(null);
             }}
           />
-          <MatchedDemands requests={allRequests} />
+          <MatchedDemands requests={serverRequests} />
           <SupplierQuoteForm
             errors={quoteErrors}
             onSubmit={submitQuote}
             onUpdate={updateQuote}
             receipt={quoteReceipt}
-            requests={allRequests}
+            requests={serverRequests}
             selectedDemand={selectedDemand}
+            submitting={quoteSubmitting}
             values={quoteValues}
           />
-          <ResponseLog responses={memberState.responses} />
+          <ResponseLog responses={serverQuotes} />
         </div>
       )}
 
       <div className="mt-14 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--border)] pt-6">
-        <p className="m-0 max-w-2xl text-xs text-[var(--muted)]">重置会清除 KAI Cloud 在此浏览器内创建的演示关注、需求、草稿与响应，不影响任何外部系统。</p>
-        <button className="button button-secondary button-compact" onClick={resetDemo} type="button">
-          重置本机演示数据
+        <p className="m-0 max-w-2xl text-xs text-[var(--muted)]">此操作只恢复本机关注列表与角色偏好，不删除演示服务器中的需求、草稿或报价。</p>
+        <button className="button button-secondary button-compact" onClick={resetLocalPreferences} type="button">
+          恢复本机偏好
         </button>
       </div>
     </section>
@@ -469,11 +451,11 @@ function BuyerWatchlist({ listings, onRemove }: { listings: ResourceListing[]; o
   );
 }
 
-function BuyerRequests({ requests }: { requests: LocalRequestRecord[] }) {
+function BuyerRequests({ requests, showingSeeded }: { requests: MarketplaceRequestRecord[]; showingSeeded: boolean }) {
   return (
     <section aria-labelledby="buyer-requests-title">
       <div id="buyer-requests-title">
-        <SectionIntro kicker="Buyer / Requests" title="已发布需求" description="新建需求会出现在这里；示例需求用于补足完整状态演示。" />
+        <SectionIntro kicker="Buyer / Requests" title="已发布需求" description={showingSeeded ? "尚无服务端需求，当前显示两条明确标注的界面示例。" : "这些需求直接来自 KAI Cloud 演示后端，刷新或重启后仍可读取。"} />
       </div>
       <div className="grid gap-5 lg:grid-cols-2">
         {requests.slice(0, 4).map((request) => (
@@ -501,10 +483,10 @@ function BuyerRequests({ requests }: { requests: LocalRequestRecord[] }) {
 }
 
 function MiniTimeline({ status }: { status: string }) {
-  const active = status.includes("方案") ? 3 : status.includes("标准") ? 2 : 1;
+  const active = status.includes("方案") || status.includes("标准") ? 3 : status.includes("报价") ? 2 : 1;
   return (
     <ol aria-label="需求处理进度" className="mt-5 grid grid-cols-3 gap-2 text-xs">
-      {["已记录", "KAI 标准化", "方案待确认"].map((step, index) => (
+      {["已记录", "供应方响应", "KAI 标准化"].map((step, index) => (
         <li className={index + 1 <= active ? "text-[var(--success)]" : "text-[var(--muted)]"} key={step}>
           <span className={`mb-2 block h-1 ${index + 1 <= active ? "bg-[var(--success)]" : "bg-[var(--border)]"}`} />
           {step}
@@ -514,33 +496,35 @@ function MiniTimeline({ status }: { status: string }) {
   );
 }
 
-function StandardizedQuotes({ listings }: { listings: ResourceListing[] }) {
+function BuyerQuotes({ quotes }: { quotes: MarketplaceQuoteRecord[] }) {
   return (
     <section aria-labelledby="standard-quotes-title">
       <div id="standard-quotes-title">
-        <SectionIntro kicker="Buyer / KAI quotes" title="KAI 标准化报价方案" description="供应商原始报价不相互公开；这里仅以统一口径展示虚构方案。" />
+        <SectionIntro kicker="Buyer / Supplier quotes" title="已收到的供应报价" description="供应方提交后会立即写入演示后端，并回流到需求方工作台；正式版本将再增加账号隔离和 KAI 标准化。" />
       </div>
-      <div className="grid gap-5 lg:grid-cols-3">
-        {listings.map((listing) => (
-          <article className="border border-[var(--border)] bg-[var(--surface)] p-5" key={listing.id}>
+      {quotes.length === 0 ? <EmptyState description="暂无服务端报价。切换到供应方，为一条已发布需求提交报价后，这里会立即出现。" /> : (
+        <div className="grid gap-5 lg:grid-cols-3">
+        {quotes.map((quote) => (
+          <article className="border-t-2 border-[var(--accent)] bg-[var(--surface)] p-5" key={quote.id}>
             <div className="flex justify-between gap-3 text-xs">
-              <span className="font-semibold text-[var(--accent)]">演示参考价</span>
-              <span className="text-[var(--muted)]">样本 {listing.quote.sampleCount}</span>
+              <span className="font-semibold text-[var(--accent)]">服务端演示报价</span>
+              <span className="text-[var(--muted)]">{shortDate(quote.createdAt)}</span>
             </div>
-            <h3 className="mb-1 mt-4 text-lg">{listing.title}</h3>
-            <p className="m-0 text-sm text-[var(--text)]">{listing.region} · {listing.supplierName}</p>
-            <p className="my-5 font-mono text-2xl font-semibold text-[var(--ink)]">
-              {formatCurrency(listing.quote.median)} <span className="text-xs font-normal text-[var(--muted)]">/ {listing.pricingUnit}</span>
+            <h3 className="mb-1 mt-4 text-lg">{quote.demandTitle}</h3>
+            <p className="m-0 font-mono text-xs text-[var(--muted)]">{quote.id}</p>
+            <p className="my-5 font-mono text-3xl font-semibold text-[var(--ink)]">
+              {formatCurrency(quote.unitPrice)} <span className="text-sm font-normal text-[var(--muted)]">/ {quote.pricingUnit}</span>
             </p>
             <dl className="grid gap-2 border-y border-[var(--border)] py-4 text-xs">
-              <div className="flex justify-between gap-4"><dt>参考区间</dt><dd className="font-mono text-[var(--ink)]">{formatCurrency(listing.quote.rangeMin)}–{formatCurrency(listing.quote.rangeMax)}</dd></div>
-              <div className="flex justify-between gap-4"><dt>费用口径</dt><dd className="text-right text-[var(--ink)]">{listing.quote.taxIncluded ? "含税" : "未含税"} · {listing.quote.energyIncluded ? "含电" : "电费另计"} · {listing.quote.networkIncluded ? "含网络" : "网络另计"}</dd></div>
-              <div className="flex justify-between gap-4"><dt>更新</dt><dd className="text-[var(--ink)]">{listing.quote.updatedAt}</dd></div>
+              <div className="flex justify-between gap-4"><dt>交付周期</dt><dd className="text-[var(--ink)]">{quote.leadTime}</dd></div>
+              <div className="flex justify-between gap-4"><dt>有效期</dt><dd className="text-[var(--ink)]">{quote.validDays} 天</dd></div>
+              <div className="flex justify-between gap-4"><dt>状态</dt><dd className="text-[var(--success)]">{quote.status}</dd></div>
             </dl>
-            <p className="mt-4 text-xs text-[var(--muted)]">{listing.quote.scopeNote}</p>
+            <p className="mt-4 text-sm text-[var(--text)]">{quote.scopeNote}</p>
           </article>
         ))}
-      </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -549,18 +533,20 @@ function SupplierDrafts({
   drafts,
   values,
   draftError,
+  submitting,
   onSubmit,
   onUpdate,
 }: {
-  drafts: ResourceDraft[];
+  drafts: MarketplaceDraftRecord[];
   values: { title: string; category: ResourceCategory; capacity: string };
   draftError: string | null;
+  submitting: boolean;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onUpdate: (values: { title: string; category: ResourceCategory; capacity: string }) => void;
 }) {
   return (
     <section aria-labelledby="supplier-drafts-title">
-      <div id="supplier-drafts-title"><SectionIntro kicker="Supplier / Drafts" title="资源草稿" description="草稿只在本机保存，不会成为公开资源。" /></div>
+      <div id="supplier-drafts-title"><SectionIntro kicker="Supplier / Drafts" title="资源草稿" description="草稿写入演示后端，但不会自动成为公开资源。" /></div>
       <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
         <form className="border-t-2 border-[var(--accent)] bg-[var(--surface)] p-5" noValidate onSubmit={onSubmit}>
           <h3 className="mt-0 text-lg">新建演示草稿</h3>
@@ -570,10 +556,10 @@ function SupplierDrafts({
             <label className={labelClass}>容量摘要<textarea className={`${inputClass} min-h-24 resize-y`} onChange={(event) => onUpdate({ ...values, capacity: event.target.value })} placeholder="例如：演示容量 16 卡，可按周排期" value={values.capacity} /></label>
           </div>
           {draftError ? <p className="text-sm text-[var(--error)]" role="alert">{draftError}</p> : null}
-          <button className="button button-primary mt-4" type="submit">保存到本机草稿</button>
+          <button className="button button-primary mt-4" disabled={submitting} type="submit">{submitting ? "正在保存…" : "保存到演示后端"}</button>
         </form>
         <div className="grid content-start gap-3">
-          {drafts.map((draft) => (
+          {drafts.length === 0 ? <EmptyState description="暂无服务端草稿。保存左侧表单后会在这里出现。" /> : drafts.map((draft) => (
             <article className="border border-[var(--border)] bg-[var(--surface)] p-4" key={draft.id}>
               <div className="flex items-start justify-between gap-3"><div><span className="font-mono text-xs text-[var(--accent)]">{draft.id}</span><h3 className="mb-1 mt-2 text-base">{draft.title}</h3></div><span className="text-xs font-semibold text-[var(--muted)]">{draft.status}</span></div>
               <p className="m-0 text-sm">{categoryLabel[draft.category]} · {draft.capacity}</p>
@@ -585,17 +571,17 @@ function SupplierDrafts({
   );
 }
 
-function MatchedDemands({ requests }: { requests: LocalRequestRecord[] }) {
+function MatchedDemands({ requests }: { requests: MarketplaceRequestRecord[] }) {
   return (
     <section aria-labelledby="matched-demands-title">
-      <div id="matched-demands-title"><SectionIntro kicker="Supplier / Matching" title="匹配需求" description="演示匹配只根据资源类别与地区字段，不连接真实需求方。" /></div>
-      <div className="data-table-wrap">
+      <div id="matched-demands-title"><SectionIntro kicker="Supplier / Matching" title="可响应需求" description="来自演示后端的匿名业务字段；不包含联系人或真实公司资料。" /></div>
+      {requests.length === 0 ? <EmptyState action="发布一条需求" description="服务端还没有需求。先从发布需求页创建一条，再回到供应方工作台报价。" href="/request" /> : <div className="data-table-wrap">
         <table className="data-table">
           <caption className="sr-only">供应方演示匹配需求</caption>
           <thead><tr><th scope="col">需求</th><th scope="col">类别</th><th scope="col">区域</th><th scope="col">数量</th><th scope="col">状态</th></tr></thead>
           <tbody>{requests.slice(0, 5).map((request) => <tr key={request.id}><th className="text-[var(--ink)]" scope="row"><span className="block font-mono text-xs text-[var(--muted)]">{request.id}</span>{request.title}</th><td>{categoryLabel[request.category]}</td><td>{request.region}</td><td>{request.quantity} {request.pricingUnit}</td><td>{request.status}</td></tr>)}</tbody>
         </table>
-      </div>
+      </div>}
     </section>
   );
 }
@@ -606,41 +592,43 @@ function SupplierQuoteForm({
   values,
   errors,
   receipt,
+  submitting,
   onUpdate,
   onSubmit,
 }: {
-  requests: LocalRequestRecord[];
-  selectedDemand?: LocalRequestRecord;
+  requests: MarketplaceRequestRecord[];
+  selectedDemand?: MarketplaceRequestRecord;
   values: QuoteValues;
   errors: Partial<Record<keyof QuoteValues, string>>;
   receipt: string | null;
+  submitting: boolean;
   onUpdate: <Key extends keyof QuoteValues>(key: Key, value: QuoteValues[Key]) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
     <section aria-labelledby="quote-submit-title">
-      <div id="quote-submit-title"><SectionIntro kicker="Supplier / Quote" title="提交演示报价" description="报价只写入本机响应记录，不会展示给真实需求方。" /></div>
+      <div id="quote-submit-title"><SectionIntro kicker="Supplier / Quote" title="提交演示报价" description="报价会保存到演示后端，并立即回流到需求方工作台。" /></div>
       <form className="border-t-2 border-[var(--accent)] bg-[var(--surface)] p-5 sm:p-7" noValidate onSubmit={onSubmit}>
         <div className="grid gap-5 md:grid-cols-2">
-          <label className={labelClass}>匹配需求<select aria-invalid={Boolean(errors.demandId)} className={inputClass} onChange={(event) => onUpdate("demandId", event.target.value)} value={values.demandId}>{requests.map((request) => <option key={request.id} value={request.id}>{request.id} · {request.title}</option>)}</select><FieldError error={errors.demandId} /></label>
+          <label className={labelClass}>匹配需求<select aria-invalid={Boolean(errors.demandId)} className={inputClass} disabled={requests.length === 0} onChange={(event) => onUpdate("demandId", event.target.value)} value={values.demandId}><option value="">{requests.length === 0 ? "暂无可响应需求" : "请选择"}</option>{requests.map((request) => <option key={request.id} value={request.id}>{request.id} · {request.title}</option>)}</select><FieldError error={errors.demandId} /></label>
           <label className={labelClass}>演示单价（人民币 / {selectedDemand?.pricingUnit ?? "单位"}）<input aria-invalid={Boolean(errors.unitPrice)} className={inputClass} inputMode="decimal" min="0.01" onChange={(event) => onUpdate("unitPrice", event.target.value)} step="0.01" type="number" value={values.unitPrice} /><FieldError error={errors.unitPrice} /></label>
           <label className={labelClass}>交付周期<select aria-invalid={Boolean(errors.leadTime)} className={inputClass} onChange={(event) => onUpdate("leadTime", event.target.value)} value={values.leadTime}><option value="">请选择</option><option>48 小时内</option><option>7 天内</option><option>30 天内</option><option>排期交付</option></select><FieldError error={errors.leadTime} /></label>
           <label className={labelClass}>报价有效期（天）<input aria-invalid={Boolean(errors.validDays)} className={inputClass} max="90" min="1" onChange={(event) => onUpdate("validDays", event.target.value)} type="number" value={values.validDays} /><FieldError error={errors.validDays} /></label>
           <label className={`${labelClass} md:col-span-2`}>费用与服务口径<textarea aria-invalid={Boolean(errors.scopeNote)} className={`${inputClass} min-h-24 resize-y`} onChange={(event) => onUpdate("scopeNote", event.target.value)} placeholder="例如：演示价含税含电，公网流量另计，支持 99.9% SLA" value={values.scopeNote} /><FieldError error={errors.scopeNote} /></label>
         </div>
-        <label className="mt-5 flex items-start gap-3 border border-[var(--border)] bg-[var(--info-bg)] p-4 text-sm"><input checked={values.consent} className="mt-1 size-4 accent-[var(--brand)]" onChange={(event) => onUpdate("consent", event.target.checked)} type="checkbox" /><span>我确认只填写虚构报价，且此操作不会向需求方、供应商或 KAI Cloud 发送数据。<FieldError error={errors.consent} /></span></label>
-        <button className="button button-primary mt-5" type="submit">保存演示报价响应</button>
-        {receipt ? <p className="mt-5 border-l-4 border-[var(--success)] bg-[var(--success-bg)] p-4 text-sm text-[var(--ink)]" role="status">已生成本机响应：<strong className="font-mono">{receipt}</strong></p> : null}
+        <label className="mt-5 flex items-start gap-3 border border-[var(--border)] bg-[var(--info-bg)] p-4 text-sm"><input checked={values.consent} className="mt-1 size-4 accent-[var(--brand)]" onChange={(event) => onUpdate("consent", event.target.checked)} type="checkbox" /><span>我确认只填写虚构业务字段，并将这条报价保存到 KAI Cloud 演示后端。<FieldError error={errors.consent} /></span></label>
+        <button className="button button-primary mt-5" disabled={submitting || requests.length === 0} type="submit">{submitting ? "正在提交…" : "提交到演示后端"}</button>
+        {receipt ? <p className="mt-5 border-l-4 border-[var(--success)] bg-[var(--success-bg)] p-4 text-sm text-[var(--ink)]" role="status">服务端报价已生成：<strong className="font-mono">{receipt}</strong></p> : null}
       </form>
     </section>
   );
 }
 
-function ResponseLog({ responses }: { responses: QuoteResponse[] }) {
+function ResponseLog({ responses }: { responses: MarketplaceQuoteRecord[] }) {
   return (
     <section aria-labelledby="response-log-title">
-      <div id="response-log-title"><SectionIntro kicker="Supplier / Log" title="响应记录" description="仅显示本机提交的演示报价。" /></div>
-      {responses.length === 0 ? <EmptyState description="尚未保存演示报价。使用上方表单完成一条完整响应流程。" /> : <div className="data-table-wrap"><table className="data-table"><caption className="sr-only">本机演示报价响应记录</caption><thead><tr><th scope="col">响应编号</th><th scope="col">需求</th><th scope="col">单价</th><th scope="col">交付</th><th scope="col">状态</th></tr></thead><tbody>{responses.map((response) => <tr key={response.id}><th className="font-mono text-xs text-[var(--ink)]" scope="row">{response.id}</th><td>{response.demandTitle}</td><td>{formatCurrency(response.unitPrice)} / {response.pricingUnit}</td><td>{response.leadTime} · {response.validDays} 天有效</td><td>{response.status}</td></tr>)}</tbody></table></div>}
+      <div id="response-log-title"><SectionIntro kicker="Supplier / Log" title="响应记录" description="读取演示后端已提交的报价响应。" /></div>
+      {responses.length === 0 ? <EmptyState description="尚未提交服务端报价。使用上方表单完成一条完整响应流程。" /> : <div className="data-table-wrap"><table className="data-table"><caption className="sr-only">服务端演示报价响应记录</caption><thead><tr><th scope="col">响应编号</th><th scope="col">需求</th><th scope="col">单价</th><th scope="col">交付</th><th scope="col">状态</th></tr></thead><tbody>{responses.map((response) => <tr key={response.id}><th className="font-mono text-xs text-[var(--ink)]" scope="row">{response.id}</th><td>{response.demandTitle}</td><td>{formatCurrency(response.unitPrice)} / {response.pricingUnit}</td><td>{response.leadTime} · {response.validDays} 天有效</td><td>{response.status}</td></tr>)}</tbody></table></div>}
     </section>
   );
 }

@@ -94,7 +94,7 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
                   {formatPrice(resource.quote.median, resource.pricingUnit)}
                 </p>
               </div>
-              <span className="border border-[var(--border-strong)] bg-[var(--surface)] px-2 py-1 text-[11px] font-semibold text-[var(--warning)]">非实时成交价</span>
+              <span className="border border-[var(--border-strong)] bg-[var(--surface)] px-2 py-1 text-xs font-semibold text-[var(--warning)]">非实时成交价</span>
             </div>
             <dl className="mt-6 grid grid-cols-2 gap-5 border-t border-[var(--border)] pt-5">
               <div>

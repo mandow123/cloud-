@@ -300,7 +300,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                           {compared.map((resource) => (
                             <td key={resource.id} className="border-r border-[var(--border)] p-3 align-top text-[var(--text)] last:border-r-0">
                               {(render as (item: ResourceListing) => string)(resource)}
-                              {label === "演示参考价" && <span className="mt-1 block text-[11px] text-[var(--warning)]">非实时成交价</span>}
+                              {label === "演示参考价" && <span className="mt-1 block text-xs text-[var(--warning)]">非实时成交价</span>}
                             </td>
                           ))}
                         </tr>
@@ -352,10 +352,10 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                           <td className="min-w-40">{resource.region}<span className="mt-1 block text-xs text-[var(--muted)]">{resource.deliveryForm}</span></td>
                           <td className="min-w-44">{resource.capacity}<span className="mt-1 block text-xs text-[var(--muted)]">SLA {resource.sla}</span></td>
                           <td className="num min-w-44">
-                            <strong className="block whitespace-nowrap text-base text-[var(--ink)]">{formatPrice(resource.quote.median, resource.pricingUnit)}</strong>
-                            <span className="mt-1 block text-[11px] text-[var(--warning)]">演示参考价 · 非实时成交价</span>
-                            <span className="mt-1 block text-[11px] text-[var(--muted)]">{pricingScope(resource)}</span>
-                            <span className="mt-1 block text-[11px] text-[var(--muted)]">样本 {resource.quote.sampleCount} 条 · 更新 {resource.quote.updatedAt}</span>
+                            <strong className="block whitespace-nowrap text-xl text-[var(--ink)]">{formatPrice(resource.quote.median, resource.pricingUnit)}</strong>
+                            <span className="mt-1 block text-xs text-[var(--warning)]">演示参考价 · 非实时成交价</span>
+                            <span className="mt-1 block text-xs text-[var(--muted)]">{pricingScope(resource)}</span>
+                            <span className="mt-1 block text-xs text-[var(--muted)]">样本 {resource.quote.sampleCount} 条 · 更新 {resource.quote.updatedAt}</span>
                           </td>
                           <td className="min-w-32">
                             <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 text-xs font-semibold text-[var(--text)]">
@@ -399,9 +399,9 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                       <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
                         <div>
                           <p className="m-0 text-xs text-[var(--muted)]">演示参考价</p>
-                          <p className="mt-1 mb-0 text-xl font-semibold tabular-nums text-[var(--ink)]">{formatPrice(resource.quote.median, resource.pricingUnit)}</p>
-                          <p className="m-0 text-[11px] text-[var(--warning)]">非实时成交价 · {pricingScope(resource)}</p>
-                          <p className="mt-1 mb-0 text-[11px] text-[var(--muted)]">样本 {resource.quote.sampleCount} 条 · 更新 {resource.quote.updatedAt}</p>
+                          <p className="mt-1 mb-0 text-2xl font-semibold tabular-nums text-[var(--ink)]">{formatPrice(resource.quote.median, resource.pricingUnit)}</p>
+                          <p className="m-0 text-xs text-[var(--warning)]">非实时成交价 · {pricingScope(resource)}</p>
+                          <p className="mt-1 mb-0 text-xs text-[var(--muted)]">样本 {resource.quote.sampleCount} 条 · 更新 {resource.quote.updatedAt}</p>
                         </div>
                         <Link className="button button-secondary button-compact" href={`/resources/${resource.id}`}>查看详情 →</Link>
                       </div>

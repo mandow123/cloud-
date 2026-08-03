@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 const navigation = [
   { href: "/market", label: "行情中心" },
   { href: "/resources", label: "资源市场" },
-  { href: "/request", label: "发布需求" },
   { href: "/partners", label: "供应商合作" },
   { href: "/member", label: "会员中心" },
 ];

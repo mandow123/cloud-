@@ -1,10 +1,7 @@
 import type { Metadata } from "next";
+import { LiveModelPriceBoard } from "@/components/live-model-price-board";
 import { MarketDashboard } from "@/components/market-dashboard";
-import {
-  ModelPriceBoard,
-  type ModelCostIndexSnapshot,
-  type ModelTokenPriceQuote,
-} from "@/components/model-price-board";
+import type { ModelCostIndexSnapshot, ModelTokenPriceQuote } from "@/components/model-price-board";
 import modelMarketSnapshot from "@/data/model-market.snapshot.json";
 import { marketSeries } from "@/lib/data";
 
@@ -20,9 +17,12 @@ export default function MarketPage() {
     <MarketDashboard
       series={infrastructureSeries}
       modelBoard={
-        <ModelPriceBoard
-          quotes={modelMarketSnapshot.quotes as ModelTokenPriceQuote[]}
-          index={modelMarketSnapshot.index as ModelCostIndexSnapshot}
+        <LiveModelPriceBoard
+          initialSnapshot={{
+            quotes: modelMarketSnapshot.quotes as ModelTokenPriceQuote[],
+            index: modelMarketSnapshot.index as ModelCostIndexSnapshot,
+            publishedAt: modelMarketSnapshot.publishedAt,
+          }}
         />
       }
     />

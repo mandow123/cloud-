@@ -18,6 +18,9 @@ export function SiteHeader() {
           </Link>
         </div>
       </div>
+      <Link className="mobile-demand-cta" href="/request">
+        <span>发布算力需求</span><span aria-hidden="true">→</span>
+      </Link>
     </header>
   );
 }

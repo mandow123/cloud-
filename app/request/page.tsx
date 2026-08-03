@@ -5,7 +5,7 @@ import type { DealMode } from "@/lib/types";
 
 export const metadata: Metadata = {
   title: "发布算力需求",
-  description: "模拟发布 GPU、Token、模型、整机柜与云厂商资源的租赁、服务采购或双边置换需求。",
+  description: "发布 GPU、Token、模型、整机柜与云厂商资源的演示租赁、服务采购或双边置换需求。",
 };
 
 type RequestPageProps = {
@@ -54,8 +54,8 @@ export default async function RequestPage({ searchParams }: RequestPageProps) {
               <p className="section-lead">租赁或服务采购可直接描述目标资源；置换则分别填写“我可提供”和“我需要”。</p>
             </div>
             <div className="border-l-2 border-[var(--accent)] pl-5 text-sm text-[var(--text)]">
-              <strong className="block text-[var(--ink)]">演示表单 · 不传输</strong>
-              不创建真实询价，不联系供应商。记录最多保留在当前浏览器中。
+              <strong className="block text-[var(--ink)]">演示业务 · 服务端留存</strong>
+              提交后会生成需求编号并写入演示数据库，供会员中心两侧继续流转；不会触发真实采购或联系供应商。
             </div>
           </div>
         </div>

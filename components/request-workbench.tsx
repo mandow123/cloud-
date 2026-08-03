@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { createDemoRequestId } from "@/lib/market";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import type { MarketplaceRequestRecord } from "@/lib/marketplace";
 import type { DealMode, PricingUnit, ResourceCategory } from "@/lib/types";
 
 export type RequestPrefill = {
@@ -43,26 +43,11 @@ type SwapValues = {
   consent: boolean;
 };
 
-type LocalRequestRecord = {
-  id: string;
-  kind: DealMode;
-  title: string;
-  category: ResourceCategory;
-  region: string;
-  pricingUnit: PricingUnit;
-  quantity: number;
-  createdAt: string;
-  status: "已记录";
-  summary: string;
-};
-
 type Confirmation = {
   id: string;
   mode: "procurement" | "swap";
   title: string;
 };
-
-const REQUEST_STORAGE_KEY = "kai-cloud-demo-requests-v1";
 
 const categories: Array<{ value: ResourceCategory; label: string }> = [
   { value: "gpu", label: "GPU 算力" },
@@ -70,10 +55,6 @@ const categories: Array<{ value: ResourceCategory; label: string }> = [
   { value: "rack_capacity", label: "整机柜 / 容量" },
   { value: "cloud_vendor", label: "云厂商资源" },
 ];
-
-const categoryLabel: Record<ResourceCategory, string> = Object.fromEntries(
-  categories.map((category) => [category.value, category.label]),
-) as Record<ResourceCategory, string>;
 
 const categoryUnits: Record<ResourceCategory, PricingUnit[]> = {
   gpu: ["卡时", "服务器时", "预留容量时"],
@@ -101,15 +82,21 @@ function validPositive(value: string) {
   return Number.isFinite(parsed) && parsed > 0;
 }
 
-function persistRequest(record: LocalRequestRecord) {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(REQUEST_STORAGE_KEY) ?? "[]") as unknown;
-    const existing = Array.isArray(parsed) ? parsed : [];
-    localStorage.setItem(REQUEST_STORAGE_KEY, JSON.stringify([record, ...existing].slice(0, 20)));
-    window.dispatchEvent(new CustomEvent("kai-demo-requests-changed"));
-  } catch {
-    // Confirmation still works when browser storage is disabled.
+
+async function createServerRequest(payload: unknown) {
+  const response = await fetch("/api/requests", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const result = (await response.json()) as {
+    record?: MarketplaceRequestRecord;
+    error?: { message?: string };
+  };
+  if (!response.ok || !result.record) {
+    throw new Error(result.error?.message || "需求服务暂时不可用，请稍后再试。");
   }
+  return result.record;
 }
 
 function ErrorText({ children }: { children?: string }) {
@@ -173,6 +160,8 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
   const [procurementErrors, setProcurementErrors] = useState<Partial<Record<keyof ProcurementValues, string>>>({});
   const [swapErrors, setSwapErrors] = useState<Partial<Record<keyof SwapValues, string>>>({});
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
   const confirmationRef = useRef<HTMLHeadingElement>(null);
   const procurementTabRef = useRef<HTMLButtonElement>(null);
   const swapTabRef = useRef<HTMLButtonElement>(null);
@@ -180,12 +169,6 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
   useEffect(() => {
     if (confirmation) confirmationRef.current?.focus();
   }, [confirmation]);
-
-  const procurementSummary = useMemo(
-    () =>
-      `${procurement.dealMode === "rental" ? "租赁" : "服务采购"} · ${categoryLabel[procurement.category]} · ${procurement.quantity || "—"} ${procurement.pricingUnit}`,
-    [procurement],
-  );
 
   function updateProcurement<Key extends keyof ProcurementValues>(key: Key, value: ProcurementValues[Key]) {
     setProcurement((current) => ({ ...current, [key]: value }));
@@ -219,7 +202,7 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
     setConfirmation(null);
   }
 
-  function submitProcurement(event: FormEvent<HTMLFormElement>) {
+  async function submitProcurement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextErrors: Partial<Record<keyof ProcurementValues, string>> = {};
 
@@ -228,38 +211,35 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
     if (!procurement.region) nextErrors.region = "请选择期望区域。";
     if (!procurement.deliveryDate) nextErrors.deliveryDate = "请选择期望开始日期。";
     if (procurement.requirements.trim().length < 8) nextErrors.requirements = "请用至少 8 个字描述交付要求。";
-    if (!procurement.consent) nextErrors.consent = "请确认不传输的演示说明。";
+    if (!procurement.consent) nextErrors.consent = "请确认演示服务器提交说明。";
 
     setProcurementErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    const seed = {
-      dealMode: procurement.dealMode,
-      category: procurement.category,
-      pricingUnit: procurement.pricingUnit,
-      quantity: procurement.quantity,
-      duration: procurement.duration,
-      region: procurement.region,
-      deliveryDate: procurement.deliveryDate,
-      requirements: procurement.requirements.trim(),
-    };
-    const id = createDemoRequestId(procurement.dealMode, seed);
-    persistRequest({
-      id,
-      kind: procurement.dealMode,
-      title: procurementSummary,
-      category: procurement.category,
-      region: procurement.region,
-      pricingUnit: procurement.pricingUnit,
-      quantity: Number(procurement.quantity),
-      createdAt: new Date().toISOString(),
-      status: "已记录",
-      summary: procurement.requirements.trim(),
-    });
-    setConfirmation({ id, mode: "procurement", title: procurementSummary });
+    setSubmitting(true);
+    setServerError(null);
+    try {
+      const record = await createServerRequest({
+        requestType: "procurement",
+        dealMode: procurement.dealMode,
+        category: procurement.category,
+        pricingUnit: procurement.pricingUnit,
+        quantity: Number(procurement.quantity),
+        durationHours: Number(procurement.duration),
+        region: procurement.region,
+        deliveryDate: procurement.deliveryDate,
+        requirements: procurement.requirements.trim(),
+      });
+      setConfirmation({ id: record.id, mode: "procurement", title: record.title });
+      window.dispatchEvent(new CustomEvent("kai-server-records-changed"));
+    } catch (error) {
+      setServerError(error instanceof Error ? error.message : "需求服务暂时不可用，请稍后再试。");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
-  function submitSwap(event: FormEvent<HTMLFormElement>) {
+  async function submitSwap(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextErrors: Partial<Record<keyof SwapValues, string>> = {};
 
@@ -269,39 +249,39 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
     if (swap.wantedDescription.trim().length < 8) nextErrors.wantedDescription = "请用至少 8 个字描述期望资源。";
     if (!swap.region) nextErrors.region = "请选择期望撮合区域。";
     if (swap.cashDirection !== "none" && !validPositive(swap.cashAmount)) nextErrors.cashAmount = "补差金额必须大于 0。";
-    if (!swap.consent) nextErrors.consent = "请确认不传输的演示说明。";
+    if (!swap.consent) nextErrors.consent = "请确认演示服务器提交说明。";
 
     setSwapErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    const seed = {
-      offeredCategory: swap.offeredCategory,
-      offeredUnit: swap.offeredUnit,
-      offeredQuantity: swap.offeredQuantity,
-      offeredDescription: swap.offeredDescription.trim(),
-      wantedCategory: swap.wantedCategory,
-      wantedUnit: swap.wantedUnit,
-      wantedQuantity: swap.wantedQuantity,
-      wantedDescription: swap.wantedDescription.trim(),
-      region: swap.region,
-      cashDirection: swap.cashDirection,
-      cashAmount: swap.cashDirection === "none" ? "0" : swap.cashAmount,
-    };
-    const id = createDemoRequestId("swap", seed);
-    const title = `${categoryLabel[swap.offeredCategory]} → ${categoryLabel[swap.wantedCategory]} 双边置换`;
-    persistRequest({
-      id,
-      kind: "swap",
-      title,
-      category: swap.wantedCategory,
-      region: swap.region,
-      pricingUnit: swap.wantedUnit,
-      quantity: Number(swap.wantedQuantity),
-      createdAt: new Date().toISOString(),
-      status: "已记录",
-      summary: `可提供：${swap.offeredDescription.trim()}；期望：${swap.wantedDescription.trim()}`,
-    });
-    setConfirmation({ id, mode: "swap", title });
+    setSubmitting(true);
+    setServerError(null);
+    try {
+      const record = await createServerRequest({
+        requestType: "swap",
+        offered: {
+          category: swap.offeredCategory,
+          pricingUnit: swap.offeredUnit,
+          quantity: Number(swap.offeredQuantity),
+          description: swap.offeredDescription.trim(),
+        },
+        wanted: {
+          category: swap.wantedCategory,
+          pricingUnit: swap.wantedUnit,
+          quantity: Number(swap.wantedQuantity),
+          description: swap.wantedDescription.trim(),
+        },
+        region: swap.region,
+        cashDirection: swap.cashDirection,
+        cashAmount: swap.cashDirection === "none" ? null : Number(swap.cashAmount),
+      });
+      setConfirmation({ id: record.id, mode: "swap", title: record.title });
+      window.dispatchEvent(new CustomEvent("kai-server-records-changed"));
+    } catch (error) {
+      setServerError(error instanceof Error ? error.message : "需求服务暂时不可用，请稍后再试。");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function chooseTab(tab: "procurement" | "swap") {
@@ -325,7 +305,7 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
           <span aria-hidden="true">/</span>
           <span>02 描述资源</span>
           <span aria-hidden="true">/</span>
-          <span>03 本机确认</span>
+          <span>03 服务端确认</span>
         </div>
         <h2 className="sr-only" id="request-workbench-title">
           需求类型与信息表单
@@ -475,8 +455,9 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
               </fieldset>
 
               <Consent checked={procurement.consent} error={procurementErrors.consent} onChange={(checked) => updateProcurement("consent", checked)} />
-              <button className="button button-primary mt-6 w-full sm:w-auto" type="submit">
-                生成演示需求
+              {serverError ? <p className="mt-5 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-4 text-base text-[var(--error)]" role="alert">{serverError}</p> : null}
+              <button className="button button-primary mt-6 w-full sm:w-auto" disabled={submitting} type="submit">
+                {submitting ? "正在提交…" : "提交演示需求"}
               </button>
             </form>
           </div>
@@ -567,8 +548,9 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
               </fieldset>
 
               <Consent checked={swap.consent} error={swapErrors.consent} onChange={(checked) => updateSwap("consent", checked)} />
-              <button className="button button-primary mt-6 w-full sm:w-auto" type="submit">
-                生成演示置换需求
+              {serverError ? <p className="mt-5 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-4 text-base text-[var(--error)]" role="alert">{serverError}</p> : null}
+              <button className="button button-primary mt-6 w-full sm:w-auto" disabled={submitting} type="submit">
+                {submitting ? "正在提交…" : "提交演示置换需求"}
               </button>
             </form>
           </div>
@@ -579,9 +561,9 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
 
       <aside className="self-start border-t-2 border-[var(--accent)] bg-[var(--info-bg)] p-5 lg:sticky lg:top-28">
         <p className="kicker">Before you start</p>
-        <h2 className="m-0 text-xl">这不是正式询价</h2>
+        <h2 className="m-0 text-xl">演示后端已接通</h2>
         <ul className="mt-4 grid gap-3 pl-5 text-sm text-[var(--text)]">
-          <li>输入只在本机生成演示记录，不发送到 KAI 或供应商。</li>
+          <li>业务字段会保存到 KAI Cloud 演示服务器，会员中心可再次读取。</li>
           <li>不要填写姓名、手机号、公司机密、账号或访问密钥。</li>
           <li>演示报价不是要约，也不会触发合同、支付或资源开通。</li>
         </ul>
@@ -606,7 +588,7 @@ function Consent({ checked, error, onChange }: { checked: boolean; error?: strin
         type="checkbox"
       />
       <span>
-        我确认这是不传输的演示提交；输入只保存在当前浏览器，并且不含真实个人资料、商业机密或访问凭据。
+        我确认仅提交演示业务字段到 KAI Cloud 演示服务器，并且不含真实个人资料、商业机密或访问凭据。
         <ErrorText>{error}</ErrorText>
       </span>
     </label>
@@ -687,16 +669,16 @@ function RequestConfirmation({ confirmation, headingRef }: { confirmation: Confi
     <section aria-live="polite" className="mt-8 border-t-2 border-[var(--success)] bg-[var(--success-bg)] p-5 sm:p-7" role="status">
       <p className="kicker">Demo confirmed</p>
       <h2 className="m-0 text-2xl" ref={headingRef} tabIndex={-1}>
-        演示需求已记录
+        需求已写入演示后端
       </h2>
       <p className="mt-2 text-sm text-[var(--text)]">{confirmation.title}</p>
       <div className="mt-5 flex flex-wrap items-baseline justify-between gap-3 border-y border-[var(--border)] py-4">
-        <span className="text-xs font-semibold text-[var(--muted)]">本机演示编号</span>
+        <span className="text-xs font-semibold text-[var(--muted)]">服务端需求编号</span>
         <strong className="font-mono text-lg text-[var(--ink)]">{confirmation.id}</strong>
       </div>
       <ol className="mt-6 grid gap-0" aria-label="演示处理状态">
         {[
-          ["已记录", "刚刚", "表单已写入当前浏览器。"],
+          ["已记录", "刚刚", "业务字段已写入演示数据库。"],
           ["KAI 标准化", "下一步（演示）", confirmation.mode === "swap" ? "整理双边资源的容量与补差口径。" : "整理计价、SLA 与交付口径。"],
           ["方案待确认", "匹配后（演示）", "展示标准化方案；不会联系真实供应商。"],
         ].map(([status, time, description], index) => (
@@ -715,7 +697,7 @@ function RequestConfirmation({ confirmation, headingRef }: { confirmation: Confi
           </li>
         ))}
       </ol>
-      <p className="m-0 border-t border-[var(--border)] pt-4 text-xs text-[var(--muted)]">刷新页面后确认区会消失；会员中心可读取本机保存的演示记录。</p>
+      <p className="m-0 border-t border-[var(--border)] pt-4 text-xs text-[var(--muted)]">刷新页面后确认区会消失；会员中心仍可从服务端读取这条演示记录。</p>
     </section>
   );
 }

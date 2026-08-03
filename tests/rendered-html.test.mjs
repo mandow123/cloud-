@@ -33,9 +33,12 @@ test("server-renders the finished KAI Cloud home page", async () => {
   const html = await response.text();
   assert.match(html, /KAI Cloud/);
   assert.match(html, /中国 Token 学院算力市场/);
-  assert.match(html, /让异构算力/);
+  assert.match(html, /先看清价格/);
   assert.match(html, /发布算力需求/);
-  assert.match(html, /演示数据环境/);
+  assert.match(html, /演示后端已接通/);
+  assert.match(html, /每日北京时间 06:00/);
+  assert.match(html, /模型调用成本指数/);
+  assert.match(html, /供应方报价会回流到需求方工作台/);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
 });
 
