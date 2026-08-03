@@ -1,0 +1,10 @@
+.git
+.next
+.wrangler
+.market-cache
+dist
+node_modules
+prototypes
+tasks
+tests
+*.log
