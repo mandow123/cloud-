@@ -1,7 +1,7 @@
 {
   "task_id": "kai-cloud-daily-model-market-20260803",
   "title": "KAI Cloud 日度模型行情生产线",
-  "status": "verifying",
+  "status": "complete",
   "mode": "AUTO",
   "resolved_mode": "PRECISION",
   "mode_reason": "异构来源方案已经过原型比较并选定，当前进入确定性测试、独立验收与私有部署。",
@@ -51,10 +51,10 @@
     "PowerShell JSON 因大小写重复键失败"
   ],
   "current_blocker": null,
-  "next_action": "提交本任务精确文件，在不包含用户并行 Mandow 草稿的干净 worktree 中完成最终 lint/build/test 与 Sites 私有部署。",
-  "last_verified_result": "流水线对抗复验 PASS：35/36 半表、来源腐化、priced review_required、过期、上游 stale、零负值均拒绝且旧字节不变；当前工作区全局 lint 仅被用户并行 Mandow 未提交草稿阻断。",
+  "next_action": "由已启用的 05:40/06:00 自动化执行下一次日度更新；仅在失败或人工复核队列出现时介入。",
+  "last_verified_result": "独立最终验收 PASS：干净提交 lint、TypeScript、build 与 46/46 tests 全部通过；Sites 私有版本 2 部署 succeeded，访问仍为 1 user / 0 groups / 0 external。",
   "worker_status": "completed",
-  "verifier_status": "pipeline_pass_clean_tree_pending",
+  "verifier_status": "passed",
   "mode_history": [
     {
       "mode": "HYBRID",
@@ -67,5 +67,5 @@
       "at": "2026-08-03"
     }
   ],
-  "updated_at": "2026-08-03T11:24:00+08:00"
+  "updated_at": "2026-08-03T11:29:00+08:00"
 }

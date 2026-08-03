@@ -15,3 +15,5 @@
 | 2026-08-03 | 回归质量门全部通过 | lint、tsc、build、node:test | lint 0 error、tsc 0 error、构建成功、全量测试 39/39 PASS | Strong |
 | 2026-08-03 | 发布闸门抵抗自报计数与来源字段腐化 | 独立验证器执行反证 | 35/36 伪完整候选、非法来源状态/URL、freshness 冲突、priced review_required 均被拒绝，旧快照字节不变 | Strong |
 | 2026-08-03 | 未来离线回退不再错标来源 | 新增 previous aggregate 越界反例 | 回退官方基线后强制 official_page 与官方 URL，不继承旧聚合标签；测试 PASS | Strong |
+| 2026-08-03 | 精确交付树通过最终验收 | 独立验证器检查 commit f0e66b1 | lint、TypeScript、build、46/46 tests PASS；16 厂商/43 模型/55 档，priced review_required=0 | Strong |
+| 2026-08-03 | 私有线上版本发布成功 | Sites version 2 deployment | 部署状态 succeeded；custom access，1 user、0 groups、0 external visitors | Strong |
