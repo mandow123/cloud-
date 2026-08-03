@@ -20,6 +20,7 @@ ENV NODE_ENV=production \
 COPY --from=build --chown=node:node /app/dist/standalone ./
 COPY --from=build --chown=node:node /app/scripts/model-market ./scripts/model-market
 COPY --from=build --chown=node:node /app/data/model-market-registry.mjs ./data/model-market-registry.mjs
+COPY --from=build --chown=node:node /app/data/model-market-registry.mjs ./market-registry/model-market-registry.mjs
 COPY --from=build --chown=node:node /app/data/model-market.snapshot.json ./data/model-market.snapshot.json
 
 USER node

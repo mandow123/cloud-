@@ -11,6 +11,9 @@ const pendingPath = process.env.KAI_MARKET_PENDING_PATH
 const snapshotPath = process.env.KAI_MARKET_SNAPSHOT_PATH
   ? resolve(process.env.KAI_MARKET_SNAPSHOT_PATH)
   : resolve(projectRoot, "data/model-market.snapshot.json");
+const registryPath = process.env.KAI_MARKET_REGISTRY_PATH
+  ? resolve(process.env.KAI_MARKET_REGISTRY_PATH)
+  : resolve(projectRoot, "data/model-market-registry.mjs");
 
 export async function runCli(command, dependencies = {}) {
   if (command === "update") {
@@ -26,7 +29,7 @@ export async function runCli(command, dependencies = {}) {
   }
   if (command === "stage") {
     const registryModule = dependencies.registryModule
-      ?? await import(pathToFileURL(resolve(projectRoot, "data/model-market-registry.mjs")).href);
+      ?? await import(pathToFileURL(registryPath).href);
     const result = await stageModelMarket({
       modelRegistry: registryModule.modelRegistry,
       usdCnyFallback: registryModule.USD_CNY_FALLBACK,
@@ -38,7 +41,7 @@ export async function runCli(command, dependencies = {}) {
   }
   if (command === "promote") {
     const registryModule = dependencies.registryModule
-      ?? await import(pathToFileURL(resolve(projectRoot, "data/model-market-registry.mjs")).href);
+      ?? await import(pathToFileURL(registryPath).href);
     const expectedRegistryIds = registryModule.modelRegistry.map((entry) => entry.id);
     const result = await promoteModelMarket({
       pendingPath,

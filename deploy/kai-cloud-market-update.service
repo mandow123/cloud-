@@ -6,7 +6,7 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/docker run --rm --name kai-cloud-market-update-3050 --user node --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 -e KAI_DATA_DIR=/app/data -e KAI_MARKET_PENDING_PATH=/app/data/model-market.pending.json -e KAI_MARKET_SNAPSHOT_PATH=/app/data/model-market.snapshot.json -v /opt/kai-cloud-3050/data:/app/data kai-cloud-market:current node scripts/model-market/cli.mjs update
+ExecStart=/usr/bin/docker run --rm --name kai-cloud-market-update-3050 --user node --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 -e KAI_DATA_DIR=/app/data -e KAI_MARKET_PENDING_PATH=/app/data/model-market.pending.json -e KAI_MARKET_SNAPSHOT_PATH=/app/data/model-market.snapshot.json -e KAI_MARKET_REGISTRY_PATH=/app/market-registry/model-market-registry.mjs -v /opt/kai-cloud-3050/data:/app/data kai-cloud-market:current node scripts/model-market/cli.mjs update
 
 [Install]
 WantedBy=multi-user.target
