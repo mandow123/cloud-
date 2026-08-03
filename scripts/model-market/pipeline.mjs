@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { fetchJsonWithRetry, fetchTextWithRetry } from "./http.mjs";
+import { calendarIndexChange } from "./history.mjs";
 
 export const PENDING_SCHEMA = "kai-model-market-pending/1";
 export const SNAPSHOT_SCHEMA = "kai-model-market-snapshot/1";
@@ -742,12 +743,8 @@ function buildIndex(pending, previousSnapshot, now) {
     .concat({ date, value: Number(value.toFixed(4)) })
     .sort((left, right) => left.date.localeCompare(right.date))
     .slice(-MAX_INDEX_HISTORY_DAYS);
-  const changeFrom = (offset) => {
-    const reference = history[Math.max(0, history.length - 1 - offset)]?.value;
-    return Number.isFinite(reference) && reference > 0
-      ? Number((((value / reference) - 1) * 100).toFixed(4))
-      : 0;
-  };
+  const currentValue = Number(value.toFixed(4));
+  const changeFrom = (offset) => calendarIndexChange(history, date, currentValue, offset);
   const baseDate = previousSnapshot?.index?.baseDate ?? history[0].date;
   return {
     name: "KAI 模型调用成本指数",
@@ -758,8 +755,8 @@ function buildIndex(pending, previousSnapshot, now) {
     isProcurementPrice: false,
     methodology: "固定模型篮子内，各模型输入/输出等权参考成本的几何价格指数；不计算跨模型人民币均价。",
     basket,
-    current: Number(value.toFixed(4)),
-    value: Number(value.toFixed(4)),
+    current: currentValue,
+    value: currentValue,
     updatedAt: now.toISOString(),
     change1d: changeFrom(1),
     change30d: changeFrom(30),

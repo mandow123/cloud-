@@ -26,6 +26,20 @@ export const categoryPricingUnits: Record<ResourceCategory, PricingUnit[]> = {
   cloud_vendor: ["卡时", "服务器时", "预留容量时"],
 };
 
+export const marketplaceRegions = ["北京", "上海", "广东", "浙江", "四川", "内蒙古"] as const;
+export type MarketplaceRegion = (typeof marketplaceRegions)[number];
+
+export const marketplaceQuoteLeadTimes = ["48 小时内", "7 天内", "30 天内", "排期交付"] as const;
+export type MarketplaceQuoteLeadTime = (typeof marketplaceQuoteLeadTimes)[number];
+
+export function isMarketplaceRegion(value: unknown): value is MarketplaceRegion {
+  return typeof value === "string" && (marketplaceRegions as readonly string[]).includes(value);
+}
+
+export function isMarketplaceQuoteLeadTime(value: unknown): value is MarketplaceQuoteLeadTime {
+  return typeof value === "string" && (marketplaceQuoteLeadTimes as readonly string[]).includes(value);
+}
+
 export type RequestStatus = "已记录" | "报价已收到" | "标准化中" | "方案待确认";
 
 export type MarketplaceSwapLeg = {
@@ -41,7 +55,7 @@ export type MarketplaceRequestRecord = {
   kind: DealMode;
   title: string;
   category: ResourceCategory;
-  region: string;
+  region: MarketplaceRegion;
   pricingUnit: PricingUnit;
   quantity: number;
   durationHours: number | null;
@@ -63,7 +77,7 @@ export type MarketplaceSupplierQuoteRecord = {
   unitPrice: number;
   pricingUnit: PricingUnit;
   currency: "CNY";
-  leadTime: string;
+  leadTime: MarketplaceQuoteLeadTime;
   validDays: number;
   validUntil: string;
   scopeNote: string;
@@ -78,10 +92,10 @@ export type MarketplaceNormalizedQuoteRecord = {
   standardizedUnitPrice: number;
   pricingUnit: PricingUnit;
   currency: "CNY";
-  deliveryWindow: string;
+  deliveryWindow: MarketplaceQuoteLeadTime;
   validUntil: string;
   standardizedScope: string;
-  standardizationVersion: "kai-demo-v2";
+  standardizationVersion: "kai-standard-v1";
   standardizationNote: string;
   status: "已标准化" | "已过期";
   createdAt: string;
@@ -103,7 +117,7 @@ export type CreateProcurementRequest = {
   pricingUnit: PricingUnit;
   quantity: number;
   durationHours: number | null;
-  region: string;
+  region: MarketplaceRegion;
   deliveryDate: string;
   requirements: string;
 };
@@ -112,7 +126,7 @@ export type CreateSwapRequest = {
   requestType: "swap";
   offered: MarketplaceSwapLeg;
   wanted: MarketplaceSwapLeg;
-  region: string;
+  region: MarketplaceRegion;
   cashDirection: "none" | "offer" | "request";
   cashAmount: number | null;
 };
@@ -122,7 +136,7 @@ export type CreateMarketplaceRequest = CreateProcurementRequest | CreateSwapRequ
 export type CreateMarketplaceQuote = {
   demandId: string;
   unitPrice: number;
-  leadTime: string;
+  leadTime: MarketplaceQuoteLeadTime;
   validDays: number;
   scopeNote: string;
 };
@@ -201,17 +215,29 @@ function swapLegValue(value: unknown, field: string): MarketplaceSwapLeg {
     category,
     pricingUnit: pricingUnitValue(leg.pricingUnit, category, `${field}.pricingUnit`),
     quantity: positiveNumber(leg.quantity, `${field}.quantity`),
-    description: demoStringValue(leg.description, `${field}.description`, 8, 500),
+    description: boundedStringValue(leg.description, `${field}.description`, 8, 500),
   };
 }
 
-function demoStringValue(value: unknown, field: string, min: number, max: number) {
+function boundedStringValue(value: unknown, field: string, min: number, max: number) {
   const normalized = stringValue(value, field, min, max);
   const containsContactData = /(?:https?:\/\/|www\.|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|(?:\+?86[- ]?)?1[3-9]\d{9})/iu.test(normalized);
   if (containsContactData) {
     throw new MarketplaceInputError(`${field} 请勿填写邮箱、手机号或外部链接。`, field);
   }
   return normalized;
+}
+
+function supportedStringValue<const T extends readonly string[]>(
+  value: unknown,
+  field: string,
+  supported: T,
+): T[number] {
+  const normalized = stringValue(value, field, 1, 100);
+  if (!(supported as readonly string[]).includes(normalized)) {
+    throw new MarketplaceInputError(`${field} 不在支持范围内。`, field);
+  }
+  return normalized as T[number];
 }
 
 export function parseCreateRequest(value: unknown): CreateMarketplaceRequest {
@@ -247,9 +273,9 @@ export function parseCreateRequest(value: unknown): CreateMarketplaceRequest {
       pricingUnit,
       quantity: positiveNumber(input.quantity, "quantity"),
       durationHours: usesDurationHours ? positiveNumber(input.durationHours, "durationHours", 1_000_000) : null,
-      region: stringValue(input.region, "region", 2, 40),
+      region: supportedStringValue(input.region, "region", marketplaceRegions),
       deliveryDate,
-      requirements: demoStringValue(input.requirements, "requirements", 8, 1_000),
+      requirements: boundedStringValue(input.requirements, "requirements", 8, 1_000),
     };
   }
 
@@ -262,7 +288,7 @@ export function parseCreateRequest(value: unknown): CreateMarketplaceRequest {
       requestType: "swap",
       offered: swapLegValue(input.offered, "offered"),
       wanted: swapLegValue(input.wanted, "wanted"),
-      region: stringValue(input.region, "region", 2, 40),
+      region: supportedStringValue(input.region, "region", marketplaceRegions),
       cashDirection: input.cashDirection,
       cashAmount,
     };
@@ -278,9 +304,9 @@ export function parseCreateQuote(value: unknown): CreateMarketplaceQuote {
   return {
     demandId: stringValue(input.demandId, "demandId", 8, 80),
     unitPrice: positiveNumber(input.unitPrice, "unitPrice", 100_000_000),
-    leadTime: stringValue(input.leadTime, "leadTime", 2, 80),
+    leadTime: supportedStringValue(input.leadTime, "leadTime", marketplaceQuoteLeadTimes),
     validDays,
-    scopeNote: demoStringValue(input.scopeNote, "scopeNote", 8, 1_000),
+    scopeNote: boundedStringValue(input.scopeNote, "scopeNote", 8, 1_000),
   };
 }
 
@@ -289,7 +315,7 @@ export function parseCreateDraft(value: unknown): CreateMarketplaceDraft {
   return {
     title: stringValue(input.title, "title", 3, 100),
     category: categoryValue(input.category, "category"),
-    capacity: demoStringValue(input.capacity, "capacity", 8, 500),
+    capacity: boundedStringValue(input.capacity, "capacity", 8, 500),
   };
 }
 

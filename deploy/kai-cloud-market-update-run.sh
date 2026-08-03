@@ -3,13 +3,13 @@ set -eu
 
 : "${KAI_IMAGE:?KAI_IMAGE is required}"
 : "${KAI_RELEASE_SHA:?KAI_RELEASE_SHA is required}"
-KAI_STATE_ROOT="${KAI_STATE_ROOT:-/opt/kai-cloud-3050}"
-KAI_UPDATE_CONTAINER_PREFIX="${KAI_UPDATE_CONTAINER_PREFIX:-kai-cloud-market-update-3050}"
+KAI_STATE_ROOT="${KAI_STATE_ROOT:-/opt/kai-cloud-3051}"
+KAI_UPDATE_CONTAINER_PREFIX="${KAI_UPDATE_CONTAINER_PREFIX:-kai-cloud-market-update-3051}"
 KAI_UPDATE_CONTAINER="${KAI_UPDATE_CONTAINER_PREFIX}-$$"
 DOCKER_BIN="${KAI_DOCKER_BIN:-/usr/bin/docker}"
 
-if ! printf '%s\n' "$KAI_IMAGE" | grep -Eq '@sha256:[0-9a-fA-F]{64}$'; then
-  printf '%s\n' "KAI_IMAGE must be an immutable image digest (repository@sha256:...)" >&2
+if ! printf '%s\n' "$KAI_IMAGE" | grep -Eq '^[a-z0-9]+([._-][a-z0-9]+)*(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)*@sha256:[0-9a-f]{64}$'; then
+  printf '%s\n' "KAI_IMAGE must be a full lowercase repository@sha256:<64 lowercase hexadecimal characters> reference" >&2
   exit 64
 fi
 if ! printf '%s\n' "$KAI_RELEASE_SHA" | grep -Eq '^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$'; then

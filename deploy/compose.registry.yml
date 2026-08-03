@@ -1,0 +1,52 @@
+name: kai-cloud-registry
+
+services:
+  registry:
+    # Docker Official Image registry 3.1.1 manifest-list digest, verified
+    # against the Docker Hub API on 2026-08-03.
+    image: "registry:3.1.1@sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33"
+    pull_policy: always
+    restart: unless-stopped
+    init: true
+    user: "1000:1000"
+    read_only: true
+    ports:
+      - "127.0.0.1:${KAI_REGISTRY_PORT:-5443}:5000"
+    volumes:
+      - type: bind
+        source: ./registry/config.yml
+        target: /etc/distribution/config.yml
+        read_only: true
+      - type: bind
+        source: "${KAI_REGISTRY_ROOT:-/opt/kai-cloud-registry}/data"
+        target: /var/lib/registry
+      - type: bind
+        source: "${KAI_REGISTRY_ROOT:-/opt/kai-cloud-registry}/certs"
+        target: /certs
+        read_only: true
+      - type: bind
+        source: "${KAI_REGISTRY_ROOT:-/opt/kai-cloud-registry}/auth"
+        target: /auth
+        read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: 0.5
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "/bin/registry", "--version"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"

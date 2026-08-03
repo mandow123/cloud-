@@ -28,20 +28,33 @@ function fail(code, message) {
   throw error;
 }
 
-function parseRetention(value, fallback, name) {
+function parseRetention(value, fallback, name, { minimum = 0, maximum = 10_000 } = {}) {
   const parsed = value === undefined ? fallback : Number(value);
-  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 10_000) {
-    fail("INVALID_RETENTION", `${name} must be an integer between 0 and 10000`);
+  if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) {
+    fail("INVALID_RETENTION", `${name} must be an integer between ${minimum} and ${maximum}`);
   }
   return parsed;
 }
 
-function retentionFromEnvironment() {
+function normalizeRetention(retention = {}) {
   return {
-    hourly: parseRetention(process.env.KAI_BACKUP_RETENTION_HOURLY, 48, "KAI_BACKUP_RETENTION_HOURLY"),
-    daily: parseRetention(process.env.KAI_BACKUP_RETENTION_DAILY, 35, "KAI_BACKUP_RETENTION_DAILY"),
-    monthly: parseRetention(process.env.KAI_BACKUP_RETENTION_MONTHLY, 12, "KAI_BACKUP_RETENTION_MONTHLY"),
+    hourly: parseRetention(retention.hourly, 48, "KAI_BACKUP_RETENTION_HOURLY"),
+    daily: parseRetention(retention.daily, 30, "KAI_BACKUP_RETENTION_DAILY"),
+    monthly: parseRetention(retention.monthly, 0, "KAI_BACKUP_RETENTION_MONTHLY"),
+    maxAgeDays: parseRetention(retention.maxAgeDays, 30, "KAI_BACKUP_RETENTION_MAX_AGE_DAYS", {
+      minimum: 1,
+      maximum: 30,
+    }),
   };
+}
+
+function retentionFromEnvironment() {
+  return normalizeRetention({
+    hourly: process.env.KAI_BACKUP_RETENTION_HOURLY,
+    daily: process.env.KAI_BACKUP_RETENTION_DAILY,
+    monthly: process.env.KAI_BACKUP_RETENTION_MONTHLY,
+    maxAgeDays: process.env.KAI_BACKUP_RETENTION_MAX_AGE_DAYS,
+  });
 }
 
 function defaultPaths() {
@@ -194,24 +207,30 @@ async function readBackupMetadata(backupRoot, entry) {
 }
 
 export async function applyRetention(backupRoot, retention, options = {}) {
+  const normalizedRetention = normalizeRetention(retention);
+  const referenceTime = options.now ? new Date(options.now) : new Date();
+  if (!Number.isFinite(referenceTime.getTime())) fail("INVALID_TIME", "retention reference time is invalid");
+  const oldestAllowedTime = referenceTime.getTime() - (normalizedRetention.maxAgeDays * 24 * 60 * 60 * 1_000);
   const entries = await readdir(backupRoot, { withFileTypes: true });
   const candidates = (await Promise.all(entries.map((entry) => readBackupMetadata(backupRoot, entry))))
     .filter(Boolean)
     .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
-  const keep = new Set(candidates.slice(0, retention.hourly).map((entry) => entry.name));
+  const eligibleCandidates = candidates.filter((entry) => entry.createdAt.getTime() >= oldestAllowedTime);
+  const eligibleNames = new Set(eligibleCandidates.map((entry) => entry.name));
+  const keep = new Set(eligibleCandidates.slice(0, normalizedRetention.hourly).map((entry) => entry.name));
   for (const name of options.protectedNames ?? []) {
-    if (BACKUP_NAME_PATTERN.test(name)) keep.add(name);
+    if (BACKUP_NAME_PATTERN.test(name) && eligibleNames.has(name)) keep.add(name);
   }
   const daily = new Set();
   const monthly = new Set();
-  for (const entry of candidates) {
+  for (const entry of eligibleCandidates) {
     const day = entry.createdAt.toISOString().slice(0, 10);
-    if (daily.size < retention.daily && !daily.has(day)) {
+    if (daily.size < normalizedRetention.daily && !daily.has(day)) {
       daily.add(day);
       keep.add(entry.name);
     }
     const month = entry.createdAt.toISOString().slice(0, 7);
-    if (monthly.size < retention.monthly && !monthly.has(month)) {
+    if (monthly.size < normalizedRetention.monthly && !monthly.has(month)) {
       monthly.add(month);
       keep.add(entry.name);
     }
@@ -224,7 +243,11 @@ export async function applyRetention(backupRoot, retention, options = {}) {
     pruned.push(entry.name);
   }
   await syncPath(backupRoot);
-  return { retained: candidates.length - pruned.length, pruned };
+  return {
+    retained: candidates.length - pruned.length,
+    pruned,
+    maxAgeDays: normalizedRetention.maxAgeDays,
+  };
 }
 
 async function vacuumInto(databasePath, outputPath) {
@@ -248,7 +271,7 @@ export async function createBackup(options = {}) {
   const databasePath = resolve(options.databasePath ?? defaults.databasePath);
   const marketPath = resolve(options.marketPath ?? defaults.marketPath);
   const backupRoot = resolve(options.backupRoot ?? defaults.backupRoot);
-  const retention = options.retention ?? retentionFromEnvironment();
+  const retention = normalizeRetention(options.retention ?? retentionFromEnvironment());
   if (retention.hourly + retention.daily + retention.monthly < 1) {
     fail("INVALID_RETENTION", "at least one backup retention tier must keep a recovery bundle");
   }
@@ -308,7 +331,7 @@ export async function createBackup(options = {}) {
     await syncPath(stagingPath);
     await rename(stagingPath, finalPath);
     await syncPath(backupRoot);
-    const retentionResult = await applyRetention(backupRoot, retention, { protectedNames: [name] });
+    const retentionResult = await applyRetention(backupRoot, retention, { protectedNames: [name], now });
     return {
       command: "backup",
       bundle: finalPath,

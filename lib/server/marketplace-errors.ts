@@ -46,3 +46,22 @@ export class MarketplaceStateConflictError extends Error {
     this.name = "MarketplaceStateConflictError";
   }
 }
+
+export type MarketplaceCapacityScope = "sessions" | "requests" | "quotes" | "drafts";
+
+export class MarketplaceCapacityError extends Error {
+  constructor(
+    public readonly scope: MarketplaceCapacityScope,
+    public readonly retryAfterSeconds = 15 * 60,
+  ) {
+    super("MARKETPLACE_CAPACITY_REACHED");
+    this.name = "MarketplaceCapacityError";
+  }
+}
+
+export class MarketplaceDemandQuoteLimitError extends Error {
+  constructor(public readonly retryAfterSeconds = 24 * 60 * 60) {
+    super("DEMAND_QUOTE_LIMIT_REACHED");
+    this.name = "MarketplaceDemandQuoteLimitError";
+  }
+}

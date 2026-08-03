@@ -53,10 +53,10 @@ export function normalizeQuote(
   return catalog.normalizeQuote(listingOrQuote, context) as NormalizedQuote;
 }
 
-export function createDemoRequestId(
+export function createInitializationRequestId(
   kind: DealMode,
-  seed: unknown = "kai-cloud-demo",
+  seed: unknown = "kai-cloud-initialization",
 ): string {
-  return catalog.createDemoRequestId(kind, seed);
+  return catalog.createInitializationRequestId(kind, seed);
 }
 

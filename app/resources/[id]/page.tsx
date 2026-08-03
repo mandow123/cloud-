@@ -33,7 +33,7 @@ export async function generateMetadata({ params }: ResourceDetailPageProps): Pro
   if (!resource) return { title: "资源未找到" };
   return {
     title: `${resource.title} · 资源详情`,
-    description: `${resource.summary} 演示参考价，非实时成交价。`,
+    description: `${resource.summary} 市场参考报价，具体以询价确认为准。`,
   };
 }
 
@@ -80,7 +80,7 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
             <h1 className="mt-5 mb-0 max-w-4xl text-4xl leading-[1.08] text-[var(--ink)] sm:text-5xl">{resource.title}</h1>
             <p className="mt-5 mb-0 max-w-3xl text-lg leading-8 text-[var(--text)]">{resource.summary}</p>
             <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm text-[var(--muted)]">
-              <span><strong className="text-[var(--ink)]">{resource.supplierName}</strong> · 虚构供应商</span>
+              <span><strong className="text-[var(--ink)]">{resource.supplierName}</strong> · 平台初始化供应方档案</span>
               <span>{resource.region}</span>
               <span>资源编号 {resource.id}</span>
             </div>
@@ -89,16 +89,16 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
           <div className="border-t-2 border-[var(--accent)] bg-[var(--info-bg)] p-5 sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="m-0 text-xs font-semibold tracking-wide text-[var(--muted)]">演示参考价</p>
+                <p className="m-0 text-xs font-semibold tracking-wide text-[var(--muted)]">市场参考报价</p>
                 <p className="mt-2 mb-0 text-3xl font-semibold tabular-nums text-[var(--ink)]">
                   {formatPrice(resource.quote.median, resource.pricingUnit)}
                 </p>
               </div>
-              <span className="border border-[var(--border-strong)] bg-[var(--surface)] px-2 py-1 text-xs font-semibold text-[var(--warning)]">非实时成交价</span>
+              <span className="border border-[var(--border-strong)] bg-[var(--surface)] px-2 py-1 text-xs font-semibold text-[var(--warning)]">询价后确认</span>
             </div>
             <dl className="mt-6 grid grid-cols-2 gap-5 border-t border-[var(--border)] pt-5">
               <div>
-                <dt className="text-xs text-[var(--muted)]">演示区间</dt>
+                <dt className="text-xs text-[var(--muted)]">参考区间</dt>
                 <dd className="mt-1 text-sm font-semibold tabular-nums text-[var(--ink)]">
                   {formatPrice(resource.quote.rangeMin, resource.pricingUnit)} – {formatPrice(resource.quote.rangeMax, resource.pricingUnit)}
                 </dd>
@@ -121,11 +121,11 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
       </section>
 
       <div className="shell py-10 sm:py-12">
-        <aside className="demo-notice mb-10" aria-label="演示报价声明">
+        <aside className="market-notice mb-10" aria-label="市场报价说明">
           <p className="m-0">
-            <strong>重要说明：</strong>{resource.quote.disclaimer} 资源、供应商、库存与样本均为演示内容。
+            <strong>重要说明：</strong>{resource.quote.disclaimer} 资源档案、容量与样本当前为平台初始化数据，供应方接入后核验。
           </p>
-          <p className="m-0 whitespace-nowrap font-semibold text-[var(--warning)]">演示参考价 · 非实时成交价</p>
+          <p className="m-0 whitespace-nowrap font-semibold text-[var(--warning)]">市场参考报价 · 询价后确认</p>
         </aside>
 
         <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -137,7 +137,7 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
               </div>
               <dl className="grid border-t-2 border-[var(--accent)] sm:grid-cols-2">
                 {[
-                  ["可用容量", resource.capacity],
+                  ["容量样本", resource.capacity],
                   ["服务等级 SLA", resource.sla],
                   ["交付形态", resource.deliveryForm],
                   ["预计交付周期", resource.deliveryLeadTime],
@@ -192,7 +192,7 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
                 </div>
               </div>
               <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
-                最终价格会受期限、资源数量、并发、网络、电力、税费与交付条件影响。页面报价仅为演示参考价，非实时成交价。
+                最终价格会受期限、资源数量、并发、网络、电力、税费与交付条件影响。页面展示市场参考报价，具体以询价确认为准。
               </p>
             </section>
 
@@ -203,9 +203,9 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
               </div>
               <div className="grid gap-6 border border-[var(--border)] bg-[var(--surface)] p-5 sm:grid-cols-2 sm:p-6">
                 <div>
-                  <p className="m-0 text-xs font-semibold text-[var(--muted)]">演示供应方</p>
+                  <p className="m-0 text-xs font-semibold text-[var(--muted)]">供应方档案</p>
                   <p className="mt-2 mb-0 text-lg font-semibold text-[var(--ink)]">{resource.supplierName}</p>
-                  <p className="mt-2 mb-0 text-sm leading-6 text-[var(--text)]">供应商名称和响应记录均为虚构，不对外披露其他供应商的原始报价。</p>
+                  <p className="mt-2 mb-0 text-sm leading-6 text-[var(--text)]">当前供应方档案为平台初始化样本，接入后核验；平台不对外披露其他供应方的原始报价。</p>
                 </div>
                 <div>
                   <p className="m-0 text-xs font-semibold text-[var(--muted)]">支持交易方式</p>
@@ -221,14 +221,14 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
             <div className="border-b border-[var(--border)] p-5">
               <p className="m-0 text-xs font-semibold tracking-wide text-[var(--muted)]">NEXT STEP</p>
               <h2 className="mt-2 mb-0 text-xl text-[var(--ink)]">让 KAI 标准化此方案</h2>
-              <p className="mt-2 mb-0 text-sm leading-6 text-[var(--text)]">带入资源类型、交易方式和计价单位，最少三步完成演示需求。</p>
+              <p className="mt-2 mb-0 text-sm leading-6 text-[var(--text)]">带入资源类型、交易方式和计价单位，最少三步完成需求提交。</p>
             </div>
             <div className="p-5">
               <ResourceDetailActions resourceId={resource.id} resourceTitle={resource.title} requestHref={requestHref} />
             </div>
             <dl className="grid grid-cols-2 border-t border-[var(--border)] bg-[var(--info-bg)] text-xs">
               <div className="border-r border-[var(--border)] p-4"><dt className="text-[var(--muted)]">报价样本</dt><dd className="mt-1 font-semibold text-[var(--ink)]">{resource.quote.sampleCount} 条</dd></div>
-              <div className="p-4"><dt className="text-[var(--muted)]">数据状态</dt><dd className="mt-1 font-semibold text-[var(--accent)]">演示数据</dd></div>
+              <div className="p-4"><dt className="text-[var(--muted)]">数据状态</dt><dd className="mt-1 font-semibold text-[var(--accent)]">平台初始化样本</dd></div>
             </dl>
           </aside>
         </div>

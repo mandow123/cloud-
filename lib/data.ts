@@ -12,7 +12,7 @@ import type {
   SwapRequest,
 } from "./types";
 
-export const DEMO_DISCLAIMER: string = catalog.DEMO_DISCLAIMER;
+export const MARKET_REFERENCE_NOTICE: string = catalog.MARKET_REFERENCE_NOTICE;
 export const RESOURCE_CATEGORIES = catalog.RESOURCE_CATEGORIES as readonly ResourceCategory[];
 export const DEAL_MODES = catalog.DEAL_MODES;
 export const PRICING_UNITS = catalog.PRICING_UNITS;
@@ -28,9 +28,9 @@ export const serviceAliases = catalog.serviceAliases as readonly ServiceAlias[];
 export const resourceListings = catalog.resourceListings as readonly ResourceListing[];
 export const marketSeries = catalog.marketSeries as readonly MarketSeries[];
 export const marketSnapshots = catalog.marketSnapshots as readonly MarketSnapshot[];
-export const demoRentalRequests = catalog.demoRentalRequests as readonly RentalRequest[];
-export const demoSwapRequests = catalog.demoSwapRequests as readonly SwapRequest[];
-export const demoNormalizedQuotes = catalog.demoNormalizedQuotes as readonly NormalizedQuote[];
+export const initializationRentalRequests = catalog.initializationRentalRequests as readonly RentalRequest[];
+export const initializationSwapRequests = catalog.initializationSwapRequests as readonly SwapRequest[];
+export const initializationNormalizedQuotes = catalog.initializationNormalizedQuotes as readonly NormalizedQuote[];
 
 export function getResourceById(id: string): ResourceListing | undefined {
   return catalog.getResourceById(id) as ResourceListing | undefined;

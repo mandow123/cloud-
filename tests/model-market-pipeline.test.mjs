@@ -13,6 +13,7 @@ import {
   stageModelMarket,
 } from "../scripts/model-market/index.mjs";
 import { runCli } from "../scripts/model-market/cli.mjs";
+import { calendarIndexChange } from "../scripts/model-market/history.mjs";
 
 const fixtureUrl = (name) => new URL(`../scripts/model-market/fixtures/${name}`, import.meta.url);
 const fixture = (name) => readFile(fixtureUrl(name), "utf8");
@@ -135,6 +136,8 @@ test("stage updates only an exact safe LiteLLM match and retains reviewed values
   assert.equal(current.inputCnyPerMillion, 7.35);
   assert.equal(current.sourceStatus, "aggregated");
   assert.equal(current.aggregationScope, "single_model");
+  assert.equal(current.serviceTier, "standard");
+  assert.equal(current.contextBand, "32K-128K");
 
   const outlier = pending.quotes[1];
   assert.equal(outlier.freshness.state, "review_required");
@@ -236,11 +239,26 @@ test("promote accepts a fresh 30+/12-vendor table and starts a fixed basket at 1
   assert.equal(snapshot.index.value, 100);
   assert.equal(snapshot.index.baseDate, "2026-08-03");
   assert.equal(snapshot.index.sampleSize, 4);
-  assert.equal(snapshot.index.change1d, 0);
-  assert.equal(snapshot.index.change30d, 0);
+  assert.equal(snapshot.index.change1d, null);
+  assert.equal(snapshot.index.change30d, null);
   assert.equal(snapshot.index.history.length, 1);
+  assert.equal(snapshot.quotes[0].serviceTier, "standard");
+  assert.equal(snapshot.quotes[0].contextBand, "32K-128K");
   assert.equal(snapshot.index.isProcurementPrice, false);
   assert.equal(Object.hasOwn(snapshot, "averagePrice"), false);
+});
+
+test("index changes require complete 1, 7 and 30 calendar-day boundaries", () => {
+  const changeAtSpan = (span, interval) => calendarIndexChange([
+    { date: "2026-08-01", value: 100 },
+    { date: new Date(Date.UTC(2026, 7, 1 + span)).toISOString().slice(0, 10), value: 110 },
+  ], new Date(Date.UTC(2026, 7, 1 + span)).toISOString().slice(0, 10), 110, interval);
+
+  assert.equal(changeAtSpan(1, 1), 10, "one complete calendar day enables 1-day change");
+  assert.equal(changeAtSpan(6, 7), null, "six days cannot stand in for seven days");
+  assert.equal(changeAtSpan(7, 7), 10, "seven complete calendar days enable 7-day change");
+  assert.equal(changeAtSpan(29, 30), null, "twenty-nine days cannot stand in for thirty days");
+  assert.equal(changeAtSpan(30, 30), 10, "thirty complete calendar days enable 30-day change");
 });
 
 test("promote rejects stale, incomplete, negative, zero and cross-model-average candidates", async () => {

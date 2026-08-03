@@ -128,7 +128,7 @@ export function MarketDashboard({
     return (
       <div className="border-y border-[var(--border)] bg-[var(--surface)] px-6 py-16 text-center">
         <p className="m-0 text-lg font-semibold text-[var(--ink)]">暂无该分类行情样本</p>
-        <p className="mt-2 text-sm text-[var(--muted)]">请选择其他资源分类查看演示行情。</p>
+        <p className="mt-2 text-sm text-[var(--muted)]">请选择其他资源分类查看市场行情。</p>
       </div>
     );
   }
@@ -174,7 +174,7 @@ export function MarketDashboard({
               </div>
               <div className="p-4">
                 <dt className="text-xs font-semibold text-[var(--muted)]">数据性质</dt>
-                <dd className="mt-1 text-sm font-semibold text-[var(--accent)]">日度目录价 + 演示样本</dd>
+                <dd className="mt-1 text-sm font-semibold text-[var(--accent)]">日度目录价 + 初始化样本</dd>
               </div>
             </dl>
           </div>
@@ -182,11 +182,11 @@ export function MarketDashboard({
       </section>
 
       <div className="shell py-10 sm:py-12">
-        <aside className="demo-notice mb-8" aria-label="数据提示">
+        <aside className="market-notice mb-8" aria-label="数据提示">
           <p className="m-0">
-            <strong>分区数据说明：</strong>Token / 模型板块展示公开目录价与来源状态；GPU、机柜和云厂商行情仍为虚构演示样本。
+            <strong>分区数据说明：</strong>Token / 模型板块展示公开目录价与来源状态；GPU、机柜和云厂商行情使用平台初始化样本，供应商接入后核验更新。
           </p>
-          <p className="m-0 whitespace-nowrap font-semibold text-[var(--warning)]">目录价与演示价均非成交价</p>
+          <p className="m-0 whitespace-nowrap font-semibold text-[var(--warning)]">市场参考报价 · 具体以询价确认为准</p>
         </aside>
 
         {modelBoard ? (
@@ -200,7 +200,7 @@ export function MarketDashboard({
             <p className="kicker">Infrastructure market</p>
             <h2 className="m-0 text-2xl text-[var(--ink)]">基础设施算力行情</h2>
           </div>
-          <a className="text-sm font-semibold text-[var(--accent)] underline underline-offset-4" href="#model-token-market">
+          <a className="inline-flex min-h-11 items-center text-sm font-semibold text-[var(--accent)] underline underline-offset-4" href="#model-token-market">
             查看 Token / 模型日度行情
           </a>
         </div>
@@ -268,7 +268,7 @@ export function MarketDashboard({
                 <button
                   key={days}
                   type="button"
-                  className={`min-h-10 min-w-14 cursor-pointer border px-3 text-sm font-semibold ${
+                  className={`min-h-11 min-w-14 cursor-pointer border px-3 text-sm font-semibold ${
                     range === days
                       ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--ink)]"
                       : "border-[var(--border)] bg-[var(--surface)] text-[var(--text)] hover:border-[var(--border-strong)]"
@@ -398,7 +398,7 @@ export function MarketDashboard({
               <p className="kicker">Latest snapshot</p>
               <h2 id="market-snapshot-title" className="m-0 text-2xl text-[var(--ink)]">{CATEGORY_LABELS[category]}最新横截面</h2>
             </div>
-            <p className="m-0 text-xs text-[var(--muted)]">演示参考价 · 非实时成交价</p>
+            <p className="m-0 text-xs text-[var(--muted)]">市场参考报价 · 具体以询价确认为准</p>
           </div>
           <div className="data-table-wrap border border-[var(--border)]">
             <table className="data-table">
@@ -432,7 +432,7 @@ export function MarketDashboard({
             </table>
           </div>
           <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
-            说明：P25、P50、P75 为演示报价样本的四分位统计，不代表平台承诺价、供应商实盘库存或任何时点的成交结果。
+            说明：P25、P50、P75 为平台初始化报价样本的四分位统计；供应商接入后核验更新，具体以询价确认为准。
           </p>
         </section>
       </div>

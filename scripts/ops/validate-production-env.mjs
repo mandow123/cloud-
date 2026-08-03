@@ -120,7 +120,7 @@ export function validateStateRoot(value, { checkFilesystem = false } = {}) {
     && posix.normalize(value) === value
     && /^\/opt\/kai-cloud(?:-[a-z0-9][a-z0-9._-]*)?$/.test(value);
   if (!safeShape) {
-    errors.push("KAI_STATE_ROOT must be a normalized absolute path dedicated to KAI Cloud under /opt (for example /opt/kai-cloud-3050)");
+    errors.push("KAI_STATE_ROOT must be a normalized absolute path dedicated to KAI Cloud under /opt (for example /opt/kai-cloud-3051)");
   } else if (checkFilesystem) {
     for (const child of ["db", "market", "backups"]) {
       const candidate = posix.join(value, child);
@@ -145,6 +145,9 @@ export function validateProductionEnvironment(environment = process.env, { check
   validateImageReference(environment.KAI_IMAGE_REFERENCE, errors);
   if (environment.KAI_TRUST_PROXY !== "1") errors.push("KAI_TRUST_PROXY must be exactly 1 in the supported reverse-proxy deployment");
   if (environment.KAI_REQUIRE_HTTPS_WRITES !== "1") errors.push("KAI_REQUIRE_HTTPS_WRITES must be exactly 1 in production");
+  if (environment.KAI_ENABLE_HSTS !== "0" && environment.KAI_ENABLE_HSTS !== "1") {
+    errors.push("KAI_ENABLE_HSTS must be exactly 0 or 1");
+  }
   for (const [name, expected] of Object.entries(REQUIRED_CONTAINER_STATE_PATHS)) {
     validateContainerStatePath(name, environment[name], expected, errors, checkFilesystem);
   }
@@ -156,6 +159,7 @@ export function validateProductionEnvironment(environment = process.env, { check
     imageReference: environment.KAI_IMAGE_REFERENCE,
     publicOrigin: environment.KAI_PUBLIC_ORIGIN,
     releaseSha: environment.KAI_RELEASE_SHA,
+    hstsEnabled: environment.KAI_ENABLE_HSTS === "1",
     dbDirectory: environment.KAI_DB_DIR,
     marketDirectory: environment.KAI_MARKET_DATA_DIR,
   });
@@ -170,6 +174,7 @@ async function main() {
     imageReference: result.imageReference,
     publicOrigin: result.publicOrigin,
     releaseSha: result.releaseSha,
+    hstsEnabled: result.hstsEnabled,
     stateDirectories: [result.dbDirectory, result.marketDirectory],
   })}\n`);
 }

@@ -1,28 +1,9 @@
 import type { Metadata } from "next";
-import { DM_Sans, Noto_Sans_SC, Work_Sans } from "next/font/google";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import "./fonts.css";
 import "./globals.css";
 import "./kai-cloud.css";
-
-const displayFont = DM_Sans({
-  variable: "--font-display",
-  subsets: ["latin"],
-  display: "swap",
-});
-
-const textFont = Work_Sans({
-  variable: "--font-text-latin",
-  subsets: ["latin"],
-  display: "swap",
-});
-
-const chineseFont = Noto_Sans_SC({
-  variable: "--font-text-cjk",
-  subsets: ["latin"],
-  weight: ["400", "600", "700"],
-  display: "swap",
-});
 
 export async function generateMetadata(): Promise<Metadata> {
   const configuredOrigin = typeof process !== "undefined" ? process.env.KAI_PUBLIC_ORIGIN : undefined;
@@ -41,7 +22,7 @@ export async function generateMetadata(): Promise<Metadata> {
       siteName: "KAI Cloud",
       title,
       description,
-      images: [{ url: "/og.png", width: 1744, height: 909, alt: "KAI Cloud 算力行情与资源撮合视觉示意" }],
+      images: [{ url: "/og.png", width: 1734, height: 907, alt: "KAI Cloud 算力行情与资源撮合" }],
     },
     twitter: {
       card: "summary_large_image",
@@ -76,7 +57,7 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body className={`kai-root ${displayFont.variable} ${textFont.variable} ${chineseFont.variable}`}>
+      <body className="kai-root">
         <a className="skip-link" href="#main-content">
           跳到主要内容
         </a>

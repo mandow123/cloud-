@@ -9,6 +9,7 @@ import {
   validateProductionEnvironment,
   validateStateRoot,
 } from "./validate-production-env.mjs";
+import { validateLocalImage } from "./validate-local-image.mjs";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -38,6 +39,7 @@ function productionEnvironment(overrides = {}) {
     KAI_IMAGE_REFERENCE: VALID_IMAGE_REFERENCE,
     KAI_TRUST_PROXY: "1",
     KAI_REQUIRE_HTTPS_WRITES: "1",
+    KAI_ENABLE_HSTS: "0",
     KAI_DB_DIR: "/app/db",
     KAI_MARKET_DATA_DIR: "/app/market",
     ...overrides,
@@ -78,10 +80,11 @@ function validateNegativeEnvironmentCases() {
   assertEnvironmentRejected({ KAI_PUBLIC_ORIGIN: "https://cloud.kai.com/" }, "KAI_PUBLIC_ORIGIN");
   assertEnvironmentRejected({ KAI_TRUST_PROXY: "0" }, "KAI_TRUST_PROXY");
   assertEnvironmentRejected({ KAI_REQUIRE_HTTPS_WRITES: "0" }, "KAI_REQUIRE_HTTPS_WRITES");
+  assertEnvironmentRejected({ KAI_ENABLE_HSTS: "2" }, "KAI_ENABLE_HSTS");
   assertEnvironmentRejected({ KAI_DB_DIR: "/" }, "KAI_DB_DIR");
   assertStateRootRejected("/");
-  assertStateRootRejected("relative/kai-cloud-3050");
-  assertStateRootRejected("/opt/kai-cloud-3050/../other");
+  assertStateRootRejected("relative/kai-cloud-3051");
+  assertStateRootRejected("/opt/kai-cloud-3051/../other");
 }
 
 async function main() {
@@ -103,12 +106,21 @@ async function main() {
       KAI_IMAGE_REFERENCE: process.env.KAI_IMAGE,
       KAI_TRUST_PROXY: process.env.KAI_TRUST_PROXY,
       KAI_REQUIRE_HTTPS_WRITES: process.env.KAI_REQUIRE_HTTPS_WRITES,
+      KAI_ENABLE_HSTS: process.env.KAI_ENABLE_HSTS ?? "0",
     })
     : productionEnvironment();
   validateProductionEnvironment(candidateEnvironment);
   const stateRoot = validateCurrentEnvironment
-    ? validateStateRoot(process.env.KAI_STATE_ROOT ?? "/opt/kai-cloud-3050", { checkFilesystem: true })
+    ? validateStateRoot(process.env.KAI_STATE_ROOT ?? "/opt/kai-cloud-3051", { checkFilesystem: true })
     : validateStateRoot("/opt/kai-cloud-validation");
+  if (validateCurrentEnvironment) {
+    validateLocalImage({
+      imageReference: candidateEnvironment.KAI_IMAGE_REFERENCE,
+      releaseSha: candidateEnvironment.KAI_RELEASE_SHA,
+      platform: process.env.KAI_IMAGE_PLATFORM ?? "linux/amd64",
+      dockerBinary: process.env.KAI_DOCKER_BIN ?? "docker",
+    });
+  }
   const compose = spawnSync("docker", [
     "compose",
     "--profile",
@@ -129,6 +141,8 @@ async function main() {
       KAI_CURSOR_SECRET: candidateEnvironment.KAI_CURSOR_SECRET,
       KAI_TRUST_PROXY: candidateEnvironment.KAI_TRUST_PROXY,
       KAI_REQUIRE_HTTPS_WRITES: candidateEnvironment.KAI_REQUIRE_HTTPS_WRITES,
+      KAI_ENABLE_HSTS: candidateEnvironment.KAI_ENABLE_HSTS,
+      KAI_APP_PORT: validateCurrentEnvironment ? (process.env.KAI_APP_PORT ?? "3051") : "3051",
       KAI_STATE_ROOT: stateRoot,
     },
   });
@@ -140,6 +154,7 @@ async function main() {
   assert(app && backup && marketUpdate, "compose must define app, backup, and market-update services");
   for (const [name, service] of Object.entries({ app, backup, marketUpdate })) {
     assert(service.image === candidateEnvironment.KAI_IMAGE_REFERENCE, `${name} must use the same immutable image digest`);
+    assert(service.pull_policy === "always", `${name} must always resolve the configured immutable digest`);
     assert(service.read_only === true, `${name} root filesystem must be read-only`);
     assert(service.user === "1000:1000", `${name} must use the fixed non-root UID/GID`);
     assert(service.cap_drop?.includes("ALL"), `${name} must drop all Linux capabilities`);
@@ -149,9 +164,11 @@ async function main() {
   }
   assert(app.ports?.length === 1 && app.ports[0].host_ip === "127.0.0.1", "app port must bind loopback only");
   assert(app.healthcheck?.test?.join(" ").includes("/api/live"), "app healthcheck must use /api/live");
+  assert(app.environment.HOST === "0.0.0.0", "app must bind its container listener through HOST");
   assert(app.environment.KAI_DB_DIR === "/app/db", "app must use the isolated KAI_DB_DIR");
   assert(app.environment.KAI_TRUST_PROXY === "1", "loopback-only app must trust the configured reverse proxy");
   assert(app.environment.KAI_REQUIRE_HTTPS_WRITES === "1", "production writes must require HTTPS");
+  assert(app.environment.KAI_ENABLE_HSTS === candidateEnvironment.KAI_ENABLE_HSTS, "app must receive the validated HSTS flag");
   assert(app.environment.KAI_PUBLIC_ORIGIN === candidateEnvironment.KAI_PUBLIC_ORIGIN, "app must receive the canonical HTTPS origin");
   assert(app.environment.KAI_CURSOR_SECRET === candidateEnvironment.KAI_CURSOR_SECRET, "app must receive the validated cursor secret");
   assert(app.environment.KAI_RELEASE_SHA === candidateEnvironment.KAI_RELEASE_SHA, "app must expose the validated release SHA");
@@ -164,11 +181,15 @@ async function main() {
   assert(!volumeByTarget(marketUpdate, "/app/db"), "market update must never mount the business database");
 
   assert(backup.network_mode === "none", "backup must have networking disabled");
+  assert(String(backup.environment.KAI_BACKUP_RETENTION_HOURLY) === "48", "backup must keep the default 48 hourly restore points");
+  assert(String(backup.environment.KAI_BACKUP_RETENTION_DAILY) === "30", "backup must keep at most 30 daily restore points");
+  assert(String(backup.environment.KAI_BACKUP_RETENTION_MONTHLY) === "0", "anonymous data backups must not have a monthly retention tier");
+  assert(String(backup.environment.KAI_BACKUP_RETENTION_MAX_AGE_DAYS) === "30", "backup retention must have a hard 30-day age limit");
   assert(volumeByTarget(backup, "/app/db") && !volumeByTarget(backup, "/app/db").read_only, "backup requires database access for VACUUM INTO");
   assert(volumeByTarget(backup, "/app/market")?.read_only === true, "backup market mount must be read-only");
   assert(volumeByTarget(backup, "/app/backups") && !volumeByTarget(backup, "/app/backups").read_only, "backup output mount must be writable");
 
-  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, runbook] = await Promise.all([
+  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, runbook, appEnvironmentExample, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator] = await Promise.all([
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.timer"), "utf8"),
@@ -178,6 +199,13 @@ async function main() {
     readFile(resolve(projectRoot, "Dockerfile"), "utf8"),
     readFile(resolve(projectRoot, "scripts/ops/production-entrypoint.sh"), "utf8"),
     readFile(resolve(projectRoot, "deploy/PRODUCTION_RUNBOOK.md"), "utf8"),
+    readFile(resolve(projectRoot, "deploy/kai-cloud-app.env.example"), "utf8"),
+    readFile(resolve(projectRoot, "deploy/kai-cloud-release.env.example"), "utf8"),
+    readFile(resolve(projectRoot, "deploy/compose.registry.yml"), "utf8"),
+    readFile(resolve(projectRoot, "deploy/registry/config.yml"), "utf8"),
+    readFile(resolve(projectRoot, "deploy/kai-cloud-registry.env.example"), "utf8"),
+    readFile(resolve(projectRoot, "scripts/ops/promote-release.mjs"), "utf8"),
+    readFile(resolve(projectRoot, "scripts/ops/validate-local-image.mjs"), "utf8"),
   ]);
   for (const [name, unit] of Object.entries({ updateUnit, backupUnit })) {
     assert(unit.includes("OnFailure=kai-cloud-ops-alert@%n.service"), `${name} must have a failure hook`);
@@ -188,11 +216,24 @@ async function main() {
   assert(updateTimer.includes("06:00:00 Asia/Shanghai") && updateTimer.includes("Persistent=true"), "market update timer must persist the 06:00 China schedule");
   assert(backupTimer.includes("*:15:00 Asia/Shanghai") && backupTimer.includes("Persistent=true"), "backup timer must run hourly and persist missed runs");
   for (const [name, runner] of Object.entries({ updateRunner, backupRunner })) {
-    assert(runner.includes("@sha256:[0-9a-fA-F]{64}$"), `${name} must reject mutable image tags`);
+    assert(runner.includes("^[a-z0-9]+([._-][a-z0-9]+)*(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)*@sha256:[0-9a-f]{64}$"), `${name} must use the full repository@sha256 validator`);
     assert(runner.includes("KAI_RELEASE_SHA must be a full 40- or 64-character Git object ID"), `${name} must validate the release SHA`);
   }
+  assert(updateRunner.includes("/opt/kai-cloud-3051") && updateRunner.includes("kai-cloud-market-update-3051"), "market update runner must default to the isolated 3051 release paths");
+  assert(backupRunner.includes("/opt/kai-cloud-3051") && backupRunner.includes("kai-cloud-backup-3051"), "backup runner must default to the isolated 3051 release paths");
+  assert(backupRunner.includes("KAI_BACKUP_RETENTION_MAX_AGE_DAYS"), "backup runner must pass the hard maximum backup age");
+  assert(appEnvironmentExample.includes("KAI_APP_PORT=3051") && appEnvironmentExample.includes("KAI_ENABLE_HSTS=0"), "application environment example must use port 3051 and keep HSTS off by default");
+  assert(releaseEnvironmentExample.includes("KAI_STATE_ROOT=/opt/kai-cloud-3051") && releaseEnvironmentExample.includes("KAI_BACKUP_RETENTION_MAX_AGE_DAYS=30") && releaseEnvironmentExample.includes("KAI_IMAGE_PLATFORM=linux/amd64"), "release environment example must use the 3051 state root, validated platform, and 30-day backup limit");
+  assert(registryCompose.includes("registry:3.1.1@sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33"), "private registry must use the verified Docker Official Image digest");
+  assert(registryCompose.includes("127.0.0.1:${KAI_REGISTRY_PORT:-5443}:5000") && registryCompose.includes("/opt/kai-cloud-registry"), "private registry must bind loopback and persist under its dedicated state root");
+  assert(registryConfig.includes("certificate: /certs/registry.crt") && registryConfig.includes("key: /certs/registry.key") && registryConfig.includes("path: /auth/htpasswd"), "private registry must require TLS and htpasswd authentication");
+  assert(registryEnvironmentExample.includes("KAI_REGISTRY_ROOT=/opt/kai-cloud-registry") && !/(PASSWORD|SECRET|PRIVATE_KEY)=/.test(registryEnvironmentExample), "registry environment template must contain paths only, not credentials");
+  assert(promotionScript.includes("git\", [\"archive\", \"--format=tar\", \"HEAD\"]") && promotionScript.includes("selectRepositoryDigest") && promotionScript.includes("--initial-release"), "promotion must build the exact commit, capture its digest, and require explicit rollback context");
+  assert(localImageValidator.includes("validateImageInspection") && localImageValidator.includes("{{.Server.Os}}/{{.Server.Arch}}"), "target-host gate must validate local digest, revision, and platform");
   assert(Dockerfile.includes("/app/scripts/ops ./scripts/ops"), "runtime image must contain operations scripts");
   assert(Dockerfile.includes("/api/live"), "runtime image healthcheck must use /api/live");
+  assert(Dockerfile.includes("HOST=0.0.0.0"), "runtime image must bind the standalone server through HOST");
+  assert(Dockerfile.includes("ARG KAI_RELEASE_SHA") && Dockerfile.includes("org.opencontainers.image.revision=\"${KAI_RELEASE_SHA}\""), "runtime image must embed the exact release SHA as an OCI revision label");
   assert(Dockerfile.includes('ENTRYPOINT ["/bin/sh", "/app/scripts/ops/production-entrypoint.sh"]'), "runtime image must invoke the production environment gate before its command");
   assert(productionEntrypoint.includes("node:scripts/model-market/cli.mjs|node:scripts/ops/backup-marketplace.mjs"), "production entrypoint may bypass the app gate only for the two supported maintenance commands");
   assert(productionEntrypoint.indexOf("validate-production-env.mjs --check-filesystem") < productionEntrypoint.lastIndexOf('exec "$@"'), "production entrypoint must validate before starting the default server command");
@@ -201,6 +242,8 @@ async function main() {
   assert(runbook.includes("API 守卫会为 API 请求输出结构化日志") && runbook.includes("不记录表单正文、Cookie、会话令牌、CSRF 值或供应商原始报价"), "runbook must accurately describe structured API logs and their redaction boundary");
   assert(runbook.includes("首次安装时数据库尚不存在") && runbook.indexOf("请求 `/api/ready`") < runbook.indexOf("第一次备份"), "runbook must initialize the database before the first-install backup");
   assert(runbook.includes("升级已有实例时顺序相反") && runbook.includes("替换应用前创建并异地同步一致性备份"), "runbook must back up existing production data before an upgrade");
+  assert(runbook.includes("127.0.0.1:3051") && runbook.includes("KAI_ENABLE_HSTS=1"), "runbook must document the new loopback port and the gated HSTS enablement step");
+  assert(runbook.includes("任何恢复包都不得超过 30 天") && runbook.includes("异地存储也必须配置不超过 30 天的生命周期"), "runbook must align local and off-host backups with the 30-day data boundary");
 
   return {
     status: "ok",

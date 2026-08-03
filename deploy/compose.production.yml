@@ -1,13 +1,14 @@
 services:
   app:
     image: "${KAI_IMAGE:?KAI_IMAGE must be an immutable repository@sha256 digest}"
+    pull_policy: always
     restart: unless-stopped
     init: true
     user: "1000:1000"
     read_only: true
     environment:
       NODE_ENV: production
-      HOSTNAME: 0.0.0.0
+      HOST: 0.0.0.0
       PORT: "3000"
       KAI_DB_DIR: /app/db
       KAI_MARKET_DATA_DIR: /app/market
@@ -15,16 +16,17 @@ services:
       KAI_IMAGE_REFERENCE: "${KAI_IMAGE:?KAI_IMAGE must be an immutable repository@sha256 digest}"
       KAI_TRUST_PROXY: "1"
       KAI_REQUIRE_HTTPS_WRITES: "1"
+      KAI_ENABLE_HSTS: "${KAI_ENABLE_HSTS:-0}"
       KAI_PUBLIC_ORIGIN: "${KAI_PUBLIC_ORIGIN:?KAI_PUBLIC_ORIGIN must be the canonical https origin}"
       KAI_CURSOR_SECRET: "${KAI_CURSOR_SECRET:?KAI_CURSOR_SECRET must contain at least 32 random characters}"
     ports:
-      - "127.0.0.1:${KAI_APP_PORT:-3050}:3000"
+      - "127.0.0.1:${KAI_APP_PORT:-3051}:3000"
     volumes:
       - type: bind
-        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3050}/db"
+        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3051}/db"
         target: /app/db
       - type: bind
-        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3050}/market"
+        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3051}/market"
         target: /app/market
         read_only: true
     tmpfs:
@@ -57,6 +59,7 @@ services:
   market-update:
     profiles: ["ops"]
     image: "${KAI_IMAGE:?KAI_IMAGE must be an immutable repository@sha256 digest}"
+    pull_policy: always
     restart: "no"
     init: true
     user: "1000:1000"
@@ -68,7 +71,7 @@ services:
       KAI_MARKET_REGISTRY_PATH: /app/market-registry/model-market-registry.mjs
     volumes:
       - type: bind
-        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3050}/market"
+        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3051}/market"
         target: /app/market
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
@@ -90,6 +93,7 @@ services:
   backup:
     profiles: ["ops"]
     image: "${KAI_IMAGE:?KAI_IMAGE must be an immutable repository@sha256 digest}"
+    pull_policy: always
     restart: "no"
     init: true
     network_mode: none
@@ -101,18 +105,19 @@ services:
       KAI_BACKUP_DIR: /app/backups
       KAI_RELEASE_SHA: "${KAI_RELEASE_SHA:?KAI_RELEASE_SHA is required}"
       KAI_BACKUP_RETENTION_HOURLY: "${KAI_BACKUP_RETENTION_HOURLY:-48}"
-      KAI_BACKUP_RETENTION_DAILY: "${KAI_BACKUP_RETENTION_DAILY:-35}"
-      KAI_BACKUP_RETENTION_MONTHLY: "${KAI_BACKUP_RETENTION_MONTHLY:-12}"
+      KAI_BACKUP_RETENTION_DAILY: "${KAI_BACKUP_RETENTION_DAILY:-30}"
+      KAI_BACKUP_RETENTION_MONTHLY: "${KAI_BACKUP_RETENTION_MONTHLY:-0}"
+      KAI_BACKUP_RETENTION_MAX_AGE_DAYS: "${KAI_BACKUP_RETENTION_MAX_AGE_DAYS:-30}"
     volumes:
       - type: bind
-        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3050}/db"
+        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3051}/db"
         target: /app/db
       - type: bind
-        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3050}/market"
+        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3051}/market"
         target: /app/market
         read_only: true
       - type: bind
-        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3050}/backups"
+        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3051}/backups"
         target: /app/backups
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m

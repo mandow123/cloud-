@@ -2,7 +2,9 @@ import { MarketplaceInputError } from "@/lib/marketplace";
 import { hashText, isSecureMarketplaceRequest } from "@/lib/server/marketplace-actor";
 import {
   MarketplaceAccessError,
+  MarketplaceCapacityError,
   MarketplaceCsrfError,
+  MarketplaceDemandQuoteLimitError,
   MarketplaceHttpsRequiredError,
   MarketplaceIdempotencyConflictError,
   MarketplacePayloadTooLargeError,
@@ -229,6 +231,24 @@ export function apiErrorResponse(error: unknown, extraHeaders?: HeadersInit, con
       409,
       headers,
       context ? { ...context, errorCode: "STATE_CONFLICT", errorName: error.name } : undefined,
+    );
+  }
+  if (error instanceof MarketplaceCapacityError) {
+    headers.set("retry-after", String(error.retryAfterSeconds));
+    return jsonResponse(
+      { error: { code: "MARKETPLACE_CAPACITY_REACHED", message: "当前提交队列已满，请稍后再试。", requestId } },
+      503,
+      headers,
+      context ? { ...context, errorCode: "MARKETPLACE_CAPACITY_REACHED", errorName: error.name } : undefined,
+    );
+  }
+  if (error instanceof MarketplaceDemandQuoteLimitError) {
+    headers.set("retry-after", String(error.retryAfterSeconds));
+    return jsonResponse(
+      { error: { code: "DEMAND_QUOTE_LIMIT_REACHED", message: "该需求收到的报价数量已达上限，请响应其他需求。", requestId } },
+      429,
+      headers,
+      context ? { ...context, errorCode: "DEMAND_QUOTE_LIMIT_REACHED", errorName: error.name } : undefined,
     );
   }
   if (error instanceof MarketplaceRateLimitError) {

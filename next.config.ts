@@ -5,7 +5,7 @@ const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
   "connect-src 'self'",
-  "font-src 'self' data: https://fonts.gstatic.com",
+  "font-src 'self' data:",
   "form-action 'self'",
   "frame-ancestors 'none'",
   "frame-src 'none'",
@@ -14,7 +14,7 @@ const contentSecurityPolicy = [
   "media-src 'self'",
   "object-src 'none'",
   `script-src 'self' 'unsafe-inline'${isProduction ? "" : " 'unsafe-eval'"}`,
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "style-src 'self' 'unsafe-inline'",
   "worker-src 'self' blob:",
 ].join("; ");
 
@@ -35,7 +35,14 @@ const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    // Vinext's App Router matcher currently does not treat `/:path*` as a
+    // match for the bare root path, so keep an explicit `/` rule. Without it,
+    // the highest-traffic page would be the only HTML response missing CSP
+    // and clickjacking protections.
+    return [
+      { source: "/", headers: securityHeaders },
+      { source: "/:path*", headers: securityHeaders },
+    ];
   },
 };
 

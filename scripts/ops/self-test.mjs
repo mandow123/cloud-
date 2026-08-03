@@ -64,7 +64,21 @@ async function main() {
       index: { current: 100 },
     }, null, 2)}\n`, "utf8");
 
-    const retention = { hourly: 1, daily: 0, monthly: 0 };
+    const retention = { hourly: 2, daily: 0, monthly: 0, maxAgeDays: 30 };
+    let excessiveRetentionWasRejected = false;
+    try {
+      await createBackup({
+        databasePath,
+        marketPath,
+        backupRoot,
+        retention: { ...retention, maxAgeDays: 31 },
+        now: "2026-08-03T06:14:00.000Z",
+      });
+    } catch (error) {
+      excessiveRetentionWasRejected = error.code === "INVALID_RETENTION";
+    }
+    assert(excessiveRetentionWasRejected, "a backup maximum age above 30 days was accepted");
+
     const first = await createBackup({
       databasePath,
       marketPath,
@@ -98,9 +112,28 @@ async function main() {
       retention,
       now: "2026-08-03T07:15:00.000Z",
     });
-    const bundles = (await readdir(backupRoot)).filter((entry) => entry.startsWith("kai-cloud-backup-"));
-    assert(bundles.length === 1, "retention did not prune the older hourly backup");
-    assert(bundles[0] === second.bundle.split(/[\\/]/).at(-1), "retention kept the wrong backup");
+    const third = await createBackup({
+      databasePath,
+      marketPath,
+      backupRoot,
+      retention,
+      now: "2026-08-03T08:15:00.000Z",
+    });
+    let bundles = (await readdir(backupRoot)).filter((entry) => entry.startsWith("kai-cloud-backup-"));
+    assert(bundles.length === 2, "hourly retention did not keep exactly the two newest backups");
+    assert(bundles.includes(second.bundle.split(/[\\/]/).at(-1)), "hourly retention removed the second-newest backup");
+    assert(bundles.includes(third.bundle.split(/[\\/]/).at(-1)), "hourly retention removed the newest backup");
+
+    const fourth = await createBackup({
+      databasePath,
+      marketPath,
+      backupRoot,
+      retention,
+      now: "2026-09-03T08:16:00.000Z",
+    });
+    bundles = (await readdir(backupRoot)).filter((entry) => entry.startsWith("kai-cloud-backup-"));
+    assert(bundles.length === 1, "the 30-day maximum age did not prune stale backups");
+    assert(bundles[0] === fourth.bundle.split(/[\\/]/).at(-1), "the 30-day maximum age kept a stale backup");
 
     return {
       status: "ok",
@@ -109,7 +142,9 @@ async function main() {
         "SHA-256 manifest matched restored files",
         "quick_check and foreign_key_check passed",
         "restore refused to overwrite an existing destination",
-        "hourly retention pruned only the older validated bundle",
+        "backup retention rejected a maximum age above 30 days",
+        "hourly retention kept only the requested newest validated bundles",
+        "the maximum-age guard pruned every validated bundle older than 30 days",
       ],
     };
   } finally {

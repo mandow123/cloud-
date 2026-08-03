@@ -1,7 +1,7 @@
 "use client";
 
 export type MarketplaceSession = {
-  source: "platform" | "demo-session";
+  source: "platform" | "anonymous-session";
   csrfToken: string;
   expiresAt: string;
   retentionDays: number;

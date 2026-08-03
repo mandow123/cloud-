@@ -1,7 +1,7 @@
 import { apiErrorResponse, beginApiRequest, jsonResponse } from "@/lib/server/api-guard";
 import { authorizeMarketplaceRequest } from "@/lib/server/marketplace-auth";
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
-import { DEMO_RETENTION_DAYS } from "@/lib/server/marketplace-store";
+import { MARKETPLACE_RETENTION_DAYS } from "@/lib/server/marketplace-store";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
         source: actor.source,
         csrfToken: actor.csrfToken,
         expiresAt: actor.expiresAt,
-        retentionDays: DEMO_RETENTION_DAYS,
+        retentionDays: MARKETPLACE_RETENTION_DAYS,
       },
     }, 200, actor.responseHeaders, context);
   } catch (error) {

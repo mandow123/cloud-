@@ -12,11 +12,12 @@ import {
   marketplacePost,
 } from "@/lib/client/marketplace-client";
 import { resourceListings } from "@/lib/data";
-import type {
-  MarketplaceDraftRecord,
-  MarketplaceNormalizedQuoteRecord,
-  MarketplaceRequestRecord,
-  MarketplaceSupplierQuoteRecord,
+import {
+  marketplaceQuoteLeadTimes,
+  type MarketplaceDraftRecord,
+  type MarketplaceNormalizedQuoteRecord,
+  type MarketplaceRequestRecord,
+  type MarketplaceSupplierQuoteRecord,
 } from "@/lib/marketplace";
 import type { ResourceCategory, ResourceListing } from "@/lib/types";
 
@@ -40,8 +41,8 @@ type CollectionState<T> = {
   pageInfo: MarketplacePageInfo | null;
 };
 
-const WATCHLIST_KEY = "kai-cloud-demo-watchlist-v1";
-const ROLE_KEY = "kai-cloud-demo-role-v1";
+const WATCHLIST_KEY = "kai-cloud-watchlist-v1";
+const ROLE_KEY = "kai-cloud-role-v1";
 const DEFAULT_WATCHLIST_IDS = resourceListings.slice(0, 3).map((listing) => listing.id);
 
 const categoryLabel: Record<ResourceCategory, string> = {
@@ -114,7 +115,7 @@ function useMarketplaceCollection<T>(path: string) {
       setState((current) => ({
         ...current,
         status: "error",
-        error: marketplaceErrorMessage(error, "暂时无法读取这组演示记录。"),
+        error: marketplaceErrorMessage(error, "暂时无法读取这组记录。"),
       }));
     }
   }, [path]);
@@ -231,7 +232,7 @@ export function MemberWorkspace() {
     event.preventDefault();
     if (draftLockRef.current) return;
     if (draftValues.title.trim().length < 3 || draftValues.capacity.trim().length < 8) {
-      setDraftError("资源名称至少 3 个字，容量说明至少 8 个字。请只使用演示信息。");
+      setDraftError("资源名称至少 3 个字，容量说明至少 8 个字。请只填写脱敏业务信息。");
       return;
     }
     draftLockRef.current = true;
@@ -275,11 +276,11 @@ export function MemberWorkspace() {
     const price = Number(quoteValues.unitPrice);
     const validDays = Number(quoteValues.validDays);
     if (!selectedDemand) nextErrors.demandId = "请选择匹配需求。";
-    if (!Number.isFinite(price) || price <= 0) nextErrors.unitPrice = "请输入大于 0 的演示单价。";
+    if (!Number.isFinite(price) || price <= 0) nextErrors.unitPrice = "请输入大于 0 的报价单价。";
     if (!quoteValues.leadTime) nextErrors.leadTime = "请选择交付周期。";
     if (!Number.isInteger(validDays) || validDays < 1 || validDays > 90) nextErrors.validDays = "有效期应为 1–90 天。";
     if (quoteValues.scopeNote.trim().length < 8) nextErrors.scopeNote = "请用至少 8 个字说明费用口径。";
-    if (!quoteValues.consent) nextErrors.consent = "请确认演示服务器提交说明。";
+    if (!quoteValues.consent) nextErrors.consent = "请确认服务器提交说明。";
     setQuoteErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0 || !selectedDemand) {
       window.requestAnimationFrame(() => quoteFormRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus());
@@ -341,13 +342,13 @@ export function MemberWorkspace() {
     <section aria-labelledby="member-workspace-heading">
       <div className="mb-8 grid gap-5 border-y border-[var(--border)] bg-[var(--surface)] p-5 sm:grid-cols-[1fr_auto] sm:items-center">
         <div>
-          <p className="m-0 text-xs font-bold uppercase tracking-[0.12em] text-[var(--accent)]">No-password demo</p>
+          <p className="m-0 text-xs font-bold uppercase tracking-[0.12em] text-[var(--accent)]">Visitor workspace</p>
           <h2 className="mt-2 text-xl" id="member-workspace-heading">
-            选择演示身份
+            选择工作视角
           </h2>
-          <p className="m-0 text-sm text-[var(--text)]">没有真实账户。角色保存在当前标签页；需求、草稿和报价读取同一套演示后端。</p>
+          <p className="m-0 text-sm text-[var(--text)]">当前为无账号访客会话。工作视角保存在当前标签页；需求、草稿和报价读取同一套服务。</p>
         </div>
-        <div aria-label="会员演示身份" className="inline-grid grid-cols-2 border border-[var(--border-strong)]" role="tablist">
+        <div aria-label="会员工作视角" className="inline-grid grid-cols-2 border border-[var(--border-strong)]" role="tablist">
           <RoleButton active={role === "buyer"} controls="buyer-workspace" id="buyer-role" label="需求方" onClick={() => chooseRole("buyer")} onKeyDown={moveRole} />
           <RoleButton active={role === "supplier"} controls="supplier-workspace" id="supplier-role" label="供应方" onClick={() => chooseRole("supplier")} onKeyDown={moveRole} />
         </div>
@@ -393,7 +394,7 @@ export function MemberWorkspace() {
       )}
 
       <div className="mt-14 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--border)] pt-6">
-        <p className="m-0 max-w-2xl text-xs text-[var(--muted)]">此操作只恢复本机关注列表与角色偏好，不删除演示服务器中的需求、草稿或报价。</p>
+        <p className="m-0 max-w-2xl text-xs text-[var(--muted)]">此操作只恢复本机关注列表与工作视角，不删除服务器中的需求、草稿或报价。</p>
         <button className="button button-secondary button-compact" onClick={resetLocalPreferences} type="button">
           恢复本机偏好
         </button>
@@ -506,7 +507,7 @@ function BuyerWatchlist({ listings, onRemove }: { listings: ResourceListing[]; o
                 {formatCurrency(listing.quote.median)} <span className="text-xs font-normal text-[var(--muted)]">/ {listing.pricingUnit}</span>
               </p>
               <Link className="mt-4 inline-block text-sm font-semibold text-[var(--accent)] underline" href={`/resources/${listing.id}`}>
-                查看演示详情
+                查看资源详情
               </Link>
             </article>
           ))}
@@ -529,7 +530,7 @@ function BuyerRequests({
   return (
     <section aria-labelledby="buyer-requests-title">
       <div id="buyer-requests-title">
-        <SectionIntro kicker="Buyer / Requests" title="我发布的需求" description="只显示当前演示会话创建的需求；界面不再用预置记录替代加载或错误状态。" />
+        <SectionIntro kicker="Buyer / Requests" title="我发布的需求" description="只显示当前访客会话创建的需求；界面不会用预置记录替代加载或错误状态。" />
       </div>
       <CollectionStatus collection={collection} label="需求" onLoadMore={onLoadMore} onRetry={onRetry} />
       {collection.status === "ready" && requests.length === 0 ? <EmptyState action="发布一条需求" description="当前会话还没有已发布需求。" href="/request" /> : null}
@@ -553,7 +554,7 @@ function BuyerRequests({
           </article>
         ))}
       </div> : null}
-      <Link className="button button-secondary mt-5" href="/request">新增演示需求</Link>
+      <Link className="button button-secondary mt-5" href="/request">新增需求</Link>
     </section>
   );
 }
@@ -594,7 +595,7 @@ function BuyerQuotes({
         {quotes.map((quote) => (
           <article className="border-t-2 border-[var(--accent)] bg-[var(--surface)] p-5" key={quote.id}>
             <div className="flex justify-between gap-3 text-xs">
-              <span className="font-semibold text-[var(--accent)]">KAI 标准化 · {quote.standardizationVersion}</span>
+              <span className="font-semibold text-[var(--accent)]">KAI 标准化方案</span>
               <span className="text-[var(--muted)]">{shortDate(quote.createdAt)}</span>
             </div>
             <h3 className="mb-1 mt-4 text-lg">{quote.demandTitle}</h3>
@@ -639,17 +640,17 @@ function SupplierDrafts({
   const drafts = collection.items;
   return (
     <section aria-labelledby="supplier-drafts-title">
-      <div id="supplier-drafts-title"><SectionIntro kicker="Supplier / Drafts" title="资源草稿" description="草稿写入演示后端，但不会自动成为公开资源。" /></div>
+      <div id="supplier-drafts-title"><SectionIntro kicker="Supplier / Drafts" title="资源草稿" description="草稿写入当前工作台，但不会自动成为公开资源。" /></div>
       <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
         <form className="border-t-2 border-[var(--accent)] bg-[var(--surface)] p-5" noValidate onSubmit={onSubmit}>
-          <h3 className="mt-0 text-lg">新建演示草稿</h3>
+          <h3 className="mt-0 text-lg">新建资源草稿</h3>
           <div className="grid gap-4">
-            <label className={labelClass}>资源名称<input className={inputClass} onChange={(event) => onUpdate({ ...values, title: event.target.value })} placeholder="使用虚构名称" value={values.title} /></label>
+            <label className={labelClass}>资源名称<input className={inputClass} onChange={(event) => onUpdate({ ...values, title: event.target.value })} placeholder="使用脱敏资源代号" value={values.title} /></label>
             <label className={labelClass}>资源类型<select className={inputClass} onChange={(event) => onUpdate({ ...values, category: event.target.value as ResourceCategory })} value={values.category}>{Object.entries(categoryLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-            <label className={labelClass}>容量摘要<textarea className={`${inputClass} min-h-24 resize-y`} onChange={(event) => onUpdate({ ...values, capacity: event.target.value })} placeholder="例如：演示容量 16 卡，可按周排期" value={values.capacity} /></label>
+            <label className={labelClass}>容量摘要<textarea className={`${inputClass} min-h-24 resize-y`} onChange={(event) => onUpdate({ ...values, capacity: event.target.value })} placeholder="例如：16 卡，可按周排期，交付前确认库存" value={values.capacity} /></label>
           </div>
           {draftError ? <p className="text-sm text-[var(--error)]" role="alert">{draftError}</p> : null}
-          <button className="button button-primary mt-4" disabled={submitting} type="submit">{submitting ? "正在保存…" : "保存到演示后端"}</button>
+          <button className="button button-primary mt-4" disabled={submitting} type="submit">{submitting ? "正在保存…" : "保存到工作台"}</button>
         </form>
         <div className="grid content-start gap-3">
           <CollectionStatus collection={collection} label="资源草稿" onLoadMore={onLoadMore} onRetry={onRetry} />
@@ -677,12 +678,12 @@ function MatchedDemands({
   const requests = collection.items;
   return (
     <section aria-labelledby="matched-demands-title">
-      <div id="matched-demands-title"><SectionIntro kicker="Supplier / Matching" title="可响应需求" description="来自演示后端的匿名业务字段；不包含联系人或真实公司资料。" /></div>
+      <div id="matched-demands-title"><SectionIntro kicker="Supplier / Matching" title="可响应需求" description="来自服务器的匿名业务字段；不包含联系人或公司资料。" /></div>
       <CollectionStatus collection={collection} label="可响应需求" onLoadMore={onLoadMore} onRetry={onRetry} />
       {collection.status === "ready" && requests.length === 0 ? <EmptyState action="发布一条需求" description="当前没有可响应的匿名市场需求。" href="/request" /> : null}
       {requests.length > 0 ? <div className="data-table-wrap">
         <table className="data-table">
-          <caption className="sr-only">供应方演示匹配需求</caption>
+          <caption className="sr-only">供应方匹配需求</caption>
           <thead><tr><th scope="col">需求</th><th scope="col">类别</th><th scope="col">区域</th><th scope="col">数量</th><th scope="col">状态</th></tr></thead>
           <tbody>{requests.map((request) => <tr key={request.id}><th className="text-[var(--ink)]" scope="row"><span className="block font-mono text-xs text-[var(--muted)]">{request.id}</span>{request.title}</th><td>{categoryLabel[request.category]}</td><td>{request.region}</td><td>{request.quantity} {request.pricingUnit}</td><td>{request.status}</td></tr>)}</tbody>
         </table>
@@ -716,18 +717,18 @@ function SupplierQuoteForm({
 }) {
   return (
     <section aria-labelledby="quote-submit-title">
-      <div id="quote-submit-title"><SectionIntro kicker="Supplier / Quote" title="提交演示报价" description="供应方可查看自己的原始报价；需求方只会收到 KAI 标准化后的版本。" /></div>
+      <div id="quote-submit-title"><SectionIntro kicker="Supplier / Quote" title="提交报价" description="供应方可查看自己的原始报价；需求方只会收到 KAI 标准化后的版本。" /></div>
       <form className="border-t-2 border-[var(--accent)] bg-[var(--surface)] p-5 sm:p-7" noValidate onSubmit={onSubmit} ref={formRef}>
         <div className="grid gap-5 md:grid-cols-2">
           <label className={labelClass}>匹配需求<select aria-describedby={errors.demandId ? "quote-demand-error" : undefined} aria-invalid={Boolean(errors.demandId)} className={inputClass} disabled={requests.length === 0} id="quote-demand" onChange={(event) => onUpdate("demandId", event.target.value)} value={selectedDemand?.id ?? ""}><option value="">{requests.length === 0 ? "暂无可响应需求" : "请选择"}</option>{requests.map((request) => <option key={request.id} value={request.id}>{request.id} · {request.title}</option>)}</select><FieldError error={errors.demandId} id="quote-demand-error" /></label>
-          <label className={labelClass}>演示单价（人民币 / {selectedDemand?.pricingUnit ?? "单位"}）<input aria-describedby={errors.unitPrice ? "quote-price-error" : undefined} aria-invalid={Boolean(errors.unitPrice)} className={inputClass} id="quote-price" inputMode="decimal" min="0.01" onChange={(event) => onUpdate("unitPrice", event.target.value)} step="0.01" type="number" value={values.unitPrice} /><FieldError error={errors.unitPrice} id="quote-price-error" /></label>
-          <label className={labelClass}>交付周期<select aria-describedby={errors.leadTime ? "quote-lead-error" : undefined} aria-invalid={Boolean(errors.leadTime)} className={inputClass} id="quote-lead" onChange={(event) => onUpdate("leadTime", event.target.value)} value={values.leadTime}><option value="">请选择</option><option>48 小时内</option><option>7 天内</option><option>30 天内</option><option>排期交付</option></select><FieldError error={errors.leadTime} id="quote-lead-error" /></label>
+          <label className={labelClass}>报价单价（人民币 / {selectedDemand?.pricingUnit ?? "单位"}）<input aria-describedby={errors.unitPrice ? "quote-price-error" : undefined} aria-invalid={Boolean(errors.unitPrice)} className={inputClass} id="quote-price" inputMode="decimal" min="0.01" onChange={(event) => onUpdate("unitPrice", event.target.value)} step="0.01" type="number" value={values.unitPrice} /><FieldError error={errors.unitPrice} id="quote-price-error" /></label>
+          <label className={labelClass}>交付周期<select aria-describedby={errors.leadTime ? "quote-lead-error" : undefined} aria-invalid={Boolean(errors.leadTime)} className={inputClass} id="quote-lead" onChange={(event) => onUpdate("leadTime", event.target.value)} value={values.leadTime}><option value="">请选择</option>{marketplaceQuoteLeadTimes.map((leadTime) => <option key={leadTime}>{leadTime}</option>)}</select><FieldError error={errors.leadTime} id="quote-lead-error" /></label>
           <label className={labelClass}>报价有效期（天）<input aria-describedby={errors.validDays ? "quote-valid-error" : undefined} aria-invalid={Boolean(errors.validDays)} className={inputClass} id="quote-valid" max="90" min="1" onChange={(event) => onUpdate("validDays", event.target.value)} type="number" value={values.validDays} /><FieldError error={errors.validDays} id="quote-valid-error" /></label>
-          <label className={`${labelClass} md:col-span-2`}>费用与服务口径<textarea aria-describedby={errors.scopeNote ? "quote-scope-error" : undefined} aria-invalid={Boolean(errors.scopeNote)} className={`${inputClass} min-h-24 resize-y`} id="quote-scope" onChange={(event) => onUpdate("scopeNote", event.target.value)} placeholder="例如：演示价含税含电，公网流量另计，支持 99.9% SLA" value={values.scopeNote} /><FieldError error={errors.scopeNote} id="quote-scope-error" /></label>
+          <label className={`${labelClass} md:col-span-2`}>费用与服务口径<textarea aria-describedby={errors.scopeNote ? "quote-scope-error" : undefined} aria-invalid={Boolean(errors.scopeNote)} className={`${inputClass} min-h-24 resize-y`} id="quote-scope" onChange={(event) => onUpdate("scopeNote", event.target.value)} placeholder="例如：报价含税含电，公网流量另计，目标 SLA 99.9%" value={values.scopeNote} /><FieldError error={errors.scopeNote} id="quote-scope-error" /></label>
         </div>
-        <label className="mt-5 flex items-start gap-3 border border-[var(--border)] bg-[var(--info-bg)] p-4 text-sm"><input aria-describedby={errors.consent ? "quote-consent-error" : undefined} aria-invalid={Boolean(errors.consent)} checked={values.consent} className="mt-1 size-4 accent-[var(--brand)]" id="quote-consent" onChange={(event) => onUpdate("consent", event.target.checked)} type="checkbox" /><span>我确认只填写虚构业务字段，并将这条报价保存到 KAI Cloud 演示后端。<FieldError error={errors.consent} id="quote-consent-error" /></span></label>
+        <label className="mt-5 flex items-start gap-3 border border-[var(--border)] bg-[var(--info-bg)] p-4 text-sm"><input aria-describedby={errors.consent ? "quote-consent-error" : undefined} aria-invalid={Boolean(errors.consent)} checked={values.consent} className="mt-1 size-4 accent-[var(--brand)]" id="quote-consent" onChange={(event) => onUpdate("consent", event.target.checked)} type="checkbox" /><span>我确认只填写脱敏业务字段，并将这条报价保存到 KAI Cloud 工作台；正式交易前需双方复核。<FieldError error={errors.consent} id="quote-consent-error" /></span></label>
         {serverError ? <p className="mt-5 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-4 text-sm text-[var(--error)]" role="alert">{serverError}</p> : null}
-        <button className="button button-primary mt-5" disabled={submitting || requests.length === 0} type="submit">{submitting ? "正在提交…" : "提交到演示后端"}</button>
+        <button className="button button-primary mt-5" disabled={submitting || requests.length === 0} type="submit">{submitting ? "正在提交…" : "提交报价"}</button>
         {receipt ? <p className="mt-5 border-l-4 border-[var(--success)] bg-[var(--success-bg)] p-4 text-sm text-[var(--ink)]" role="status">服务端报价已生成：<strong className="font-mono">{receipt}</strong></p> : null}
       </form>
     </section>

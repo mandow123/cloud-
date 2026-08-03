@@ -7,7 +7,11 @@ import {
   marketplaceErrorMessage,
   marketplacePost,
 } from "@/lib/client/marketplace-client";
-import type { MarketplaceRequestRecord } from "@/lib/marketplace";
+import {
+  marketplaceRegions,
+  type MarketplaceRegion,
+  type MarketplaceRequestRecord,
+} from "@/lib/marketplace";
 import type { DealMode, PricingUnit, ResourceCategory } from "@/lib/types";
 
 export type RequestPrefill = {
@@ -68,8 +72,6 @@ const categoryUnits: Record<ResourceCategory, PricingUnit[]> = {
   rack_capacity: ["机柜月", "kW 月", "预留容量时"],
   cloud_vendor: ["卡时", "服务器时", "预留容量时"],
 };
-
-const regions = ["北京", "上海", "广东", "浙江", "四川", "内蒙古"];
 
 const inputClass =
   "min-h-11 w-full border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[var(--ink)] placeholder:text-[var(--muted)]";
@@ -144,6 +146,9 @@ function CategoryOptions() {
 
 export function RequestWorkbench({ initialMode = "rental", initialPrefill }: RequestWorkbenchProps) {
   const initialCategory = initialPrefill?.category ?? "gpu";
+  const initialRegion = marketplaceRegions.includes(initialPrefill?.region as MarketplaceRegion)
+    ? initialPrefill?.region as MarketplaceRegion
+    : "";
   const initialUnit = isCompatibleUnit(initialCategory, initialPrefill?.pricingUnit)
     ? initialPrefill.pricingUnit
     : firstUnit(initialCategory);
@@ -156,21 +161,21 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
     pricingUnit: initialUnit,
     quantity: "1",
     duration: durationConfig(initialUnit).defaultValue,
-    region: initialPrefill?.region ?? "",
+    region: initialRegion,
     deliveryDate: "",
-    requirements: initialPrefill?.title ? `希望获取「${initialPrefill.title}」的标准化演示方案。` : "",
+    requirements: initialPrefill?.title ? `希望获取「${initialPrefill.title}」的标准化报价方案。` : "",
     consent: false,
   });
   const [swap, setSwap] = useState<SwapValues>({
     offeredCategory: initialCategory,
     offeredUnit: initialUnit,
     offeredQuantity: "1",
-    offeredDescription: initialPrefill?.title ? `可提供与「${initialPrefill.title}」同类的演示资源。` : "",
+    offeredDescription: initialPrefill?.title ? `可提供与「${initialPrefill.title}」同类的资源，具体容量待确认。` : "",
     wantedCategory: "token_model",
     wantedUnit: "百万 Token",
     wantedQuantity: "1",
     wantedDescription: "",
-    region: initialPrefill?.region ?? "",
+    region: initialRegion,
     cashDirection: "none",
     cashAmount: "",
     consent: false,
@@ -262,7 +267,7 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
     if (!procurement.region) nextErrors.region = "请选择期望区域。";
     if (!procurement.deliveryDate) nextErrors.deliveryDate = "请选择期望开始日期。";
     if (procurement.requirements.trim().length < 8) nextErrors.requirements = "请用至少 8 个字描述交付要求。";
-    if (!procurement.consent) nextErrors.consent = "请确认演示服务器提交说明。";
+    if (!procurement.consent) nextErrors.consent = "请确认服务器提交说明。";
 
     setProcurementErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
@@ -330,7 +335,7 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
     if (swap.wantedDescription.trim().length < 8) nextErrors.wantedDescription = "请用至少 8 个字描述期望资源。";
     if (!swap.region) nextErrors.region = "请选择期望撮合区域。";
     if (swap.cashDirection !== "none" && !validPositive(swap.cashAmount)) nextErrors.cashAmount = "补差金额必须大于 0。";
-    if (!swap.consent) nextErrors.consent = "请确认演示服务器提交说明。";
+    if (!swap.consent) nextErrors.consent = "请确认服务器提交说明。";
 
     setSwapErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
@@ -563,7 +568,7 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
                       value={procurement.region}
                     >
                       <option value="">请选择</option>
-                      {regions.map((region) => (
+                      {marketplaceRegions.map((region) => (
                         <option key={region}>{region}</option>
                       ))}
                     </select>
@@ -601,7 +606,7 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
               <Consent checked={procurement.consent} error={procurementErrors.consent} id="procurement-consent" onChange={(checked) => updateProcurement("consent", checked)} />
               {serverError ? <p className="mt-5 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-4 text-base text-[var(--error)]" role="alert">{serverError}</p> : null}
               <button className="button button-primary mt-6 w-full sm:w-auto" disabled={submitting} type="submit">
-                {submitting ? "正在提交…" : "提交演示需求"}
+                {submitting ? "正在提交…" : "提交需求"}
               </button>
             </form>
           </div>
@@ -658,7 +663,7 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
                       value={swap.region}
                     >
                       <option value="">请选择</option>
-                      {regions.map((region) => (
+                      {marketplaceRegions.map((region) => (
                         <option key={region}>{region}</option>
                       ))}
                     </select>
@@ -704,7 +709,7 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
               <Consent checked={swap.consent} error={swapErrors.consent} id="swap-consent" onChange={(checked) => updateSwap("consent", checked)} />
               {serverError ? <p className="mt-5 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-4 text-base text-[var(--error)]" role="alert">{serverError}</p> : null}
               <button className="button button-primary mt-6 w-full sm:w-auto" disabled={submitting} type="submit">
-                {submitting ? "正在提交…" : "提交演示置换需求"}
+                {submitting ? "正在提交…" : "提交置换需求"}
               </button>
             </form>
           </div>
@@ -715,11 +720,11 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
 
       <aside className="self-start border-t-2 border-[var(--accent)] bg-[var(--info-bg)] p-5 lg:sticky lg:top-28">
         <p className="kicker">Before you start</p>
-        <h2 className="m-0 text-xl">演示后端已接通</h2>
+        <h2 className="m-0 text-xl">需求服务已接通</h2>
         <ul className="mt-4 grid gap-3 pl-5 text-sm text-[var(--text)]">
-          <li>业务字段会保存到 KAI Cloud 演示服务器，会员中心可再次读取。</li>
+          <li>业务字段会保存到 KAI Cloud 服务器，会员中心可再次读取。</li>
           <li>不要填写姓名、手机号、公司机密、账号或访问密钥。</li>
-          <li>演示报价不是要约，也不会触发合同、支付或资源开通。</li>
+          <li>市场参考报价不是要约，具体价格与交付条件以询价确认为准。</li>
         </ul>
         {initialPrefill?.title ? (
           <div className="mt-5 border-t border-[var(--border)] pt-4 text-sm">
@@ -745,7 +750,7 @@ function Consent({ checked, error, id, onChange }: { checked: boolean; error?: s
         type="checkbox"
       />
       <span>
-        我确认仅提交演示业务字段到 KAI Cloud 演示服务器，并且不含真实个人资料、商业机密或访问凭据。
+        我确认仅提交脱敏业务字段到 KAI Cloud 服务器，并且不含个人资料、商业机密或访问凭据。
         <ErrorText id={`${id}-error`}>{error}</ErrorText>
       </span>
     </label>
@@ -839,20 +844,20 @@ function SwapLeg(props: SwapLegProps) {
 function RequestConfirmation({ confirmation, headingRef }: { confirmation: Confirmation; headingRef: React.RefObject<HTMLHeadingElement | null> }) {
   return (
     <section aria-live="polite" className="mt-8 border-t-2 border-[var(--success)] bg-[var(--success-bg)] p-5 sm:p-7" role="status">
-      <p className="kicker">Demo confirmed</p>
+      <p className="kicker">Request confirmed</p>
       <h2 className="m-0 text-2xl" ref={headingRef} tabIndex={-1}>
-        需求已写入演示后端
+        需求已写入服务端
       </h2>
       <p className="mt-2 text-sm text-[var(--text)]">{confirmation.title}</p>
       <div className="mt-5 flex flex-wrap items-baseline justify-between gap-3 border-y border-[var(--border)] py-4">
         <span className="text-xs font-semibold text-[var(--muted)]">服务端需求编号</span>
         <strong className="font-mono text-lg text-[var(--ink)]">{confirmation.id}</strong>
       </div>
-      <ol className="mt-6 grid gap-0" aria-label="演示处理状态">
+      <ol className="mt-6 grid gap-0" aria-label="需求处理状态">
         {[
-          ["已记录", "刚刚", "业务字段已写入演示数据库。"],
-          ["KAI 标准化", "下一步（演示）", confirmation.mode === "swap" ? "整理双边资源的容量与补差口径。" : "整理计价、SLA 与交付口径。"],
-          ["方案待确认", "匹配后（演示）", "展示标准化方案；不会联系真实供应商。"],
+          ["已记录", "刚刚", "业务字段已写入服务器。"],
+          ["KAI 标准化", "下一步", confirmation.mode === "swap" ? "整理双边资源的容量与补差口径。" : "整理计价、SLA 与交付口径。"],
+          ["方案待确认", "匹配后", "展示标准化方案；具体交易需双方人工确认。"],
         ].map(([status, time, description], index) => (
           <li className="grid grid-cols-[18px_1fr] gap-3" key={status}>
             <span className="relative flex justify-center" aria-hidden="true">
@@ -869,7 +874,7 @@ function RequestConfirmation({ confirmation, headingRef }: { confirmation: Confi
           </li>
         ))}
       </ol>
-      <p className="m-0 border-t border-[var(--border)] pt-4 text-xs text-[var(--muted)]">刷新页面后确认区会消失；会员中心仍可从服务端读取这条演示记录。</p>
+      <p className="m-0 border-t border-[var(--border)] pt-4 text-xs text-[var(--muted)]">刷新页面后确认区会消失；会员中心仍可从服务端读取这条记录。</p>
     </section>
   );
 }

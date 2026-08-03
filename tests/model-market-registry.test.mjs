@@ -162,6 +162,15 @@ test("different context and service price tiers are represented as separate rows
   assert.equal(rowsFor("Google", "Gemini 3.1 Pro Preview").length, 2);
   assert.equal(rowsFor("Google", "Gemini 3.1 Flash-Lite").length, 2);
   assert.equal(rowsFor("xAI", "Grok 4.5").length, 2);
+
+  const accessibleVariants = modelRegistry.map((row) => (
+    `${row.vendor}|${row.model}|${row.serviceTier}|${row.contextBand}`
+  ));
+  assert.equal(
+    new Set(accessibleVariants).size,
+    accessibleVariants.length,
+    "vendor, model, service tier and context band must identify every visible price row",
+  );
 });
 
 test("official research spot prices are preserved in original currency", () => {
@@ -211,6 +220,8 @@ test("every published quote remains traceable to its reviewed registry row", () 
     assert.equal(quote.originalCurrency, row.originalCurrency, row.id);
     assert.equal(quote.officialSourceName, row.officialSourceName, row.id);
     assert.equal(quote.officialSourceUrl, row.officialSourceUrl, row.id);
+    assert.equal(quote.serviceTier, row.serviceTier, row.id);
+    assert.equal(quote.contextBand, row.contextBand, row.id);
     if (quote.sourceStatus === "official_page") {
       assert.equal(quote.originalInputPerMillion, row.inputPerMillion, row.id);
       assert.equal(quote.originalCachedInputPerMillion, row.cachedInputPerMillion, row.id);

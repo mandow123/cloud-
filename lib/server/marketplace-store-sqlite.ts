@@ -1,19 +1,24 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync, type StatementResultingChanges } from "node:sqlite";
-import type {
-  CreateMarketplaceDraft,
-  CreateMarketplaceQuote,
-  CreateMarketplaceRequest,
-  MarketplaceDraftRecord,
-  MarketplaceNormalizedQuoteRecord,
-  MarketplaceRequestRecord,
-  MarketplaceSupplierQuoteRecord,
-  MarketplaceSwapLeg,
-  PricingUnit,
-  ResourceCategory,
+import {
+  isMarketplaceQuoteLeadTime,
+  isMarketplaceRegion,
+  type MarketplaceQuoteLeadTime,
+  type MarketplaceRegion,
+  type CreateMarketplaceDraft,
+  type CreateMarketplaceQuote,
+  type CreateMarketplaceRequest,
+  type MarketplaceDraftRecord,
+  type MarketplaceNormalizedQuoteRecord,
+  type MarketplaceRequestRecord,
+  type MarketplaceSupplierQuoteRecord,
+  type MarketplaceSwapLeg,
+  type PricingUnit,
+  type ResourceCategory,
 } from "@/lib/marketplace";
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
+import { resolveMarketplaceCapacityLimits } from "@/lib/server/marketplace-capacity";
 import {
   MARKETPLACE_MIGRATION_CHECKSUM,
   MARKETPLACE_MIGRATION_VERSION,
@@ -22,12 +27,14 @@ import {
 } from "@/lib/server/marketplace-schema";
 import {
   MarketplaceAccessError,
+  MarketplaceCapacityError,
+  MarketplaceDemandQuoteLimitError,
   MarketplaceIdempotencyConflictError,
   MarketplaceRateLimitError,
   MarketplaceStateConflictError,
 } from "@/lib/server/marketplace-errors";
 import {
-  DEMO_RETENTION_DAYS,
+  MARKETPLACE_RETENTION_DAYS,
   decodeMarketplaceCursor,
   draftRecord,
   marketplacePage,
@@ -41,7 +48,6 @@ import {
 
 const RATE_WINDOW_MS = 10 * 60 * 1_000;
 const MAX_WRITES_PER_WINDOW = 30;
-const SESSION_ROW_LIMIT = 50_000;
 const MAINTENANCE_INTERVAL_MS = 15 * 60 * 1_000;
 
 type RequestRow = {
@@ -87,7 +93,7 @@ type QuoteRow = {
   valid_until: string;
   raw_scope_note: string;
   standardized_scope_note: string;
-  standardization_version: "kai-demo-v2";
+  standardization_version: string;
   standardization_note: string;
   supplier_status: "已提交";
   normalized_status: "已标准化";
@@ -116,6 +122,23 @@ function parseLeg(value: string | null) {
   }
 }
 
+function regionFromRow(value: string): MarketplaceRegion {
+  if (!isMarketplaceRegion(value)) throw new Error("DATABASE_UNSUPPORTED_MARKETPLACE_REGION");
+  return value;
+}
+
+function leadTimeFromRow(value: string): MarketplaceQuoteLeadTime {
+  if (!isMarketplaceQuoteLeadTime(value)) throw new Error("DATABASE_UNSUPPORTED_QUOTE_LEAD_TIME");
+  return value;
+}
+
+function publicStandardizationText(value: string) {
+  return value
+    .replaceAll("演示", "平台参考")
+    .replaceAll("虚构", "初始化")
+    .replaceAll("非实时成交价", "询价确认");
+}
+
 function mapRequest(row: RequestRow): MarketplaceRequestRecord {
   return {
     id: row.id,
@@ -123,7 +146,7 @@ function mapRequest(row: RequestRow): MarketplaceRequestRecord {
     kind: row.kind,
     title: row.title,
     category: row.category,
-    region: row.region,
+    region: regionFromRow(row.region),
     pricingUnit: row.pricing_unit,
     quantity: row.quantity,
     durationHours: row.duration_hours,
@@ -147,7 +170,7 @@ function mapSupplierQuote(row: QuoteRow): MarketplaceSupplierQuoteRecord {
     unitPrice: row.raw_unit_price,
     pricingUnit: row.pricing_unit,
     currency: row.currency,
-    leadTime: row.lead_time,
+    leadTime: leadTimeFromRow(row.lead_time),
     validDays: row.valid_days,
     validUntil: row.valid_until,
     scopeNote: row.raw_scope_note,
@@ -164,11 +187,11 @@ function mapNormalizedQuote(row: QuoteRow): MarketplaceNormalizedQuoteRecord {
     standardizedUnitPrice: row.standardized_unit_price,
     pricingUnit: row.pricing_unit,
     currency: row.currency,
-    deliveryWindow: row.lead_time,
+    deliveryWindow: leadTimeFromRow(row.lead_time),
     validUntil: row.valid_until,
-    standardizedScope: row.standardized_scope_note,
-    standardizationVersion: row.standardization_version,
-    standardizationNote: row.standardization_note,
+    standardizedScope: publicStandardizationText(row.standardized_scope_note),
+    standardizationVersion: "kai-standard-v1",
+    standardizationNote: publicStandardizationText(row.standardization_note),
     status: Date.parse(row.valid_until) <= Date.now() ? "已过期" : row.normalized_status,
     createdAt: row.created_at,
   };
@@ -224,8 +247,8 @@ function applyMigration(db: DatabaseSync) {
   }
 }
 
-function pruneExpiredDemoData(db: DatabaseSync) {
-  const cutoff = new Date(Date.now() - DEMO_RETENTION_DAYS * 24 * 60 * 60 * 1_000).toISOString();
+function pruneExpiredMarketplaceData(db: DatabaseSync, sessionRowLimit: number) {
+  const cutoff = new Date(Date.now() - MARKETPLACE_RETENTION_DAYS * 24 * 60 * 60 * 1_000).toISOString();
   const now = new Date().toISOString();
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -237,7 +260,7 @@ function pruneExpiredDemoData(db: DatabaseSync) {
     db.prepare(`DELETE FROM marketplace_sessions_v2 WHERE actor_id IN (
       SELECT actor_id FROM marketplace_sessions_v2
       ORDER BY last_seen_at DESC LIMIT -1 OFFSET ?
-    )`).run(SESSION_ROW_LIMIT);
+    )`).run(sessionRowLimit);
     db.prepare("DELETE FROM marketplace_write_limits_v2 WHERE updated_at < ?").run(cutoff);
     db.exec("COMMIT");
   } catch (error) {
@@ -246,7 +269,7 @@ function pruneExpiredDemoData(db: DatabaseSync) {
   }
 }
 
-function openDatabase() {
+function openDatabase(sessionRowLimit: number) {
   const dataDirectory = process.env.KAI_DB_DIR
     || process.env.KAI_DATA_DIR
     || join(process.cwd(), ".market-cache", "marketplace");
@@ -258,7 +281,7 @@ function openDatabase() {
   db.exec("PRAGMA busy_timeout = 5000");
   db.exec("PRAGMA wal_autocheckpoint = 1000");
   applyMigration(db);
-  pruneExpiredDemoData(db);
+  pruneExpiredMarketplaceData(db, sessionRowLimit);
   return db;
 }
 
@@ -307,34 +330,48 @@ function insertEvent(db: DatabaseSync, actorId: string, entityType: string, enti
 }
 
 export function createSqliteMarketplaceStore(): MarketplaceStore {
-  const db = openDatabase();
+  const capacityLimits = resolveMarketplaceCapacityLimits();
+  const db = openDatabase(capacityLimits.sessions);
   let nextMaintenanceAt = Date.now() + MAINTENANCE_INTERVAL_MS;
 
   function maintainIfDue() {
     if (Date.now() < nextMaintenanceAt) return;
     nextMaintenanceAt = Date.now() + MAINTENANCE_INTERVAL_MS;
-    pruneExpiredDemoData(db);
+    pruneExpiredMarketplaceData(db, capacityLimits.sessions);
   }
 
   return {
     async establishSession(actor: MarketplaceActor) {
       maintainIfDue();
       const now = new Date().toISOString();
-      db.prepare(`INSERT INTO marketplace_sessions_v2 (
-        actor_id, session_hash, source, created_at, last_seen_at, expires_at
-      ) VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(actor_id) DO UPDATE SET
-        session_hash = excluded.session_hash,
-        source = excluded.source,
-        last_seen_at = excluded.last_seen_at,
-        expires_at = excluded.expires_at`).run(
-        actor.id,
-        actor.sessionHash,
-        actor.source,
-        now,
-        now,
-        actor.expiresAt,
-      );
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const existing = db.prepare("SELECT 1 AS found FROM marketplace_sessions_v2 WHERE actor_id = ?")
+          .get(actor.id) as { found: number } | undefined;
+        if (!existing) {
+          const count = db.prepare("SELECT COUNT(*) AS count FROM marketplace_sessions_v2").get() as { count: number };
+          if (count.count >= capacityLimits.sessions) throw new MarketplaceCapacityError("sessions");
+        }
+        db.prepare(`INSERT INTO marketplace_sessions_v2 (
+          actor_id, session_hash, source, created_at, last_seen_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(actor_id) DO UPDATE SET
+          session_hash = excluded.session_hash,
+          source = excluded.source,
+          last_seen_at = excluded.last_seen_at,
+          expires_at = excluded.expires_at`).run(
+          actor.id,
+          actor.sessionHash,
+          actor.source,
+          now,
+          now,
+          actor.expiresAt,
+        );
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
     },
     async touchSession(actor: MarketplaceActor) {
       const result = db.prepare(`UPDATE marketplace_sessions_v2
@@ -411,6 +448,8 @@ export function createSqliteMarketplaceStore(): MarketplaceStore {
           db.exec("COMMIT");
           return insideReplay;
         }
+        const count = db.prepare("SELECT COUNT(*) AS count FROM marketplace_requests_v2").get() as { count: number };
+        if (count.count >= capacityLimits.requests) throw new MarketplaceCapacityError("requests");
         db.prepare(`INSERT INTO marketplace_requests_v2 (
           id, owner_actor_id, idempotency_key, payload_hash, visibility,
           request_type, kind, title, category, region, pricing_unit, quantity,
@@ -439,7 +478,7 @@ export function createSqliteMarketplaceStore(): MarketplaceStore {
           record.createdAt,
           record.updatedAt,
         );
-        insertEvent(db, context.actorId, "request", record.id, "REQUEST_CREATED", "演示需求已记录并生成匿名市场投影。", record.createdAt);
+        insertEvent(db, context.actorId, "request", record.id, "REQUEST_CREATED", "需求已记录并生成匿名市场投影。", record.createdAt);
         db.exec("COMMIT");
         return { record, replayed: false };
       } catch (error) {
@@ -486,6 +525,11 @@ export function createSqliteMarketplaceStore(): MarketplaceStore {
         const demand = db.prepare("SELECT * FROM marketplace_requests_v2 WHERE id = ? AND visibility = 'market'")
           .get(input.demandId) as RequestRow | undefined;
         if (!demand) throw new MarketplaceAccessError("DEMAND_NOT_AVAILABLE");
+        const demandQuoteCount = db.prepare("SELECT COUNT(*) AS count FROM marketplace_quotes_v2 WHERE demand_id = ?")
+          .get(demand.id) as { count: number };
+        if (demandQuoteCount.count >= capacityLimits.quotesPerDemand) throw new MarketplaceDemandQuoteLimitError();
+        const quoteCount = db.prepare("SELECT COUNT(*) AS count FROM marketplace_quotes_v2").get() as { count: number };
+        if (quoteCount.count >= capacityLimits.quotes) throw new MarketplaceCapacityError("quotes");
         db.prepare(`INSERT INTO marketplace_quotes_v2 (
           id, supplier_actor_id, request_owner_actor_id, idempotency_key, payload_hash,
           demand_id, demand_title, raw_unit_price, standardized_unit_price,
@@ -519,8 +563,8 @@ export function createSqliteMarketplaceStore(): MarketplaceStore {
           SET status = '方案待确认', updated_at = ?, version = version + 1
           WHERE id = ? AND version = ?`).run(records.supplier.createdAt, demand.id, demand.version) as StatementResultingChanges;
         if (Number(updated.changes) !== 1) throw new MarketplaceStateConflictError();
-        insertEvent(db, context.actorId, "request", demand.id, "QUOTE_SUBMITTED", "供应方已提交一条原始演示报价。", records.supplier.createdAt);
-        insertEvent(db, "system:kai", "request", demand.id, "QUOTE_STANDARDIZED", "KAI 已生成需求方可见的演示标准化方案。", records.supplier.createdAt);
+        insertEvent(db, context.actorId, "request", demand.id, "QUOTE_SUBMITTED", "供应方已提交一条原始报价。", records.supplier.createdAt);
+        insertEvent(db, "system:kai", "request", demand.id, "QUOTE_STANDARDIZED", "KAI 已生成需求方可见的标准化方案。", records.supplier.createdAt);
         db.exec("COMMIT");
         return { record: records.supplier, replayed: false };
       } catch (error) {
@@ -550,6 +594,8 @@ export function createSqliteMarketplaceStore(): MarketplaceStore {
           db.exec("COMMIT");
           return insideReplay;
         }
+        const count = db.prepare("SELECT COUNT(*) AS count FROM marketplace_drafts_v2").get() as { count: number };
+        if (count.count >= capacityLimits.drafts) throw new MarketplaceCapacityError("drafts");
         db.prepare(`INSERT INTO marketplace_drafts_v2 (
           id, owner_actor_id, idempotency_key, payload_hash,
           title, category, capacity, status, created_at
@@ -564,7 +610,7 @@ export function createSqliteMarketplaceStore(): MarketplaceStore {
           record.status,
           record.createdAt,
         );
-        insertEvent(db, context.actorId, "draft", record.id, "DRAFT_SAVED", "供应方演示资源草稿已保存。", record.createdAt);
+        insertEvent(db, context.actorId, "draft", record.id, "DRAFT_SAVED", "供应方资源草稿已保存。", record.createdAt);
         db.exec("COMMIT");
         return { record, replayed: false };
       } catch (error) {

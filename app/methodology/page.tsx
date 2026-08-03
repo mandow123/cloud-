@@ -3,7 +3,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "数据与计价方法",
-  description: "KAI Cloud 日度模型目录价、算力演示行情、计价单位与标准化汇总方法。",
+  description: "KAI Cloud 日度模型目录价、算力市场行情、计价单位与标准化汇总方法。",
 };
 
 const units = [
@@ -24,11 +24,11 @@ export default function MethodologyPage() {
           <p className="kicker">Market methodology</p>
           <h1 className="m-0 text-4xl leading-tight sm:text-5xl">行情先统一口径，再讨论价格</h1>
           <p className="section-lead">
-            KAI Cloud 将异构算力报价拆成可比较字段。模型 Token 板块使用公开目录价的日度快照，其他算力板块暂保留虚构演示数据。
+            KAI Cloud 将异构算力报价拆成可比较字段。模型 Token 板块使用公开目录价的日度快照；其他算力板块当前为平台初始化样本，待供应方接入后核验。
           </p>
-          <div className="demo-notice mt-8">
-            <strong>目录价与演示数据声明</strong>
-            <span>两者均不代表实时库存或成交价；国际官方基准不等于中国大陆可采购价格，不得直接用于合同或财务决策。</span>
+          <div className="market-notice mt-8">
+            <strong>目录价与市场报价说明</strong>
+            <span>市场参考报价与容量样本均需询价确认；国际官方基准不等于中国大陆可采购价格，不得直接用于合同或财务决策。</span>
           </div>
         </div>
       </header>
@@ -169,19 +169,19 @@ export default function MethodologyPage() {
             当前版本的明确限制
           </h2>
           <ul className="mt-5 grid gap-2 pl-5 text-sm">
-            <li>模型板块为每日 06:00 CST 发布的公开目录价快照，不是实时行情；促销、长上下文和区域价需按行内口径理解。</li>
-            <li>GPU、机柜、云厂商资源、库存、样本量与对应 90 天行情仍为虚构演示。</li>
+            <li>模型板块按每日 06:00 CST 发布公开目录价快照；促销、长上下文和区域价需按行内口径理解。</li>
+            <li>GPU、机柜、云厂商资源、容量数据、样本量与对应 90 天行情当前为平台初始化样本，供应方接入后核验。</li>
             <li>国际模型价格只作为官方国际基准，不代表中国大陆的可用性、税费或采购渠道。</li>
             <li>报价不构成要约；网站不完成支付、合同、交付或验收。</li>
-            <li>主题、角色偏好和关注列表保存在当前浏览器；演示需求、草稿与报价按匿名会话写入服务器，默认保留 30 天。</li>
-            <li>演示会话不是正式账户；请勿输入个人信息、公司机密、访问凭据或真实成交资料。</li>
+            <li>主题、工作视角和关注列表保存在当前浏览器；需求、草稿与报价按匿名会话写入服务器，默认保留 30 天。</li>
+            <li>匿名会话不是正式账户；请勿输入个人信息、公司机密、访问凭据或成交资料。</li>
           </ul>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link className="button button-primary" href="/market">
               查看日度模型行情
             </Link>
             <Link className="button button-secondary" href="/request">
-              模拟发布需求
+              发布需求
             </Link>
           </div>
         </section>

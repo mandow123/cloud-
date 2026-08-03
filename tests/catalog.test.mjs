@@ -3,10 +3,10 @@ import test from "node:test";
 
 import {
   DEAL_MODES,
-  DEMO_DISCLAIMER,
+  MARKET_REFERENCE_NOTICE,
   PRICING_UNITS,
   RESOURCE_CATEGORIES,
-  createDemoRequestId,
+  createInitializationRequestId,
   filterAndSortResources,
   filterResources,
   findServiceAlias,
@@ -20,7 +20,7 @@ import {
   suppliers,
 } from "../lib/catalog.mjs";
 
-test("catalog has the planned fictional inventory shape", () => {
+test("catalog has the planned initialization inventory shape", () => {
   assert.equal(resourceListings.length, 24);
   assert.equal(suppliers.length, 8);
   assert.equal(regions.length, 6);
@@ -34,8 +34,10 @@ test("catalog has the planned fictional inventory shape", () => {
       `${category} should have six listings`,
     );
   }
-  assert.ok(resourceListings.every((item) => item.demo && item.fictional));
-  assert.ok(suppliers.every((supplier) => supplier.demo && supplier.fictional));
+  assert.doesNotMatch(
+    JSON.stringify({ resourceListings, suppliers }),
+    /"(?:demo|fictional)":true|supplierId":"demo-/iu,
+  );
 });
 
 test("all ten business aliases map to valid category, deal and unit values", () => {
@@ -63,7 +65,7 @@ test("all ten business aliases map to valid category, deal and unit values", () 
   assert.equal(findServiceAlias("GPU 租赁")?.label, "GPU租赁");
 });
 
-test("every listing quote declares price range, scope, freshness and demo status", () => {
+test("every listing quote declares price range, scope, freshness and reference status", () => {
   for (const listing of resourceListings) {
     const quote = listing.quote;
     assert.equal(quote.currency, "CNY");
@@ -79,9 +81,10 @@ test("every listing quote declares price range, scope, freshness and demo status
     assert.ok(Number.isFinite(Date.parse(quote.updatedAt)));
     assert.ok(Number.isFinite(Date.parse(quote.validUntil)));
     assert.ok(Date.parse(quote.validUntil) > Date.parse(quote.updatedAt));
-    assert.equal(quote.demo, true);
-    assert.equal(quote.disclaimer, DEMO_DISCLAIMER);
-    assert.match(quote.disclaimer, /演示参考价/);
+    assert.equal(quote.disclaimer, MARKET_REFERENCE_NOTICE);
+    assert.match(quote.disclaimer, /市场参考报价/);
+    assert.match(quote.disclaimer, /询价确认/);
+    assert.doesNotMatch(JSON.stringify(listing), /演示|虚构|非实时成交价|模拟/u);
   }
 });
 
@@ -97,8 +100,7 @@ test("market series provide deterministic 90-day quartiles for four categories",
     assert.equal(series.points.at(-1).date, "2026-08-01");
     assert.ok(series.points.every((point) => point.p25 <= point.p50 && point.p50 <= point.p75));
     assert.ok(series.points.every((point) => point.sampleCount > 0));
-    assert.equal(series.demo, true);
-    assert.equal(series.disclaimer, DEMO_DISCLAIMER);
+    assert.equal(series.disclaimer, MARKET_REFERENCE_NOTICE);
   }
 });
 
@@ -131,7 +133,7 @@ test("alias-aware search, sort and explicit empty state work", () => {
 
   const ascending = sortResources(gpuRentals, "price_asc");
   assert.ok(ascending.every((item, index) => index === 0 || ascending[index - 1].quote.median <= item.quote.median));
-  assert.deepEqual(filterResources(resourceListings, { q: "不存在的演示资源XYZ" }), []);
+  assert.deepEqual(filterResources(resourceListings, { q: "不存在的资源XYZ" }), []);
 });
 
 test("all planned pricing units appear and prices are formatted with clear units", () => {
@@ -142,15 +144,15 @@ test("all planned pricing units appear and prices are formatted with clear units
   assert.equal(formatPrice(Number.NaN, "卡时"), "—");
 });
 
-test("demo request IDs are stable, typed and collision-free for distinct seeds", () => {
-  const first = createDemoRequestId("rental", { listing: "gpu-h100", quantity: 8 });
-  const same = createDemoRequestId("rental", { quantity: 8, listing: "gpu-h100" });
-  const second = createDemoRequestId("rental", { listing: "gpu-h100", quantity: 16 });
-  const swap = createDemoRequestId("swap", { listing: "gpu-h100", quantity: 8 });
+test("initialization request IDs are stable, typed and collision-free for distinct seeds", () => {
+  const first = createInitializationRequestId("rental", { listing: "gpu-h100", quantity: 8 });
+  const same = createInitializationRequestId("rental", { quantity: 8, listing: "gpu-h100" });
+  const second = createInitializationRequestId("rental", { listing: "gpu-h100", quantity: 16 });
+  const swap = createInitializationRequestId("swap", { listing: "gpu-h100", quantity: 8 });
   assert.equal(first, same);
   assert.notEqual(first, second);
   assert.notEqual(first, swap);
-  assert.match(first, /^KAI-RNT-DEMO-[0-9A-Z]{7}$/);
-  assert.match(swap, /^KAI-SWP-DEMO-[0-9A-Z]{7}$/);
-  assert.throws(() => createDemoRequestId("invalid", "seed"), /Unsupported/);
+  assert.match(first, /^KAI-RNT-INIT-[0-9A-Z]{7}$/);
+  assert.match(swap, /^KAI-SWP-INIT-[0-9A-Z]{7}$/);
+  assert.throws(() => createInitializationRequestId("invalid", "seed"), /Unsupported/);
 });

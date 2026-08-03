@@ -1,11 +1,11 @@
 # KAI Cloud 生产运维基线
 
-本目录提供可复现的单机生产基线，不会自行修改服务器。所有示例都假设业务仍为演示撮合范围；真实资料上线前还必须完成正式身份认证、授权和数据合规审查。
+本目录提供可复现的单机生产基线，不会自行修改服务器。当前业务仍未接入真实供应商库存与正式身份体系；真实资料上线前还必须完成身份认证、授权和数据合规审查。
 
 ## 服务目标
 
 - 业务数据库备份：每小时第 15 分钟执行一次。
-- 默认本机保留：48 个小时副本、35 个每日副本、12 个每月副本。
+- 默认本机保留：48 个小时副本、30 个每日副本、不保留每月副本；任何恢复包都不得超过 30 天。
 - 目标 RPO：不超过 1 小时；只有备份已同步到异地主机或开启版本控制的对象存储时，该目标才覆盖整机故障。
 - 目标 RTO：不超过 30 分钟。
 - 行情更新：每天北京时间 06:00，失败时继续提供最后一个通过校验的快照并触发告警。
@@ -22,14 +22,42 @@ registry.example.com/kai-cloud-market@sha256:<64 hexadecimal characters>
 
 Compose 会把 `KAI_IMAGE` 以 `KAI_IMAGE_REFERENCE` 传入应用容器，供启动门禁核对自身镜像口径。两者必须是同一个 `repository@sha256:<64 位小写十六进制>` 引用；全零 digest 也会被拒绝。
 
+## 本机私有镜像仓库与构建晋级
+
+`deploy/compose.registry.yml` 提供只绑定 `127.0.0.1:5443` 的持久化 OCI Registry。它固定使用 Docker Official Image `registry:3.1.1@sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33`；该 manifest-list digest 于 2026-08-03 通过 Docker Hub 官方 API 核对，上游对应 CNCF Distribution v3.1.1。不得改成可变 tag，也不得把 5443 开到安全组或公网监听。
+
+引导步骤必须由获批的目标主机管理员执行：
+
+1. 创建 `/opt/kai-cloud-registry/{data,certs,auth}`。`data` 使用 `1000:1000` 和 `0750`；`certs`、`auth` 使用 `root:1000` 和 `0750`。
+2. 由受信 CA 签发包含 `IP:127.0.0.1`（以及需要时 `DNS:localhost`）SAN 的 TLS 证书，分别安装为 `certs/registry.crt` 与 `certs/registry.key`。证书可读权限不高于 `0444`，私钥必须为 `0440 root:1000`。证书和私钥不得提交仓库。
+3. 使用 Apache `htpasswd -B` 交互生成 bcrypt 文件 `auth/htpasswd`，权限 `0440 root:1000`。文件必须在启动前存在；禁止占位账号、命令行明文密码或把密码写进 env 文件。
+4. 将 `deploy/kai-cloud-registry.env.example` 复制为 `/etc/kai-cloud/kai-cloud-registry.env`，权限 `0640 root:root`。把注册表 CA 复制到 Docker 的 `127.0.0.1:5443` 信任目录并重启 Docker；不得使用 `insecure-registries` 绕过 TLS。
+5. 从仓库根目录运行 `docker compose --env-file /etc/kai-cloud/kai-cloud-registry.env -f deploy/compose.registry.yml config --quiet`，人工核对只出现 loopback 端口和专用数据目录，再运行 `up -d --wait`。通过 `curl --cacert ... --user <账号> https://127.0.0.1:5443/v2/` 验证未认证为 `401`、正确认证为 `200`。
+6. 使用 `docker login 127.0.0.1:5443 --username <账号> --password-stdin`，密码仅从受控密码管理器经标准输入传入；晋级脚本从不接收或输出仓库凭据。
+
+构建晋级必须在干净 Git 提交上执行。脚本用 `git archive HEAD` 作为构建上下文、把完整提交 SHA 写入 OCI revision label、推送唯一的完整 SHA tag，然后重新拉取并核对 RepoDigest、revision label 与 `linux/amd64` 或 `linux/arm64`：
+
+```bash
+# 后续发布必须传当前 release env；首次发布方式见下文。
+npm run ops:image:promote -- \
+  --repository 127.0.0.1:5443/kai-cloud-market \
+  --platform linux/amd64 \
+  --output-dir /var/lib/kai-cloud-releases \
+  --previous-env /etc/kai-cloud/kai-cloud-release.env
+```
+
+首次发布用 `--initial-release` 代替 `--previous-env`。输出只包含 `KAI_IMAGE=repository@sha256:...`、提交 SHA、平台和既有 3051/30 天策略，不包含密码；同时生成不可覆盖的 JSON 记录，保存 current 与 previous digest。管理员核对后才可原子替换 `/etc/kai-cloud/kai-cloud-release.env`。在目标主机加载该文件后运行 `npm run ops:image:validate`，门禁会拒绝本机不存在的镜像、RepoDigest 不匹配、revision 不匹配或 OS/架构不匹配。
+
+仓库磁盘达到 70% 时预警、85% 时停止新的晋级并人工处理。清理前必须保留当前和上一已验证 digest/tag、两份发布记录及其恢复演练证据。Registry 垃圾回收是 stop-the-world 操作：先停止 Registry 并为 `/opt/kai-cloud-registry/data` 创建已校验备份，再用固定 digest 镜像运行 `registry garbage-collect --dry-run`；人工确认 mark 集仍含 current/previous 后，才允许在 Registry 仍停止的情况下执行正式 GC。GC 期间禁止 push，禁止直接删除 `data` 子目录；完成后重启并重新拉取、验证 current 和 previous 两个 digest。任何一步失败都从仓库数据备份恢复，不能继续应用发布。
+
 ## 主机目录与权限
 
-建议状态根目录为 `/opt/kai-cloud-3050`：
+建议状态根目录为 `/opt/kai-cloud-3051`：
 
 ```text
-/opt/kai-cloud-3050/db       # 仅应用与备份任务可写
-/opt/kai-cloud-3050/market   # 更新任务可写，应用和备份任务只读
-/opt/kai-cloud-3050/backups  # 仅备份任务可写
+/opt/kai-cloud-3051/db       # 仅应用与备份任务可写
+/opt/kai-cloud-3051/market   # 更新任务可写，应用和备份任务只读
+/opt/kai-cloud-3051/backups  # 仅备份任务可写
 ```
 
 创建目录时固定为容器运行 UID/GID 1000，权限 `0750`。不要把三个目录重新合并，也不要把宿主机根目录或 `/opt` 整体挂入容器。
@@ -39,7 +67,7 @@ Compose 会把 `KAI_IMAGE` 以 `KAI_IMAGE_REFERENCE` 传入应用容器，供启
 ## 配置和安装
 
 1. 将 `deploy/kai-cloud-release.env.example` 复制到 `/etc/kai-cloud/kai-cloud-release.env`，替换真实 digest 和发布 SHA，权限设为 `0640 root:root`。该文件供应用 Compose 发布和 systemd 运维任务共同读取。
-2. 将 `deploy/kai-cloud-app.env.example` 复制到 `/etc/kai-cloud/kai-cloud-app.env`，权限同样为 `0640 root:root`。使用受信随机源生成 32 字节随机值，建议以 64 位小写十六进制写入 `KAI_CURSOR_SECRET`（例如在受控主机运行 `openssl rand -hex 32`），不得使用示例值；`KAI_PUBLIC_ORIGIN` 必须是最终 HTTPS 域名。应用密钥文件不能被备份或行情更新 unit 读取。
+2. 将 `deploy/kai-cloud-app.env.example` 复制到 `/etc/kai-cloud/kai-cloud-app.env`，权限同样为 `0640 root:root`。使用受信随机源生成 32 字节随机值，建议以 64 位小写十六进制写入 `KAI_CURSOR_SECRET`（例如在受控主机运行 `openssl rand -hex 32`），不得使用示例值；`KAI_PUBLIC_ORIGIN` 必须是最终 HTTPS 域名。初次发布保持 `KAI_ENABLE_HSTS=0`；只有真实域名、证书续期、HTTP 到 HTTPS 跳转和关键业务流程均验证通过后，才改为 `KAI_ENABLE_HSTS=1` 并重启应用。应用密钥文件不能被备份或行情更新 unit 读取。
 3. 将以下脚本安装到 `/usr/local/lib/kai-cloud/`，权限 `0644 root:root`：
 
    - `kai-cloud-market-update-run.sh`
@@ -81,9 +109,9 @@ Compose 会把 `KAI_IMAGE` 以 `KAI_IMAGE_REFERENCE` 传入应用容器，供启
 )
 ```
 
-门禁会拒绝：不足 32 UTF-8 字节或已知占位值的 `KAI_CURSOR_SECRET`、非规范 HTTPS 公网 origin、非完整 40/64 位小写十六进制发布 SHA、可变 tag 或占位 digest、关闭的 HTTPS/代理标志，以及不安全或不存在的状态目录。镜像自己的 entrypoint 会在 `server.js` 之前重复相同校验；任一条件不满足时容器以非零状态退出，`up --wait` 不会报告成功。不要把跳过 `ops:deploy:validate -- --current-env`、删除 entrypoint 或不等待健康检查的命令当作受支持的发布路径。
+门禁会拒绝：不足 32 UTF-8 字节或已知占位值的 `KAI_CURSOR_SECRET`、非规范 HTTPS 公网 origin、非完整 40/64 位小写十六进制发布 SHA、可变 tag 或占位 digest、关闭的 HTTPS/代理标志、非 `0`/`1` 的 HSTS 标志，以及不安全或不存在的状态目录。镜像自己的 entrypoint 会在 `server.js` 之前重复相同校验；任一条件不满足时容器以非零状态退出，`up --wait` 不会报告成功。不要把跳过 `ops:deploy:validate -- --current-env`、删除 entrypoint 或不等待健康检查的命令当作受支持的发布路径。
 
-应用端口只绑定 `127.0.0.1:3050`。因此生产配置固定启用 `KAI_TRUST_PROXY=1`，并同时设置 `KAI_REQUIRE_HTTPS_WRITES=1`；任何绕过反向代理的明文写请求都会被拒绝。容器内业务数据库和行情目录固定分别挂载到 `/app/db` 与 `/app/market`，不得合并或改成应用根目录。容器还具有 1 CPU、512MB 内存、256 PIDs、只读根文件系统、日志轮转和 `/api/live` 存活检查。`/api/ready` 用于发布和反向代理就绪判断，不应替代存活检查。
+应用端口只绑定 `127.0.0.1:3051`。因此生产配置固定启用 `KAI_TRUST_PROXY=1`，并同时设置 `KAI_REQUIRE_HTTPS_WRITES=1`；任何绕过反向代理的明文写请求都会被拒绝。容器内业务数据库和行情目录固定分别挂载到 `/app/db` 与 `/app/market`，不得合并或改成应用根目录。容器还具有 1 CPU、512MB 内存、256 PIDs、只读根文件系统、日志轮转和 `/api/live` 存活检查。`/api/ready` 用于发布和反向代理就绪判断，不应替代存活检查。
 
 生产调度使用 systemd；Compose 中 `market-update` 和 `backup` 的 `ops` profile 只用于受控人工验证。
 
@@ -119,9 +147,9 @@ kai-cloud-backup-<UTC timestamp>-<random>/
 - 行情 schema、发布时间、报价数和指数值；
 - 发布号和保留策略。
 
-保留清理只删除名称与 manifest 都符合本格式、且位于备份根目录直接子级的旧恢复包，不跟随符号链接。
+保留清理只删除名称与 manifest 都符合本格式、且位于备份根目录直接子级的旧恢复包，不跟随符号链接。小时、每日与每月层级之外还存在不可放宽的 30 天年龄上限；配置值超过 30 天会被拒绝。
 
-本机备份完成后，必须由独立的基础设施任务把完整目录同步到异地不可变存储，并对上传后的 SHA-256 再校验。访问密钥不得写入仓库、Compose 文件或 systemd unit。
+本机备份完成后，必须由独立的基础设施任务把完整目录同步到异地不可变存储，并对上传后的 SHA-256 再校验。异地存储也必须配置不超过 30 天的生命周期，不得借由复制备份绕过匿名业务数据的保留边界。访问密钥不得写入仓库、Compose 文件或 systemd unit。
 
 ## 隔离恢复演练
 
@@ -156,13 +184,13 @@ restore-candidate/restore-verification.json
 
 ## TLS 与网络边界
 
-3050 不得直接暴露公网。上线前必须满足：
+3051 不得直接暴露公网。上线前必须满足：
 
 1. `cloud.kai.com` DNS 指向受控入口。
-2. Caddy、Nginx 或云负载均衡器监听 443，并反向代理到 `127.0.0.1:3050`。
+2. Caddy、Nginx 或云负载均衡器监听 443，并反向代理到 `127.0.0.1:3051`。
 3. 80 仅用于跳转到 HTTPS；TLS 最低 1.2，开启自动续期和到期告警。
-4. 云安全组只开放 80/443；SSH 限制到管理来源；3050 不对公网开放。
-5. 通过真实域名验证登录、表单和 API 后再启用 HSTS；不要在证书或域名尚未稳定时提前预加载 HSTS。
+4. 云安全组只开放 80/443；SSH 限制到管理来源；3051 不对公网开放。
+5. 通过真实域名验证页面、表单和 API，确认 TLS 续期与 HTTP 跳转后，再把 `KAI_ENABLE_HSTS=1`；不要在证书或域名尚未稳定时提前启用或预加载 HSTS。
 6. 反向代理以 `/api/ready` 判断新版本是否可接流量，并保留可信代理地址配置，避免伪造转发头。
 7. 在反向代理对 `/api/session` 设置每个代理实际观察到的客户端地址每分钟 30 次、突发 10 次的限流；对所有 `POST /api/*` 设置每分钟 20 次、突发 5 次的限流。超限返回 `429` 和 `Retry-After`，不得转发到应用。代理必须覆盖而不是追加外部传入的转发头；限流键和日志不得包含 Cookie、会话令牌、请求正文或供应商报价。
 
@@ -196,7 +224,7 @@ systemd 失败会调用 `kai-cloud-ops-alert@.service`。默认写入 journal；
 4. 通过 `/api/ready`、业务冒烟和资源观察。
 5. 短暂停写后切换反向代理；单个 SQLite 文件不得同时存在两个写实例。
 6. 更新 `/etc/kai-cloud/kai-cloud-release.env`，确保应用和两个定时任务使用同一 digest 与 release SHA；应用环境另由 `kai-cloud-app.env` 提供，不能复制到运维 unit。
-7. 保留上一个已验证 digest 和对应恢复包，观察期结束后再按保留策略清理。
+7. 保留上一个已验证 digest、完整 SHA tag、晋级 JSON 记录和对应恢复包，观察期结束后再按保留策略清理；Registry GC 前必须再次确认 current/previous 都可按 digest 拉取。
 
 只有数据库迁移明确向后兼容时，才允许只回退应用 digest。若 schema 不兼容，必须恢复发布前恢复包或使用经过验证的前向修复迁移。回滚也要在隔离端口完成就绪和业务冒烟，不能依赖一个未挂载持久化目录的停止容器。
 
@@ -209,7 +237,7 @@ npm run ops:self-test
 npm run ops:deploy:validate
 ```
 
-`ops:deploy:validate` 内含弱密钥、可变镜像、非法发布 SHA、HTTP/带路径 origin、关闭安全标志和危险目录的负向用例。目标主机发布时还必须在加载真实环境文件后执行 `npm run ops:deploy:validate -- --current-env`；该模式会同时检查 `/opt/kai-cloud-*/{db,market,backups}` 为已存在、非符号链接的独立目录。
+`ops:deploy:validate` 内含弱密钥、可变镜像、非法发布 SHA、HTTP/带路径 origin、关闭安全标志和危险目录的负向用例。目标主机发布时还必须在加载真实环境文件后执行 `npm run ops:deploy:validate -- --current-env`；该模式会同时检查 `/opt/kai-cloud-*/{db,market,backups}` 为已存在、非符号链接的独立目录，并检查本机镜像 RepoDigest、OCI revision label 和 OS/架构与 release env 完全一致。
 
 发布候选至少还要通过：
 

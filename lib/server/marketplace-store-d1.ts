@@ -1,16 +1,21 @@
-import type {
-  CreateMarketplaceDraft,
-  CreateMarketplaceQuote,
-  CreateMarketplaceRequest,
-  MarketplaceDraftRecord,
-  MarketplaceNormalizedQuoteRecord,
-  MarketplaceRequestRecord,
-  MarketplaceSupplierQuoteRecord,
-  MarketplaceSwapLeg,
-  PricingUnit,
-  ResourceCategory,
+import {
+  isMarketplaceQuoteLeadTime,
+  isMarketplaceRegion,
+  type MarketplaceQuoteLeadTime,
+  type MarketplaceRegion,
+  type CreateMarketplaceDraft,
+  type CreateMarketplaceQuote,
+  type CreateMarketplaceRequest,
+  type MarketplaceDraftRecord,
+  type MarketplaceNormalizedQuoteRecord,
+  type MarketplaceRequestRecord,
+  type MarketplaceSupplierQuoteRecord,
+  type MarketplaceSwapLeg,
+  type PricingUnit,
+  type ResourceCategory,
 } from "@/lib/marketplace";
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
+import { resolveMarketplaceCapacityLimits } from "@/lib/server/marketplace-capacity";
 import {
   MARKETPLACE_MIGRATION_CHECKSUM,
   MARKETPLACE_MIGRATION_VERSION,
@@ -19,11 +24,14 @@ import {
 } from "@/lib/server/marketplace-schema";
 import {
   MarketplaceAccessError,
+  MarketplaceCapacityError,
+  MarketplaceDemandQuoteLimitError,
   MarketplaceIdempotencyConflictError,
   MarketplaceRateLimitError,
+  MarketplaceStateConflictError,
 } from "@/lib/server/marketplace-errors";
 import {
-  DEMO_RETENTION_DAYS,
+  MARKETPLACE_RETENTION_DAYS,
   decodeMarketplaceCursor,
   draftRecord,
   marketplacePage,
@@ -37,7 +45,6 @@ import {
 
 const RATE_WINDOW_MS = 10 * 60 * 1_000;
 const MAX_WRITES_PER_WINDOW = 30;
-const SESSION_ROW_LIMIT = 50_000;
 const MAINTENANCE_INTERVAL_MS = 15 * 60 * 1_000;
 
 type D1Result<T> = { results?: T[]; success?: boolean; meta?: { changes?: number } };
@@ -95,7 +102,7 @@ type QuoteRow = {
   valid_until: string;
   raw_scope_note: string;
   standardized_scope_note: string;
-  standardization_version: "kai-demo-v2";
+  standardization_version: string;
   standardization_note: string;
   supplier_status: "已提交";
   normalized_status: "已标准化";
@@ -124,6 +131,23 @@ function parseLeg(value: string | null) {
   }
 }
 
+function regionFromRow(value: string): MarketplaceRegion {
+  if (!isMarketplaceRegion(value)) throw new Error("DATABASE_UNSUPPORTED_MARKETPLACE_REGION");
+  return value;
+}
+
+function leadTimeFromRow(value: string): MarketplaceQuoteLeadTime {
+  if (!isMarketplaceQuoteLeadTime(value)) throw new Error("DATABASE_UNSUPPORTED_QUOTE_LEAD_TIME");
+  return value;
+}
+
+function publicStandardizationText(value: string) {
+  return value
+    .replaceAll("演示", "平台参考")
+    .replaceAll("虚构", "初始化")
+    .replaceAll("非实时成交价", "询价确认");
+}
+
 function mapRequest(row: RequestRow): MarketplaceRequestRecord {
   return {
     id: row.id,
@@ -131,7 +155,7 @@ function mapRequest(row: RequestRow): MarketplaceRequestRecord {
     kind: row.kind,
     title: row.title,
     category: row.category,
-    region: row.region,
+    region: regionFromRow(row.region),
     pricingUnit: row.pricing_unit,
     quantity: row.quantity,
     durationHours: row.duration_hours,
@@ -155,7 +179,7 @@ function mapSupplierQuote(row: QuoteRow): MarketplaceSupplierQuoteRecord {
     unitPrice: row.raw_unit_price,
     pricingUnit: row.pricing_unit,
     currency: row.currency,
-    leadTime: row.lead_time,
+    leadTime: leadTimeFromRow(row.lead_time),
     validDays: row.valid_days,
     validUntil: row.valid_until,
     scopeNote: row.raw_scope_note,
@@ -172,11 +196,11 @@ function mapNormalizedQuote(row: QuoteRow): MarketplaceNormalizedQuoteRecord {
     standardizedUnitPrice: row.standardized_unit_price,
     pricingUnit: row.pricing_unit,
     currency: row.currency,
-    deliveryWindow: row.lead_time,
+    deliveryWindow: leadTimeFromRow(row.lead_time),
     validUntil: row.valid_until,
-    standardizedScope: row.standardized_scope_note,
-    standardizationVersion: row.standardization_version,
-    standardizationNote: row.standardization_note,
+    standardizedScope: publicStandardizationText(row.standardized_scope_note),
+    standardizationVersion: "kai-standard-v1",
+    standardizationNote: publicStandardizationText(row.standardization_note),
     status: Date.parse(row.valid_until) <= Date.now() ? "已过期" : row.normalized_status,
     createdAt: row.created_at,
   };
@@ -193,11 +217,42 @@ function mapDraft(row: DraftRow): MarketplaceDraftRecord {
   };
 }
 
-function eventStatement(db: D1Database, actorId: string, entityType: string, entityId: string, eventType: string, summary: string, createdAt: string) {
+type EventDependency = Readonly<{
+  kind: "request" | "quote" | "draft";
+  id: string;
+}>;
+
+function eventStatement(
+  db: D1Database,
+  actorId: string,
+  entityType: string,
+  entityId: string,
+  eventType: string,
+  summary: string,
+  createdAt: string,
+  dependency?: EventDependency,
+) {
   const id = `KAI-E-${createdAt.slice(0, 10).replaceAll("-", "")}-${crypto.randomUUID().replaceAll("-", "").toUpperCase()}`;
-  return db.prepare(`INSERT INTO marketplace_events_v2 (
+  const dependencyTable = dependency?.kind === "request"
+    ? "marketplace_requests_v2"
+    : dependency?.kind === "quote"
+      ? "marketplace_quotes_v2"
+      : dependency?.kind === "draft"
+        ? "marketplace_drafts_v2"
+        : null;
+  const statement = db.prepare(`INSERT INTO marketplace_events_v2 (
     id, actor_id, entity_type, entity_id, event_type, summary, created_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(id, actorId, entityType, entityId, eventType, summary, createdAt);
+  ) SELECT ?, ?, ?, ?, ?, ?, ?${dependencyTable ? `
+    WHERE EXISTS (SELECT 1 FROM ${dependencyTable} WHERE id = ?)` : ""}`);
+  return dependencyTable && dependency
+    ? statement.bind(id, actorId, entityType, entityId, eventType, summary, createdAt, dependency.id)
+    : statement.bind(id, actorId, entityType, entityId, eventType, summary, createdAt);
+}
+
+function d1Changes(result: D1Result<unknown> | undefined, operation: string) {
+  const changes = result?.meta?.changes;
+  if (!Number.isInteger(changes) || (changes ?? -1) < 0) throw new Error(`D1_CHANGES_UNAVAILABLE:${operation}`);
+  return changes as number;
 }
 
 async function cursorFragment(options: MarketplaceListOptions, values: unknown[], audience: string) {
@@ -215,12 +270,13 @@ function replayOrConflict<Row extends { payload_hash: string }, Record>(row: Row
 
 export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
   const db = value as D1Database;
+  const capacityLimits = resolveMarketplaceCapacityLimits();
   let schemaPromise: Promise<void> | undefined;
   let nextMaintenanceAt = 0;
-  const pruneExpiredDemoData = async (force = false) => {
+  const pruneExpiredMarketplaceData = async (force = false) => {
     if (!force && Date.now() < nextMaintenanceAt) return;
     nextMaintenanceAt = Date.now() + MAINTENANCE_INTERVAL_MS;
-    const cutoff = new Date(Date.now() - DEMO_RETENTION_DAYS * 24 * 60 * 60 * 1_000).toISOString();
+    const cutoff = new Date(Date.now() - MARKETPLACE_RETENTION_DAYS * 24 * 60 * 60 * 1_000).toISOString();
     const now = new Date().toISOString();
     await db.batch([
       db.prepare("DELETE FROM marketplace_events_v2 WHERE created_at < ?").bind(cutoff),
@@ -231,7 +287,7 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
       db.prepare(`DELETE FROM marketplace_sessions_v2 WHERE actor_id IN (
         SELECT actor_id FROM marketplace_sessions_v2
         ORDER BY last_seen_at DESC LIMIT -1 OFFSET ?
-      )`).bind(SESSION_ROW_LIMIT),
+      )`).bind(capacityLimits.sessions),
       db.prepare("DELETE FROM marketplace_write_limits_v2 WHERE updated_at < ?").bind(cutoff),
     ]);
   };
@@ -261,7 +317,7 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
           new Date().toISOString(),
         ).run();
       }
-      await pruneExpiredDemoData(true);
+      await pruneExpiredMarketplaceData(true);
     })().catch((error) => {
       schemaPromise = undefined;
       throw error;
@@ -282,11 +338,13 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
   return {
     async establishSession(actor: MarketplaceActor) {
       await ensureSchema();
-      await pruneExpiredDemoData();
+      await pruneExpiredMarketplaceData();
       const now = new Date().toISOString();
-      await db.prepare(`INSERT INTO marketplace_sessions_v2 (
+      const result = await db.prepare(`INSERT INTO marketplace_sessions_v2 (
         actor_id, session_hash, source, created_at, last_seen_at, expires_at
-      ) VALUES (?, ?, ?, ?, ?, ?)
+      ) SELECT ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (SELECT 1 FROM marketplace_sessions_v2 WHERE actor_id = ?)
+        OR (SELECT COUNT(*) FROM marketplace_sessions_v2) < ?
       ON CONFLICT(actor_id) DO UPDATE SET
         session_hash = excluded.session_hash,
         source = excluded.source,
@@ -298,7 +356,10 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
         now,
         now,
         actor.expiresAt,
+        actor.id,
+        capacityLimits.sessions,
       ).run();
+      if (d1Changes(result, "session_upsert") !== 1) throw new MarketplaceCapacityError("sessions");
     },
     async touchSession(actor: MarketplaceActor) {
       await ensureSchema();
@@ -315,7 +376,7 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
     },
     async consumeWriteAllowance(actorId, routeScope) {
       await ensureSchema();
-      await pruneExpiredDemoData();
+      await pruneExpiredMarketplaceData();
       const now = Date.now();
       await db.prepare(`INSERT INTO marketplace_write_limits_v2 (
         actor_id, route_scope, window_started_at, write_count, updated_at
@@ -344,7 +405,7 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
     },
     async listOwnedRequests(actorId, options) {
       await ensureSchema();
-      await pruneExpiredDemoData();
+      await pruneExpiredMarketplaceData();
       const values: unknown[] = [actorId];
       const audience = `requests:mine:${actorId}`;
       const cursor = await cursorFragment(options, values, audience);
@@ -356,7 +417,7 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
     },
     async listPublicRequests(options) {
       await ensureSchema();
-      await pruneExpiredDemoData();
+      await pruneExpiredMarketplaceData();
       const values: unknown[] = [];
       const audience = "requests:market";
       const cursor = await cursorFragment(options, values, audience);
@@ -372,13 +433,14 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
       if (replay) return replay;
       const record = requestRecord(input);
       try {
-        await db.batch([
+        const results = await db.batch([
           db.prepare(`INSERT INTO marketplace_requests_v2 (
             id, owner_actor_id, idempotency_key, payload_hash, visibility,
             request_type, kind, title, category, region, pricing_unit, quantity,
             duration_hours, delivery_date, summary, offered_json, wanted_json,
             cash_direction, cash_amount, status, created_at, updated_at, version
-          ) VALUES (?, ?, ?, ?, 'market', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`).bind(
+          ) SELECT ?, ?, ?, ?, 'market', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1
+          WHERE (SELECT COUNT(*) FROM marketplace_requests_v2) < ?`).bind(
             record.id,
             context.actorId,
             context.idempotencyKey,
@@ -400,9 +462,11 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
             record.status,
             record.createdAt,
             record.updatedAt,
+            capacityLimits.requests,
           ),
-          eventStatement(db, context.actorId, "request", record.id, "REQUEST_CREATED", "演示需求已记录并生成匿名市场投影。", record.createdAt),
+          eventStatement(db, context.actorId, "request", record.id, "REQUEST_CREATED", "需求已记录并生成匿名市场投影。", record.createdAt, { kind: "request", id: record.id }),
         ]);
+        if (d1Changes(results[0], "request_insert") !== 1) throw new MarketplaceCapacityError("requests");
         return { record, replayed: false };
       } catch (error) {
         const raced = replayOrConflict(await existingRequest(context), context.payloadHash, mapRequest);
@@ -412,7 +476,7 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
     },
     async listBuyerNormalizedQuotes(actorId, options) {
       await ensureSchema();
-      await pruneExpiredDemoData();
+      await pruneExpiredMarketplaceData();
       const values: unknown[] = [actorId];
       const audience = `quotes:buyer:${actorId}`;
       const cursor = await cursorFragment(options, values, audience);
@@ -424,7 +488,7 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
     },
     async listSupplierQuotes(actorId, options) {
       await ensureSchema();
-      await pruneExpiredDemoData();
+      await pruneExpiredMarketplaceData();
       const values: unknown[] = [actorId];
       const audience = `quotes:supplier:${actorId}`;
       const cursor = await cursorFragment(options, values, audience);
@@ -443,14 +507,20 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
       if (!demand) throw new MarketplaceAccessError("DEMAND_NOT_AVAILABLE");
       const records = quoteWriteRecord(input, mapRequest(demand));
       try {
-        await db.batch([
+        const results = await db.batch([
           db.prepare(`INSERT INTO marketplace_quotes_v2 (
             id, supplier_actor_id, request_owner_actor_id, idempotency_key, payload_hash,
             demand_id, demand_title, raw_unit_price, standardized_unit_price,
             pricing_unit, currency, lead_time, valid_days, valid_until,
             raw_scope_note, standardized_scope_note, standardization_version,
             standardization_note, supplier_status, normalized_status, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+          ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          WHERE EXISTS (
+            SELECT 1 FROM marketplace_requests_v2
+            WHERE id = ? AND visibility = 'market' AND version = ?
+          )
+            AND (SELECT COUNT(*) FROM marketplace_quotes_v2 WHERE demand_id = ?) < ?
+            AND (SELECT COUNT(*) FROM marketplace_quotes_v2) < ?`).bind(
             records.supplier.id,
             context.actorId,
             demand.owner_actor_id,
@@ -472,14 +542,47 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
             records.supplier.status,
             records.normalized.status,
             records.supplier.createdAt,
+            demand.id,
+            demand.version,
+            demand.id,
+            capacityLimits.quotesPerDemand,
+            capacityLimits.quotes,
           ),
           db.prepare(`UPDATE marketplace_requests_v2
             SET status = '方案待确认', updated_at = ?, version = version + 1
-            WHERE id = ?`).bind(records.supplier.createdAt, demand.id),
-          eventStatement(db, context.actorId, "request", demand.id, "QUOTE_SUBMITTED", "供应方已提交一条原始演示报价。", records.supplier.createdAt),
-          eventStatement(db, "system:kai", "request", demand.id, "QUOTE_STANDARDIZED", "KAI 已生成需求方可见的演示标准化方案。", records.supplier.createdAt),
+            WHERE id = ? AND version = ?
+              AND EXISTS (SELECT 1 FROM marketplace_quotes_v2 WHERE id = ?)`).bind(
+                records.supplier.createdAt,
+                demand.id,
+                demand.version,
+                records.supplier.id,
+              ),
+          eventStatement(db, context.actorId, "request", demand.id, "QUOTE_SUBMITTED", "供应方已提交一条原始报价。", records.supplier.createdAt, { kind: "quote", id: records.supplier.id }),
+          eventStatement(db, "system:kai", "request", demand.id, "QUOTE_STANDARDIZED", "KAI 已生成需求方可见的标准化方案。", records.supplier.createdAt, { kind: "quote", id: records.supplier.id }),
         ]);
-        return { record: records.supplier, replayed: false };
+        const inserted = d1Changes(results[0], "quote_insert");
+        const updated = d1Changes(results[1], "demand_version_update");
+        if (inserted === 1) {
+          if (updated !== 1) throw new MarketplaceStateConflictError();
+          return { record: records.supplier, replayed: false };
+        }
+        if (inserted !== 0 || updated !== 0) throw new Error("D1_QUOTE_BATCH_INCONSISTENT");
+
+        const currentDemand = await db.prepare("SELECT * FROM marketplace_requests_v2 WHERE id = ? AND visibility = 'market'")
+          .bind(input.demandId).first<RequestRow>();
+        if (!currentDemand) throw new MarketplaceAccessError("DEMAND_NOT_AVAILABLE");
+        if (currentDemand.version !== demand.version) throw new MarketplaceStateConflictError();
+        const demandQuoteCount = await db.prepare("SELECT COUNT(*) AS count FROM marketplace_quotes_v2 WHERE demand_id = ?")
+          .bind(demand.id).first<{ count: number }>();
+        if ((demandQuoteCount?.count ?? capacityLimits.quotesPerDemand) >= capacityLimits.quotesPerDemand) {
+          throw new MarketplaceDemandQuoteLimitError();
+        }
+        const quoteCount = await db.prepare("SELECT COUNT(*) AS count FROM marketplace_quotes_v2")
+          .first<{ count: number }>();
+        if ((quoteCount?.count ?? capacityLimits.quotes) >= capacityLimits.quotes) {
+          throw new MarketplaceCapacityError("quotes");
+        }
+        throw new Error("D1_CONDITIONAL_QUOTE_INSERT_FAILED");
       } catch (error) {
         const raced = replayOrConflict(await existingQuote(context), context.payloadHash, mapSupplierQuote);
         if (raced) return raced;
@@ -488,7 +591,7 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
     },
     async listOwnedDrafts(actorId, options) {
       await ensureSchema();
-      await pruneExpiredDemoData();
+      await pruneExpiredMarketplaceData();
       const values: unknown[] = [actorId];
       const audience = `drafts:mine:${actorId}`;
       const cursor = await cursorFragment(options, values, audience);
@@ -504,11 +607,12 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
       if (replay) return replay;
       const record = draftRecord(input);
       try {
-        await db.batch([
+        const results = await db.batch([
           db.prepare(`INSERT INTO marketplace_drafts_v2 (
             id, owner_actor_id, idempotency_key, payload_hash,
             title, category, capacity, status, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+          ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+          WHERE (SELECT COUNT(*) FROM marketplace_drafts_v2) < ?`).bind(
             record.id,
             context.actorId,
             context.idempotencyKey,
@@ -518,9 +622,11 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
             record.capacity,
             record.status,
             record.createdAt,
+            capacityLimits.drafts,
           ),
-          eventStatement(db, context.actorId, "draft", record.id, "DRAFT_SAVED", "供应方演示资源草稿已保存。", record.createdAt),
+          eventStatement(db, context.actorId, "draft", record.id, "DRAFT_SAVED", "供应方资源草稿已保存。", record.createdAt, { kind: "draft", id: record.id }),
         ]);
+        if (d1Changes(results[0], "draft_insert") !== 1) throw new MarketplaceCapacityError("drafts");
         return { record, replayed: false };
       } catch (error) {
         const raced = replayOrConflict(await existingDraft(context), context.payloadHash, mapDraft);
@@ -530,7 +636,7 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
     },
     async health() {
       await ensureSchema();
-      await pruneExpiredDemoData();
+      await pruneExpiredMarketplaceData();
       const [migration, requests, quotes, drafts, events] = await Promise.all([
         db.prepare("SELECT version, checksum FROM marketplace_schema_migrations ORDER BY version DESC LIMIT 1")
           .first<{ version: number; checksum: string }>(),

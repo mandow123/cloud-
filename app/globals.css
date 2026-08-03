@@ -242,8 +242,10 @@ textarea {
 }
 
 .theme-control select {
+  min-height: 44px;
   min-width: 96px;
   border: 0;
+  padding-inline: 8px;
   background: transparent;
   color: var(--text);
   font-size: 0.75rem;
@@ -322,7 +324,7 @@ textarea {
   line-height: 1.67;
 }
 
-.demo-notice {
+.market-notice {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -335,7 +337,7 @@ textarea {
   font-size: 0.875rem;
 }
 
-.demo-notice strong {
+.market-notice strong {
   color: var(--ink);
 }
 
@@ -493,12 +495,12 @@ textarea {
     font-size: 0.8125rem;
   }
 
-  .demo-notice,
+  .market-notice,
   .footer-bottom {
     display: block;
   }
 
-  .demo-notice > * + *,
+  .market-notice > * + *,
   .footer-bottom > * + * {
     margin-top: 8px;
   }

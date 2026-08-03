@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
 
-const WATCHLIST_KEY = "kai-cloud-demo-watchlist-v1";
+const WATCHLIST_KEY = "kai-cloud-watchlist-v1";
 
 function readWatchlist(): string[] {
   try {
@@ -70,7 +70,7 @@ export function ResourceDetailActions({
         {watched ? "已关注此资源" : "关注此资源"}
       </button>
       <p className="m-0 text-xs leading-5 text-[var(--muted)] sm:col-span-2 lg:col-span-1">
-        关注状态仅保存在当前设备。发布需求不会触发真实采购、支付或资源开通。
+        关注状态仅保存在当前设备。发布需求不会自动触发采购、支付或资源开通。
       </p>
     </div>
   );

@@ -6,7 +6,7 @@ export type MarketplaceAuthorization = {
   store: MarketplaceStore;
 };
 
-/** Establishes or validates a server-side demo session and transparently
+/** Establishes or validates a server-side anonymous session and transparently
  * rotates expired/unknown cookies. */
 export async function authorizeMarketplaceRequest(request: Request): Promise<MarketplaceAuthorization> {
   const store = await getMarketplaceStore();

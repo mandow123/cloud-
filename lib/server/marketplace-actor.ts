@@ -1,10 +1,10 @@
-const SECURE_SESSION_COOKIE = "__Host-kai_demo_session";
-const DEVELOPMENT_SESSION_COOKIE = "kai_demo_session_dev";
+const SECURE_SESSION_COOKIE = "__Host-kai_session";
+const DEVELOPMENT_SESSION_COOKIE = "kai_session_dev";
 const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 
 export type MarketplaceActor = {
   id: string;
-  source: "platform" | "demo-session";
+  source: "platform" | "anonymous-session";
   sessionHash: string;
   csrfToken: string;
   expiresAt: string;
@@ -59,7 +59,7 @@ function sessionCookie(token: string, secure: boolean) {
 
 /**
  * Sites requests use the trusted workspace identity header when available.
- * Direct Node deployments fall back to a high-entropy, HttpOnly demo session.
+ * Direct Node deployments fall back to a high-entropy, HttpOnly anonymous session.
  * Only the hash is used as a database owner id; raw emails and tokens are never
  * persisted or returned to the client.
  */
@@ -95,8 +95,8 @@ export async function resolveMarketplaceActor(request: Request, forceNew = false
   const sessionHash = await hashText(`kai-cloud-session:${token}`);
 
   return {
-    id: `demo_${(await hashText(`kai-cloud:${token}`)).slice(0, 40)}`,
-    source: "demo-session",
+    id: `anon_${(await hashText(`kai-cloud:${token}`)).slice(0, 40)}`,
+    source: "anonymous-session",
     sessionHash,
     csrfToken: await hashText(`kai-cloud-csrf:${token}`),
     expiresAt: new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1_000).toISOString(),

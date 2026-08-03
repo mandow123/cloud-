@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LiveHomeMarketHero } from "@/components/live-home-market-hero";
-import { serviceAliases } from "@/lib/data";
+import { resourceListings, serviceAliases } from "@/lib/data";
+import { formatPrice } from "@/lib/market";
 import { marketIndexChange, readMarketSnapshot } from "@/lib/server/market-snapshot";
+import type { ResourceCategory, ResourceListing } from "@/lib/types";
 
 export const metadata: Metadata = {
   title: "算力行情与资源撮合",
@@ -16,12 +18,57 @@ const quickActions = [
   { code: "04", title: "做置换", copy: "我可提供 / 我需要双边撮合", href: "/request?mode=swap" },
 ];
 
-const quoteRows = [
-  { spec: "H20 / 96 GB", region: "华北", price: "¥12.80", unit: "卡时", category: "gpu", deal: "rental", change: "-2.1%", status: "可询价" },
-  { spec: "A800 / 80 GB", region: "华东", price: "¥9.60", unit: "卡时", category: "gpu", deal: "rental", change: "+0.8%", status: "可询价" },
-  { spec: "推理容量 / 1M TPM", region: "全国", price: "¥46.00", unit: "预留容量时", category: "token_model", deal: "service", change: "-1.4%", status: "可撮合" },
-  { spec: "20 kW 独占机柜", region: "华南", price: "¥13,800", unit: "机柜月", category: "rack_capacity", deal: "rental", change: "+1.2%", status: "需排期" },
+const HOMEPAGE_QUOTE_CATEGORIES: readonly ResourceCategory[] = [
+  "gpu",
+  "token_model",
+  "rack_capacity",
+  "cloud_vendor",
 ];
+
+const quoteRows = HOMEPAGE_QUOTE_CATEGORIES.map((category) => {
+  const listing = resourceListings.find((item) => item.category === category && item.featured);
+  if (!listing) throw new Error(`Homepage quote missing for category: ${category}`);
+  return listing;
+});
+const homepageGpuQuote = quoteRows[0];
+
+function pricingScope(listing: ResourceListing) {
+  const { quote } = listing;
+  return [
+    quote.taxIncluded ? "含税" : "未含税",
+    quote.energyIncluded ? "含电费" : "未含电费",
+    quote.networkIncluded ? "含网络" : "未含网络",
+  ].join(" · ");
+}
+
+function publicScopeNote(value: string) {
+  return value
+    .replaceAll("\u6f14\u793a价", "市场参考价")
+    .replaceAll("\u6f14\u793a", "参考");
+}
+
+function formatBeijingTime(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(value));
+}
+
+function requestHref(listing: ResourceListing) {
+  return `/request?${new URLSearchParams({
+    listing: listing.id,
+    mode: listing.dealModes[0],
+    category: listing.category,
+    unit: listing.pricingUnit,
+    title: listing.title,
+    region: listing.region,
+  }).toString()}`;
+}
 
 const serviceEntries = serviceAliases.map((alias) => {
   const params = new URLSearchParams({
@@ -45,6 +92,10 @@ export default async function Home() {
           indexChange1d: snapshot.index.change1d,
           indexChange7d: marketIndexChange(snapshot, 7),
           indexChange30d: snapshot.index.change30d,
+          gpuP50: homepageGpuQuote.quote.median,
+          gpuCurrency: homepageGpuQuote.quote.currency,
+          gpuPricingUnit: homepageGpuQuote.pricingUnit,
+          gpuResourceTitle: homepageGpuQuote.title,
         }}
       />
 
@@ -75,37 +126,48 @@ export default async function Home() {
           <div>
             <p className="kicker">Market snapshot</p>
             <h2 className="section-heading" id="market-snapshot-title">今日关键报价</h2>
-            <p className="section-lead">每条价格都带资源规格、地区、计价单位和可响应状态。</p>
+            <p className="section-lead">四类资源均直接引用统一目录，价格、口径和时效可追溯到具体资源。</p>
           </div>
           <Link className="button button-secondary" href="/market">全部行情</Link>
         </div>
-        <div className="data-table-wrap snapshot-table-wrap">
+        <div
+          aria-labelledby="market-snapshot-title"
+          className="data-table-wrap snapshot-table-wrap"
+          role="region"
+          tabIndex={0}
+        >
           <table className="data-table snapshot-table">
             <thead>
-              <tr><th>规格</th><th>地区</th><th className="num">P50 参考价</th><th>单位</th><th className="num">7 日变化</th><th>状态</th><th><span className="sr-only">操作</span></th></tr>
+              <tr><th>资源 / 编号</th><th>地区</th><th className="num">市场参考报价</th><th>税费 / 电费 / 网络</th><th>样本 / 时效</th><th><span className="sr-only">操作</span></th></tr>
             </thead>
             <tbody>
-              {quoteRows.map((row) => (
-                <tr key={row.spec}>
-                  <th scope="row">{row.spec}</th>
-                  <td>{row.region}</td>
-                  <td className="snapshot-price num">{row.price}</td>
-                  <td>{row.unit}</td>
-                  <td className="num text-[var(--accent)]">{row.change}</td>
-                  <td><span className="availability">{row.status}</span></td>
-                  <td><Link className="table-action" href={`/request?${new URLSearchParams({
-                    category: row.category,
-                    deal: row.deal,
-                    unit: row.unit,
-                    title: row.spec,
-                    region: row.region,
-                  }).toString()}`}>按此发布需求</Link></td>
+              {quoteRows.map((listing) => (
+                <tr key={listing.id}>
+                  <th scope="row">
+                    <Link className="snapshot-resource-link" href={`/resources/${listing.id}`}>{listing.title}</Link>
+                    <span className="snapshot-resource-id">{listing.id}</span>
+                  </th>
+                  <td>{listing.region}</td>
+                  <td className="snapshot-price num">
+                    <span className="snapshot-currency">{listing.quote.currency}</span>
+                    {formatPrice(listing.quote.median, listing.pricingUnit)}
+                  </td>
+                  <td>
+                    <strong>{pricingScope(listing)}</strong>
+                    <span className="snapshot-detail">{publicScopeNote(listing.quote.scopeNote)}</span>
+                  </td>
+                  <td>
+                    <strong>样本 {listing.quote.sampleCount} 条</strong>
+                    <span className="snapshot-detail">更新 <time dateTime={listing.quote.updatedAt}>{formatBeijingTime(listing.quote.updatedAt)}</time></span>
+                    <span className="snapshot-detail">有效至 <time dateTime={listing.quote.validUntil}>{formatBeijingTime(listing.quote.validUntil)}</time></span>
+                  </td>
+                  <td><Link className="table-action" href={requestHref(listing)}>按此发布需求</Link></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <p className="data-footnote">基础设施演示参考价 · 非实时成交价 · 模型行情每日北京时间 06:00 更新 · 含税、电费和网络口径以资源详情为准</p>
+        <p className="data-footnote">市场参考报价 · 具体以询价确认为准 · 每日北京时间 06:00 更新 · 平台初始化样本，供应商接入后核验更新</p>
       </section>
 
       <section className="service-section" aria-labelledby="service-entry-title">

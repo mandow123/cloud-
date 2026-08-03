@@ -63,8 +63,6 @@ export interface Supplier {
   shortName: string;
   description: string;
   categoryFocus: readonly ResourceCategory[];
-  fictional: true;
-  demo: true;
 }
 
 export interface ServiceAlias {
@@ -90,7 +88,6 @@ export interface CatalogQuote {
   sampleCount: number;
   validUntil: string;
   updatedAt: string;
-  demo: true;
   disclaimer: string;
 }
 
@@ -111,8 +108,6 @@ export interface ResourceListing {
   deliveryLeadTime: string;
   tags: readonly string[];
   featured: boolean;
-  fictional: true;
-  demo: true;
   quote: CatalogQuote;
 }
 
@@ -132,7 +127,6 @@ export interface MarketSeries {
   region: string;
   points: readonly MarketPoint[];
   updatedAt: string;
-  demo: true;
   disclaimer: string;
 }
 
@@ -149,7 +143,6 @@ export interface MarketSnapshot {
   change7d: number;
   change30d: number;
   updatedAt: string;
-  demo: true;
   disclaimer: string;
 }
 
@@ -200,7 +193,6 @@ export interface NormalizedQuote {
   updatedAt: string;
   normalizedAt: string;
   methodology: string;
-  demo: true;
   disclaimer: string;
 }
 
@@ -221,7 +213,6 @@ export interface RentalRequest {
   notes?: string;
   status: RequestStatus;
   createdAt: string;
-  demo: true;
 }
 
 export interface SwapResourceRequirement {
@@ -245,7 +236,6 @@ export interface SwapRequest {
   notes?: string;
   status: RequestStatus;
   createdAt: string;
-  demo: true;
 }
 
 export type ResourceQueryInput =

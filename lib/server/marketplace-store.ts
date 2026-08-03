@@ -12,7 +12,7 @@ import {
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
 
 export const MARKETPLACE_SCHEMA_VERSION = 2;
-export const DEMO_RETENTION_DAYS = 30;
+export const MARKETPLACE_RETENTION_DAYS = 30;
 
 export type MarketplaceStoreHealth = {
   backend: "sqlite" | "d1";
@@ -238,7 +238,7 @@ export function publicRequestRecord(record: MarketplaceRequestRecord): Marketpla
   } : null;
   return {
     ...record,
-    summary: `匿名演示需求：${categoryLabel[record.category]}，${record.region}，${record.quantity} ${record.pricingUnit}。`,
+    summary: `匿名市场需求：${categoryLabel[record.category]}，${record.region}，${record.quantity} ${record.pricingUnit}。`,
     offered: publicLeg(record.offered, "可提供资源"),
     wanted: publicLeg(record.wanted, "所需资源"),
     cashAmount: record.cashDirection === "none" ? null : 0,
@@ -294,9 +294,9 @@ export function quoteWriteRecord(
       currency: "CNY",
       deliveryWindow: input.leadTime,
       validUntil: validUntilDate.toISOString(),
-      standardizedScope: "KAI 演示统一口径：人民币、需求计价单位、含税及基础服务保障；供应方自由文本不向需求方展示。",
-      standardizationVersion: "kai-demo-v2",
-      standardizationNote: `按“${demand.pricingUnit}”使用 3% 演示占位系数并归入价格档位；这不是供应方原始单价，正式交易前仍需人工复核税、电、网络与 SLA。`,
+      standardizedScope: "KAI 统一口径：人民币、需求计价单位、含税及基础服务保障；供应方自由文本不向需求方展示。",
+      standardizationVersion: "kai-standard-v1",
+      standardizationNote: `按“${demand.pricingUnit}”使用 3% 平台标准化校准系数并归入价格档位；这不是供应方原始单价，交易前仍需人工复核税、电、网络与 SLA。`,
       status: "已标准化",
       createdAt,
     },

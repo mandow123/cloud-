@@ -1,0 +1,38 @@
+version: 0.1
+
+log:
+  level: info
+  formatter: json
+  fields:
+    service: kai-cloud-registry
+    environment: production
+
+storage:
+  filesystem:
+    rootdirectory: /var/lib/registry
+  delete:
+    enabled: true
+  maintenance:
+    uploadpurging:
+      enabled: true
+      age: 168h
+      interval: 24h
+      dryrun: false
+
+http:
+  addr: 0.0.0.0:5000
+  tls:
+    certificate: /certs/registry.crt
+    key: /certs/registry.key
+    minimumtls: tls1.2
+
+auth:
+  htpasswd:
+    realm: KAI Cloud private registry
+    path: /auth/htpasswd
+
+health:
+  storagedriver:
+    enabled: true
+    interval: 10s
+    threshold: 3

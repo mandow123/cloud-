@@ -32,12 +32,12 @@ export async function SiteFooter() {
           <p className="footer-label">平台说明</p>
           <Link href="/methodology">数据方法</Link>
           <Link href="/partners">供应商合作</Link>
-          <Link href="/member">演示会员中心</Link>
+          <Link href="/member">会员工作台</Link>
         </div>
         <div className="footer-disclaimer">
-          <p className="footer-label">演示声明</p>
-          <p>本站资源、供应商与价格均为演示数据，不构成实时成交报价或投资、采购建议。</p>
-          <p>模型目录价发布：{dateLabel(snapshot.publishedAt)} · 基础设施演示样本截至：{dateLabel(infrastructureUpdatedAt)}</p>
+          <p className="footer-label">报价说明</p>
+          <p>本站展示市场参考报价，具体价格、库存与交付条件以询价确认为准，不构成要约或投资、采购建议。</p>
+          <p>模型目录价发布：{dateLabel(snapshot.publishedAt)} · 基础设施初始化样本截至：{dateLabel(infrastructureUpdatedAt)}</p>
         </div>
       </div>
       <div className="shell footer-bottom">

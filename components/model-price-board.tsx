@@ -31,6 +31,8 @@ export interface ModelTokenPriceQuote {
   sourceStatus: ModelPriceSourceStatus;
   updatedAt: string;
   isStale: boolean;
+  serviceTier: string;
+  contextBand: string;
   freshness?: {
     state?: "current" | "official_only" | "stale" | "review_required";
   };
@@ -42,8 +44,8 @@ export interface ModelCostIndexSnapshot {
   value: number;
   baseDate: string;
   updatedAt: string;
-  change1d?: number;
-  change30d?: number;
+  change1d?: number | null;
+  change30d?: number | null;
   sampleSize?: number;
 }
 
@@ -124,14 +126,22 @@ function formatDateTime(value: string) {
   }).format(date);
 }
 
-function formatIndexChange(value: number | undefined) {
-  if (value === undefined || !Number.isFinite(value)) return "暂无";
+function formatIndexChange(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "暂无";
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(2)}%`;
 }
 
 function priceStatusLabel(value: number | null) {
   return value === null ? "未公布或不适用" : "人民币标准化价格";
+}
+
+function quoteVariantLabel(quote: ModelTokenPriceQuote) {
+  return `服务档：${quote.serviceTier} · 上下文：${quote.contextBand}`;
+}
+
+function quoteAccessibleLabel(quote: ModelTokenPriceQuote) {
+  return `${quote.vendor} ${quote.model}；服务档 ${quote.serviceTier}；上下文 ${quote.contextBand}`;
 }
 
 function SourceBadge({ status }: { status: ModelPriceSourceStatus }) {
@@ -246,7 +256,9 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
       const matchesQuery =
         normalizedQuery.length === 0 ||
         quote.vendor.toLocaleLowerCase("zh-CN").includes(normalizedQuery) ||
-        quote.model.toLocaleLowerCase("zh-CN").includes(normalizedQuery);
+        quote.model.toLocaleLowerCase("zh-CN").includes(normalizedQuery) ||
+        quote.serviceTier.toLocaleLowerCase("zh-CN").includes(normalizedQuery) ||
+        quote.contextBand.toLocaleLowerCase("zh-CN").includes(normalizedQuery);
       const matchesMarket = market === "all" || quote.market === market;
       const matchesCapability = capability === "all" || quote.categories.includes(capability);
       const freshnessState = quote.freshness?.state === "official_only"
@@ -266,7 +278,12 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
   const validatedCount = filteredQuotes.length - reviewCount - officialCount;
   const visibleQuotes = filteredQuotes.slice(0, visibleLimit);
   const hasFilters = query.length > 0 || market !== "all" || capability !== "all" || freshness !== "all";
-  const indexDirection = (index.change30d ?? 0) > 0 ? "上涨" : (index.change30d ?? 0) < 0 ? "下降" : "持平";
+  const hasComplete30DayChange = index.change30d !== null
+    && index.change30d !== undefined
+    && Number.isFinite(index.change30d);
+  const indexDirection = hasComplete30DayChange
+    ? index.change30d! > 0 ? "上涨" : index.change30d! < 0 ? "下降" : "持平"
+    : null;
 
   function clearFilters() {
     setQuery("");
@@ -286,7 +303,7 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
             主流模型 Token 分项行情
           </h2>
           <p className="mt-3 mb-0 max-w-3xl text-sm leading-6 text-[var(--text)]">
-            每个模型按输入、缓存输入和输出分别报价，并保留原币种与来源状态。人民币价格统一为“元 / 百万 Token”，不可用字段以“—”表示。
+            每个模型按服务档位、上下文档位、输入、缓存输入和输出分别报价，并保留原币种与来源状态。人民币价格统一为“元 / 百万 Token”，不可用字段以“—”表示。市场参考报价，具体以询价确认为准。
           </p>
           <p className="mt-4 mb-0 inline-flex border border-[var(--border-strong)] bg-[var(--success-bg)] px-3 py-2 text-xs font-semibold text-[var(--success)]">
             每日 06:00（北京时间）更新 · 失败时保留上一版，不发布半表
@@ -317,7 +334,10 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
             </div>
           </dl>
           <p className="mt-3 mb-0 text-xs leading-5 text-[var(--muted)]">
-            该指数仅表达固定模型篮子相对基期 100 的成本{indexDirection}趋势，不是跨模型人民币均价，也不能替代任一模型的实际报价。
+            {indexDirection === null
+              ? "历史样本积累中，暂无完整 30 日变化。"
+              : `该指数仅表达固定模型篮子相对基期 100 的成本${indexDirection}趋势。`}
+            该指数不是跨模型人民币均价，也不能替代任一模型的实际报价。
           </p>
           <p className="mt-2 mb-0 text-xs text-[var(--muted)]">
             基期 {index.baseDate} · 更新 {formatDateTime(index.updatedAt)}
@@ -329,7 +349,7 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
       <div className="mt-6 border-y border-[var(--border)] bg-[var(--info-bg)] p-4 sm:p-5">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(240px,1.4fr)_repeat(3,minmax(150px,0.8fr))_auto] xl:items-end">
           <label className="grid gap-1.5 text-xs font-semibold text-[var(--ink)]">
-            搜索厂商或模型
+            搜索厂商、模型或档位
             <input
               className={fieldClass}
                onChange={(event) => {
@@ -415,7 +435,7 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
         <>
           <div className="mt-6 hidden overflow-x-auto border border-[var(--border)] lg:block">
             <table className="data-table min-w-[1180px]">
-              <caption className="sr-only">主流模型 Token 分项价格、原币种、数据来源和更新时间</caption>
+              <caption className="sr-only">主流模型 Token 分项价格、服务档位、上下文档位、原币种、数据来源和更新时间</caption>
               <thead>
                 <tr>
                   <th scope="col">厂商 / 模型</th>
@@ -430,9 +450,12 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
               <tbody>
                 {visibleQuotes.map((quote) => (
                   <tr key={quote.id}>
-                    <th className="min-w-56 text-left" scope="row">
+                    <th aria-label={quoteAccessibleLabel(quote)} className="min-w-64 text-left" scope="row">
                       <span className="block text-xs font-semibold text-[var(--accent)]">{quote.vendor}</span>
                       <span className="mt-1 block text-base text-[var(--ink)]">{quote.model}</span>
+                      <span className="mt-1 block text-xs font-semibold text-[var(--text)]">
+                        {quoteVariantLabel(quote)}
+                      </span>
                       {quote.availabilityNote ? (
                         <span className="mt-1 block max-w-60 text-xs font-normal text-[var(--muted)]">
                           {quote.availabilityNote}
@@ -465,13 +488,18 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
 
           <div className="mt-6 grid gap-4 lg:hidden">
             {visibleQuotes.map((quote) => (
-              <article className="border-t-2 border-[var(--accent)] bg-[var(--surface)] p-5 ring-1 ring-[var(--border)]" key={quote.id}>
+              <article
+                aria-label={quoteAccessibleLabel(quote)}
+                className="border-t-2 border-[var(--accent)] bg-[var(--surface)] p-5 ring-1 ring-[var(--border)]"
+                key={quote.id}
+              >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="m-0 text-xs font-semibold text-[var(--accent)]">
                       {quote.vendor} · {MARKET_LABELS[quote.market]}
                     </p>
                     <h3 className="mt-1 mb-0 text-xl text-[var(--ink)]">{quote.model}</h3>
+                    <p className="mt-1 mb-0 text-xs font-semibold text-[var(--text)]">{quoteVariantLabel(quote)}</p>
                   </div>
                   <FreshnessBadge quote={quote} />
                 </div>

@@ -34,13 +34,13 @@ export function PartnerForm() {
     event.preventDefault();
     const nextErrors: Partial<Record<keyof PartnerFormValues, string>> = {};
 
-    if (values.alias.trim().length < 2) nextErrors.alias = "请输入至少 2 个字的演示供应商代号。";
+    if (values.alias.trim().length < 2) nextErrors.alias = "请输入至少 2 个字的供应方代号。";
     if (!values.category) nextErrors.category = "请选择主要资源类型。";
     if (!values.region) nextErrors.region = "请选择资源所在区域。";
     if (values.capacity.trim().length < 8) nextErrors.capacity = "请用至少 8 个字描述可供容量。";
     if (!values.delivery) nextErrors.delivery = "请选择可交付周期。";
     if (!values.unit) nextErrors.unit = "请选择主要报价单位。";
-    if (!values.consent) nextErrors.consent = "请确认这是不传输的演示提交。";
+    if (!values.consent) nextErrors.consent = "请确认这是不传输的本机预登记。";
 
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
@@ -68,19 +68,19 @@ export function PartnerForm() {
   return (
     <section aria-labelledby="partner-form-title" className="border-t-2 border-[var(--accent)] bg-[var(--surface)] p-5 sm:p-7">
       <div className="mb-6 border-b border-[var(--border)] pb-5">
-        <p className="kicker">Local demo</p>
+        <p className="kicker">Local pre-registration</p>
         <h2 id="partner-form-title" className="m-0 text-2xl">
-          演示资源入驻登记
+          资源入驻预登记
         </h2>
         <p className="mt-2 max-w-2xl text-sm text-[var(--text)]">
-          表单仅验证未来入驻流程，不会联网、发送或持久化输入。请勿填写真实公司名称、联系人或商业机密。
+          表单仅用于预检入驻信息，不会联网、发送或持久化输入。请勿填写公司全称、联系人或商业机密。
         </p>
       </div>
 
       <form noValidate onSubmit={submit}>
         <div className="grid gap-5 md:grid-cols-2">
           <label className="grid gap-1.5 text-sm font-semibold text-[var(--ink)]">
-            演示供应商代号
+            供应方代号
             <input
               aria-describedby={errors.alias ? "partner-alias-error" : "partner-alias-help"}
               aria-invalid={Boolean(errors.alias)}
@@ -91,7 +91,7 @@ export function PartnerForm() {
               value={values.alias}
             />
             <span className="text-xs font-normal text-[var(--muted)]" id="partner-alias-help">
-              请使用虚构代号，不填写真实企业名称。
+              请使用脱敏代号，不填写企业全称。
             </span>
             {errors.alias ? (
               <span className="text-xs font-normal text-[var(--error)]" id="partner-alias-error" role="alert">
@@ -161,11 +161,11 @@ export function PartnerForm() {
               className={`${inputClass} min-h-28 resize-y`}
               id="partner-capacity"
               onChange={(event) => update("capacity", event.target.value)}
-              placeholder="例如：演示集群，可提供 32 卡并行容量，支持按周排期"
+              placeholder="例如：32 卡并行容量，支持按周排期，库存接入后确认"
               value={values.capacity}
             />
             <span className="text-xs font-normal text-[var(--muted)]" id="partner-capacity-help">
-              仅描述脱敏的演示资源范围，不填写机房地址、账号或访问密钥。
+              仅描述脱敏的资源范围，不填写机房地址、账号或访问密钥。
             </span>
             {errors.capacity ? <span className="text-xs font-normal text-[var(--error)]">{errors.capacity}</span> : null}
           </label>
@@ -199,14 +199,14 @@ export function PartnerForm() {
             type="checkbox"
           />
           <span>
-            我确认这是本机演示，不会提交到 KAI Cloud 或任何供应商；我没有填写真实个人资料、商务报价或访问凭据。
+            我确认这是本机预登记，不会提交到 KAI Cloud 或任何供应方；我没有填写个人资料、商务报价或访问凭据。
             {errors.consent ? <span className="mt-1 block text-xs text-[var(--error)]">{errors.consent}</span> : null}
           </span>
         </label>
 
         <div className="mt-6 flex flex-wrap items-center gap-4">
           <button className="button button-primary" type="submit">
-            生成演示入驻回执
+            生成预登记回执
           </button>
           <button
             className="button button-secondary"
@@ -224,9 +224,9 @@ export function PartnerForm() {
 
       {receipt ? (
         <div aria-live="polite" className="mt-6 border-l-4 border-[var(--success)] bg-[var(--success-bg)] p-5" role="status">
-          <p className="m-0 text-xs font-bold uppercase tracking-[0.12em] text-[var(--success)]">Demo receipt</p>
+          <p className="m-0 text-xs font-bold uppercase tracking-[0.12em] text-[var(--success)]">Pre-registration receipt</p>
           <p className="mt-2 text-xl font-semibold text-[var(--ink)]">{receipt}</p>
-          <p className="mt-1 text-sm text-[var(--text)]">演示校验已完成。此编号只存在于当前页面状态，刷新后即消失。</p>
+          <p className="mt-1 text-sm text-[var(--text)]">预登记校验已完成。此编号只存在于当前页面状态，刷新后即消失。</p>
         </div>
       ) : null}
     </section>

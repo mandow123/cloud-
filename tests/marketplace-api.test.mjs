@@ -8,7 +8,7 @@ import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
-const SESSION_COOKIE_PATTERN = /^kai_demo_session_dev=[a-f0-9]{64}$/u;
+const SESSION_COOKIE_PATTERN = /^kai_session_dev=[a-f0-9]{64}$/u;
 
 function futureDate(days = 14) {
   const date = new Date();
@@ -30,7 +30,7 @@ function procurementPayload(overrides = {}) {
     durationHours: 168,
     region: "北京",
     deliveryDate: futureDate(),
-    requirements: "演示测试需求：容器交付，明确电费、网络范围与 SLA。",
+    requirements: "容器交付需求：明确电费、网络范围与 SLA。",
     ...overrides,
   };
 }
@@ -39,7 +39,7 @@ function draftPayload(index = 0) {
   return {
     title: `华北 H100 资源草稿 ${index}`,
     category: "gpu",
-    capacity: `第 ${index} 条演示容量说明：8 卡 H100，可按服务器时或卡时交付。`,
+    capacity: `第 ${index} 条容量说明：8 卡 H100，可按服务器时或卡时交付。`,
   };
 }
 
@@ -285,7 +285,7 @@ test("legacy marketplace tables import once without exposing supplier free text 
         legacyRequestId,
         "procurement",
         "rental",
-        "旧版 H100 演示需求",
+        "旧版 H100 需求",
         "gpu",
         "北京",
         "卡时",
@@ -307,7 +307,7 @@ test("legacy marketplace tables import once without exposing supplier free text 
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         "KAI-LEGACY-QUOTE-001",
         legacyRequestId,
-        "旧版 H100 演示需求",
+        "旧版 H100 需求",
         31.2,
         "卡时",
         "48 小时内",
@@ -389,8 +389,8 @@ test("marketplace API enforces A/B/C isolation, projections, CSRF and idempotenc
       openSession(fixture.server.baseUrl),
     ]);
 
-    assert.equal(buyerA.session.source, "demo-session");
-    assert.equal(supplierB.session.source, "demo-session");
+    assert.equal(buyerA.session.source, "anonymous-session");
+    assert.equal(supplierB.session.source, "anonymous-session");
     assert.match(buyerA.cookie, SESSION_COOKIE_PATTERN);
     assert.match(supplierB.cookie, SESSION_COOKIE_PATTERN);
     assert.notEqual(buyerA.cookie, supplierB.cookie, "forged platform headers must not collapse two sessions");
@@ -423,6 +423,19 @@ test("marketplace API enforces A/B/C isolation, projections, CSRF and idempotenc
       "CSRF_REJECTED",
     );
 
+    const rejectedRegion = await errorBody(
+      await buyerA.postJson(
+        "/api/requests",
+        procurementPayload({ region: "联系 13800138000 获取低价" }),
+        { idempotencyKey: idempotencyKey("unsupported-region") },
+      ),
+      400,
+      "VALIDATION_ERROR",
+    );
+    assert.equal(rejectedRegion.error.field, "region");
+    const requestsAfterRejectedRegion = await (await buyerA.get("/api/requests?view=mine&limit=50")).json();
+    assert.equal(requestsAfterRejectedRegion.count, 0);
+
     const privateRequirement = "A_ONLY_PRIVATE_REQUIREMENT_7QX9: 需要指定容器镜像与专线。";
     const requestResponse = await buyerA.postJson(
       "/api/requests",
@@ -449,7 +462,7 @@ test("marketplace API enforces A/B/C isolation, projections, CSRF and idempotenc
         quantity: 500,
         description: privateWant,
       },
-      region: "全国",
+      region: "广东",
       cashDirection: "offer",
       cashAmount: 12_345,
     }, { idempotencyKey: idempotencyKey("buyer-swap") });
@@ -481,8 +494,27 @@ test("marketplace API enforces A/B/C isolation, projections, CSRF and idempotenc
     assert.match(publicSwap.offered.description, /人工撮合时核验/u);
     assert.match(publicSwap.wanted.description, /人工撮合时核验/u);
 
-    const privateScope = "B_ONLY_RAW_SCOPE_R8C4: 演示价含税含电，公网流量另计。";
+    const privateScope = "B_ONLY_RAW_SCOPE_R8C4: 报价含税含电，公网流量另计。";
     const normalizedPrivateScope = privateScope.normalize("NFKC");
+    const rejectedLeadTime = await errorBody(
+      await supplierB.postJson("/api/quotes", {
+        demandId: requestRecord.id,
+        unitPrice: 31.2,
+        leadTime: "私聊 supplier-private@example.invalid",
+        validDays: 7,
+        scopeNote: privateScope,
+      }, { idempotencyKey: idempotencyKey("unsupported-lead-time") }),
+      400,
+      "VALIDATION_ERROR",
+    );
+    assert.equal(rejectedLeadTime.error.field, "leadTime");
+    const [supplierQuotesAfterRejectedLeadTime, buyerQuotesAfterRejectedLeadTime] = await Promise.all([
+      supplierB.get("/api/quotes?view=supplier&limit=50").then((response) => response.json()),
+      buyerA.get("/api/quotes?view=buyer&limit=50").then((response) => response.json()),
+    ]);
+    assert.equal(supplierQuotesAfterRejectedLeadTime.count, 0);
+    assert.equal(buyerQuotesAfterRejectedLeadTime.count, 0);
+
     const quoteResponse = await supplierB.postJson("/api/quotes", {
       demandId: requestRecord.id,
       unitPrice: 31.2,
@@ -509,7 +541,9 @@ test("marketplace API enforces A/B/C isolation, projections, CSRF and idempotenc
     assert.ok(!("standardizedUnitPrice" in supplierOwnQuotes.items[0]));
     assert.equal(buyerQuotes.count, 1);
     assert.notEqual(buyerQuotes.items[0].standardizedUnitPrice, 31.2);
-    assert.match(buyerQuotes.items[0].standardizedScope, /^KAI 演示统一口径：/u);
+    assert.match(buyerQuotes.items[0].standardizedScope, /^KAI 统一口径：/u);
+    assert.equal(buyerQuotes.items[0].standardizationVersion, "kai-standard-v1");
+    assert.doesNotMatch(JSON.stringify(buyerQuotes), /演示|虚构|非实时成交价|模拟/u);
     assert.ok(!JSON.stringify(buyerQuotes).includes(normalizedPrivateScope));
     assert.ok(!("unitPrice" in buyerQuotes.items[0]));
     assert.ok(!("scopeNote" in buyerQuotes.items[0]));
@@ -680,7 +714,7 @@ test("marketplace cursor pagination is stable and rejects a structurally valid f
     for (let index = 0; index < 8; index += 1) {
       const response = await client.postJson("/api/requests", procurementPayload({
         quantity: index + 1,
-        requirements: `分页演示需求 ${index}：验证稳定游标无重复、无遗漏。`,
+        requirements: `分页需求 ${index}：验证稳定游标无重复、无遗漏。`,
       }), { idempotencyKey: idempotencyKey(`page-${index}`) });
       assert.equal(response.status, 201);
     }

@@ -4,7 +4,7 @@ import { PartnerForm } from "@/components/partner-form";
 
 export const metadata: Metadata = {
   title: "供应商合作",
-  description: "了解 KAI Cloud 演示供应商入驻、报价标准化与资源撮合流程。",
+  description: "了解 KAI Cloud 供应方入驻、报价标准化与资源撮合流程。",
 };
 
 const steps = [
@@ -26,7 +26,7 @@ const steps = [
   {
     number: "04",
     title: "人工确认",
-    description: "真实版本将由双方完成合同、交付与验收；当前站点只演示流程。",
+    description: "正式成交由双方另行完成合同、交付与验收；平台保留人工复核与状态跟踪。",
   },
 ];
 
@@ -40,12 +40,12 @@ export default function PartnersPage() {
             <div>
               <h1 className="m-0 max-w-4xl text-4xl leading-tight sm:text-5xl">把分散供给，整理成可比较、可交付的算力资源</h1>
               <p className="section-lead">
-                面向 GPU、Token、模型实例、整机柜与云厂商资源的供应方。KAI Cloud 以统一计价口径连接真实需求。
+                面向 GPU、Token、模型实例、整机柜与云厂商资源的供应方。KAI Cloud 以统一计价口径连接供需双方。
               </p>
             </div>
             <div className="border-l-2 border-[var(--accent)] pl-5 text-sm text-[var(--text)]">
-              <strong className="block text-[var(--ink)]">当前为产品演示</strong>
-              下方表单不联网、不创建账户，也不接收入驻申请。请勿提交真实资料。
+              <strong className="block text-[var(--ink)]">本机入驻预登记</strong>
+              下方表单不联网、不创建账户，也不接收入驻申请。请勿提交企业全称、联系人或商业机密。
             </div>
           </div>
         </div>

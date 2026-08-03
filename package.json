@@ -7,8 +7,8 @@
   },
   "scripts": {
     "dev": "vinext dev",
-    "build": "vinext build",
-    "start": "vinext start",
+    "build": "vinext build && node scripts/ops/finalize-standalone.mjs",
+    "start": "node dist/standalone/server.js",
     "test": "npm run build && node --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "market:stage": "node scripts/model-market/cli.mjs stage",
@@ -17,7 +17,9 @@
     "ops:backup": "node scripts/ops/backup-marketplace.mjs create",
     "ops:restore:verify": "node scripts/ops/verify-restore.mjs",
     "ops:self-test": "node scripts/ops/self-test.mjs",
-    "ops:deploy:validate": "node scripts/ops/validate-deployment.mjs"
+    "ops:deploy:validate": "node scripts/ops/validate-deployment.mjs",
+    "ops:image:promote": "node scripts/ops/promote-release.mjs",
+    "ops:image:validate": "node scripts/ops/validate-local-image.mjs"
   },
   "dependencies": {
     "next": "16.2.12",

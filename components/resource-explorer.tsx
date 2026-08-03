@@ -32,6 +32,19 @@ function pricingScope(resource: ResourceListing) {
   ].join(" · ");
 }
 
+function publicCatalogText(value: string) {
+  return value
+    .replaceAll("（\u6f14\u793a）", "")
+    .replaceAll("\u6f14\u793a可置换", "初始化样本可置换")
+    .replaceAll("\u6f14\u793a可用", "初始化样本容量")
+    .replaceAll("\u6f14\u793a日容量", "初始化样本日容量")
+    .replaceAll("\u6f14\u793a SLA", "参考 SLA")
+    .replaceAll("\u6f14\u793a服务", "服务")
+    .replaceAll("\u6f14\u793a资源", "资源")
+    .replaceAll("\u6f14\u793a值", "参考值")
+    .replaceAll("\u6f14\u793a", "参考");
+}
+
 function FilterSelect({
   id,
   label,
@@ -137,19 +150,19 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
             </div>
             <div className="border-t-2 border-[var(--accent)] bg-[var(--info-bg)] px-5 py-4">
               <div className="flex items-baseline justify-between gap-6">
-                <span className="text-xs font-semibold text-[var(--muted)]">演示资源池</span>
+                <span className="text-xs font-semibold text-[var(--muted)]">目录资源池</span>
                 <strong className="text-3xl tabular-nums text-[var(--ink)]">{listings.length}</strong>
               </div>
-              <p className="mt-2 mb-0 text-xs leading-5 text-[var(--muted)]">来自虚构供应商，不连接真实库存或报价系统。</p>
+              <p className="mt-2 mb-0 text-xs leading-5 text-[var(--muted)]">平台初始化样本资源，供应商接入后核验容量与报价。</p>
             </div>
           </div>
         </div>
       </section>
 
       <div className="shell py-10 sm:py-12">
-        <aside className="demo-notice mb-8" aria-label="报价声明">
-          <p className="m-0"><strong>演示参考价：</strong>所有报价均包含明确计价单位与演示口径，仅用于功能体验。</p>
-          <p className="m-0 whitespace-nowrap font-semibold text-[var(--warning)]">非实时成交价</p>
+        <aside className="market-notice mb-8" aria-label="报价声明">
+          <p className="m-0"><strong>市场参考报价：</strong>所有报价均标明计价单位、税费、电费、网络与更新时间。</p>
+          <p className="m-0 whitespace-nowrap font-semibold text-[var(--warning)]">具体以询价确认为准</p>
         </aside>
 
         <div className="grid items-start gap-8 lg:grid-cols-[260px_minmax(0,1fr)]">
@@ -158,7 +171,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
               <h2 className="m-0 text-base text-[var(--ink)]">筛选资源</h2>
               {activeFilterCount > 0 && (
                 <button
-                  className="cursor-pointer border-0 bg-transparent p-1 text-xs font-semibold text-[var(--accent)] underline underline-offset-4"
+                  className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center border-0 bg-transparent px-2 text-xs font-semibold text-[var(--accent)] underline underline-offset-4"
                   type="button"
                   onClick={clearFilters}
                 >
@@ -233,7 +246,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                 排序
                 <select
                   id="resource-sort"
-                  className="min-h-10 border border-[var(--border-strong)] bg-[var(--surface)] px-3 text-sm text-[var(--ink)]"
+                  className="min-h-11 border border-[var(--border-strong)] bg-[var(--surface)] px-3 text-sm text-[var(--ink)]"
                   value={currentValue("sort") || "recommended"}
                   onChange={(event) => updateFilter("sort", event.target.value === "recommended" ? "" : event.target.value)}
                 >
@@ -259,7 +272,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                     <p className="m-0 text-xs text-[var(--muted)]">已选择 {compared.length} / 3 项</p>
                   </div>
                   <button
-                    className="cursor-pointer border-0 bg-transparent text-xs font-semibold text-[var(--accent)] underline underline-offset-4"
+                    className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center border-0 bg-transparent px-2 text-xs font-semibold text-[var(--accent)] underline underline-offset-4"
                     type="button"
                     onClick={() => { setCompareIds([]); setCompareMessage(""); }}
                   >
@@ -273,11 +286,11 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                         <th className="w-32 border-r border-[var(--border)] bg-[var(--info-bg)] p-3 text-left text-xs text-[var(--muted)]" scope="col">对比项</th>
                         {compared.map((resource) => (
                           <th key={resource.id} className="min-w-44 border-r border-[var(--border)] p-3 text-left align-top last:border-r-0" scope="col">
-                            <Link className="font-semibold text-[var(--ink)] underline decoration-[var(--border-strong)] underline-offset-4 hover:text-[var(--accent)]" href={`/resources/${resource.id}`}>
+                            <Link className="inline-flex min-h-11 items-center font-semibold text-[var(--ink)] underline decoration-[var(--border-strong)] underline-offset-4 hover:text-[var(--accent)]" href={`/resources/${resource.id}`}>
                               {resource.title}
                             </Link>
                             <button
-                              className="mt-2 block cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-[var(--muted)] underline underline-offset-4"
+                              className="mt-1 inline-flex min-h-11 min-w-11 cursor-pointer items-center border-0 bg-transparent px-1 text-xs font-medium text-[var(--muted)] underline underline-offset-4"
                               type="button"
                               onClick={() => toggleCompare(resource.id)}
                             >移除</button>
@@ -287,10 +300,10 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                     </thead>
                     <tbody>
                       {[
-                        ["演示参考价", (item: ResourceListing) => formatPrice(item.quote.median, item.pricingUnit)],
+                        ["市场参考报价", (item: ResourceListing) => formatPrice(item.quote.median, item.pricingUnit)],
                         ["区域 / 交付", (item: ResourceListing) => `${item.region} · ${item.deliveryForm}`],
-                        ["可用容量", (item: ResourceListing) => item.capacity],
-                        ["服务等级", (item: ResourceListing) => item.sla],
+                        ["容量样本", (item: ResourceListing) => publicCatalogText(item.capacity)],
+                        ["目标服务等级", (item: ResourceListing) => publicCatalogText(item.sla)],
                         ["价格口径", (item: ResourceListing) => pricingScope(item)],
                         ["报价样本", (item: ResourceListing) => `${item.quote.sampleCount} 条`],
                         ["更新时间", (item: ResourceListing) => item.quote.updatedAt],
@@ -300,7 +313,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                           {compared.map((resource) => (
                             <td key={resource.id} className="border-r border-[var(--border)] p-3 align-top text-[var(--text)] last:border-r-0">
                               {(render as (item: ResourceListing) => string)(resource)}
-                              {label === "演示参考价" && <span className="mt-1 block text-xs text-[var(--warning)]">非实时成交价</span>}
+                              {label === "市场参考报价" && <span className="mt-1 block text-xs text-[var(--warning)]">具体以询价确认为准</span>}
                             </td>
                           ))}
                         </tr>
@@ -313,9 +326,9 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
 
             {results.length === 0 ? (
               <div className="mt-6 border-y border-[var(--border)] bg-[var(--surface)] px-6 py-20 text-center">
-                <p className="m-0 text-xl font-semibold text-[var(--ink)]">没有匹配的演示资源</p>
+                <p className="m-0 text-xl font-semibold text-[var(--ink)]">没有匹配的目录资源</p>
                 <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-[var(--muted)]">
-                  当前筛选组合较窄。清除筛选后可浏览完整资源池，或发布需求由 KAI 进行人工演示撮合。
+                  当前筛选组合较窄。清除筛选后可浏览完整资源池，或发布需求由 KAI 进行人工撮合。
                 </p>
                 <div className="mt-6 flex flex-wrap justify-center gap-3">
                   <button className="button button-secondary cursor-pointer" type="button" onClick={clearFilters}>清除全部筛选</button>
@@ -331,8 +344,8 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                         <th scope="col">资源 / 供应商</th>
                         <th scope="col">分类 / 交易</th>
                         <th scope="col">区域 / 交付</th>
-                        <th scope="col">容量 / SLA</th>
-                        <th className="num" scope="col">演示参考价</th>
+                        <th scope="col">容量样本 / 目标 SLA</th>
+                        <th className="num" scope="col">市场参考报价</th>
                         <th scope="col">操作</th>
                       </tr>
                     </thead>
@@ -340,25 +353,25 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                       {results.map((resource) => (
                         <tr key={resource.id}>
                           <td className="min-w-64">
-                            <Link className="font-semibold text-[var(--ink)] underline decoration-[var(--border-strong)] underline-offset-4 hover:text-[var(--accent)]" href={`/resources/${resource.id}`}>
+                            <Link className="inline-flex min-h-11 items-center font-semibold text-[var(--ink)] underline decoration-[var(--border-strong)] underline-offset-4 hover:text-[var(--accent)]" href={`/resources/${resource.id}`}>
                               {resource.title}
                             </Link>
-                            <span className="mt-1 block text-xs text-[var(--muted)]">{resource.supplierName} · 虚构供应商</span>
+                            <span className="mt-1 block text-xs text-[var(--muted)]">{publicCatalogText(resource.supplierName)} · 供应商目录</span>
                           </td>
                           <td className="min-w-40">
                             <span className="font-semibold text-[var(--ink)]">{CATEGORY_LABELS[resource.category]}</span>
                             <span className="mt-1 block text-xs text-[var(--muted)]">{resource.dealModes.map((mode) => DEAL_LABELS[mode]).join(" / ")}</span>
                           </td>
                           <td className="min-w-40">{resource.region}<span className="mt-1 block text-xs text-[var(--muted)]">{resource.deliveryForm}</span></td>
-                          <td className="min-w-44">{resource.capacity}<span className="mt-1 block text-xs text-[var(--muted)]">SLA {resource.sla}</span></td>
+                          <td className="min-w-44">{publicCatalogText(resource.capacity)}<span className="mt-1 block text-xs text-[var(--muted)]">SLA {publicCatalogText(resource.sla)}</span></td>
                           <td className="num min-w-44">
                             <strong className="block whitespace-nowrap text-xl text-[var(--ink)]">{formatPrice(resource.quote.median, resource.pricingUnit)}</strong>
-                            <span className="mt-1 block text-xs text-[var(--warning)]">演示参考价 · 非实时成交价</span>
+                            <span className="mt-1 block text-xs text-[var(--warning)]">市场参考报价 · 具体以询价确认为准</span>
                             <span className="mt-1 block text-xs text-[var(--muted)]">{pricingScope(resource)}</span>
                             <span className="mt-1 block text-xs text-[var(--muted)]">样本 {resource.quote.sampleCount} 条 · 更新 {resource.quote.updatedAt}</span>
                           </td>
                           <td className="min-w-32">
-                            <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 text-xs font-semibold text-[var(--text)]">
+                            <label className="inline-flex min-h-11 min-w-11 cursor-pointer items-center gap-2 text-xs font-semibold text-[var(--text)]">
                               <input
                                 type="checkbox"
                                 checked={compareIds.includes(resource.id)}
@@ -380,27 +393,27 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                         <div>
                           <p className="m-0 text-xs font-semibold text-[var(--accent)]">{CATEGORY_LABELS[resource.category]} · {resource.region}</p>
                           <h2 className="mt-2 mb-0 text-xl text-[var(--ink)]">
-                            <Link className="hover:text-[var(--accent)]" href={`/resources/${resource.id}`}>{resource.title}</Link>
+                            <Link className="inline-flex min-h-11 items-center hover:text-[var(--accent)]" href={`/resources/${resource.id}`}>{resource.title}</Link>
                           </h2>
-                          <p className="mt-1 mb-0 text-xs text-[var(--muted)]">{resource.supplierName} · 虚构供应商</p>
+                          <p className="mt-1 mb-0 text-xs text-[var(--muted)]">{publicCatalogText(resource.supplierName)} · 供应商目录</p>
                         </div>
-                        <label className="inline-flex min-h-10 shrink-0 cursor-pointer items-center gap-2 text-xs font-semibold text-[var(--text)]">
+                        <label className="inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center gap-2 text-xs font-semibold text-[var(--text)]">
                           <input type="checkbox" checked={compareIds.includes(resource.id)} onChange={() => toggleCompare(resource.id)} />
                           对比
                         </label>
                       </div>
-                      <p className="mt-5 mb-0 text-sm leading-6 text-[var(--text)]">{resource.summary}</p>
+                      <p className="mt-5 mb-0 text-sm leading-6 text-[var(--text)]">{publicCatalogText(resource.summary)}</p>
                       <dl className="mt-5 grid grid-cols-2 gap-4 border-y border-[var(--border)] py-4 text-sm">
                         <div><dt className="text-xs text-[var(--muted)]">交付形态</dt><dd className="mt-1 font-semibold text-[var(--ink)]">{resource.deliveryForm}</dd></div>
-                        <div><dt className="text-xs text-[var(--muted)]">交付周期</dt><dd className="mt-1 font-semibold text-[var(--ink)]">{resource.deliveryLeadTime}</dd></div>
-                        <div><dt className="text-xs text-[var(--muted)]">可用容量</dt><dd className="mt-1 font-semibold text-[var(--ink)]">{resource.capacity}</dd></div>
-                        <div><dt className="text-xs text-[var(--muted)]">服务等级</dt><dd className="mt-1 font-semibold text-[var(--ink)]">{resource.sla}</dd></div>
+                        <div><dt className="text-xs text-[var(--muted)]">交付周期</dt><dd className="mt-1 font-semibold text-[var(--ink)]">{publicCatalogText(resource.deliveryLeadTime)}</dd></div>
+                        <div><dt className="text-xs text-[var(--muted)]">容量样本</dt><dd className="mt-1 font-semibold text-[var(--ink)]">{publicCatalogText(resource.capacity)}</dd></div>
+                        <div><dt className="text-xs text-[var(--muted)]">目标服务等级</dt><dd className="mt-1 font-semibold text-[var(--ink)]">{publicCatalogText(resource.sla)}</dd></div>
                       </dl>
                       <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
                         <div>
-                          <p className="m-0 text-xs text-[var(--muted)]">演示参考价</p>
+                          <p className="m-0 text-xs text-[var(--muted)]">市场参考报价</p>
                           <p className="mt-1 mb-0 text-2xl font-semibold tabular-nums text-[var(--ink)]">{formatPrice(resource.quote.median, resource.pricingUnit)}</p>
-                          <p className="m-0 text-xs text-[var(--warning)]">非实时成交价 · {pricingScope(resource)}</p>
+                          <p className="m-0 text-xs text-[var(--warning)]">具体以询价确认为准 · {pricingScope(resource)}</p>
                           <p className="mt-1 mb-0 text-xs text-[var(--muted)]">样本 {resource.quote.sampleCount} 条 · 更新 {resource.quote.updatedAt}</p>
                         </div>
                         <Link className="button button-secondary button-compact" href={`/resources/${resource.id}`}>查看详情 →</Link>
@@ -414,7 +427,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
             {results.length > 0 && (
               <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--border)] pt-4 text-xs text-[var(--muted)]">
                 <span>共 {results.length} 项 · 报价更新以各资源详情页为准</span>
-                <span>所有资源均为演示数据，不代表真实供应能力</span>
+                <span>平台初始化样本，供应商接入后核验更新</span>
               </div>
             )}
           </div>

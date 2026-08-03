@@ -3,16 +3,17 @@ set -eu
 
 : "${KAI_IMAGE:?KAI_IMAGE is required}"
 : "${KAI_RELEASE_SHA:?KAI_RELEASE_SHA is required}"
-KAI_STATE_ROOT="${KAI_STATE_ROOT:-/opt/kai-cloud-3050}"
-KAI_BACKUP_CONTAINER_PREFIX="${KAI_BACKUP_CONTAINER_PREFIX:-kai-cloud-backup-3050}"
+KAI_STATE_ROOT="${KAI_STATE_ROOT:-/opt/kai-cloud-3051}"
+KAI_BACKUP_CONTAINER_PREFIX="${KAI_BACKUP_CONTAINER_PREFIX:-kai-cloud-backup-3051}"
 KAI_BACKUP_CONTAINER="${KAI_BACKUP_CONTAINER_PREFIX}-$$"
 DOCKER_BIN="${KAI_DOCKER_BIN:-/usr/bin/docker}"
 KAI_BACKUP_RETENTION_HOURLY="${KAI_BACKUP_RETENTION_HOURLY:-48}"
-KAI_BACKUP_RETENTION_DAILY="${KAI_BACKUP_RETENTION_DAILY:-35}"
-KAI_BACKUP_RETENTION_MONTHLY="${KAI_BACKUP_RETENTION_MONTHLY:-12}"
+KAI_BACKUP_RETENTION_DAILY="${KAI_BACKUP_RETENTION_DAILY:-30}"
+KAI_BACKUP_RETENTION_MONTHLY="${KAI_BACKUP_RETENTION_MONTHLY:-0}"
+KAI_BACKUP_RETENTION_MAX_AGE_DAYS="${KAI_BACKUP_RETENTION_MAX_AGE_DAYS:-30}"
 
-if ! printf '%s\n' "$KAI_IMAGE" | grep -Eq '@sha256:[0-9a-fA-F]{64}$'; then
-  printf '%s\n' "KAI_IMAGE must be an immutable image digest (repository@sha256:...)" >&2
+if ! printf '%s\n' "$KAI_IMAGE" | grep -Eq '^[a-z0-9]+([._-][a-z0-9]+)*(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)*@sha256:[0-9a-f]{64}$'; then
+  printf '%s\n' "KAI_IMAGE must be a full lowercase repository@sha256:<64 lowercase hexadecimal characters> reference" >&2
   exit 64
 fi
 if ! printf '%s\n' "$KAI_RELEASE_SHA" | grep -Eq '^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$'; then
@@ -68,6 +69,7 @@ trap cleanup EXIT HUP INT TERM
   --env "KAI_BACKUP_RETENTION_HOURLY=$KAI_BACKUP_RETENTION_HOURLY" \
   --env "KAI_BACKUP_RETENTION_DAILY=$KAI_BACKUP_RETENTION_DAILY" \
   --env "KAI_BACKUP_RETENTION_MONTHLY=$KAI_BACKUP_RETENTION_MONTHLY" \
+  --env "KAI_BACKUP_RETENTION_MAX_AGE_DAYS=$KAI_BACKUP_RETENTION_MAX_AGE_DAYS" \
   --mount "type=bind,src=$KAI_STATE_ROOT/db,dst=/app/db" \
   --mount "type=bind,src=$KAI_STATE_ROOT/market,dst=/app/market,readonly" \
   --mount "type=bind,src=$KAI_STATE_ROOT/backups,dst=/app/backups" \

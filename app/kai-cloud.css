@@ -23,7 +23,7 @@
 
 .kai-root:not(:has(.mandow-hound-root)) .theme-control,
 .kai-root:not(:has(.mandow-hound-root)) .theme-control select {
-  font-size: 0.8125rem;
+  font-size: 0.9375rem;
 }
 
 .kai-root:not(:has(.mandow-hound-root)) .button {
@@ -314,10 +314,50 @@
   margin-top: 36px;
 }
 
+.snapshot-table {
+  min-width: 1120px;
+}
+
 .snapshot-table tbody th {
   color: var(--ink);
   font-size: 1.0625rem;
   font-weight: 700;
+}
+
+.snapshot-resource-link {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 4px;
+}
+
+.snapshot-resource-link:hover {
+  color: var(--accent);
+}
+
+.snapshot-resource-id,
+.snapshot-detail,
+.snapshot-currency {
+  display: block;
+  color: var(--muted);
+  font-family: var(--font-display), monospace;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.55;
+}
+
+.snapshot-detail {
+  margin-top: 4px;
+  font-family: var(--font-text-cjk), sans-serif;
+}
+
+.snapshot-currency {
+  margin-bottom: 2px;
+  color: var(--accent);
+  letter-spacing: 0.08em;
 }
 
 .snapshot-price {
@@ -338,6 +378,9 @@
 }
 
 .table-action {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
   color: var(--accent);
   font-size: 0.9375rem;
   font-weight: 700;
@@ -521,15 +564,6 @@
 
   .service-list a {
     border-right: 0;
-  }
-
-  .snapshot-table th:nth-child(2),
-  .snapshot-table td:nth-child(2),
-  .snapshot-table th:nth-child(5),
-  .snapshot-table td:nth-child(5),
-  .snapshot-table th:nth-child(6),
-  .snapshot-table td:nth-child(6) {
-    display: none;
   }
 
   .action-close > div:last-child {
