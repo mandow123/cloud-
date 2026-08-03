@@ -3,7 +3,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "数据与计价方法",
-  description: "KAI Cloud 演示行情的计价单位、分位数、容量小时与标准化汇总方法。",
+  description: "KAI Cloud 日度模型目录价、算力演示行情、计价单位与标准化汇总方法。",
 };
 
 const units = [
@@ -24,11 +24,11 @@ export default function MethodologyPage() {
           <p className="kicker">Market methodology</p>
           <h1 className="m-0 text-4xl leading-tight sm:text-5xl">行情先统一口径，再讨论价格</h1>
           <p className="section-lead">
-            KAI Cloud 将异构算力报价拆成可比较字段，并通过分位数展示市场区间。当前所有数据均为虚构演示。
+            KAI Cloud 将异构算力报价拆成可比较字段。模型 Token 板块使用公开目录价的日度快照，其他算力板块暂保留虚构演示数据。
           </p>
           <div className="demo-notice mt-8">
-            <strong>演示数据声明</strong>
-            <span>不代表实时库存、真实成交价或投资建议；不得用于采购、合同或财务决策。</span>
+            <strong>目录价与演示数据声明</strong>
+            <span>两者均不代表实时库存或成交价；国际官方基准不等于中国大陆可采购价格，不得直接用于合同或财务决策。</span>
           </div>
         </div>
       </header>
@@ -40,7 +40,7 @@ export default function MethodologyPage() {
             七种标准计价单位
           </h2>
           <p className="section-lead text-base">
-            每条演示报价同时保留币种、含税状态、电费、网络、有效期、样本量和更新时间，避免只比较一个数字。
+            每条记录同时保留币种、计费类型、上下文档位、服务等级、有效期、来源和更新时间，避免只比较一个数字。
           </p>
           <div className="data-table-wrap mt-8">
             <table className="data-table">
@@ -94,8 +94,30 @@ export default function MethodologyPage() {
           </div>
         </section>
 
+        <section aria-labelledby="model-token-heading" className="mt-20 border-t border-[var(--border)] pt-12">
+          <p className="kicker">03 / Model Token</p>
+          <h2 className="section-heading" id="model-token-heading">
+            模型价格必须逐型号、逐计费项比较
+          </h2>
+          <div className="mt-8 grid gap-px bg-[var(--border)] md:grid-cols-3">
+            {[
+              ["输入 Token", "用户请求、上下文和工具结果进入模型时产生的用量。长上下文可能进入更高价格档位。"],
+              ["缓存输入", "命中厂商提示词缓存时的读取价格；未公布或不适用时保持为空，不用普通输入价代填。"],
+              ["输出 Token", "模型生成文本与推理 Token 的价格；部分厂商会把思考 Token 一并计入输出。"],
+            ].map(([title, description]) => (
+              <div className="bg-[var(--surface)] p-5" key={title}>
+                <h3 className="m-0 text-lg text-[var(--ink)]">{title}</h3>
+                <p className="mt-2 mb-0 text-sm leading-6 text-[var(--text)]">{description}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-6 border-l-2 border-[var(--accent)] pl-4 text-sm leading-6 text-[var(--text)]">
+            <strong className="text-[var(--ink)]">KAI 模型调用成本指数</strong>使用固定模型篮子、固定输入输出比例与缓存命中假设，基期设为 100，只表达日度成本变化；它不是跨模型人民币均价，也不是任何一个模型的可成交报价。
+          </p>
+        </section>
+
         <section aria-labelledby="percentile-heading" className="mt-20 border-t border-[var(--border)] pt-12">
-          <p className="kicker">03 / Percentiles</p>
+          <p className="kicker">04 / Percentiles</p>
           <h2 className="section-heading" id="percentile-heading">
             P25、P50、P75 如何阅读
           </h2>
@@ -118,17 +140,17 @@ export default function MethodologyPage() {
         </section>
 
         <section aria-labelledby="aggregation-heading" className="mt-20 border-t border-[var(--border)] pt-12">
-          <p className="kicker">04 / Aggregation</p>
+          <p className="kicker">05 / Aggregation</p>
           <h2 className="section-heading" id="aggregation-heading">
             KAI 标准化与汇总流程
           </h2>
           <ol className="mt-8 grid gap-4">
             {[
-              ["接收", "记录资源类别、单位、区域、容量、有效期与交付条件。"],
-              ["校验", "剔除单位不完整、条件矛盾或超过有效期的演示报价。"],
-              ["标准化", "统一为人民币参考口径，并单独保留税、电、网络等费用状态。"],
+              ["05:40 采集", "读取官方价格页、机器可读目录与日度外汇数据，保留来源内容摘要。"],
+              ["05:50 校验", "剔除单位不完整、价格突变、型号批量消失或超过有效期的数据。"],
+              ["05:55 标准化", "按具体模型、版本、服务档位和上下文区间统一为每百万 Token，并保留原币种。"],
               ["分组", "仅在资源、区域、交付形态和计价单位可比时进入同一组。"],
-              ["汇总", "计算 P25/P50/P75、样本量和更新时间；不公开供应商原始报价。"],
+              ["06:00 发布", "原子切换已验证快照；失败来源继续展示上一期并明确标记数据陈旧。"],
             ].map(([title, description], index) => (
               <li className="grid grid-cols-[48px_1fr] border-b border-[var(--border)] pb-4" key={title}>
                 <span className="font-mono text-sm font-bold text-[var(--accent)]">{String(index + 1).padStart(2, "0")}</span>
@@ -142,19 +164,20 @@ export default function MethodologyPage() {
         </section>
 
         <section aria-labelledby="limits-heading" className="mt-20 border border-[var(--border-strong)] bg-[var(--info-bg)] p-6 sm:p-8">
-          <p className="kicker">05 / Limits</p>
+          <p className="kicker">06 / Limits</p>
           <h2 className="m-0 text-2xl" id="limits-heading">
             当前版本的明确限制
           </h2>
           <ul className="mt-5 grid gap-2 pl-5 text-sm">
-            <li>供应商、资源、库存、样本量与 90 天行情全部为虚构演示。</li>
-            <li>指数和报价区间不连接交易所、云厂商 API 或实时市场。</li>
+            <li>模型板块为每日 06:00 CST 发布的公开目录价快照，不是实时行情；促销、长上下文和区域价需按行内口径理解。</li>
+            <li>GPU、机柜、云厂商资源、库存、样本量与对应 90 天行情仍为虚构演示。</li>
+            <li>国际模型价格只作为官方国际基准，不代表中国大陆的可用性、税费或采购渠道。</li>
             <li>报价不构成要约；网站不完成支付、合同、交付或验收。</li>
             <li>需求与会员操作只保存在当前浏览器，不应输入真实个人或商业资料。</li>
           </ul>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link className="button button-primary" href="/market">
-              查看演示行情
+              查看日度模型行情
             </Link>
             <Link className="button button-secondary" href="/request">
               模拟发布需求

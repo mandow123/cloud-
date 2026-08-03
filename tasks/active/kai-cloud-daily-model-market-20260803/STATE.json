@@ -1,0 +1,71 @@
+{
+  "task_id": "kai-cloud-daily-model-market-20260803",
+  "title": "KAI Cloud 日度模型行情生产线",
+  "status": "verifying",
+  "mode": "AUTO",
+  "resolved_mode": "PRECISION",
+  "mode_reason": "异构来源方案已经过原型比较并选定，当前进入确定性测试、独立验收与私有部署。",
+  "objective": "每天北京时间 06:00 发布覆盖主流模型的分模型行情，并将综合价格改为基期 100 的趋势指数。",
+  "success_criteria": [
+    "主流国内外模型按厂商、模型版本、输入/缓存/输出等口径分别展示",
+    "日度 06:00 CST 调度、失败回退与重试行为可测试",
+    "综合指标仅为固定篮子指数，不展示跨模型人民币均价",
+    "页面显示数据来源、更新时间、样本和陈旧状态",
+    "构建、自动化测试及独立验证通过"
+  ],
+  "hard_constraints": [
+    "不绕过登录、验证码或反爬",
+    "不伪造实时行情",
+    "仅使用公开官方来源或明确演示回退",
+    "保持 Cloudflare Worker 兼容和既有业务流程"
+  ],
+  "soft_constraints": [
+    "覆盖尽量完整",
+    "维持现有 KAI 视觉系统",
+    "适配器易维护"
+  ],
+  "confirmed_facts": [
+    "生产注册表覆盖 16 家厂商、43 个具体模型和 55 个价格档",
+    "首轮快照含 52 条公开价格和 3 条明确为 null 的待审核讯飞型号",
+    "行情按输入、缓存输入和输出分项，综合值仅为固定篮子基期 100 指数",
+    "05:40 候选采集和 06:00 私有发布两项本地自动化均已启用",
+    "当前 39 项全量测试、lint、TypeScript 检查和生产构建均通过"
+  ],
+  "current_hypotheses": [
+    "官方 API 或公开价格表可提供一部分高可信日度数据",
+    "不可稳定自动抓取的厂商应进入人工审核或待接入状态",
+    "固定模型篮子指数可表达跨模型成本趋势但不应作为采购单价"
+  ],
+  "candidate_paths": [
+    "官方机器可读 API 适配器",
+    "官方定价页结构化抓取与变更检测",
+    "供应商授权报盘 API/CSV",
+    "人工审核模型注册表与日度版本快照",
+    "第三方聚合行情源交叉校验",
+    "受保护的外部调度器调用站内采集端点"
+  ],
+  "selected_path": "官方来源注册表 + LiteLLM 机器可读目录作为覆盖层 + 版本化日度快照；变化需通过校验闸门后发布",
+  "attempts": [
+    "Node 单次 fetch 遭 ECONNRESET",
+    "curl 到 Node 内联解析受转义破坏",
+    "PowerShell JSON 因大小写重复键失败"
+  ],
+  "current_blocker": null,
+  "next_action": "提交本任务精确文件，在不包含用户并行 Mandow 草稿的干净 worktree 中完成最终 lint/build/test 与 Sites 私有部署。",
+  "last_verified_result": "流水线对抗复验 PASS：35/36 半表、来源腐化、priced review_required、过期、上游 stale、零负值均拒绝且旧字节不变；当前工作区全局 lint 仅被用户并行 Mandow 未提交草稿阻断。",
+  "worker_status": "completed",
+  "verifier_status": "pipeline_pass_clean_tree_pending",
+  "mode_history": [
+    {
+      "mode": "HYBRID",
+      "reason": "数据源探索与产品实现同等重要",
+      "at": "2026-08-03"
+    },
+    {
+      "mode": "PRECISION",
+      "reason": "方案已选定，转入可重复验证和部署",
+      "at": "2026-08-03"
+    }
+  ],
+  "updated_at": "2026-08-03T11:24:00+08:00"
+}

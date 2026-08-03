@@ -66,6 +66,20 @@ test("market surfaces clearly disclose demo pricing", async () => {
   }
 });
 
+test("model market renders per-model prices, source status, and the 06:00 update contract", async () => {
+  const response = await render("/market");
+  const html = await response.text();
+
+  assert.match(html, /主流模型 Token 分项行情/);
+  assert.match(html, /每日 06:00/);
+  assert.match(html, /不是跨模型人民币均价/);
+  assert.match(html, /DeepSeek/);
+  assert.match(html, /OpenAI/);
+  assert.match(html, /Moonshot \/ Kimi/);
+  assert.match(html, /Google/);
+  assert.doesNotMatch(html, /模型 Token 综合行情/);
+});
+
 test("all ten business aliases are reachable from the home page", async () => {
   const response = await render("/");
   const html = await response.text();

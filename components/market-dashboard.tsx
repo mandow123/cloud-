@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { formatPrice } from "@/lib/market";
 import type { MarketSeries, ResourceCategory } from "@/lib/types";
 
 const CATEGORY_ORDER: ResourceCategory[] = [
   "gpu",
-  "token_model",
   "rack_capacity",
   "cloud_vendor",
 ];
@@ -38,7 +38,13 @@ function fullDate(value: string) {
   return `${year}年${Number(month)}月${Number(day)}日`;
 }
 
-export function MarketDashboard({ series }: { series: readonly MarketSeries[] }) {
+export function MarketDashboard({
+  series,
+  modelBoard,
+}: {
+  series: readonly MarketSeries[];
+  modelBoard?: ReactNode;
+}) {
   const firstCategory = CATEGORY_ORDER.find((item) =>
     series.some((entry) => entry.category === item),
   ) ?? "gpu";
@@ -152,7 +158,7 @@ export function MarketDashboard({ series }: { series: readonly MarketSeries[] })
               </div>
               <div className="p-4">
                 <dt className="text-xs font-semibold text-[var(--muted)]">数据性质</dt>
-                <dd className="mt-1 text-sm font-semibold text-[var(--accent)]">演示样本</dd>
+                <dd className="mt-1 text-sm font-semibold text-[var(--accent)]">日度目录价 + 演示样本</dd>
               </div>
             </dl>
           </div>
@@ -162,13 +168,29 @@ export function MarketDashboard({ series }: { series: readonly MarketSeries[] })
       <div className="shell py-10 sm:py-12">
         <aside className="demo-notice mb-8" aria-label="数据提示">
           <p className="m-0">
-            <strong>演示参考价：</strong>页面全部供应商、样本与报价均为虚构演示数据，仅用于呈现产品能力。
+            <strong>分区数据说明：</strong>Token / 模型板块展示公开目录价与来源状态；GPU、机柜和云厂商行情仍为虚构演示样本。
           </p>
-          <p className="m-0 whitespace-nowrap font-semibold text-[var(--warning)]">非实时成交价</p>
+          <p className="m-0 whitespace-nowrap font-semibold text-[var(--warning)]">目录价与演示价均非成交价</p>
         </aside>
 
+        {modelBoard ? (
+          <div className="mb-14 scroll-mt-24" id="model-token-market">
+            {modelBoard}
+          </div>
+        ) : null}
+
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="kicker">Infrastructure market</p>
+            <h2 className="m-0 text-2xl text-[var(--ink)]">基础设施算力行情</h2>
+          </div>
+          <a className="text-sm font-semibold text-[var(--accent)] underline underline-offset-4" href="#model-token-market">
+            查看 Token / 模型日度行情
+          </a>
+        </div>
+
         <div
-          className="grid grid-cols-2 border-b border-[var(--border-strong)] md:grid-cols-4"
+          className="grid grid-cols-1 border-b border-[var(--border-strong)] sm:grid-cols-3"
           role="tablist"
           aria-label="行情资源分类"
         >

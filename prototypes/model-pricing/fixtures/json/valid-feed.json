@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "kai-official-price-feed/1",
+  "provider": "Fixture JSON Cloud",
+  "publishedAt": "2026-08-03T21:40:00+08:00",
+  "items": [
+    {
+      "model": "fixture-general",
+      "version": "2026-07",
+      "pricing": {
+        "input": 2.4,
+        "cachedInput": 0.6,
+        "output": 9.6,
+        "currency": "CNY",
+        "unit": "per_million_tokens"
+      }
+    },
+    {
+      "model": "fixture-reasoning",
+      "version": "2026-06",
+      "pricing": {
+        "input": 4.2,
+        "cachedInput": null,
+        "output": 16.8,
+        "currency": "CNY",
+        "unit": "per_million_tokens"
+      }
+    },
+    {
+      "model": "fixture-multimodal",
+      "version": "2026-05",
+      "pricing": {
+        "input": 6,
+        "cachedInput": 1.5,
+        "output": 24,
+        "currency": "CNY",
+        "unit": "per_million_tokens"
+      }
+    }
+  ]
+}

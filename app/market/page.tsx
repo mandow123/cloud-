@@ -1,12 +1,30 @@
 import type { Metadata } from "next";
 import { MarketDashboard } from "@/components/market-dashboard";
+import {
+  ModelPriceBoard,
+  type ModelCostIndexSnapshot,
+  type ModelTokenPriceQuote,
+} from "@/components/model-price-board";
+import modelMarketSnapshot from "@/data/model-market.snapshot.json";
 import { marketSeries } from "@/lib/data";
 
 export const metadata: Metadata = {
-  title: "算力行情中心",
-  description: "查看 GPU、Token 与模型、整机柜容量及云厂商资源的演示价格分位与趋势。",
+  title: "算力与模型行情中心",
+  description: "查看每日更新的主流模型 Token 分项目录价，以及 GPU、整机柜容量和云厂商资源的演示价格分位与趋势。",
 };
 
 export default function MarketPage() {
-  return <MarketDashboard series={marketSeries} />;
+  const infrastructureSeries = marketSeries.filter((series) => series.category !== "token_model");
+
+  return (
+    <MarketDashboard
+      series={infrastructureSeries}
+      modelBoard={
+        <ModelPriceBoard
+          quotes={modelMarketSnapshot.quotes as ModelTokenPriceQuote[]}
+          index={modelMarketSnapshot.index as ModelCostIndexSnapshot}
+        />
+      }
+    />
+  );
 }

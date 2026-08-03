@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "kai-reviewed-price-registry/1",
+  "provider": "Fixture Reviewed Cloud",
+  "sourceUrl": "https://pricing.vendor.example/models",
+  "reviewedAt": "2026-08-02T10:00:00+08:00",
+  "reviewedContentSha256": "ca2f05a70211def1533faa834beecb584e47431d7503693bd41ee86e80084e2f",
+  "entries": [
+    {
+      "model": "fixture-chat",
+      "version": "2026-08",
+      "inputPrice": 3,
+      "cachedInputPrice": 0.75,
+      "outputPrice": 12,
+      "currency": "CNY",
+      "unit": "per_million_tokens",
+      "effectiveAt": "2026-08-01T00:00:00+08:00"
+    },
+    {
+      "model": "fixture-long-context",
+      "version": "2026-08",
+      "inputPrice": 5,
+      "cachedInputPrice": null,
+      "outputPrice": 20,
+      "currency": "CNY",
+      "unit": "per_million_tokens",
+      "effectiveAt": "2026-08-01T00:00:00+08:00"
+    }
+  ]
+}

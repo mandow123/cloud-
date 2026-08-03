@@ -1,0 +1,3608 @@
+{
+  "schemaVersion": "kai-model-market-snapshot/1",
+  "publishedAt": "2026-08-03T03:20:03.078Z",
+  "sourcePendingGeneratedAt": "2026-08-03T03:19:44.923Z",
+  "marketDefinition": {
+    "kind": "per_model_quotes",
+    "pricingUnit": "per_million_tokens",
+    "aggregatePublication": "fixed_basket_index_only",
+    "disclaimer": "不同模型价格不可直接求均价；综合指标仅为固定篮子趋势指数。"
+  },
+  "exchangeRate": {
+    "usdCny": 6.75132782,
+    "source": "ECB_DAILY_REFERENCE",
+    "state": "current",
+    "sourceUrl": "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml",
+    "failure": null
+  },
+  "sources": {
+    "officialRegistry": {
+      "state": "reviewed",
+      "registeredModelCount": 55,
+      "registeredIds": [
+        "anthropic-claude-fable-5-standard",
+        "anthropic-claude-opus-48-standard",
+        "anthropic-claude-opus-5-standard",
+        "anthropic-claude-sonnet-5-promo",
+        "baichuan-m3-plus-standard",
+        "cohere-command-a-plus-standard",
+        "deepseek-v4-flash-0731-standard",
+        "deepseek-v4-pro-standard",
+        "doubao-seed-21-pro-standard",
+        "doubao-seed-21-turbo-standard",
+        "ernie-45-turbo-standard",
+        "ernie-51-32k-to-128k",
+        "ernie-51-up-to-32k",
+        "glm-51-32k-and-over",
+        "glm-51-under-32k",
+        "glm-52-standard",
+        "glm-5v-turbo-32k-and-over",
+        "glm-5v-turbo-under-32k",
+        "google-gemini-31-flash-lite-audio",
+        "google-gemini-31-flash-lite-text-media",
+        "google-gemini-31-pro-preview-over-200k",
+        "google-gemini-31-pro-preview-up-to-200k",
+        "google-gemini-35-flash-standard",
+        "hy3-preview-context-tier-1",
+        "hy3-preview-context-tier-2",
+        "hy3-preview-context-tier-3",
+        "hy3-standard",
+        "iflytek-spark-ultra-unpriced",
+        "iflytek-spark-x2-flash-unpriced",
+        "iflytek-spark-x2-unpriced",
+        "kimi-k26-standard",
+        "kimi-k27-code-highspeed",
+        "kimi-k27-code-standard",
+        "kimi-k3-standard",
+        "minimax-m27-highspeed",
+        "minimax-m27-standard",
+        "minimax-m3-over-512k",
+        "minimax-m3-up-to-512k",
+        "mistral-large-3-standard",
+        "mistral-medium-35-standard",
+        "mistral-small-4-standard",
+        "openai-gpt-54-mini-standard",
+        "openai-gpt-54-nano-standard",
+        "openai-gpt-54-standard",
+        "openai-gpt-55-standard",
+        "openai-gpt-56-luna-standard",
+        "openai-gpt-56-sol-standard",
+        "openai-gpt-56-terra-standard",
+        "qwen36-flash-20260416-over-256k",
+        "qwen36-flash-20260416-up-to-256k",
+        "qwen37-max-20260608-standard",
+        "qwen37-plus-20260526-256k-to-1m",
+        "qwen37-plus-20260526-up-to-256k",
+        "xai-grok-45-long-context",
+        "xai-grok-45-under-200k"
+      ],
+      "quoteCount": 55,
+      "pricedQuoteCount": 52,
+      "unpricedModelCount": 3
+    },
+    "ecb": {
+      "state": "current",
+      "failure": null
+    },
+    "litellm": {
+      "state": "current",
+      "failure": null
+    }
+  },
+  "quotes": [
+    {
+      "id": "deepseek-v4-flash-0731-standard",
+      "vendor": "DeepSeek",
+      "model": "V4-Flash-0731",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 0.14,
+      "cachedInputPerMillion": 0.0028,
+      "outputPerMillion": 0.28,
+      "officialSourceName": "DeepSeek API Pricing",
+      "officialSourceUrl": "https://api-docs.deepseek.com/quick_start/pricing/",
+      "sourceGrade": "A",
+      "serviceTier": "standard · reasoning switchable",
+      "contextBand": "default",
+      "availabilityNote": "中国大陆官方 API 目录价；实际采购可用性、税费与地域以对应官方账号为准。",
+      "litellmCandidates": [
+        "deepseek/deepseek-v4-flash-0731",
+        "deepseek-v4-flash-0731"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 0.14,
+          "cachedInput": 0.0028,
+          "output": 0.28
+        },
+        "cny": {
+          "input": 0.14,
+          "cachedInput": 0.0028,
+          "output": 0.28
+        }
+      },
+      "inputCnyPerMillion": 0.14,
+      "cachedInputCnyPerMillion": 0.0028,
+      "outputCnyPerMillion": 0.28,
+      "originalInputPerMillion": 0.14,
+      "originalCachedInputPerMillion": 0.0028,
+      "originalOutputPerMillion": 0.28,
+      "sourceName": "DeepSeek API Pricing",
+      "sourceUrl": "https://api-docs.deepseek.com/quick_start/pricing/",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "deepseek-v4-pro-standard",
+      "vendor": "DeepSeek",
+      "model": "V4-Pro",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 0.435,
+      "cachedInputPerMillion": 0.003625,
+      "outputPerMillion": 0.87,
+      "officialSourceName": "DeepSeek API Pricing",
+      "officialSourceUrl": "https://api-docs.deepseek.com/quick_start/pricing/",
+      "sourceGrade": "A",
+      "serviceTier": "standard · reasoning switchable",
+      "contextBand": "default",
+      "availabilityNote": "中国大陆官方 API 当前目录价；官方已预告未来高峰时段 2 倍价格，但未公布生效日，当前行未提前应用。",
+      "litellmCandidates": [],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 0.435,
+          "cachedInput": 0.003625,
+          "output": 0.87
+        },
+        "cny": {
+          "input": 0.435,
+          "cachedInput": 0.003625,
+          "output": 0.87
+        }
+      },
+      "inputCnyPerMillion": 0.435,
+      "cachedInputCnyPerMillion": 0.003625,
+      "outputCnyPerMillion": 0.87,
+      "originalInputPerMillion": 0.435,
+      "originalCachedInputPerMillion": 0.003625,
+      "originalOutputPerMillion": 0.87,
+      "sourceName": "DeepSeek API Pricing",
+      "sourceUrl": "https://api-docs.deepseek.com/quick_start/pricing/",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "official_only",
+        "reason": "NO_SECONDARY_MAPPING",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "qwen37-max-20260608-standard",
+      "vendor": "阿里云百炼 / Qwen",
+      "model": "qwen3.7-max-2026-06-08",
+      "market": "domestic",
+      "categories": [
+        "text"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 12,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": 36,
+      "officialSourceName": "阿里云百炼模型价格",
+      "officialSourceUrl": "https://help.aliyun.com/en/model-studio/model-pricing",
+      "sourceGrade": "B",
+      "serviceTier": "standard · fixed version",
+      "contextBand": "default",
+      "availabilityNote": "中国大陆官方目录价；缓存价需按地域与缓存规则另采，固定版本避免 alias 限时折扣漂移。",
+      "litellmCandidates": [
+        "dashscope/qwen3.7-max-2026-06-08",
+        "qwen3.7-max-2026-06-08"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 12,
+          "cachedInput": null,
+          "output": 36
+        },
+        "cny": {
+          "input": 12,
+          "cachedInput": null,
+          "output": 36
+        }
+      },
+      "inputCnyPerMillion": 12,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": 36,
+      "originalInputPerMillion": 12,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": 36,
+      "sourceName": "阿里云百炼模型价格",
+      "sourceUrl": "https://help.aliyun.com/en/model-studio/model-pricing",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "qwen37-plus-20260526-up-to-256k",
+      "vendor": "阿里云百炼 / Qwen",
+      "model": "qwen3.7-plus-2026-05-26",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "multimodal"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 2,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": 8,
+      "officialSourceName": "阿里云百炼推荐模型清单",
+      "officialSourceUrl": "https://help.aliyun.com/zh/model-studio/text-generation-model",
+      "sourceGrade": "B",
+      "serviceTier": "standard · fixed version",
+      "contextBand": "<=256K",
+      "availabilityNote": "中国大陆官方目录价；缓存价需按地域与规则另采，固定版本避免 alias 限时折扣漂移。",
+      "litellmCandidates": [
+        "dashscope/qwen3.7-plus-2026-05-26",
+        "qwen3.7-plus-2026-05-26"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 2,
+          "cachedInput": null,
+          "output": 8
+        },
+        "cny": {
+          "input": 2,
+          "cachedInput": null,
+          "output": 8
+        }
+      },
+      "inputCnyPerMillion": 2,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": 8,
+      "originalInputPerMillion": 2,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": 8,
+      "sourceName": "阿里云百炼推荐模型清单",
+      "sourceUrl": "https://help.aliyun.com/zh/model-studio/text-generation-model",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "qwen37-plus-20260526-256k-to-1m",
+      "vendor": "阿里云百炼 / Qwen",
+      "model": "qwen3.7-plus-2026-05-26",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "multimodal"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 6,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": 24,
+      "officialSourceName": "阿里云百炼推荐模型清单",
+      "officialSourceUrl": "https://help.aliyun.com/zh/model-studio/text-generation-model",
+      "sourceGrade": "B",
+      "serviceTier": "standard · fixed version",
+      "contextBand": "256K-1M",
+      "availabilityNote": "中国大陆官方长上下文目录价；缓存价需按地域与规则另采，不与短上下文档合并。",
+      "litellmCandidates": [
+        "dashscope/qwen3.7-plus-2026-05-26",
+        "qwen3.7-plus-2026-05-26"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 6,
+          "cachedInput": null,
+          "output": 24
+        },
+        "cny": {
+          "input": 6,
+          "cachedInput": null,
+          "output": 24
+        }
+      },
+      "inputCnyPerMillion": 6,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": 24,
+      "originalInputPerMillion": 6,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": 24,
+      "sourceName": "阿里云百炼推荐模型清单",
+      "sourceUrl": "https://help.aliyun.com/zh/model-studio/text-generation-model",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "qwen36-flash-20260416-up-to-256k",
+      "vendor": "阿里云百炼 / Qwen",
+      "model": "qwen3.6-flash-2026-04-16",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "multimodal"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 1.2,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": 7.2,
+      "officialSourceName": "阿里云百炼 Qwen3.6 Flash",
+      "officialSourceUrl": "https://help.aliyun.com/zh/model-studio/qwen3-6-flash",
+      "sourceGrade": "B",
+      "serviceTier": "standard · fixed version",
+      "contextBand": "<=256K",
+      "availabilityNote": "中国大陆官方目录价；部分部署提供缓存命中价，需按部署另采。",
+      "litellmCandidates": [
+        "dashscope/qwen3.6-flash-2026-04-16",
+        "qwen3.6-flash-2026-04-16"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 1.2,
+          "cachedInput": null,
+          "output": 7.2
+        },
+        "cny": {
+          "input": 1.2,
+          "cachedInput": null,
+          "output": 7.2
+        }
+      },
+      "inputCnyPerMillion": 1.2,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": 7.2,
+      "originalInputPerMillion": 1.2,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": 7.2,
+      "sourceName": "阿里云百炼 Qwen3.6 Flash",
+      "sourceUrl": "https://help.aliyun.com/zh/model-studio/qwen3-6-flash",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "qwen36-flash-20260416-over-256k",
+      "vendor": "阿里云百炼 / Qwen",
+      "model": "qwen3.6-flash-2026-04-16",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "multimodal"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 4.8,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": 28.8,
+      "officialSourceName": "阿里云百炼 Qwen3.6 Flash",
+      "officialSourceUrl": "https://help.aliyun.com/zh/model-studio/qwen3-6-flash",
+      "sourceGrade": "B",
+      "serviceTier": "standard · fixed version",
+      "contextBand": ">256K · official long-context tier",
+      "availabilityNote": "中国大陆官方长上下文目录价；不与 <=256K 档合并。",
+      "litellmCandidates": [
+        "dashscope/qwen3.6-flash-2026-04-16",
+        "qwen3.6-flash-2026-04-16"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 4.8,
+          "cachedInput": null,
+          "output": 28.8
+        },
+        "cny": {
+          "input": 4.8,
+          "cachedInput": null,
+          "output": 28.8
+        }
+      },
+      "inputCnyPerMillion": 4.8,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": 28.8,
+      "originalInputPerMillion": 4.8,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": 28.8,
+      "sourceName": "阿里云百炼 Qwen3.6 Flash",
+      "sourceUrl": "https://help.aliyun.com/zh/model-studio/qwen3-6-flash",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "doubao-seed-21-pro-standard",
+      "vendor": "火山方舟 / 豆包",
+      "model": "Doubao-Seed-2.1-pro",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 6,
+      "cachedInputPerMillion": 1.2,
+      "outputPerMillion": 30,
+      "officialSourceName": "火山方舟",
+      "officialSourceUrl": "https://www.volcengine.com/product/ark",
+      "sourceGrade": "B",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "中国大陆官方目录价；缓存存储另计 0.017 元/百万 Token·小时，动态页面变更需人工复核。",
+      "litellmCandidates": [
+        "volcengine/doubao-seed-2.1-pro",
+        "doubao-seed-2.1-pro"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 6,
+          "cachedInput": 1.2,
+          "output": 30
+        },
+        "cny": {
+          "input": 6,
+          "cachedInput": 1.2,
+          "output": 30
+        }
+      },
+      "inputCnyPerMillion": 6,
+      "cachedInputCnyPerMillion": 1.2,
+      "outputCnyPerMillion": 30,
+      "originalInputPerMillion": 6,
+      "originalCachedInputPerMillion": 1.2,
+      "originalOutputPerMillion": 30,
+      "sourceName": "火山方舟",
+      "sourceUrl": "https://www.volcengine.com/product/ark",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "doubao-seed-21-turbo-standard",
+      "vendor": "火山方舟 / 豆包",
+      "model": "Doubao-Seed-2.1-turbo",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 3,
+      "cachedInputPerMillion": 0.6,
+      "outputPerMillion": 15,
+      "officialSourceName": "火山方舟",
+      "officialSourceUrl": "https://www.volcengine.com/product/ark",
+      "sourceGrade": "B",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "中国大陆官方目录价；缓存存储另计 0.017 元/百万 Token·小时，动态页面变更需人工复核。",
+      "litellmCandidates": [
+        "volcengine/doubao-seed-2.1-turbo",
+        "doubao-seed-2.1-turbo"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 3,
+          "cachedInput": 0.6,
+          "output": 15
+        },
+        "cny": {
+          "input": 3,
+          "cachedInput": 0.6,
+          "output": 15
+        }
+      },
+      "inputCnyPerMillion": 3,
+      "cachedInputCnyPerMillion": 0.6,
+      "outputCnyPerMillion": 15,
+      "originalInputPerMillion": 3,
+      "originalCachedInputPerMillion": 0.6,
+      "originalOutputPerMillion": 15,
+      "sourceName": "火山方舟",
+      "sourceUrl": "https://www.volcengine.com/product/ark",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "ernie-51-up-to-32k",
+      "vendor": "百度千帆 / ERNIE",
+      "model": "ERNIE-5.1",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 4,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": 18,
+      "officialSourceName": "百度千帆模型价格",
+      "officialSourceUrl": "https://cloud.baidu.com/doc/qianfan/s/wmh4sv6ya",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "<=32K",
+      "availabilityNote": "中国大陆官方 API 目录价；实际采购可用性、税费与地域以对应官方账号为准。",
+      "litellmCandidates": [
+        "baidu/ernie-5.1",
+        "ernie-5.1"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 4,
+          "cachedInput": null,
+          "output": 18
+        },
+        "cny": {
+          "input": 4,
+          "cachedInput": null,
+          "output": 18
+        }
+      },
+      "inputCnyPerMillion": 4,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": 18,
+      "originalInputPerMillion": 4,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": 18,
+      "sourceName": "百度千帆模型价格",
+      "sourceUrl": "https://cloud.baidu.com/doc/qianfan/s/wmh4sv6ya",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "ernie-51-32k-to-128k",
+      "vendor": "百度千帆 / ERNIE",
+      "model": "ERNIE-5.1",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 6,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": 22,
+      "officialSourceName": "百度千帆模型价格",
+      "officialSourceUrl": "https://cloud.baidu.com/doc/qianfan/s/wmh4sv6ya",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "32K-128K",
+      "availabilityNote": "中国大陆官方长上下文目录价；不与 <=32K 档合并。",
+      "litellmCandidates": [
+        "baidu/ernie-5.1",
+        "ernie-5.1"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 6,
+          "cachedInput": null,
+          "output": 22
+        },
+        "cny": {
+          "input": 6,
+          "cachedInput": null,
+          "output": 22
+        }
+      },
+      "inputCnyPerMillion": 6,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": 22,
+      "originalInputPerMillion": 6,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": 22,
+      "sourceName": "百度千帆模型价格",
+      "sourceUrl": "https://cloud.baidu.com/doc/qianfan/s/wmh4sv6ya",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "ernie-45-turbo-standard",
+      "vendor": "百度千帆 / ERNIE",
+      "model": "ERNIE-4.5-Turbo",
+      "market": "domestic",
+      "categories": [
+        "text"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 0.8,
+      "cachedInputPerMillion": 0.2,
+      "outputPerMillion": 3.2,
+      "officialSourceName": "百度千帆模型价格",
+      "officialSourceUrl": "https://cloud.baidu.com/doc/qianfan/s/wmh4sv6ya",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "中国大陆官方 API 目录价；实际采购可用性、税费与地域以对应官方账号为准。",
+      "litellmCandidates": [
+        "baidu/ernie-4.5-turbo",
+        "ernie-4.5-turbo"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 0.8,
+          "cachedInput": 0.2,
+          "output": 3.2
+        },
+        "cny": {
+          "input": 0.8,
+          "cachedInput": 0.2,
+          "output": 3.2
+        }
+      },
+      "inputCnyPerMillion": 0.8,
+      "cachedInputCnyPerMillion": 0.2,
+      "outputCnyPerMillion": 3.2,
+      "originalInputPerMillion": 0.8,
+      "originalCachedInputPerMillion": 0.2,
+      "originalOutputPerMillion": 3.2,
+      "sourceName": "百度千帆模型价格",
+      "sourceUrl": "https://cloud.baidu.com/doc/qianfan/s/wmh4sv6ya",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "hy3-standard",
+      "vendor": "腾讯云 TokenHub / 混元",
+      "model": "Hy3",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 1,
+      "cachedInputPerMillion": 0.25,
+      "outputPerMillion": 4,
+      "officialSourceName": "腾讯云 TokenHub 定价",
+      "officialSourceUrl": "https://cloud.tencent.com/document/product/1823/130055",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "中国大陆官方 API 目录价；实际采购可用性、税费与地域以对应官方账号为准。",
+      "litellmCandidates": [
+        "tencent/hy3",
+        "hy3"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 1,
+          "cachedInput": 0.25,
+          "output": 4
+        },
+        "cny": {
+          "input": 1,
+          "cachedInput": 0.25,
+          "output": 4
+        }
+      },
+      "inputCnyPerMillion": 1,
+      "cachedInputCnyPerMillion": 0.25,
+      "outputCnyPerMillion": 4,
+      "originalInputPerMillion": 1,
+      "originalCachedInputPerMillion": 0.25,
+      "originalOutputPerMillion": 4,
+      "sourceName": "腾讯云 TokenHub 定价",
+      "sourceUrl": "https://cloud.tencent.com/document/product/1823/130055",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "hy3-preview-context-tier-1",
+      "vendor": "腾讯云 TokenHub / 混元",
+      "model": "Hy3 Preview",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 1.2,
+      "cachedInputPerMillion": 0.4,
+      "outputPerMillion": 4,
+      "officialSourceName": "腾讯云 TokenHub 定价",
+      "officialSourceUrl": "https://cloud.tencent.com/document/product/1823/130055",
+      "sourceGrade": "A",
+      "serviceTier": "preview",
+      "contextBand": "official context tier 1 · thresholds from source",
+      "availabilityNote": "中国大陆官方预览价；上下文阈值按源表解析，预览型号不进入固定指数篮子。",
+      "litellmCandidates": [
+        "tencent/hy3-preview",
+        "hy3-preview"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 1.2,
+          "cachedInput": 0.4,
+          "output": 4
+        },
+        "cny": {
+          "input": 1.2,
+          "cachedInput": 0.4,
+          "output": 4
+        }
+      },
+      "inputCnyPerMillion": 1.2,
+      "cachedInputCnyPerMillion": 0.4,
+      "outputCnyPerMillion": 4,
+      "originalInputPerMillion": 1.2,
+      "originalCachedInputPerMillion": 0.4,
+      "originalOutputPerMillion": 4,
+      "sourceName": "腾讯云 TokenHub 定价",
+      "sourceUrl": "https://cloud.tencent.com/document/product/1823/130055",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "hy3-preview-context-tier-2",
+      "vendor": "腾讯云 TokenHub / 混元",
+      "model": "Hy3 Preview",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 1.6,
+      "cachedInputPerMillion": 0.6,
+      "outputPerMillion": 6.4,
+      "officialSourceName": "腾讯云 TokenHub 定价",
+      "officialSourceUrl": "https://cloud.tencent.com/document/product/1823/130055",
+      "sourceGrade": "A",
+      "serviceTier": "preview",
+      "contextBand": "official context tier 2 · thresholds from source",
+      "availabilityNote": "中国大陆官方预览价；上下文阈值按源表解析，预览型号不进入固定指数篮子。",
+      "litellmCandidates": [
+        "tencent/hy3-preview",
+        "hy3-preview"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 1.6,
+          "cachedInput": 0.6,
+          "output": 6.4
+        },
+        "cny": {
+          "input": 1.6,
+          "cachedInput": 0.6,
+          "output": 6.4
+        }
+      },
+      "inputCnyPerMillion": 1.6,
+      "cachedInputCnyPerMillion": 0.6,
+      "outputCnyPerMillion": 6.4,
+      "originalInputPerMillion": 1.6,
+      "originalCachedInputPerMillion": 0.6,
+      "originalOutputPerMillion": 6.4,
+      "sourceName": "腾讯云 TokenHub 定价",
+      "sourceUrl": "https://cloud.tencent.com/document/product/1823/130055",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "hy3-preview-context-tier-3",
+      "vendor": "腾讯云 TokenHub / 混元",
+      "model": "Hy3 Preview",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 2,
+      "cachedInputPerMillion": 0.8,
+      "outputPerMillion": 8,
+      "officialSourceName": "腾讯云 TokenHub 定价",
+      "officialSourceUrl": "https://cloud.tencent.com/document/product/1823/130055",
+      "sourceGrade": "A",
+      "serviceTier": "preview",
+      "contextBand": "official context tier 3 · thresholds from source",
+      "availabilityNote": "中国大陆官方预览价；上下文阈值按源表解析，预览型号不进入固定指数篮子。",
+      "litellmCandidates": [
+        "tencent/hy3-preview",
+        "hy3-preview"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 2,
+          "cachedInput": 0.8,
+          "output": 8
+        },
+        "cny": {
+          "input": 2,
+          "cachedInput": 0.8,
+          "output": 8
+        }
+      },
+      "inputCnyPerMillion": 2,
+      "cachedInputCnyPerMillion": 0.8,
+      "outputCnyPerMillion": 8,
+      "originalInputPerMillion": 2,
+      "originalCachedInputPerMillion": 0.8,
+      "originalOutputPerMillion": 8,
+      "sourceName": "腾讯云 TokenHub 定价",
+      "sourceUrl": "https://cloud.tencent.com/document/product/1823/130055",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "glm-52-standard",
+      "vendor": "智谱",
+      "model": "GLM-5.2",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 8,
+      "cachedInputPerMillion": 2,
+      "outputPerMillion": 28,
+      "officialSourceName": "智谱开放平台定价",
+      "officialSourceUrl": "https://bigmodel.cn/pricing",
+      "sourceGrade": "B",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "中国大陆官方目录价；缓存存储限时免费状态需与价格分开跟踪。",
+      "litellmCandidates": [
+        "zhipu/glm-5.2",
+        "glm-5.2"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 8,
+          "cachedInput": 2,
+          "output": 28
+        },
+        "cny": {
+          "input": 8,
+          "cachedInput": 2,
+          "output": 28
+        }
+      },
+      "inputCnyPerMillion": 8,
+      "cachedInputCnyPerMillion": 2,
+      "outputCnyPerMillion": 28,
+      "originalInputPerMillion": 8,
+      "originalCachedInputPerMillion": 2,
+      "originalOutputPerMillion": 28,
+      "sourceName": "智谱开放平台定价",
+      "sourceUrl": "https://bigmodel.cn/pricing",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "glm-51-under-32k",
+      "vendor": "智谱",
+      "model": "GLM-5.1",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 6,
+      "cachedInputPerMillion": 1.3,
+      "outputPerMillion": 24,
+      "officialSourceName": "智谱开放平台定价",
+      "officialSourceUrl": "https://bigmodel.cn/pricing",
+      "sourceGrade": "B",
+      "serviceTier": "standard",
+      "contextBand": "<32K",
+      "availabilityNote": "中国大陆官方 API 目录价；实际采购可用性、税费与地域以对应官方账号为准。",
+      "litellmCandidates": [
+        "zhipu/glm-5.1",
+        "glm-5.1"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 6,
+          "cachedInput": 1.3,
+          "output": 24
+        },
+        "cny": {
+          "input": 6,
+          "cachedInput": 1.3,
+          "output": 24
+        }
+      },
+      "inputCnyPerMillion": 6,
+      "cachedInputCnyPerMillion": 1.3,
+      "outputCnyPerMillion": 24,
+      "originalInputPerMillion": 6,
+      "originalCachedInputPerMillion": 1.3,
+      "originalOutputPerMillion": 24,
+      "sourceName": "智谱开放平台定价",
+      "sourceUrl": "https://bigmodel.cn/pricing",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "glm-51-32k-and-over",
+      "vendor": "智谱",
+      "model": "GLM-5.1",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 8,
+      "cachedInputPerMillion": 2,
+      "outputPerMillion": 28,
+      "officialSourceName": "智谱开放平台定价",
+      "officialSourceUrl": "https://bigmodel.cn/pricing",
+      "sourceGrade": "B",
+      "serviceTier": "standard",
+      "contextBand": ">=32K",
+      "availabilityNote": "中国大陆官方长上下文目录价；不与 <32K 档合并。",
+      "litellmCandidates": [
+        "zhipu/glm-5.1",
+        "glm-5.1"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 8,
+          "cachedInput": 2,
+          "output": 28
+        },
+        "cny": {
+          "input": 8,
+          "cachedInput": 2,
+          "output": 28
+        }
+      },
+      "inputCnyPerMillion": 8,
+      "cachedInputCnyPerMillion": 2,
+      "outputCnyPerMillion": 28,
+      "originalInputPerMillion": 8,
+      "originalCachedInputPerMillion": 2,
+      "originalOutputPerMillion": 28,
+      "sourceName": "智谱开放平台定价",
+      "sourceUrl": "https://bigmodel.cn/pricing",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "glm-5v-turbo-under-32k",
+      "vendor": "智谱",
+      "model": "GLM-5V-Turbo",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "multimodal"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 5,
+      "cachedInputPerMillion": 1.2,
+      "outputPerMillion": 22,
+      "officialSourceName": "智谱开放平台定价",
+      "officialSourceUrl": "https://bigmodel.cn/pricing",
+      "sourceGrade": "B",
+      "serviceTier": "standard",
+      "contextBand": "<32K",
+      "availabilityNote": "中国大陆官方 API 目录价；实际采购可用性、税费与地域以对应官方账号为准。",
+      "litellmCandidates": [
+        "zhipu/glm-5v-turbo",
+        "glm-5v-turbo"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 5,
+          "cachedInput": 1.2,
+          "output": 22
+        },
+        "cny": {
+          "input": 5,
+          "cachedInput": 1.2,
+          "output": 22
+        }
+      },
+      "inputCnyPerMillion": 5,
+      "cachedInputCnyPerMillion": 1.2,
+      "outputCnyPerMillion": 22,
+      "originalInputPerMillion": 5,
+      "originalCachedInputPerMillion": 1.2,
+      "originalOutputPerMillion": 22,
+      "sourceName": "智谱开放平台定价",
+      "sourceUrl": "https://bigmodel.cn/pricing",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "glm-5v-turbo-32k-and-over",
+      "vendor": "智谱",
+      "model": "GLM-5V-Turbo",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "multimodal"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 7,
+      "cachedInputPerMillion": 1.8,
+      "outputPerMillion": 26,
+      "officialSourceName": "智谱开放平台定价",
+      "officialSourceUrl": "https://bigmodel.cn/pricing",
+      "sourceGrade": "B",
+      "serviceTier": "standard",
+      "contextBand": ">=32K",
+      "availabilityNote": "中国大陆官方长上下文目录价；不与 <32K 档合并。",
+      "litellmCandidates": [
+        "zhipu/glm-5v-turbo",
+        "glm-5v-turbo"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 7,
+          "cachedInput": 1.8,
+          "output": 26
+        },
+        "cny": {
+          "input": 7,
+          "cachedInput": 1.8,
+          "output": 26
+        }
+      },
+      "inputCnyPerMillion": 7,
+      "cachedInputCnyPerMillion": 1.8,
+      "outputCnyPerMillion": 26,
+      "originalInputPerMillion": 7,
+      "originalCachedInputPerMillion": 1.8,
+      "originalOutputPerMillion": 26,
+      "sourceName": "智谱开放平台定价",
+      "sourceUrl": "https://bigmodel.cn/pricing",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "kimi-k3-standard",
+      "vendor": "Moonshot / Kimi",
+      "model": "kimi-k3",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 20,
+      "cachedInputPerMillion": 2,
+      "outputPerMillion": 100,
+      "officialSourceName": "Kimi K3 官方定价",
+      "officialSourceUrl": "https://platform.kimi.com/docs/pricing/chat-k3.md",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "中国大陆官方 API 目录价；实际采购可用性、税费与地域以对应官方账号为准。",
+      "litellmCandidates": [
+        "moonshot/kimi-k3",
+        "kimi-k3"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 20,
+          "cachedInput": 2,
+          "output": 100
+        },
+        "cny": {
+          "input": 20,
+          "cachedInput": 2,
+          "output": 100
+        }
+      },
+      "inputCnyPerMillion": 20,
+      "cachedInputCnyPerMillion": 2,
+      "outputCnyPerMillion": 100,
+      "originalInputPerMillion": 20,
+      "originalCachedInputPerMillion": 2,
+      "originalOutputPerMillion": 100,
+      "sourceName": "Kimi K3 官方定价",
+      "sourceUrl": "https://platform.kimi.com/docs/pricing/chat-k3.md",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "kimi-k26-standard",
+      "vendor": "Moonshot / Kimi",
+      "model": "kimi-k2.6",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 6.5,
+      "cachedInputPerMillion": 1.1,
+      "outputPerMillion": 27,
+      "officialSourceName": "Kimi K2.6 官方定价",
+      "officialSourceUrl": "https://platform.kimi.com/docs/pricing/chat-k26.md",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "中国大陆官方 API 目录价；实际采购可用性、税费与地域以对应官方账号为准。",
+      "litellmCandidates": [
+        "moonshot/kimi-k2.6",
+        "kimi-k2.6"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 6.41376143,
+          "cachedInput": 1.08021245,
+          "output": 27.00531128
+        },
+        "cny": {
+          "input": 6.41376143,
+          "cachedInput": 1.08021245,
+          "output": 27.00531128
+        }
+      },
+      "inputCnyPerMillion": 6.41376143,
+      "cachedInputCnyPerMillion": 1.08021245,
+      "outputCnyPerMillion": 27.00531128,
+      "originalInputPerMillion": 6.41376143,
+      "originalCachedInputPerMillion": 1.08021245,
+      "originalOutputPerMillion": 27.00531128,
+      "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
+      "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
+      "sourceStatus": "aggregated",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "current",
+        "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": {
+        "catalog": "LiteLLM",
+        "exactKey": "moonshot/kimi-k2.6",
+        "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json"
+      }
+    },
+    {
+      "id": "kimi-k27-code-standard",
+      "vendor": "Moonshot / Kimi",
+      "model": "kimi-k2.7-code",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 6.5,
+      "cachedInputPerMillion": 1.3,
+      "outputPerMillion": 27,
+      "officialSourceName": "Kimi K2.7 Code 官方定价",
+      "officialSourceUrl": "https://platform.kimi.com/docs/pricing/chat-k27-code.md",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "中国大陆官方代码模型标准档；与高速档分开比较。",
+      "litellmCandidates": [
+        "moonshot/kimi-k2.7-code",
+        "kimi-k2.7-code"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 6.5,
+          "cachedInput": 1.3,
+          "output": 27
+        },
+        "cny": {
+          "input": 6.5,
+          "cachedInput": 1.3,
+          "output": 27
+        }
+      },
+      "inputCnyPerMillion": 6.5,
+      "cachedInputCnyPerMillion": 1.3,
+      "outputCnyPerMillion": 27,
+      "originalInputPerMillion": 6.5,
+      "originalCachedInputPerMillion": 1.3,
+      "originalOutputPerMillion": 27,
+      "sourceName": "Kimi K2.7 Code 官方定价",
+      "sourceUrl": "https://platform.kimi.com/docs/pricing/chat-k27-code.md",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "kimi-k27-code-highspeed",
+      "vendor": "Moonshot / Kimi",
+      "model": "kimi-k2.7-code",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 13,
+      "cachedInputPerMillion": 2.6,
+      "outputPerMillion": 54,
+      "officialSourceName": "Kimi K2.7 Code 官方定价",
+      "officialSourceUrl": "https://platform.kimi.com/docs/pricing/chat-k27-code.md",
+      "sourceGrade": "A",
+      "serviceTier": "highspeed",
+      "contextBand": "default",
+      "availabilityNote": "中国大陆官方代码模型高速档；不与标准档合并。",
+      "litellmCandidates": [
+        "moonshot/kimi-k2.7-code-highspeed",
+        "kimi-k2.7-code-highspeed"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 13,
+          "cachedInput": 2.6,
+          "output": 54
+        },
+        "cny": {
+          "input": 13,
+          "cachedInput": 2.6,
+          "output": 54
+        }
+      },
+      "inputCnyPerMillion": 13,
+      "cachedInputCnyPerMillion": 2.6,
+      "outputCnyPerMillion": 54,
+      "originalInputPerMillion": 13,
+      "originalCachedInputPerMillion": 2.6,
+      "originalOutputPerMillion": 54,
+      "sourceName": "Kimi K2.7 Code 官方定价",
+      "sourceUrl": "https://platform.kimi.com/docs/pricing/chat-k27-code.md",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "minimax-m3-up-to-512k",
+      "vendor": "MiniMax",
+      "model": "MiniMax-M3",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 2.1,
+      "cachedInputPerMillion": 0.42,
+      "outputPerMillion": 8.4,
+      "officialSourceName": "MiniMax Pay-as-you-go Pricing",
+      "officialSourceUrl": "https://platform.minimaxi.com/docs/guides/pricing-paygo.md",
+      "sourceGrade": "A",
+      "serviceTier": "standard · current effective price",
+      "contextBand": "<=512K",
+      "availabilityNote": "中国大陆官方当前实付价；标价与长期折扣需在采集层同时保留。",
+      "litellmCandidates": [
+        "minimax/minimax-m3",
+        "minimax-m3"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 2.1,
+          "cachedInput": 0.42,
+          "output": 8.4
+        },
+        "cny": {
+          "input": 2.1,
+          "cachedInput": 0.42,
+          "output": 8.4
+        }
+      },
+      "inputCnyPerMillion": 2.1,
+      "cachedInputCnyPerMillion": 0.42,
+      "outputCnyPerMillion": 8.4,
+      "originalInputPerMillion": 2.1,
+      "originalCachedInputPerMillion": 0.42,
+      "originalOutputPerMillion": 8.4,
+      "sourceName": "MiniMax Pay-as-you-go Pricing",
+      "sourceUrl": "https://platform.minimaxi.com/docs/guides/pricing-paygo.md",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "minimax-m3-over-512k",
+      "vendor": "MiniMax",
+      "model": "MiniMax-M3",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 4.2,
+      "cachedInputPerMillion": 0.84,
+      "outputPerMillion": 16.8,
+      "officialSourceName": "MiniMax Pay-as-you-go Pricing",
+      "officialSourceUrl": "https://platform.minimaxi.com/docs/guides/pricing-paygo.md",
+      "sourceGrade": "A",
+      "serviceTier": "standard · current effective price",
+      "contextBand": ">512K",
+      "availabilityNote": "中国大陆官方当前长上下文实付价；不与 <=512K 档合并。",
+      "litellmCandidates": [
+        "minimax/minimax-m3",
+        "minimax-m3"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 4.2,
+          "cachedInput": 0.84,
+          "output": 16.8
+        },
+        "cny": {
+          "input": 4.2,
+          "cachedInput": 0.84,
+          "output": 16.8
+        }
+      },
+      "inputCnyPerMillion": 4.2,
+      "cachedInputCnyPerMillion": 0.84,
+      "outputCnyPerMillion": 16.8,
+      "originalInputPerMillion": 4.2,
+      "originalCachedInputPerMillion": 0.84,
+      "originalOutputPerMillion": 16.8,
+      "sourceName": "MiniMax Pay-as-you-go Pricing",
+      "sourceUrl": "https://platform.minimaxi.com/docs/guides/pricing-paygo.md",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "minimax-m27-standard",
+      "vendor": "MiniMax",
+      "model": "M2.7",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 2.1,
+      "cachedInputPerMillion": 0.42,
+      "outputPerMillion": 8.4,
+      "officialSourceName": "MiniMax Pay-as-you-go Pricing",
+      "officialSourceUrl": "https://platform.minimaxi.com/docs/guides/pricing-paygo.md",
+      "sourceGrade": "A",
+      "serviceTier": "standard · current effective price",
+      "contextBand": "default",
+      "availabilityNote": "中国大陆官方当前实付价；缓存写入另计 2.625 元/百万 Token。",
+      "litellmCandidates": [
+        "minimax/m2.7",
+        "minimax-m2.7",
+        "m2.7"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 2.1,
+          "cachedInput": 0.42,
+          "output": 8.4
+        },
+        "cny": {
+          "input": 2.1,
+          "cachedInput": 0.42,
+          "output": 8.4
+        }
+      },
+      "inputCnyPerMillion": 2.1,
+      "cachedInputCnyPerMillion": 0.42,
+      "outputCnyPerMillion": 8.4,
+      "originalInputPerMillion": 2.1,
+      "originalCachedInputPerMillion": 0.42,
+      "originalOutputPerMillion": 8.4,
+      "sourceName": "MiniMax Pay-as-you-go Pricing",
+      "sourceUrl": "https://platform.minimaxi.com/docs/guides/pricing-paygo.md",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "minimax-m27-highspeed",
+      "vendor": "MiniMax",
+      "model": "M2.7-highspeed",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 4.2,
+      "cachedInputPerMillion": 0.42,
+      "outputPerMillion": 16.8,
+      "officialSourceName": "MiniMax Pay-as-you-go Pricing",
+      "officialSourceUrl": "https://platform.minimaxi.com/docs/guides/pricing-paygo.md",
+      "sourceGrade": "A",
+      "serviceTier": "highspeed · current effective price",
+      "contextBand": "default",
+      "availabilityNote": "中国大陆官方高速档当前实付价；缓存写入另计 2.625 元/百万 Token。",
+      "litellmCandidates": [
+        "minimax/m2.7-highspeed",
+        "minimax-m2.7-highspeed",
+        "m2.7-highspeed"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 4.2,
+          "cachedInput": 0.42,
+          "output": 16.8
+        },
+        "cny": {
+          "input": 4.2,
+          "cachedInput": 0.42,
+          "output": 16.8
+        }
+      },
+      "inputCnyPerMillion": 4.2,
+      "cachedInputCnyPerMillion": 0.42,
+      "outputCnyPerMillion": 16.8,
+      "originalInputPerMillion": 4.2,
+      "originalCachedInputPerMillion": 0.42,
+      "originalOutputPerMillion": 16.8,
+      "sourceName": "MiniMax Pay-as-you-go Pricing",
+      "sourceUrl": "https://platform.minimaxi.com/docs/guides/pricing-paygo.md",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "baichuan-m3-plus-standard",
+      "vendor": "百川",
+      "model": "Baichuan-M3-Plus",
+      "market": "domestic",
+      "categories": [
+        "text"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": 5,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": 9,
+      "officialSourceName": "百川模型价格",
+      "officialSourceUrl": "https://platform.baichuan-ai.com/prices",
+      "sourceGrade": "B",
+      "serviceTier": "standard · medical",
+      "contextBand": "default",
+      "availabilityNote": "中国大陆官方医疗文本模型目录价；专用模型不进入通用模型调用成本指数。",
+      "litellmCandidates": [
+        "baichuan/baichuan-m3-plus",
+        "baichuan-m3-plus"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": 5,
+          "cachedInput": null,
+          "output": 9
+        },
+        "cny": {
+          "input": 5,
+          "cachedInput": null,
+          "output": 9
+        }
+      },
+      "inputCnyPerMillion": 5,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": 9,
+      "originalInputPerMillion": 5,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": 9,
+      "sourceName": "百川模型价格",
+      "sourceUrl": "https://platform.baichuan-ai.com/prices",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "iflytek-spark-x2-unpriced",
+      "vendor": "讯飞星火",
+      "model": "Spark X2",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "multimodal"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": null,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": null,
+      "officialSourceName": "讯飞星火 API 文档",
+      "officialSourceUrl": "https://www.xfyun.cn/doc/spark/HTTP%E8%B0%83%E7%94%A8%E6%96%87%E6%A1%A3.html",
+      "sourceGrade": "C",
+      "serviceTier": "manual review",
+      "contextBand": "default",
+      "availabilityNote": "官方未提供稳定公开现付价，待人工审核。官方公开文档暂无稳定统一现付价；仅保留型号覆盖，价格需从购买页人工审核。",
+      "litellmCandidates": [
+        "iflytek/spark-x2",
+        "spark-x2"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": false,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": null,
+          "cachedInput": null,
+          "output": null
+        },
+        "cny": {
+          "input": null,
+          "cachedInput": null,
+          "output": null
+        }
+      },
+      "inputCnyPerMillion": null,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": null,
+      "originalInputPerMillion": null,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": null,
+      "sourceName": "讯飞星火 API 文档",
+      "sourceUrl": "https://www.xfyun.cn/doc/spark/HTTP%E8%B0%83%E7%94%A8%E6%96%87%E6%A1%A3.html",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "review_required",
+        "reason": "NO_REVIEWED_PUBLIC_PRICE",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "iflytek-spark-x2-flash-unpriced",
+      "vendor": "讯飞星火",
+      "model": "Spark X2 Flash",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "multimodal"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": null,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": null,
+      "officialSourceName": "讯飞星火 API 文档",
+      "officialSourceUrl": "https://www.xfyun.cn/doc/spark/HTTP%E8%B0%83%E7%94%A8%E6%96%87%E6%A1%A3.html",
+      "sourceGrade": "C",
+      "serviceTier": "manual review",
+      "contextBand": "default",
+      "availabilityNote": "官方未提供稳定公开现付价，待人工审核。官方公开文档暂无稳定统一现付价；仅保留型号覆盖，价格需从购买页人工审核。",
+      "litellmCandidates": [
+        "iflytek/spark-x2-flash",
+        "spark-x2-flash"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": false,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": null,
+          "cachedInput": null,
+          "output": null
+        },
+        "cny": {
+          "input": null,
+          "cachedInput": null,
+          "output": null
+        }
+      },
+      "inputCnyPerMillion": null,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": null,
+      "originalInputPerMillion": null,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": null,
+      "sourceName": "讯飞星火 API 文档",
+      "sourceUrl": "https://www.xfyun.cn/doc/spark/HTTP%E8%B0%83%E7%94%A8%E6%96%87%E6%A1%A3.html",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "review_required",
+        "reason": "NO_REVIEWED_PUBLIC_PRICE",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "iflytek-spark-ultra-unpriced",
+      "vendor": "讯飞星火",
+      "model": "Spark Ultra",
+      "market": "domestic",
+      "categories": [
+        "text",
+        "multimodal"
+      ],
+      "originalCurrency": "CNY",
+      "inputPerMillion": null,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": null,
+      "officialSourceName": "讯飞星火 API 文档",
+      "officialSourceUrl": "https://www.xfyun.cn/doc/spark/HTTP%E8%B0%83%E7%94%A8%E6%96%87%E6%A1%A3.html",
+      "sourceGrade": "C",
+      "serviceTier": "manual review",
+      "contextBand": "default",
+      "availabilityNote": "官方未提供稳定公开现付价，待人工审核。官方公开文档暂无稳定统一现付价；仅保留型号覆盖，价格需从购买页人工审核。",
+      "litellmCandidates": [
+        "iflytek/spark-ultra",
+        "spark-ultra"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": false,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "CNY",
+          "input": null,
+          "cachedInput": null,
+          "output": null
+        },
+        "cny": {
+          "input": null,
+          "cachedInput": null,
+          "output": null
+        }
+      },
+      "inputCnyPerMillion": null,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": null,
+      "originalInputPerMillion": null,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": null,
+      "sourceName": "讯飞星火 API 文档",
+      "sourceUrl": "https://www.xfyun.cn/doc/spark/HTTP%E8%B0%83%E7%94%A8%E6%96%87%E6%A1%A3.html",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "review_required",
+        "reason": "NO_REVIEWED_PUBLIC_PRICE",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "openai-gpt-56-sol-standard",
+      "vendor": "OpenAI",
+      "model": "GPT-5.6 Sol",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 5,
+      "cachedInputPerMillion": 0.5,
+      "outputPerMillion": 30,
+      "officialSourceName": "OpenAI API Pricing",
+      "officialSourceUrl": "https://developers.openai.com/api/docs/pricing",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "国际官方基准；官方支持地区未列中国大陆，不代表中国大陆可直接采购。",
+      "litellmCandidates": [
+        "openai/gpt-5.6-sol",
+        "gpt-5.6-sol"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 5,
+          "cachedInput": 0.5,
+          "output": 30
+        },
+        "cny": {
+          "input": 33.7566391,
+          "cachedInput": 3.37566391,
+          "output": 202.5398346
+        }
+      },
+      "inputCnyPerMillion": 33.7566391,
+      "cachedInputCnyPerMillion": 3.37566391,
+      "outputCnyPerMillion": 202.5398346,
+      "originalInputPerMillion": 5,
+      "originalCachedInputPerMillion": 0.5,
+      "originalOutputPerMillion": 30,
+      "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
+      "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
+      "sourceStatus": "aggregated",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "current",
+        "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": {
+        "catalog": "LiteLLM",
+        "exactKey": "gpt-5.6-sol",
+        "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json"
+      }
+    },
+    {
+      "id": "openai-gpt-56-terra-standard",
+      "vendor": "OpenAI",
+      "model": "GPT-5.6 Terra",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 2,
+      "cachedInputPerMillion": 0.2,
+      "outputPerMillion": 12,
+      "officialSourceName": "OpenAI API Pricing",
+      "officialSourceUrl": "https://developers.openai.com/api/docs/pricing",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "国际官方基准；官方支持地区未列中国大陆，不代表中国大陆可直接采购。",
+      "litellmCandidates": [
+        "openai/gpt-5.6-terra",
+        "gpt-5.6-terra"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 2,
+          "cachedInput": 0.2,
+          "output": 12
+        },
+        "cny": {
+          "input": 13.50265564,
+          "cachedInput": 1.35026556,
+          "output": 81.01593384
+        }
+      },
+      "inputCnyPerMillion": 13.50265564,
+      "cachedInputCnyPerMillion": 1.35026556,
+      "outputCnyPerMillion": 81.01593384,
+      "originalInputPerMillion": 2,
+      "originalCachedInputPerMillion": 0.2,
+      "originalOutputPerMillion": 12,
+      "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
+      "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
+      "sourceStatus": "aggregated",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "current",
+        "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": {
+        "catalog": "LiteLLM",
+        "exactKey": "gpt-5.6-terra",
+        "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json"
+      }
+    },
+    {
+      "id": "openai-gpt-56-luna-standard",
+      "vendor": "OpenAI",
+      "model": "GPT-5.6 Luna",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 0.2,
+      "cachedInputPerMillion": 0.02,
+      "outputPerMillion": 1.2,
+      "officialSourceName": "OpenAI API Pricing",
+      "officialSourceUrl": "https://developers.openai.com/api/docs/pricing",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "国际官方基准；官方支持地区未列中国大陆，不代表中国大陆可直接采购。",
+      "litellmCandidates": [
+        "openai/gpt-5.6-luna",
+        "gpt-5.6-luna"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 0.2,
+          "cachedInput": 0.02,
+          "output": 1.2
+        },
+        "cny": {
+          "input": 1.35026556,
+          "cachedInput": 0.13502656,
+          "output": 8.10159338
+        }
+      },
+      "inputCnyPerMillion": 1.35026556,
+      "cachedInputCnyPerMillion": 0.13502656,
+      "outputCnyPerMillion": 8.10159338,
+      "originalInputPerMillion": 0.2,
+      "originalCachedInputPerMillion": 0.02,
+      "originalOutputPerMillion": 1.2,
+      "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
+      "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
+      "sourceStatus": "aggregated",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "current",
+        "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": {
+        "catalog": "LiteLLM",
+        "exactKey": "gpt-5.6-luna",
+        "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json"
+      }
+    },
+    {
+      "id": "openai-gpt-55-standard",
+      "vendor": "OpenAI",
+      "model": "GPT-5.5",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 5,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": 30,
+      "officialSourceName": "OpenAI API Pricing",
+      "officialSourceUrl": "https://developers.openai.com/api/docs/pricing",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "国际官方基准；官方支持地区未列中国大陆，不代表中国大陆可直接采购。",
+      "litellmCandidates": [
+        "openai/gpt-5.5",
+        "gpt-5.5"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 5,
+          "cachedInput": null,
+          "output": 30
+        },
+        "cny": {
+          "input": 33.7566391,
+          "cachedInput": null,
+          "output": 202.5398346
+        }
+      },
+      "inputCnyPerMillion": 33.7566391,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": 202.5398346,
+      "originalInputPerMillion": 5,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": 30,
+      "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
+      "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
+      "sourceStatus": "aggregated",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "current",
+        "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": {
+        "catalog": "LiteLLM",
+        "exactKey": "gpt-5.5",
+        "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json"
+      }
+    },
+    {
+      "id": "openai-gpt-54-standard",
+      "vendor": "OpenAI",
+      "model": "GPT-5.4",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 2.5,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": 15,
+      "officialSourceName": "OpenAI API Pricing",
+      "officialSourceUrl": "https://developers.openai.com/api/docs/pricing",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "国际官方基准；官方支持地区未列中国大陆，不代表中国大陆可直接采购。",
+      "litellmCandidates": [
+        "openai/gpt-5.4",
+        "gpt-5.4"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 2.5,
+          "cachedInput": null,
+          "output": 15
+        },
+        "cny": {
+          "input": 16.87831955,
+          "cachedInput": null,
+          "output": 101.2699173
+        }
+      },
+      "inputCnyPerMillion": 16.87831955,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": 101.2699173,
+      "originalInputPerMillion": 2.5,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": 15,
+      "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
+      "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
+      "sourceStatus": "aggregated",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "current",
+        "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": {
+        "catalog": "LiteLLM",
+        "exactKey": "gpt-5.4",
+        "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json"
+      }
+    },
+    {
+      "id": "openai-gpt-54-mini-standard",
+      "vendor": "OpenAI",
+      "model": "GPT-5.4-mini",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 0.75,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": 4.5,
+      "officialSourceName": "OpenAI API Pricing",
+      "officialSourceUrl": "https://developers.openai.com/api/docs/pricing",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "国际官方基准；官方支持地区未列中国大陆，不代表中国大陆可直接采购。",
+      "litellmCandidates": [
+        "openai/gpt-5.4-mini",
+        "gpt-5.4-mini"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 0.75,
+          "cachedInput": null,
+          "output": 4.5
+        },
+        "cny": {
+          "input": 5.06349587,
+          "cachedInput": null,
+          "output": 30.38097519
+        }
+      },
+      "inputCnyPerMillion": 5.06349587,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": 30.38097519,
+      "originalInputPerMillion": 0.75,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": 4.5,
+      "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
+      "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
+      "sourceStatus": "aggregated",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "current",
+        "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": {
+        "catalog": "LiteLLM",
+        "exactKey": "gpt-5.4-mini",
+        "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json"
+      }
+    },
+    {
+      "id": "openai-gpt-54-nano-standard",
+      "vendor": "OpenAI",
+      "model": "GPT-5.4-nano",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 0.2,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": 1.25,
+      "officialSourceName": "OpenAI API Pricing",
+      "officialSourceUrl": "https://developers.openai.com/api/docs/pricing",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "国际官方基准；官方支持地区未列中国大陆，不代表中国大陆可直接采购。",
+      "litellmCandidates": [
+        "openai/gpt-5.4-nano",
+        "gpt-5.4-nano"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 0.2,
+          "cachedInput": null,
+          "output": 1.25
+        },
+        "cny": {
+          "input": 1.35026556,
+          "cachedInput": null,
+          "output": 8.43915978
+        }
+      },
+      "inputCnyPerMillion": 1.35026556,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": 8.43915978,
+      "originalInputPerMillion": 0.2,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": 1.25,
+      "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
+      "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
+      "sourceStatus": "aggregated",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "current",
+        "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": {
+        "catalog": "LiteLLM",
+        "exactKey": "gpt-5.4-nano",
+        "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json"
+      }
+    },
+    {
+      "id": "anthropic-claude-fable-5-standard",
+      "vendor": "Anthropic",
+      "model": "Claude Fable 5",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 10,
+      "cachedInputPerMillion": 1,
+      "outputPerMillion": 50,
+      "officialSourceName": "Anthropic Claude Pricing",
+      "officialSourceUrl": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "国际官方基准；官方支持地区未列中国大陆，不代表中国大陆可直接采购。",
+      "litellmCandidates": [
+        "anthropic/claude-fable-5",
+        "claude-fable-5"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 10,
+          "cachedInput": 1,
+          "output": 50
+        },
+        "cny": {
+          "input": 67.5132782,
+          "cachedInput": 6.75132782,
+          "output": 337.566391
+        }
+      },
+      "inputCnyPerMillion": 67.5132782,
+      "cachedInputCnyPerMillion": 6.75132782,
+      "outputCnyPerMillion": 337.566391,
+      "originalInputPerMillion": 10,
+      "originalCachedInputPerMillion": 1,
+      "originalOutputPerMillion": 50,
+      "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
+      "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
+      "sourceStatus": "aggregated",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "current",
+        "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": {
+        "catalog": "LiteLLM",
+        "exactKey": "claude-fable-5",
+        "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json"
+      }
+    },
+    {
+      "id": "anthropic-claude-opus-5-standard",
+      "vendor": "Anthropic",
+      "model": "Claude Opus 5",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 5,
+      "cachedInputPerMillion": 0.5,
+      "outputPerMillion": 25,
+      "officialSourceName": "Anthropic Claude Pricing",
+      "officialSourceUrl": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "国际官方基准；官方支持地区未列中国大陆，不代表中国大陆可直接采购。",
+      "litellmCandidates": [
+        "anthropic/claude-opus-5",
+        "claude-opus-5"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 5,
+          "cachedInput": 0.5,
+          "output": 25
+        },
+        "cny": {
+          "input": 33.7566391,
+          "cachedInput": 3.37566391,
+          "output": 168.7831955
+        }
+      },
+      "inputCnyPerMillion": 33.7566391,
+      "cachedInputCnyPerMillion": 3.37566391,
+      "outputCnyPerMillion": 168.7831955,
+      "originalInputPerMillion": 5,
+      "originalCachedInputPerMillion": 0.5,
+      "originalOutputPerMillion": 25,
+      "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
+      "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
+      "sourceStatus": "aggregated",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "current",
+        "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": {
+        "catalog": "LiteLLM",
+        "exactKey": "claude-opus-5",
+        "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json"
+      }
+    },
+    {
+      "id": "anthropic-claude-opus-48-standard",
+      "vendor": "Anthropic",
+      "model": "Claude Opus 4.8",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 5,
+      "cachedInputPerMillion": 0.5,
+      "outputPerMillion": 25,
+      "officialSourceName": "Anthropic Claude Pricing",
+      "officialSourceUrl": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "国际官方基准；官方支持地区未列中国大陆，不代表中国大陆可直接采购。",
+      "litellmCandidates": [
+        "anthropic/claude-opus-4.8",
+        "claude-opus-4.8"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 5,
+          "cachedInput": 0.5,
+          "output": 25
+        },
+        "cny": {
+          "input": 33.7566391,
+          "cachedInput": 3.37566391,
+          "output": 168.7831955
+        }
+      },
+      "inputCnyPerMillion": 33.7566391,
+      "cachedInputCnyPerMillion": 3.37566391,
+      "outputCnyPerMillion": 168.7831955,
+      "originalInputPerMillion": 5,
+      "originalCachedInputPerMillion": 0.5,
+      "originalOutputPerMillion": 25,
+      "sourceName": "Anthropic Claude Pricing",
+      "sourceUrl": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "anthropic-claude-sonnet-5-promo",
+      "vendor": "Anthropic",
+      "model": "Claude Sonnet 5",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 2,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": 10,
+      "officialSourceName": "Anthropic Claude Pricing",
+      "officialSourceUrl": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "sourceGrade": "A",
+      "serviceTier": "promotional through 2026-08-31",
+      "contextBand": "default",
+      "availabilityNote": "国际官方基准；2026-09-01 起官方目录计划调整为输入 3、输出 15 美元/百万 Token，当前促销档不进入固定指数。",
+      "litellmCandidates": [
+        "anthropic/claude-sonnet-5",
+        "claude-sonnet-5"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 2,
+          "cachedInput": null,
+          "output": 10
+        },
+        "cny": {
+          "input": 13.50265564,
+          "cachedInput": null,
+          "output": 67.5132782
+        }
+      },
+      "inputCnyPerMillion": 13.50265564,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": 67.5132782,
+      "originalInputPerMillion": 2,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": 10,
+      "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
+      "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
+      "sourceStatus": "aggregated",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "current",
+        "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": {
+        "catalog": "LiteLLM",
+        "exactKey": "claude-sonnet-5",
+        "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json"
+      }
+    },
+    {
+      "id": "google-gemini-31-pro-preview-up-to-200k",
+      "vendor": "Google",
+      "model": "Gemini 3.1 Pro Preview",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 2,
+      "cachedInputPerMillion": 0.2,
+      "outputPerMillion": 12,
+      "officialSourceName": "Google Gemini API Pricing",
+      "officialSourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+      "sourceGrade": "B",
+      "serviceTier": "preview",
+      "contextBand": "<=200K",
+      "availabilityNote": "国际官方预览基准；官方支持地区未列中国大陆，预览型号不进入固定指数篮子。",
+      "litellmCandidates": [
+        "gemini/gemini-3.1-pro-preview",
+        "gemini-3.1-pro-preview"
+      ],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 2,
+          "cachedInput": 0.2,
+          "output": 12
+        },
+        "cny": {
+          "input": 13.50265564,
+          "cachedInput": 1.35026556,
+          "output": 81.01593384
+        }
+      },
+      "inputCnyPerMillion": 13.50265564,
+      "cachedInputCnyPerMillion": 1.35026556,
+      "outputCnyPerMillion": 81.01593384,
+      "originalInputPerMillion": 2,
+      "originalCachedInputPerMillion": 0.2,
+      "originalOutputPerMillion": 12,
+      "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
+      "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
+      "sourceStatus": "aggregated",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "current",
+        "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": {
+        "catalog": "LiteLLM",
+        "exactKey": "gemini/gemini-3.1-pro-preview",
+        "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json"
+      }
+    },
+    {
+      "id": "google-gemini-31-pro-preview-over-200k",
+      "vendor": "Google",
+      "model": "Gemini 3.1 Pro Preview",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 4,
+      "cachedInputPerMillion": 0.4,
+      "outputPerMillion": 18,
+      "officialSourceName": "Google Gemini API Pricing",
+      "officialSourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+      "sourceGrade": "B",
+      "serviceTier": "preview",
+      "contextBand": ">200K",
+      "availabilityNote": "国际官方预览长上下文基准；官方支持地区未列中国大陆，不进入固定指数篮子。",
+      "litellmCandidates": [],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 4,
+          "cachedInput": 0.4,
+          "output": 18
+        },
+        "cny": {
+          "input": 27.00531128,
+          "cachedInput": 2.70053113,
+          "output": 121.52390076
+        }
+      },
+      "inputCnyPerMillion": 27.00531128,
+      "cachedInputCnyPerMillion": 2.70053113,
+      "outputCnyPerMillion": 121.52390076,
+      "originalInputPerMillion": 4,
+      "originalCachedInputPerMillion": 0.4,
+      "originalOutputPerMillion": 18,
+      "sourceName": "Google Gemini API Pricing",
+      "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "official_only",
+        "reason": "NO_SECONDARY_MAPPING",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "google-gemini-35-flash-standard",
+      "vendor": "Google",
+      "model": "Gemini 3.5 Flash",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 1.5,
+      "cachedInputPerMillion": 0.15,
+      "outputPerMillion": 9,
+      "officialSourceName": "Google Gemini API Pricing",
+      "officialSourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+      "sourceGrade": "B",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "国际官方基准；官方支持地区未列中国大陆，不代表中国大陆可直接采购。",
+      "litellmCandidates": [
+        "gemini/gemini-3.5-flash",
+        "gemini-3.5-flash"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 1.5,
+          "cachedInput": 0.15,
+          "output": 9
+        },
+        "cny": {
+          "input": 10.12699173,
+          "cachedInput": 1.01269917,
+          "output": 60.76195038
+        }
+      },
+      "inputCnyPerMillion": 10.12699173,
+      "cachedInputCnyPerMillion": 1.01269917,
+      "outputCnyPerMillion": 60.76195038,
+      "originalInputPerMillion": 1.5,
+      "originalCachedInputPerMillion": 0.15,
+      "originalOutputPerMillion": 9,
+      "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
+      "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
+      "sourceStatus": "aggregated",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "current",
+        "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": {
+        "catalog": "LiteLLM",
+        "exactKey": "gemini/gemini-3.5-flash",
+        "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json"
+      }
+    },
+    {
+      "id": "google-gemini-31-flash-lite-text-media",
+      "vendor": "Google",
+      "model": "Gemini 3.1 Flash-Lite",
+      "market": "international",
+      "categories": [
+        "text",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 0.25,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": 1.5,
+      "officialSourceName": "Google Gemini API Pricing",
+      "officialSourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+      "sourceGrade": "B",
+      "serviceTier": "text · image · video input",
+      "contextBand": "default",
+      "availabilityNote": "国际官方基准；官方支持地区未列中国大陆，不代表中国大陆可直接采购。",
+      "litellmCandidates": [
+        "gemini/gemini-3.1-flash-lite",
+        "gemini-3.1-flash-lite"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 0.25,
+          "cachedInput": null,
+          "output": 1.5
+        },
+        "cny": {
+          "input": 1.68783196,
+          "cachedInput": null,
+          "output": 10.12699173
+        }
+      },
+      "inputCnyPerMillion": 1.68783196,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": 10.12699173,
+      "originalInputPerMillion": 0.25,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": 1.5,
+      "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
+      "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
+      "sourceStatus": "aggregated",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "current",
+        "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": {
+        "catalog": "LiteLLM",
+        "exactKey": "gemini/gemini-3.1-flash-lite",
+        "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json"
+      }
+    },
+    {
+      "id": "google-gemini-31-flash-lite-audio",
+      "vendor": "Google",
+      "model": "Gemini 3.1 Flash-Lite",
+      "market": "international",
+      "categories": [
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 0.5,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": 1.5,
+      "officialSourceName": "Google Gemini API Pricing",
+      "officialSourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+      "sourceGrade": "B",
+      "serviceTier": "audio input",
+      "contextBand": "default",
+      "availabilityNote": "国际官方音频输入基准；官方支持地区未列中国大陆，不与文本/图像/视频输入档合并。",
+      "litellmCandidates": [],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 0.5,
+          "cachedInput": null,
+          "output": 1.5
+        },
+        "cny": {
+          "input": 3.37566391,
+          "cachedInput": null,
+          "output": 10.12699173
+        }
+      },
+      "inputCnyPerMillion": 3.37566391,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": 10.12699173,
+      "originalInputPerMillion": 0.5,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": 1.5,
+      "sourceName": "Google Gemini API Pricing",
+      "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "official_only",
+        "reason": "NO_SECONDARY_MAPPING",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "xai-grok-45-under-200k",
+      "vendor": "xAI",
+      "model": "Grok 4.5",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 2,
+      "cachedInputPerMillion": 0.3,
+      "outputPerMillion": 6,
+      "officialSourceName": "xAI API Pricing",
+      "officialSourceUrl": "https://docs.x.ai/developers/pricing",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "<200K",
+      "availabilityNote": "国际官方基准；官方支持地区未列中国大陆，不代表中国大陆可直接采购。",
+      "litellmCandidates": [],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 2,
+          "cachedInput": 0.3,
+          "output": 6
+        },
+        "cny": {
+          "input": 13.50265564,
+          "cachedInput": 2.02539835,
+          "output": 40.50796692
+        }
+      },
+      "inputCnyPerMillion": 13.50265564,
+      "cachedInputCnyPerMillion": 2.02539835,
+      "outputCnyPerMillion": 40.50796692,
+      "originalInputPerMillion": 2,
+      "originalCachedInputPerMillion": 0.3,
+      "originalOutputPerMillion": 6,
+      "sourceName": "xAI API Pricing",
+      "sourceUrl": "https://docs.x.ai/developers/pricing",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "official_only",
+        "reason": "NO_SECONDARY_MAPPING",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "xai-grok-45-long-context",
+      "vendor": "xAI",
+      "model": "Grok 4.5",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 4,
+      "cachedInputPerMillion": 0.6,
+      "outputPerMillion": 12,
+      "officialSourceName": "xAI API Pricing",
+      "officialSourceUrl": "https://docs.x.ai/developers/pricing",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "official long-context tier",
+      "availabilityNote": "国际官方长上下文基准；官方支持地区未列中国大陆，不与 <200K 档合并。",
+      "litellmCandidates": [],
+      "indexMember": false,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 4,
+          "cachedInput": 0.6,
+          "output": 12
+        },
+        "cny": {
+          "input": 27.00531128,
+          "cachedInput": 4.05079669,
+          "output": 81.01593384
+        }
+      },
+      "inputCnyPerMillion": 27.00531128,
+      "cachedInputCnyPerMillion": 4.05079669,
+      "outputCnyPerMillion": 81.01593384,
+      "originalInputPerMillion": 4,
+      "originalCachedInputPerMillion": 0.6,
+      "originalOutputPerMillion": 12,
+      "sourceName": "xAI API Pricing",
+      "sourceUrl": "https://docs.x.ai/developers/pricing",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "official_only",
+        "reason": "NO_SECONDARY_MAPPING",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "mistral-large-3-standard",
+      "vendor": "Mistral",
+      "model": "Large 3",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 0.5,
+      "cachedInputPerMillion": 0.05,
+      "outputPerMillion": 1.5,
+      "officialSourceName": "Mistral Model Selection Guide",
+      "officialSourceUrl": "https://docs.mistral.ai/models/model-selection-guide",
+      "sourceGrade": "B",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "国际官方基准；缓存价按官方统一的输入价 10% 规则计算，不代表中国大陆可直接采购。",
+      "litellmCandidates": [
+        "mistral/mistral-large-3",
+        "mistral-large-3"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 0.5,
+          "cachedInput": 0.05,
+          "output": 1.5
+        },
+        "cny": {
+          "input": 3.37566391,
+          "cachedInput": 0.33756639,
+          "output": 10.12699173
+        }
+      },
+      "inputCnyPerMillion": 3.37566391,
+      "cachedInputCnyPerMillion": 0.33756639,
+      "outputCnyPerMillion": 10.12699173,
+      "originalInputPerMillion": 0.5,
+      "originalCachedInputPerMillion": 0.05,
+      "originalOutputPerMillion": 1.5,
+      "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
+      "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
+      "sourceStatus": "aggregated",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": false,
+      "freshness": {
+        "state": "current",
+        "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": {
+        "catalog": "LiteLLM",
+        "exactKey": "mistral/mistral-large-3",
+        "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json"
+      }
+    },
+    {
+      "id": "mistral-medium-35-standard",
+      "vendor": "Mistral",
+      "model": "Medium 3.5",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 1.5,
+      "cachedInputPerMillion": 0.15,
+      "outputPerMillion": 7.5,
+      "officialSourceName": "Mistral Model Selection Guide",
+      "officialSourceUrl": "https://docs.mistral.ai/models/model-selection-guide",
+      "sourceGrade": "B",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "国际官方基准；缓存价按官方统一的输入价 10% 规则计算，不代表中国大陆可直接采购。",
+      "litellmCandidates": [
+        "mistral/mistral-medium-3.5",
+        "mistral-medium-3.5"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 1.5,
+          "cachedInput": 0.15,
+          "output": 7.5
+        },
+        "cny": {
+          "input": 10.12699173,
+          "cachedInput": 1.01269917,
+          "output": 50.63495865
+        }
+      },
+      "inputCnyPerMillion": 10.12699173,
+      "cachedInputCnyPerMillion": 1.01269917,
+      "outputCnyPerMillion": 50.63495865,
+      "originalInputPerMillion": 1.5,
+      "originalCachedInputPerMillion": 0.15,
+      "originalOutputPerMillion": 7.5,
+      "sourceName": "Mistral Model Selection Guide",
+      "sourceUrl": "https://docs.mistral.ai/models/model-selection-guide",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "mistral-small-4-standard",
+      "vendor": "Mistral",
+      "model": "Small 4",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 0.15,
+      "cachedInputPerMillion": 0.015,
+      "outputPerMillion": 0.6,
+      "officialSourceName": "Mistral Model Selection Guide",
+      "officialSourceUrl": "https://docs.mistral.ai/models/model-selection-guide",
+      "sourceGrade": "B",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "国际官方基准；缓存价按官方统一的输入价 10% 规则计算，不代表中国大陆可直接采购。",
+      "litellmCandidates": [
+        "mistral/mistral-small-4",
+        "mistral-small-4"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 0.15,
+          "cachedInput": 0.015,
+          "output": 0.6
+        },
+        "cny": {
+          "input": 1.01269917,
+          "cachedInput": 0.10126992,
+          "output": 4.05079669
+        }
+      },
+      "inputCnyPerMillion": 1.01269917,
+      "cachedInputCnyPerMillion": 0.10126992,
+      "outputCnyPerMillion": 4.05079669,
+      "originalInputPerMillion": 0.15,
+      "originalCachedInputPerMillion": 0.015,
+      "originalOutputPerMillion": 0.6,
+      "sourceName": "Mistral Model Selection Guide",
+      "sourceUrl": "https://docs.mistral.ai/models/model-selection-guide",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    },
+    {
+      "id": "cohere-command-a-plus-standard",
+      "vendor": "Cohere",
+      "model": "Command A+",
+      "market": "international",
+      "categories": [
+        "text",
+        "reasoning",
+        "multimodal"
+      ],
+      "originalCurrency": "USD",
+      "inputPerMillion": 2.5,
+      "cachedInputPerMillion": null,
+      "outputPerMillion": 10,
+      "officialSourceName": "Cohere Command A Model Card",
+      "officialSourceUrl": "https://docs.cohere.com/docs/command-a",
+      "sourceGrade": "A",
+      "serviceTier": "standard",
+      "contextBand": "default",
+      "availabilityNote": "国际官方基准；官方支持地区未列中国大陆，不代表中国大陆可直接采购。",
+      "litellmCandidates": [
+        "cohere/command-a-plus",
+        "command-a-plus"
+      ],
+      "indexMember": true,
+      "hasReviewedPrice": true,
+      "pricingUnit": "per_million_tokens",
+      "aggregationScope": "single_model",
+      "prices": {
+        "original": {
+          "currency": "USD",
+          "input": 2.5,
+          "cachedInput": null,
+          "output": 10
+        },
+        "cny": {
+          "input": 16.87831955,
+          "cachedInput": null,
+          "output": 67.5132782
+        }
+      },
+      "inputCnyPerMillion": 16.87831955,
+      "cachedInputCnyPerMillion": null,
+      "outputCnyPerMillion": 67.5132782,
+      "originalInputPerMillion": 2.5,
+      "originalCachedInputPerMillion": null,
+      "originalOutputPerMillion": 10,
+      "sourceName": "Cohere Command A Model Card",
+      "sourceUrl": "https://docs.cohere.com/docs/command-a",
+      "sourceStatus": "official_page",
+      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "isStale": true,
+      "freshness": {
+        "state": "stale",
+        "reason": "SECONDARY_MODEL_NOT_FOUND",
+        "checkedAt": "2026-08-03T03:19:44.923Z"
+      },
+      "secondarySource": null
+    }
+  ],
+  "index": {
+    "name": "KAI 模型调用成本指数",
+    "kind": "fixed_basket_index",
+    "baseValue": 100,
+    "baseDate": "2026-08-03",
+    "unit": "index_points",
+    "isProcurementPrice": false,
+    "methodology": "固定模型篮子内，各模型输入/输出等权参考成本的几何价格指数；不计算跨模型人民币均价。",
+    "basket": [
+      {
+        "id": "deepseek-v4-flash-0731-standard",
+        "vendor": "DeepSeek",
+        "model": "V4-Flash-0731",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 0.21000000000000002
+      },
+      {
+        "id": "deepseek-v4-pro-standard",
+        "vendor": "DeepSeek",
+        "model": "V4-Pro",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 0.6525
+      },
+      {
+        "id": "qwen37-max-20260608-standard",
+        "vendor": "阿里云百炼 / Qwen",
+        "model": "qwen3.7-max-2026-06-08",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 24
+      },
+      {
+        "id": "qwen37-plus-20260526-up-to-256k",
+        "vendor": "阿里云百炼 / Qwen",
+        "model": "qwen3.7-plus-2026-05-26",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 5
+      },
+      {
+        "id": "qwen36-flash-20260416-up-to-256k",
+        "vendor": "阿里云百炼 / Qwen",
+        "model": "qwen3.6-flash-2026-04-16",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 4.2
+      },
+      {
+        "id": "doubao-seed-21-pro-standard",
+        "vendor": "火山方舟 / 豆包",
+        "model": "Doubao-Seed-2.1-pro",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 18
+      },
+      {
+        "id": "doubao-seed-21-turbo-standard",
+        "vendor": "火山方舟 / 豆包",
+        "model": "Doubao-Seed-2.1-turbo",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 9
+      },
+      {
+        "id": "ernie-51-up-to-32k",
+        "vendor": "百度千帆 / ERNIE",
+        "model": "ERNIE-5.1",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 11
+      },
+      {
+        "id": "ernie-45-turbo-standard",
+        "vendor": "百度千帆 / ERNIE",
+        "model": "ERNIE-4.5-Turbo",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 2
+      },
+      {
+        "id": "hy3-standard",
+        "vendor": "腾讯云 TokenHub / 混元",
+        "model": "Hy3",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 2.5
+      },
+      {
+        "id": "glm-52-standard",
+        "vendor": "智谱",
+        "model": "GLM-5.2",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 18
+      },
+      {
+        "id": "glm-51-under-32k",
+        "vendor": "智谱",
+        "model": "GLM-5.1",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 15
+      },
+      {
+        "id": "glm-5v-turbo-under-32k",
+        "vendor": "智谱",
+        "model": "GLM-5V-Turbo",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 13.5
+      },
+      {
+        "id": "kimi-k3-standard",
+        "vendor": "Moonshot / Kimi",
+        "model": "kimi-k3",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 60
+      },
+      {
+        "id": "kimi-k26-standard",
+        "vendor": "Moonshot / Kimi",
+        "model": "kimi-k2.6",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 16.709536355
+      },
+      {
+        "id": "minimax-m3-up-to-512k",
+        "vendor": "MiniMax",
+        "model": "MiniMax-M3",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 5.25
+      },
+      {
+        "id": "minimax-m27-standard",
+        "vendor": "MiniMax",
+        "model": "M2.7",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 5.25
+      },
+      {
+        "id": "openai-gpt-56-sol-standard",
+        "vendor": "OpenAI",
+        "model": "GPT-5.6 Sol",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 118.14823685
+      },
+      {
+        "id": "openai-gpt-56-terra-standard",
+        "vendor": "OpenAI",
+        "model": "GPT-5.6 Terra",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 47.25929474
+      },
+      {
+        "id": "openai-gpt-56-luna-standard",
+        "vendor": "OpenAI",
+        "model": "GPT-5.6 Luna",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 4.7259294700000005
+      },
+      {
+        "id": "openai-gpt-55-standard",
+        "vendor": "OpenAI",
+        "model": "GPT-5.5",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 118.14823685
+      },
+      {
+        "id": "openai-gpt-54-standard",
+        "vendor": "OpenAI",
+        "model": "GPT-5.4",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 59.074118425
+      },
+      {
+        "id": "openai-gpt-54-mini-standard",
+        "vendor": "OpenAI",
+        "model": "GPT-5.4-mini",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 17.72223553
+      },
+      {
+        "id": "openai-gpt-54-nano-standard",
+        "vendor": "OpenAI",
+        "model": "GPT-5.4-nano",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 4.8947126700000005
+      },
+      {
+        "id": "anthropic-claude-fable-5-standard",
+        "vendor": "Anthropic",
+        "model": "Claude Fable 5",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 202.5398346
+      },
+      {
+        "id": "anthropic-claude-opus-5-standard",
+        "vendor": "Anthropic",
+        "model": "Claude Opus 5",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 101.2699173
+      },
+      {
+        "id": "anthropic-claude-opus-48-standard",
+        "vendor": "Anthropic",
+        "model": "Claude Opus 4.8",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 101.2699173
+      },
+      {
+        "id": "google-gemini-35-flash-standard",
+        "vendor": "Google",
+        "model": "Gemini 3.5 Flash",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 35.444471055
+      },
+      {
+        "id": "google-gemini-31-flash-lite-text-media",
+        "vendor": "Google",
+        "model": "Gemini 3.1 Flash-Lite",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 5.907411845
+      },
+      {
+        "id": "xai-grok-45-under-200k",
+        "vendor": "xAI",
+        "model": "Grok 4.5",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 27.00531128
+      },
+      {
+        "id": "mistral-large-3-standard",
+        "vendor": "Mistral",
+        "model": "Large 3",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 6.75132782
+      },
+      {
+        "id": "mistral-medium-35-standard",
+        "vendor": "Mistral",
+        "model": "Medium 3.5",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 30.38097519
+      },
+      {
+        "id": "mistral-small-4-standard",
+        "vendor": "Mistral",
+        "model": "Small 4",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 2.5317479300000003
+      },
+      {
+        "id": "cohere-command-a-plus-standard",
+        "vendor": "Cohere",
+        "model": "Command A+",
+        "weight": 0.029411764705882353,
+        "baseReferenceCostCny": 42.195798875
+      }
+    ],
+    "current": 100,
+    "value": 100,
+    "updatedAt": "2026-08-03T03:20:03.078Z",
+    "change1d": 0,
+    "change30d": 0,
+    "sampleSize": 34,
+    "history": [
+      {
+        "date": "2026-08-03",
+        "value": 100
+      }
+    ]
+  }
+}
