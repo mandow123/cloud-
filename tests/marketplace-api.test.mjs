@@ -1,10 +1,47 @@
 import assert from "node:assert/strict";
-import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+
+const SESSION_COOKIE_PATTERN = /^kai_demo_session_dev=[a-f0-9]{64}$/u;
+
+function futureDate(days = 14) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function idempotencyKey(label) {
+  return `${label}-${randomUUID()}`;
+}
+
+function procurementPayload(overrides = {}) {
+  return {
+    requestType: "procurement",
+    dealMode: "rental",
+    category: "gpu",
+    pricingUnit: "卡时",
+    quantity: 8,
+    durationHours: 168,
+    region: "北京",
+    deliveryDate: futureDate(),
+    requirements: "演示测试需求：容器交付，明确电费、网络范围与 SLA。",
+    ...overrides,
+  };
+}
+
+function draftPayload(index = 0) {
+  return {
+    title: `华北 H100 资源草稿 ${index}`,
+    category: "gpu",
+    capacity: `第 ${index} 条演示容量说明：8 卡 H100，可按服务器时或卡时交付。`,
+  };
+}
 
 async function reservePort() {
   const server = createServer();
@@ -18,8 +55,9 @@ async function reservePort() {
   return port;
 }
 
-async function startServer(dataDirectory) {
+async function startServer(dataDirectory, envOverrides = {}) {
   const port = await reservePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
   const logs = [];
   const child = spawn(process.execPath, ["dist/standalone/server.js"], {
     cwd: process.cwd(),
@@ -28,19 +66,24 @@ async function startServer(dataDirectory) {
       HOSTNAME: "127.0.0.1",
       PORT: String(port),
       KAI_DATA_DIR: dataDirectory,
+      KAI_PUBLIC_ORIGIN: baseUrl,
+      KAI_REQUIRE_HTTPS_WRITES: "0",
+      KAI_TRUST_PLATFORM_HEADERS: "0",
+      KAI_RELEASE_SHA: "marketplace-api-test",
+      KAI_CURSOR_SECRET: "marketplace-api-test-cursor-4f2db9a37c6e81f50a7d3b96",
       NODE_ENV: "production",
+      ...envOverrides,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout.on("data", (chunk) => logs.push(chunk.toString()));
   child.stderr.on("data", (chunk) => logs.push(chunk.toString()));
 
-  const baseUrl = `http://127.0.0.1:${port}`;
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`Server exited early:\n${logs.join("")}`);
     try {
-      const response = await fetch(`${baseUrl}/api/health`);
+      const response = await fetch(`${baseUrl}/api/live`);
       if (response.ok) return { baseUrl, child, logs };
     } catch {
       // The standalone server is still starting.
@@ -48,144 +91,703 @@ async function startServer(dataDirectory) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   child.kill();
-  throw new Error(`Server did not become healthy:\n${logs.join("")}`);
+  throw new Error(`Server did not become ready:\n${logs.join("")}`);
 }
 
 async function stopServer(server) {
-  if (server.child.exitCode !== null) return;
+  if (!server || server.child.exitCode !== null || server.child.signalCode !== null) return;
   const exited = new Promise((resolve) => server.child.once("exit", resolve));
-  server.child.kill();
+  server.child.kill("SIGKILL");
   await Promise.race([
     exited,
     new Promise((_, reject) => setTimeout(() => reject(new Error("Server did not stop")), 5_000)),
   ]);
 }
 
-async function postJson(baseUrl, path, body, extraHeaders = {}) {
-  return fetch(`${baseUrl}${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...extraHeaders },
-    body: JSON.stringify(body),
-  });
+async function writeFreshMarketSnapshot(dataDirectory) {
+  const snapshot = JSON.parse(await readFile("data/model-market.snapshot.json", "utf8"));
+  snapshot.publishedAt = new Date().toISOString();
+  await writeFile(join(dataDirectory, "model-market.snapshot.json"), `${JSON.stringify(snapshot)}\n`, "utf8");
 }
 
-test("marketplace API closes the request, quote and persistence loop", async () => {
+async function createFixture() {
   const dataDirectory = await mkdtemp(join(tmpdir(), "kai-marketplace-test-"));
-  let server;
-  try {
-    await copyFile("data/model-market.snapshot.json", join(dataDirectory, "model-market.snapshot.json"));
-    server = await startServer(dataDirectory);
+  await writeFreshMarketSnapshot(dataDirectory);
+  const server = await startServer(dataDirectory);
+  return { dataDirectory, server };
+}
 
-    const marketResponse = await fetch(`${server.baseUrl}/api/market`);
+async function destroyFixture(fixture) {
+  await stopServer(fixture.server);
+  await rm(fixture.dataDirectory, { recursive: true, force: true });
+}
+
+async function errorBody(response, status, code) {
+  assert.equal(response.status, status);
+  const body = await response.json();
+  assert.equal(body.error?.code, code);
+  assert.match(body.error?.requestId ?? "", /^[0-9a-f-]{36}$/u);
+  assert.equal(response.headers.get("x-request-id"), body.error.requestId);
+  return body;
+}
+
+class MarketplaceClient {
+  constructor(baseUrl, cookie, csrfToken, session) {
+    this.baseUrl = baseUrl;
+    this.cookie = cookie;
+    this.csrfToken = csrfToken;
+    this.session = session;
+  }
+
+  moveTo(baseUrl) {
+    this.baseUrl = baseUrl;
+  }
+
+  async refreshSession() {
+    const response = await fetch(`${this.baseUrl}/api/session`, {
+      headers: { cookie: this.cookie },
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    this.csrfToken = body.session.csrfToken;
+    this.session = body.session;
+    return body.session;
+  }
+
+  get(path, headers = {}) {
+    return fetch(`${this.baseUrl}${path}`, {
+      headers: { cookie: this.cookie, ...headers },
+    });
+  }
+
+  postJson(path, body, options = {}) {
+    const headers = new Headers(options.headers);
+    headers.set("content-type", "application/json");
+    if (options.cookie !== null) headers.set("cookie", options.cookie ?? this.cookie);
+    if (options.origin !== null) headers.set("origin", options.origin ?? this.baseUrl);
+    if (options.csrf !== null) headers.set("x-kai-csrf", options.csrf ?? this.csrfToken);
+    if (options.idempotencyKey !== null) {
+      headers.set("idempotency-key", options.idempotencyKey ?? idempotencyKey("write"));
+    }
+    return fetch(`${this.baseUrl}${path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+  }
+
+  postStream(path, serializedBody, options = {}) {
+    const headers = new Headers(options.headers);
+    headers.set("content-type", "application/json");
+    headers.set("cookie", this.cookie);
+    headers.set("origin", this.baseUrl);
+    headers.set("x-kai-csrf", this.csrfToken);
+    headers.set("idempotency-key", options.idempotencyKey ?? idempotencyKey("stream"));
+
+    const bytes = new TextEncoder().encode(serializedBody);
+    const chunkSize = 8 * 1024;
+    let offset = 0;
+    const body = new ReadableStream({
+      pull(controller) {
+        if (offset >= bytes.byteLength) {
+          controller.close();
+          return;
+        }
+        const end = Math.min(bytes.byteLength, offset + chunkSize);
+        controller.enqueue(bytes.slice(offset, end));
+        offset = end;
+      },
+    });
+
+    return fetch(`${this.baseUrl}${path}`, {
+      method: "POST",
+      headers,
+      body,
+      duplex: "half",
+    });
+  }
+}
+
+async function openSession(baseUrl, headers = {}) {
+  const response = await fetch(`${baseUrl}/api/session`, { headers });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("x-request-id") ?? "", /^[0-9a-f-]{36}$/u);
+  const setCookie = response.headers.get("set-cookie");
+  assert.ok(setCookie, "a new anonymous session must set a cookie");
+  const cookie = setCookie.split(";", 1)[0];
+  const body = await response.json();
+  assert.match(body.session.csrfToken, /^[a-f0-9]{64}$/u);
+  assert.equal(body.session.retentionDays, 30);
+  assert.ok(Date.parse(body.session.expiresAt) > Date.now());
+  return new MarketplaceClient(baseUrl, cookie, body.session.csrfToken, body.session);
+}
+
+test("legacy marketplace tables import once without exposing supplier free text to buyers", async () => {
+  const dataDirectory = await mkdtemp(join(tmpdir(), "kai-marketplace-legacy-test-"));
+  const databasePath = join(dataDirectory, "kai-cloud.sqlite");
+  const legacyRequestId = "KAI-LEGACY-DEMAND-001";
+  const privateScope = "LEGACY_SUPPLIER_PRIVATE_SCOPE_R8C4";
+  const createdAt = new Date().toISOString();
+  let server;
+
+  try {
+    await writeFreshMarketSnapshot(dataDirectory);
+    const legacyDb = new DatabaseSync(databasePath, { enableForeignKeyConstraints: true });
+    try {
+      legacyDb.exec(`
+        CREATE TABLE marketplace_requests (
+          id TEXT PRIMARY KEY,
+          request_type TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          title TEXT NOT NULL,
+          category TEXT NOT NULL,
+          region TEXT NOT NULL,
+          pricing_unit TEXT NOT NULL,
+          quantity REAL NOT NULL,
+          duration_hours REAL,
+          delivery_date TEXT,
+          summary TEXT NOT NULL,
+          offered_json TEXT,
+          wanted_json TEXT,
+          cash_direction TEXT NOT NULL,
+          cash_amount REAL,
+          status TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE marketplace_quotes (
+          id TEXT PRIMARY KEY,
+          demand_id TEXT NOT NULL,
+          demand_title TEXT NOT NULL,
+          unit_price REAL NOT NULL,
+          pricing_unit TEXT NOT NULL,
+          lead_time TEXT NOT NULL,
+          valid_days INTEGER NOT NULL,
+          scope_note TEXT NOT NULL,
+          status TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (demand_id) REFERENCES marketplace_requests(id)
+        );
+        CREATE TABLE marketplace_drafts (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          category TEXT NOT NULL,
+          capacity TEXT NOT NULL,
+          status TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+      `);
+      legacyDb.prepare(`INSERT INTO marketplace_requests (
+        id, request_type, kind, title, category, region, pricing_unit, quantity,
+        duration_hours, delivery_date, summary, offered_json, wanted_json,
+        cash_direction, cash_amount, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        legacyRequestId,
+        "procurement",
+        "rental",
+        "旧版 H100 演示需求",
+        "gpu",
+        "北京",
+        "卡时",
+        8,
+        168,
+        futureDate(),
+        "旧版公开摘要",
+        null,
+        null,
+        "none",
+        null,
+        "匹配中",
+        createdAt,
+        createdAt,
+      );
+      legacyDb.prepare(`INSERT INTO marketplace_quotes (
+        id, demand_id, demand_title, unit_price, pricing_unit, lead_time,
+        valid_days, scope_note, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        "KAI-LEGACY-QUOTE-001",
+        legacyRequestId,
+        "旧版 H100 演示需求",
+        31.2,
+        "卡时",
+        "48 小时内",
+        7,
+        privateScope,
+        "已提交",
+        createdAt,
+      );
+      legacyDb.prepare(`INSERT INTO marketplace_drafts (
+        id, title, category, capacity, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?)`).run(
+        "KAI-LEGACY-DRAFT-001",
+        "旧版 H100 资源草稿",
+        "gpu",
+        "8 卡 H100",
+        "草稿",
+        createdAt,
+      );
+    } finally {
+      legacyDb.close();
+    }
+
+    server = await startServer(dataDirectory);
+    const readyResponse = await fetch(`${server.baseUrl}/api/ready`);
+    assert.equal(readyResponse.status, 200);
+    const ready = await readyResponse.json();
+    assert.equal(ready.status, "ok");
+    assert.equal(ready.database.schemaVersion, 2);
+    await stopServer(server);
+
+    const migratedDb = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      const request = migratedDb.prepare(
+        "SELECT owner_actor_id FROM marketplace_requests_v2 WHERE id = ?",
+      ).get(legacyRequestId);
+      assert.equal(request.owner_actor_id, "legacy-demo");
+
+      const quote = migratedDb.prepare(`SELECT
+        raw_unit_price, standardized_unit_price, raw_scope_note,
+        standardized_scope_note, standardization_version
+        FROM marketplace_quotes_v2 WHERE id = ?`).get("KAI-LEGACY-QUOTE-001");
+      assert.equal(quote.raw_scope_note, privateScope);
+      assert.ok(!quote.standardized_scope_note.includes(privateScope));
+      assert.notEqual(quote.standardized_unit_price, quote.raw_unit_price);
+      assert.equal(quote.standardization_version, "kai-demo-v2");
+
+      const draft = migratedDb.prepare(
+        "SELECT owner_actor_id FROM marketplace_drafts_v2 WHERE id = ?",
+      ).get("KAI-LEGACY-DRAFT-001");
+      assert.equal(draft.owner_actor_id, "legacy-demo");
+
+      const migration = migratedDb.prepare(
+        "SELECT version, checksum FROM marketplace_schema_migrations ORDER BY version DESC LIMIT 1",
+      ).get();
+      const schemaSource = await readFile("db/schema.ts", "utf8");
+      const declaredChecksum = schemaSource.match(/MARKETPLACE_MIGRATION_CHECKSUM = "([0-9a-f]{64})"/u)?.[1];
+      assert.equal(migration.version, 2);
+      assert.equal(migration.checksum, declaredChecksum);
+    } finally {
+      migratedDb.close();
+    }
+  } finally {
+    await stopServer(server);
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("marketplace API enforces A/B/C isolation, projections, CSRF and idempotency across restart", async () => {
+  const fixture = await createFixture();
+  const forgedIdentityHeaders = {
+    "oai-authenticated-user-email": "victim@example.invalid",
+    "x-forwarded-proto": "https",
+  };
+
+  try {
+    const [buyerA, supplierB, outsiderC] = await Promise.all([
+      openSession(fixture.server.baseUrl, forgedIdentityHeaders),
+      openSession(fixture.server.baseUrl, forgedIdentityHeaders),
+      openSession(fixture.server.baseUrl),
+    ]);
+
+    assert.equal(buyerA.session.source, "demo-session");
+    assert.equal(supplierB.session.source, "demo-session");
+    assert.match(buyerA.cookie, SESSION_COOKIE_PATTERN);
+    assert.match(supplierB.cookie, SESSION_COOKIE_PATTERN);
+    assert.notEqual(buyerA.cookie, supplierB.cookie, "forged platform headers must not collapse two sessions");
+
+    const marketResponse = await fetch(`${fixture.server.baseUrl}/api/market`);
     assert.equal(marketResponse.status, 200);
     const market = await marketResponse.json();
     assert.equal(market.source, "persistent");
     assert.ok(market.snapshot.quotes.length >= 30);
-    const marketSummary = await (await fetch(`${server.baseUrl}/api/market?summary=1`)).json();
-    assert.equal(marketSummary.source, "persistent");
-    assert.equal(marketSummary.summary.quoteCount, market.snapshot.quotes.length);
 
-    const requestResponse = await postJson(server.baseUrl, "/api/requests", {
-      requestType: "procurement",
-      dealMode: "rental",
-      category: "gpu",
-      pricingUnit: "卡时",
-      quantity: 8,
-      durationHours: 168,
-      region: "北京",
-      deliveryDate: "2026-08-10",
-      requirements: "需要容器交付，明确电费、网络范围与 SLA。",
-    });
+    const csrfDraft = draftPayload(900);
+    await errorBody(
+      await buyerA.postJson("/api/drafts", csrfDraft, { origin: null, idempotencyKey: idempotencyKey("missing-origin") }),
+      403,
+      "ORIGIN_REJECTED",
+    );
+    await errorBody(
+      await buyerA.postJson("/api/drafts", csrfDraft, { origin: "https://attacker.invalid", idempotencyKey: idempotencyKey("wrong-origin") }),
+      403,
+      "ORIGIN_REJECTED",
+    );
+    await errorBody(
+      await buyerA.postJson("/api/drafts", csrfDraft, { csrf: null, idempotencyKey: idempotencyKey("missing-csrf") }),
+      403,
+      "CSRF_REJECTED",
+    );
+    await errorBody(
+      await buyerA.postJson("/api/drafts", csrfDraft, { csrf: "0".repeat(64), idempotencyKey: idempotencyKey("wrong-csrf") }),
+      403,
+      "CSRF_REJECTED",
+    );
+
+    const privateRequirement = "A_ONLY_PRIVATE_REQUIREMENT_7QX9: 需要指定容器镜像与专线。";
+    const requestResponse = await buyerA.postJson(
+      "/api/requests",
+      procurementPayload({ requirements: privateRequirement }),
+      { idempotencyKey: idempotencyKey("buyer-request") },
+    );
     assert.equal(requestResponse.status, 201);
     const requestRecord = (await requestResponse.json()).record;
-    assert.match(requestRecord.id, /^KAI-R-\d{8}-[A-F0-9]{8}$/);
-    assert.equal(requestRecord.status, "已记录");
+    assert.match(requestRecord.id, /^KAI-R-\d{8}-[A-F0-9]{32}$/u);
 
-    const swapResponse = await postJson(server.baseUrl, "/api/requests", {
+    const privateOffer = "A_ONLY_PRIVATE_OFFER_N3M8: 华北离峰 GPU 容量与容器环境。";
+    const privateWant = "A_ONLY_PRIVATE_WANT_P5K2: 主流推理模型的标准调用额度。";
+    const swapResponse = await buyerA.postJson("/api/requests", {
       requestType: "swap",
       offered: {
         category: "gpu",
         pricingUnit: "卡时",
         quantity: 100,
-        description: "可提供华北 GPU 卡时资源与容器环境。",
+        description: privateOffer,
       },
       wanted: {
         category: "token_model",
         pricingUnit: "百万 Token",
         quantity: 500,
-        description: "需要主流推理模型的标准调用额度。",
+        description: privateWant,
       },
       region: "全国",
       cashDirection: "offer",
-      cashAmount: 10_000,
-    });
+      cashAmount: 12_345,
+    }, { idempotencyKey: idempotencyKey("buyer-swap") });
     assert.equal(swapResponse.status, 201);
-    assert.match((await swapResponse.json()).record.id, /^KAI-X-/);
+    const swapRecord = (await swapResponse.json()).record;
 
-    const quoteResponse = await postJson(server.baseUrl, "/api/quotes", {
+    const [buyerMineResponse, supplierMineResponse, outsiderMineResponse] = await Promise.all([
+      buyerA.get("/api/requests?view=mine&limit=50"),
+      supplierB.get("/api/requests?view=mine&limit=50"),
+      outsiderC.get("/api/requests?view=mine&limit=50"),
+    ]);
+    const buyerMine = await buyerMineResponse.json();
+    const supplierMine = await supplierMineResponse.json();
+    const outsiderMine = await outsiderMineResponse.json();
+    assert.equal(buyerMine.count, 2);
+    assert.equal(supplierMine.count, 0);
+    assert.equal(outsiderMine.count, 0);
+    assert.ok(JSON.stringify(buyerMine).includes(privateRequirement));
+
+    const marketForB = await (await supplierB.get("/api/requests?view=market&limit=50")).json();
+    const serializedMarket = JSON.stringify(marketForB);
+    assert.equal(marketForB.count, 2);
+    assert.ok(marketForB.items.some((item) => item.id === requestRecord.id));
+    assert.ok(!serializedMarket.includes(privateRequirement));
+    assert.ok(!serializedMarket.includes(privateOffer));
+    assert.ok(!serializedMarket.includes(privateWant));
+    const publicSwap = marketForB.items.find((item) => item.id === swapRecord.id);
+    assert.equal(publicSwap.cashAmount, 0);
+    assert.match(publicSwap.offered.description, /人工撮合时核验/u);
+    assert.match(publicSwap.wanted.description, /人工撮合时核验/u);
+
+    const privateScope = "B_ONLY_RAW_SCOPE_R8C4: 演示价含税含电，公网流量另计。";
+    const normalizedPrivateScope = privateScope.normalize("NFKC");
+    const quoteResponse = await supplierB.postJson("/api/quotes", {
       demandId: requestRecord.id,
       unitPrice: 31.2,
-      leadTime: "48 小时",
+      leadTime: "48 小时内",
       validDays: 7,
-      scopeNote: "演示报价：含税含电，公网流量另计。",
-    });
+      scopeNote: privateScope,
+    }, { idempotencyKey: idempotencyKey("supplier-quote") });
     assert.equal(quoteResponse.status, 201);
-    const quoteRecord = (await quoteResponse.json()).record;
-    assert.equal(quoteRecord.demandId, requestRecord.id);
-    assert.equal(quoteRecord.pricingUnit, "卡时");
+    const supplierQuote = (await quoteResponse.json()).record;
+    assert.equal(supplierQuote.unitPrice, 31.2);
+    assert.equal(supplierQuote.scopeNote, normalizedPrivateScope);
+    assert.ok(!("standardizedUnitPrice" in supplierQuote));
 
-    const draftResponse = await postJson(server.baseUrl, "/api/drafts", {
-      title: "华北 H100 资源草稿",
-      category: "gpu",
-      capacity: "8 卡 H100，可按服务器时或卡时交付。",
+    const [supplierOwnQuotes, buyerQuotes, supplierBuyerView, buyerSupplierView, outsiderBuyerView, outsiderSupplierView] = await Promise.all([
+      supplierB.get("/api/quotes?view=supplier&limit=50").then((response) => response.json()),
+      buyerA.get("/api/quotes?view=buyer&limit=50").then((response) => response.json()),
+      supplierB.get("/api/quotes?view=buyer&limit=50").then((response) => response.json()),
+      buyerA.get("/api/quotes?view=supplier&limit=50").then((response) => response.json()),
+      outsiderC.get("/api/quotes?view=buyer&limit=50").then((response) => response.json()),
+      outsiderC.get("/api/quotes?view=supplier&limit=50").then((response) => response.json()),
+    ]);
+    assert.equal(supplierOwnQuotes.count, 1);
+    assert.equal(supplierOwnQuotes.items[0].scopeNote, normalizedPrivateScope);
+    assert.ok(!("standardizedUnitPrice" in supplierOwnQuotes.items[0]));
+    assert.equal(buyerQuotes.count, 1);
+    assert.notEqual(buyerQuotes.items[0].standardizedUnitPrice, 31.2);
+    assert.match(buyerQuotes.items[0].standardizedScope, /^KAI 演示统一口径：/u);
+    assert.ok(!JSON.stringify(buyerQuotes).includes(normalizedPrivateScope));
+    assert.ok(!("unitPrice" in buyerQuotes.items[0]));
+    assert.ok(!("scopeNote" in buyerQuotes.items[0]));
+    assert.equal(supplierBuyerView.count, 0);
+    assert.equal(buyerSupplierView.count, 0);
+    assert.equal(outsiderBuyerView.count, 0);
+    assert.equal(outsiderSupplierView.count, 0);
+
+    const draftResponse = await buyerA.postJson("/api/drafts", draftPayload(1), {
+      idempotencyKey: idempotencyKey("buyer-draft"),
     });
     assert.equal(draftResponse.status, 201);
+    const draftRecord = (await draftResponse.json()).record;
+    const [buyerDrafts, supplierDrafts, outsiderDrafts] = await Promise.all([
+      buyerA.get("/api/drafts?view=mine&limit=50").then((response) => response.json()),
+      supplierB.get("/api/drafts?view=mine&limit=50").then((response) => response.json()),
+      outsiderC.get("/api/drafts?view=mine&limit=50").then((response) => response.json()),
+    ]);
+    assert.deepEqual(buyerDrafts.items.map((item) => item.id), [draftRecord.id]);
+    assert.equal(supplierDrafts.count, 0);
+    assert.equal(outsiderDrafts.count, 0);
 
-    const invalidResponse = await postJson(server.baseUrl, "/api/requests", {
-      requestType: "procurement",
-      dealMode: "rental",
-      category: "gpu",
-      pricingUnit: "百万 Token",
-      quantity: 1,
-      durationHours: 1,
-      region: "北京",
-      deliveryDate: "2026-08-10",
-      requirements: "单位应当被服务端拒绝。",
+    const replayKey = idempotencyKey("request-replay");
+    const replayPayload = procurementPayload({
+      quantity: 16,
+      requirements: "幂等测试需求：同一次用户提交重试不得创建重复记录。",
     });
-    assert.equal(invalidResponse.status, 400);
-    assert.equal((await invalidResponse.json()).error.code, "VALIDATION_ERROR");
-
-    const crossOriginResponse = await postJson(
-      server.baseUrl,
-      "/api/drafts",
-      { title: "跨站草稿", category: "gpu", capacity: "这条内容不应被保存到数据库中。" },
-      { origin: "https://attacker.invalid" },
+    const firstWrite = await buyerA.postJson("/api/requests", replayPayload, { idempotencyKey: replayKey });
+    assert.equal(firstWrite.status, 201);
+    assert.equal(firstWrite.headers.get("idempotency-replayed"), "false");
+    const firstWriteBody = await firstWrite.json();
+    assert.equal(firstWriteBody.replayed, false);
+    const replay = await buyerA.postJson("/api/requests", replayPayload, { idempotencyKey: replayKey });
+    assert.equal(replay.status, 200);
+    assert.equal(replay.headers.get("idempotency-replayed"), "true");
+    const replayBody = await replay.json();
+    assert.equal(replayBody.replayed, true);
+    assert.equal(replayBody.record.id, firstWriteBody.record.id);
+    await errorBody(
+      await buyerA.postJson("/api/requests", { ...replayPayload, quantity: 17 }, { idempotencyKey: replayKey }),
+      409,
+      "IDEMPOTENCY_CONFLICT",
     );
-    assert.equal(crossOriginResponse.status, 400);
 
-    const requestsBeforeRestart = await (await fetch(`${server.baseUrl}/api/requests`)).json();
-    assert.equal(requestsBeforeRestart.count, 2);
-    assert.equal(
-      requestsBeforeRestart.items.find((item) => item.id === requestRecord.id).status,
-      "报价已收到",
-    );
+    await stopServer(fixture.server);
+    const persistedDb = new DatabaseSync(join(fixture.dataDirectory, "kai-cloud.sqlite"));
+    try {
+      persistedDb.prepare("UPDATE marketplace_quotes_v2 SET valid_until = ? WHERE id = ?")
+        .run("2000-01-01T00:00:00.000Z", supplierQuote.id);
+      persistedDb.prepare("UPDATE marketplace_requests_v2 SET created_at = ? WHERE id = ?")
+        .run("2000-01-01T00:00:00.000Z", requestRecord.id);
+    } finally {
+      persistedDb.close();
+    }
+    fixture.server = await startServer(fixture.dataDirectory);
+    for (const client of [buyerA, supplierB, outsiderC]) {
+      client.moveTo(fixture.server.baseUrl);
+      await client.refreshSession();
+    }
+
+    const ready = await (await fetch(`${fixture.server.baseUrl}/api/ready`)).json();
+    assert.equal(ready.status, "ok");
+    assert.equal(ready.database.backend, "sqlite");
+    assert.equal(ready.database.schemaVersion, 2);
+    assert.equal(ready.market.source, "persistent");
+    assert.equal(ready.market.ready, true);
+
+    const [requestsAfterRestart, supplierQuotesAfterRestart, buyerQuotesAfterRestart, draftsAfterRestart] = await Promise.all([
+      buyerA.get("/api/requests?view=mine&limit=50").then((response) => response.json()),
+      supplierB.get("/api/quotes?view=supplier&limit=50").then((response) => response.json()),
+      buyerA.get("/api/quotes?view=buyer&limit=50").then((response) => response.json()),
+      buyerA.get("/api/drafts?view=mine&limit=50").then((response) => response.json()),
+    ]);
+    assert.equal(requestsAfterRestart.count, 3);
+    assert.ok(requestsAfterRestart.items.some((item) => item.id === requestRecord.id), "a recently updated demand must survive retention even when its creation date is old");
+    assert.equal(supplierQuotesAfterRestart.items[0].id, supplierQuote.id);
+    assert.equal(supplierQuotesAfterRestart.items[0].status, "已过期");
+    assert.equal(buyerQuotesAfterRestart.items[0].id, supplierQuote.id);
+    assert.equal(buyerQuotesAfterRestart.items[0].status, "已过期");
+    assert.equal(draftsAfterRestart.items[0].id, draftRecord.id);
+
+    const replayAfterRestart = await buyerA.postJson("/api/requests", replayPayload, { idempotencyKey: replayKey });
+    assert.equal(replayAfterRestart.status, 200);
+    assert.equal((await replayAfterRestart.json()).record.id, firstWriteBody.record.id);
+  } finally {
+    await destroyFixture(fixture);
+  }
+});
+
+test("anonymous session bootstrap does not create persistent rows before a write", async () => {
+  const fixture = await createFixture();
+  try {
+    const responses = await Promise.all(Array.from({ length: 8 }, () => fetch(`${fixture.server.baseUrl}/api/session`)));
+    assert.ok(responses.every((response) => response.status === 200));
+    const sessionBodies = await Promise.all(responses.map((response) => response.json()));
+    const firstSession = sessionBodies[0];
+    const rejectedWrite = await fetch(`${fixture.server.baseUrl}/api/requests`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(procurementPayload()),
+    });
+    assert.equal(rejectedWrite.status, 403);
+    await rejectedWrite.text();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const structuredLogs = fixture.server.logs.join("");
+    assert.match(structuredLogs, /"event":"api_request"/u);
+    assert.match(structuredLogs, /"route":"\/api\/session"/u);
+    assert.match(structuredLogs, /"status":403/u);
+    assert.ok(!structuredLogs.includes(firstSession.session.csrfToken));
+    assert.ok(!structuredLogs.includes(procurementPayload().requirements));
+    await stopServer(fixture.server);
+    const db = new DatabaseSync(join(fixture.dataDirectory, "kai-cloud.sqlite"), { readOnly: true });
+    try {
+      const row = db.prepare("SELECT COUNT(*) AS count FROM marketplace_sessions_v2").get();
+      assert.equal(row.count, 0);
+    } finally {
+      db.close();
+    }
+  } finally {
+    await destroyFixture(fixture);
+  }
+});
+
+test("readiness rejects bundled and stale market fallbacks", async () => {
+  const dataDirectory = await mkdtemp(join(tmpdir(), "kai-marketplace-readiness-test-"));
+  let server;
+  try {
+    server = await startServer(dataDirectory);
+    const bundledResponse = await fetch(`${server.baseUrl}/api/ready`);
+    assert.equal(bundledResponse.status, 503);
+    const bundled = await bundledResponse.json();
+    assert.equal(bundled.status, "error");
+    assert.equal(bundled.market.source, "bundled");
+    assert.equal(bundled.market.ready, false);
 
     await stopServer(server);
+    const snapshot = JSON.parse(await readFile("data/model-market.snapshot.json", "utf8"));
+    snapshot.publishedAt = "2000-01-01T00:00:00.000Z";
+    await writeFile(join(dataDirectory, "model-market.snapshot.json"), `${JSON.stringify(snapshot)}\n`, "utf8");
     server = await startServer(dataDirectory);
+    const staleResponse = await fetch(`${server.baseUrl}/api/ready`);
+    assert.equal(staleResponse.status, 503);
+    const stale = await staleResponse.json();
+    assert.equal(stale.market.source, "persistent");
+    assert.equal(stale.market.stale, true);
+    assert.equal(stale.market.ready, false);
 
-    const [health, requests, quotes, drafts] = await Promise.all([
-      fetch(`${server.baseUrl}/api/health`).then((response) => response.json()),
-      fetch(`${server.baseUrl}/api/requests`).then((response) => response.json()),
-      fetch(`${server.baseUrl}/api/quotes`).then((response) => response.json()),
-      fetch(`${server.baseUrl}/api/drafts`).then((response) => response.json()),
-    ]);
-    assert.equal(health.status, "ok");
-    assert.equal(health.backend, "sqlite");
-    assert.equal(requests.count, 2);
-    assert.equal(quotes.count, 1);
-    assert.equal(drafts.count, 1);
+    await stopServer(server);
+    snapshot.publishedAt = new Date().toISOString();
+    await writeFile(join(dataDirectory, "model-market.snapshot.json"), `${JSON.stringify(snapshot)}\n`, "utf8");
+    server = await startServer(dataDirectory, { KAI_CURSOR_SECRET: "" });
+    const missingSecretResponse = await fetch(`${server.baseUrl}/api/ready`);
+    assert.equal(missingSecretResponse.status, 503);
+    const missingSecret = await missingSecretResponse.json();
+    assert.equal(missingSecret.status, "error");
+    assert.match(missingSecret.requestId, /^[0-9a-f-]{36}$/u);
   } finally {
-    if (server) await stopServer(server);
+    await stopServer(server);
     await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("marketplace cursor pagination is stable and rejects a structurally valid forged cursor", async () => {
+  const fixture = await createFixture();
+  try {
+    const client = await openSession(fixture.server.baseUrl);
+    const otherClient = await openSession(fixture.server.baseUrl);
+    for (let index = 0; index < 8; index += 1) {
+      const response = await client.postJson("/api/requests", procurementPayload({
+        quantity: index + 1,
+        requirements: `分页演示需求 ${index}：验证稳定游标无重复、无遗漏。`,
+      }), { idempotencyKey: idempotencyKey(`page-${index}`) });
+      assert.equal(response.status, 201);
+    }
+
+    const full = await (await client.get("/api/requests?view=mine&limit=50")).json();
+    assert.equal(full.count, 8);
+    const expectedIds = full.items.map((item) => item.id);
+
+    const pagedIds = [];
+    let cursor = null;
+    let firstCursor = null;
+    for (let pageNumber = 0; pageNumber < 10; pageNumber += 1) {
+      const path = `/api/requests?view=mine&limit=3${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+      const response = await client.get(path);
+      assert.equal(response.status, 200);
+      const page = await response.json();
+      assert.ok(page.items.length >= 1 && page.items.length <= 3);
+      assert.equal(page.pageInfo.limit, 3);
+      pagedIds.push(...page.items.map((item) => item.id));
+      if (!page.pageInfo.hasMore) {
+        assert.equal(page.pageInfo.nextCursor, null);
+        break;
+      }
+      assert.match(page.pageInfo.nextCursor, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u);
+      cursor = page.pageInfo.nextCursor;
+      firstCursor ??= cursor;
+    }
+    assert.deepEqual(pagedIds, expectedIds);
+    assert.equal(new Set(pagedIds).size, expectedIds.length);
+    assert.ok(firstCursor);
+
+    await errorBody(
+      await otherClient.get(`/api/requests?view=mine&limit=3&cursor=${encodeURIComponent(firstCursor)}`),
+      400,
+      "VALIDATION_ERROR",
+    );
+    await errorBody(
+      await client.get(`/api/requests?view=market&limit=3&cursor=${encodeURIComponent(firstCursor)}`),
+      400,
+      "VALIDATION_ERROR",
+    );
+
+    const forgedPayload = Buffer.from(JSON.stringify([
+      "2099-01-01T00:00:00.000Z",
+      `KAI-R-20990101-${"A".repeat(32)}`,
+    ])).toString("base64url");
+    const forgedCursor = `${forgedPayload}.${"A".repeat(24)}`;
+    await errorBody(
+      await client.get(`/api/requests?view=mine&limit=3&cursor=${encodeURIComponent(forgedCursor)}`),
+      400,
+      "VALIDATION_ERROR",
+    );
+  } finally {
+    await destroyFixture(fixture);
+  }
+});
+
+test("marketplace streaming body limit returns 413 before persisting a draft", async () => {
+  const fixture = await createFixture();
+  try {
+    const client = await openSession(fixture.server.baseUrl);
+    const oversizedBody = JSON.stringify({
+      title: "超大流式草稿",
+      category: "gpu",
+      capacity: "X".repeat(40 * 1024),
+    });
+    const response = await client.postStream("/api/drafts", oversizedBody);
+    await errorBody(response, 413, "PAYLOAD_TOO_LARGE");
+    const drafts = await (await client.get("/api/drafts?view=mine&limit=50")).json();
+    assert.equal(drafts.count, 0);
+  } finally {
+    await destroyFixture(fixture);
+  }
+});
+
+test("marketplace durable rate limit survives a standalone restart", async () => {
+  const fixture = await createFixture();
+  try {
+    const client = await openSession(fixture.server.baseUrl);
+    for (let index = 0; index < 2; index += 1) {
+      const response = await client.postJson("/api/drafts", draftPayload(index), {
+        idempotencyKey: idempotencyKey(`rate-before-${index}`),
+      });
+      assert.equal(response.status, 201);
+    }
+
+    await stopServer(fixture.server);
+    fixture.server = await startServer(fixture.dataDirectory);
+    client.moveTo(fixture.server.baseUrl);
+    await client.refreshSession();
+
+    for (let index = 2; index < 30; index += 1) {
+      const response = await client.postJson("/api/drafts", draftPayload(index), {
+        idempotencyKey: idempotencyKey(`rate-after-${index}`),
+      });
+      assert.equal(response.status, 201, `write ${index + 1} should remain within the 30-write window`);
+    }
+
+    const limited = await client.postJson("/api/drafts", draftPayload(30), {
+      idempotencyKey: idempotencyKey("rate-limited"),
+    });
+    await errorBody(limited, 429, "RATE_LIMITED");
+    assert.ok(Number(limited.headers.get("retry-after")) >= 1);
+
+    const drafts = await (await client.get("/api/drafts?view=mine&limit=50")).json();
+    assert.equal(drafts.count, 30);
+  } finally {
+    await destroyFixture(fixture);
   }
 });

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MobileDemandCta } from "./mobile-demand-cta";
 import { NavLinks } from "./nav-links";
 import { ThemeControl } from "./theme-control";
 
@@ -18,9 +19,7 @@ export function SiteHeader() {
           </Link>
         </div>
       </div>
-      <Link className="mobile-demand-cta" href="/request">
-        <span>发布算力需求</span><span aria-hidden="true">→</span>
-      </Link>
+      <MobileDemandCta />
     </header>
   );
 }

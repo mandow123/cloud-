@@ -2,6 +2,14 @@ import bundledSnapshot from "@/data/model-market.snapshot.json";
 
 type MarketSnapshot = typeof bundledSnapshot;
 
+export function marketIndexChange(snapshot: MarketSnapshot, days: number) {
+  const history = Array.isArray(snapshot.index.history) ? snapshot.index.history : [];
+  const current = snapshot.index.current;
+  const reference = history[Math.max(0, history.length - 1 - days)]?.value;
+  if (!Number.isFinite(current) || !Number.isFinite(reference) || reference <= 0) return 0;
+  return ((current / reference) - 1) * 100;
+}
+
 function isSnapshot(value: unknown): value is MarketSnapshot {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const candidate = value as Partial<MarketSnapshot>;
@@ -13,7 +21,9 @@ function isSnapshot(value: unknown): value is MarketSnapshot {
 }
 
 export async function readMarketSnapshot(): Promise<{ snapshot: MarketSnapshot; source: "persistent" | "bundled" }> {
-  const dataDirectory = typeof process !== "undefined" ? process.env.KAI_DATA_DIR : undefined;
+  const dataDirectory = typeof process !== "undefined"
+    ? (process.env.KAI_MARKET_DATA_DIR ?? process.env.KAI_DATA_DIR)
+    : undefined;
   if (!dataDirectory) return { snapshot: bundledSnapshot, source: "bundled" };
 
   try {

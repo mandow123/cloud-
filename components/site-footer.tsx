@@ -1,6 +1,20 @@
 import Link from "next/link";
+import { marketSeries } from "@/lib/data";
+import { readMarketSnapshot } from "@/lib/server/market-snapshot";
 
-export function SiteFooter() {
+function dateLabel(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "待确认"
+    : new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
+
+export async function SiteFooter() {
+  const { snapshot } = await readMarketSnapshot();
+  const infrastructureUpdatedAt = marketSeries.reduce(
+    (latest, series) => series.updatedAt > latest ? series.updatedAt : latest,
+    "",
+  );
   return (
     <footer className="site-footer">
       <div className="shell footer-grid">
@@ -23,7 +37,7 @@ export function SiteFooter() {
         <div className="footer-disclaimer">
           <p className="footer-label">演示声明</p>
           <p>本站资源、供应商与价格均为演示数据，不构成实时成交报价或投资、采购建议。</p>
-          <p>数据日期：2026-08-01 · 中国标准时间</p>
+          <p>模型目录价发布：{dateLabel(snapshot.publishedAt)} · 基础设施演示样本截至：{dateLabel(infrastructureUpdatedAt)}</p>
         </div>
       </div>
       <div className="shell footer-bottom">

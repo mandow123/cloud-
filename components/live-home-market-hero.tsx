@@ -8,6 +8,8 @@ export type HomeMarketSummary = {
   quoteCount: number;
   indexCurrent: number;
   indexChange1d: number;
+  indexChange7d: number;
+  indexChange30d: number;
 };
 
 function formatSnapshotTime(value: string) {
@@ -23,12 +25,24 @@ function formatSnapshotTime(value: string) {
   }).format(date);
 }
 
-export function LiveHomeMarketHero({ initialSummary }: { initialSummary: HomeMarketSummary }) {
+export function LiveHomeMarketHero({
+  initialSummary,
+  initialSource,
+}: {
+  initialSummary: HomeMarketSummary;
+  initialSource: "persistent" | "bundled";
+}) {
   const [summary, setSummary] = useState(initialSummary);
-  const [source, setSource] = useState<"persistent" | "bundled">("bundled");
+  const [source, setSource] = useState<"persistent" | "bundled">(initialSource);
+  const [checkState, setCheckState] = useState<"checking" | "ready" | "error">("checking");
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      setCheckState("error");
+      controller.abort();
+    }, 12_000);
     fetch("/api/market?summary=1", { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("market unavailable");
@@ -37,12 +51,18 @@ export function LiveHomeMarketHero({ initialSummary }: { initialSummary: HomeMar
       .then((result) => {
         setSummary(result.summary);
         setSource(result.source);
+        setCheckState("ready");
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-      });
-    return () => controller.abort();
-  }, []);
+        setCheckState("error");
+      })
+      .finally(() => window.clearTimeout(timeout));
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [refreshKey]);
 
   const signals = useMemo(() => [
     { label: "GPU 算力 P50", value: "¥12.80", unit: "/ H20 卡时", change: "基础设施演示样本" },
@@ -50,7 +70,7 @@ export function LiveHomeMarketHero({ initialSummary }: { initialSummary: HomeMar
       label: "模型调用成本指数",
       value: summary.indexCurrent.toFixed(1),
       unit: "固定篮子",
-      change: `日变化 ${summary.indexChange1d >= 0 ? "+" : ""}${summary.indexChange1d.toFixed(2)}%`,
+      change: `1 日 ${summary.indexChange1d >= 0 ? "+" : ""}${summary.indexChange1d.toFixed(2)}% · 7 日 ${summary.indexChange7d >= 0 ? "+" : ""}${summary.indexChange7d.toFixed(2)}% · 30 日 ${summary.indexChange30d >= 0 ? "+" : ""}${summary.indexChange30d.toFixed(2)}%`,
     },
     { label: "模型分项价格", value: String(summary.quoteCount), unit: "个价格档位", change: "输入 / 缓存 / 输出" },
   ], [summary]);
@@ -59,8 +79,11 @@ export function LiveHomeMarketHero({ initialSummary }: { initialSummary: HomeMar
     <section className="kai-hero">
       <div className="shell">
         <div className="hero-status" role="status">
-          <span><strong>{source === "persistent" ? "模型行情后端已同步" : "模型行情安全快照"}</strong> · 最近发布 {formatSnapshotTime(summary.publishedAt)}</span>
-          <span>{summary.quoteCount} 个模型价格档位 · 每日北京时间 06:00 更新</span>
+          <span><strong>{checkState === "error" ? "行情检查失败，保留上一版" : checkState === "checking" ? "正在检查最新行情" : source === "persistent" ? "模型行情后端已同步" : "模型行情安全快照"}</strong> · 最近发布 {formatSnapshotTime(summary.publishedAt)}</span>
+          <span>{summary.quoteCount} 个模型价格档位 · 每日北京时间 06:00 更新{checkState === "error" ? <button className="ml-2 font-semibold underline" onClick={() => {
+            setCheckState("checking");
+            setRefreshKey((value) => value + 1);
+          }} type="button">重试</button> : null}</span>
         </div>
 
         <div className="hero-grid">

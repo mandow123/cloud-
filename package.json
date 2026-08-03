@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=24.15.0"
   },
   "scripts": {
     "dev": "vinext dev",
@@ -13,7 +13,11 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "market:stage": "node scripts/model-market/cli.mjs stage",
     "market:promote": "node scripts/model-market/cli.mjs promote",
-    "market:update": "npm run market:stage && npm run market:promote"
+    "market:update": "npm run market:stage && npm run market:promote",
+    "ops:backup": "node scripts/ops/backup-marketplace.mjs create",
+    "ops:restore:verify": "node scripts/ops/verify-restore.mjs",
+    "ops:self-test": "node scripts/ops/self-test.mjs",
+    "ops:deploy:validate": "node scripts/ops/validate-deployment.mjs"
   },
   "dependencies": {
     "next": "16.2.12",
@@ -21,21 +25,21 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.37.1",
+    "@cloudflare/vite-plugin": "1.50.0",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "6.0.2",
-    "@vitejs/plugin-rsc": "0.5.26",
+    "@vitejs/plugin-react": "6.0.5",
+    "@vitejs/plugin-rsc": "0.5.32",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.12",
     "react-server-dom-webpack": "19.2.8",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "vinext": "0.0.50",
-    "vite": "8.0.13",
-    "wrangler": "4.92.0"
+    "vite": "8.2.0",
+    "wrangler": "4.118.0"
   },
   "overrides": {
     "postcss": "8.5.25",

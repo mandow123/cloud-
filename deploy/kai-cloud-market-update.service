@@ -3,10 +3,18 @@ Description=KAI Cloud daily model market snapshot update
 After=docker.service network-online.target
 Wants=network-online.target
 Requires=docker.service
+OnFailure=kai-cloud-ops-alert@%n.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/docker run --rm --name kai-cloud-market-update-3050 --user node --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 -e KAI_DATA_DIR=/app/data -e KAI_MARKET_PENDING_PATH=/app/data/model-market.pending.json -e KAI_MARKET_SNAPSHOT_PATH=/app/data/model-market.snapshot.json -e KAI_MARKET_REGISTRY_PATH=/app/market-registry/model-market-registry.mjs -v /opt/kai-cloud-3050/data:/app/data kai-cloud-market:current node scripts/model-market/cli.mjs update
+EnvironmentFile=/etc/kai-cloud/kai-cloud-release.env
+ExecStart=/usr/bin/flock --nonblock /run/lock/kai-cloud-market-update.lock /usr/bin/timeout --signal=TERM --kill-after=15s 300s /bin/sh /usr/local/lib/kai-cloud/kai-cloud-market-update-run.sh
+TimeoutStartSec=330
+RuntimeMaxSec=330
+UMask=0027
+Nice=5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
 
 [Install]
 WantedBy=multi-user.target

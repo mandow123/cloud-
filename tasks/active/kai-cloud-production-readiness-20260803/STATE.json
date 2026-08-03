@@ -1,0 +1,9 @@
+{
+  "mode": "AUTO",
+  "resolved_mode": "PRECISION",
+  "mode_reason": "Implementation is complete; the task is now in objective-based release verification and external cutover gating.",
+  "status": "awaiting_production_approval",
+  "objective": "前后端必须做到可以上线的质量",
+  "next_action": "Request explicit approval before mutating the target host, DNS, TLS, firewall, timers, immutable image registry, backup destination, or production data.",
+  "updated_at": "2026-08-03T14:55:51+08:00"
+}

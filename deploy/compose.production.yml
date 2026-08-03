@@ -1,0 +1,132 @@
+services:
+  app:
+    image: "${KAI_IMAGE:?KAI_IMAGE must be an immutable repository@sha256 digest}"
+    restart: unless-stopped
+    init: true
+    user: "1000:1000"
+    read_only: true
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      KAI_DB_DIR: /app/db
+      KAI_MARKET_DATA_DIR: /app/market
+      KAI_RELEASE_SHA: "${KAI_RELEASE_SHA:?KAI_RELEASE_SHA is required}"
+      KAI_IMAGE_REFERENCE: "${KAI_IMAGE:?KAI_IMAGE must be an immutable repository@sha256 digest}"
+      KAI_TRUST_PROXY: "1"
+      KAI_REQUIRE_HTTPS_WRITES: "1"
+      KAI_PUBLIC_ORIGIN: "${KAI_PUBLIC_ORIGIN:?KAI_PUBLIC_ORIGIN must be the canonical https origin}"
+      KAI_CURSOR_SECRET: "${KAI_CURSOR_SECRET:?KAI_CURSOR_SECRET must contain at least 32 random characters}"
+    ports:
+      - "127.0.0.1:${KAI_APP_PORT:-3050}:3000"
+    volumes:
+      - type: bind
+        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3050}/db"
+        target: /app/db
+      - type: bind
+        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3050}/market"
+        target: /app/market
+        read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 512m
+    mem_reservation: 128m
+    cpus: 1.0
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/live || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  market-update:
+    profiles: ["ops"]
+    image: "${KAI_IMAGE:?KAI_IMAGE must be an immutable repository@sha256 digest}"
+    restart: "no"
+    init: true
+    user: "1000:1000"
+    read_only: true
+    environment:
+      KAI_MARKET_DATA_DIR: /app/market
+      KAI_MARKET_PENDING_PATH: /app/market/model-market.pending.json
+      KAI_MARKET_SNAPSHOT_PATH: /app/market/model-market.snapshot.json
+      KAI_MARKET_REGISTRY_PATH: /app/market-registry/model-market-registry.mjs
+    volumes:
+      - type: bind
+        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3050}/market"
+        target: /app/market
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: 0.5
+    command: ["node", "scripts/model-market/cli.mjs", "update"]
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  backup:
+    profiles: ["ops"]
+    image: "${KAI_IMAGE:?KAI_IMAGE must be an immutable repository@sha256 digest}"
+    restart: "no"
+    init: true
+    network_mode: none
+    user: "1000:1000"
+    read_only: true
+    environment:
+      KAI_DB_DIR: /app/db
+      KAI_MARKET_DATA_DIR: /app/market
+      KAI_BACKUP_DIR: /app/backups
+      KAI_RELEASE_SHA: "${KAI_RELEASE_SHA:?KAI_RELEASE_SHA is required}"
+      KAI_BACKUP_RETENTION_HOURLY: "${KAI_BACKUP_RETENTION_HOURLY:-48}"
+      KAI_BACKUP_RETENTION_DAILY: "${KAI_BACKUP_RETENTION_DAILY:-35}"
+      KAI_BACKUP_RETENTION_MONTHLY: "${KAI_BACKUP_RETENTION_MONTHLY:-12}"
+    volumes:
+      - type: bind
+        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3050}/db"
+        target: /app/db
+      - type: bind
+        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3050}/market"
+        target: /app/market
+        read_only: true
+      - type: bind
+        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3050}/backups"
+        target: /app/backups
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: 0.5
+    command: ["node", "scripts/ops/backup-marketplace.mjs", "create"]
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

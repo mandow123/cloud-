@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LiveHomeMarketHero } from "@/components/live-home-market-hero";
-import modelMarketSnapshot from "@/data/model-market.snapshot.json";
 import { serviceAliases } from "@/lib/data";
+import { marketIndexChange, readMarketSnapshot } from "@/lib/server/market-snapshot";
 
 export const metadata: Metadata = {
   title: "算力行情与资源撮合",
@@ -17,10 +17,10 @@ const quickActions = [
 ];
 
 const quoteRows = [
-  { spec: "H20 / 96 GB", region: "华北", price: "¥12.80", unit: "卡时", change: "-2.1%", status: "可询价" },
-  { spec: "A800 / 80 GB", region: "华东", price: "¥9.60", unit: "卡时", change: "+0.8%", status: "可询价" },
-  { spec: "推理容量 / 1M TPM", region: "全国", price: "¥46.00", unit: "预留容量时", change: "-1.4%", status: "可撮合" },
-  { spec: "20 kW 独占机柜", region: "华南", price: "¥13,800", unit: "机柜月", change: "+1.2%", status: "需排期" },
+  { spec: "H20 / 96 GB", region: "华北", price: "¥12.80", unit: "卡时", category: "gpu", deal: "rental", change: "-2.1%", status: "可询价" },
+  { spec: "A800 / 80 GB", region: "华东", price: "¥9.60", unit: "卡时", category: "gpu", deal: "rental", change: "+0.8%", status: "可询价" },
+  { spec: "推理容量 / 1M TPM", region: "全国", price: "¥46.00", unit: "预留容量时", category: "token_model", deal: "service", change: "-1.4%", status: "可撮合" },
+  { spec: "20 kW 独占机柜", region: "华南", price: "¥13,800", unit: "机柜月", category: "rack_capacity", deal: "rental", change: "+1.2%", status: "需排期" },
 ];
 
 const serviceEntries = serviceAliases.map((alias) => {
@@ -32,15 +32,19 @@ const serviceEntries = serviceAliases.map((alias) => {
   return [alias.label, `/resources?${params.toString()}`] as const;
 });
 
-export default function Home() {
+export default async function Home() {
+  const { snapshot, source } = await readMarketSnapshot();
   return (
     <>
       <LiveHomeMarketHero
+        initialSource={source}
         initialSummary={{
-          publishedAt: modelMarketSnapshot.publishedAt,
-          quoteCount: modelMarketSnapshot.quotes.length,
-          indexCurrent: modelMarketSnapshot.index.current,
-          indexChange1d: modelMarketSnapshot.index.change1d,
+          publishedAt: snapshot.publishedAt,
+          quoteCount: snapshot.quotes.length,
+          indexCurrent: snapshot.index.current,
+          indexChange1d: snapshot.index.change1d,
+          indexChange7d: marketIndexChange(snapshot, 7),
+          indexChange30d: snapshot.index.change30d,
         }}
       />
 
@@ -89,7 +93,13 @@ export default function Home() {
                   <td>{row.unit}</td>
                   <td className="num text-[var(--accent)]">{row.change}</td>
                   <td><span className="availability">{row.status}</span></td>
-                  <td><Link className="table-action" href="/request">按此发布需求</Link></td>
+                  <td><Link className="table-action" href={`/request?${new URLSearchParams({
+                    category: row.category,
+                    deal: row.deal,
+                    unit: row.unit,
+                    title: row.spec,
+                    region: row.region,
+                  }).toString()}`}>按此发布需求</Link></td>
                 </tr>
               ))}
             </tbody>

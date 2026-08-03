@@ -1,0 +1,7 @@
+[Unit]
+Description=KAI Cloud pluggable failure notification for %i
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /usr/local/lib/kai-cloud/kai-cloud-ops-alert.sh %i
+TimeoutStartSec=60

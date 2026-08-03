@@ -441,14 +441,18 @@
   }
 
   .kai-root:not(:has(.mandow-hound-root)) .site-footer {
-    margin-bottom: 72px;
+    margin-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+
+  .kai-root:not(:has(.mobile-demand-cta)) .site-footer {
+    margin-bottom: 0;
   }
 
   .mobile-demand-cta {
     position: fixed;
     z-index: 60;
     right: 12px;
-    bottom: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
     left: 12px;
     min-height: 52px;
     display: flex;

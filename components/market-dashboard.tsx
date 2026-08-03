@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { formatPrice } from "@/lib/market";
 import type { MarketSeries, ResourceCategory } from "@/lib/types";
 
@@ -70,19 +70,22 @@ export function MarketDashboard({
       const nextRange = params.get("range");
       const nextSeries = params.get("series");
 
-      if (isCategory(nextCategory) && series.some((entry) => entry.category === nextCategory)) {
-        setCategory(nextCategory);
-      }
-      if (isRange(nextRange)) setRange(Number(nextRange) as RangeDays);
-      if (nextSeries && series.some((entry) => entry.id === nextSeries)) {
-        setActiveSeriesId(nextSeries);
-      }
+      const resolvedCategory = isCategory(nextCategory) && series.some((entry) => entry.category === nextCategory)
+        ? nextCategory
+        : firstCategory;
+      setCategory(resolvedCategory);
+      setRange(isRange(nextRange) ? Number(nextRange) as RangeDays : 30);
+      setActiveSeriesId(
+        nextSeries && series.some((entry) => entry.id === nextSeries && entry.category === resolvedCategory)
+          ? nextSeries
+          : "",
+      );
     }
 
     syncFromUrl();
     window.addEventListener("popstate", syncFromUrl);
     return () => window.removeEventListener("popstate", syncFromUrl);
-  }, [series]);
+  }, [firstCategory, series]);
 
   function writeUrl(next: {
     category?: ResourceCategory;
@@ -106,6 +109,19 @@ export function MarketDashboard({
   function chooseRange(nextRange: RangeDays) {
     setRange(nextRange);
     writeUrl({ range: nextRange });
+  }
+
+  function moveCategory(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? CATEGORY_ORDER.length - 1
+        : (index + (event.key === "ArrowRight" ? 1 : -1) + CATEGORY_ORDER.length) % CATEGORY_ORDER.length;
+    const nextCategory = CATEGORY_ORDER[nextIndex];
+    chooseCategory(nextCategory);
+    document.getElementById(`market-tab-${nextCategory}`)?.focus();
   }
 
   if (!activeSeries || points.length === 0) {
@@ -194,7 +210,7 @@ export function MarketDashboard({
           role="tablist"
           aria-label="行情资源分类"
         >
-          {CATEGORY_ORDER.map((item) => {
+          {CATEGORY_ORDER.map((item, index) => {
             const selected = category === item;
             return (
               <button
@@ -207,7 +223,11 @@ export function MarketDashboard({
                 type="button"
                 role="tab"
                 aria-selected={selected}
+                aria-controls="market-infrastructure-panel"
+                id={`market-tab-${item}`}
+                tabIndex={selected ? 0 : -1}
                 onClick={() => chooseCategory(item)}
+                onKeyDown={(event) => moveCategory(event, index)}
               >
                 {CATEGORY_LABELS[item]}
               </button>
@@ -218,7 +238,8 @@ export function MarketDashboard({
         <section
           className="mt-6 border border-[var(--border)] bg-[var(--surface)]"
           role="tabpanel"
-          aria-label={`${CATEGORY_LABELS[category]}行情`}
+          aria-labelledby={`market-tab-${category}`}
+          id="market-infrastructure-panel"
         >
           <div className="grid border-b border-[var(--border)] lg:grid-cols-[minmax(0,1fr)_auto]">
             <div className="p-5 sm:p-6">

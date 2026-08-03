@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export type ModelMarketScope = "domestic" | "international";
 export type ModelCapability = "text" | "reasoning" | "multimodal" | "embedding";
@@ -55,7 +55,7 @@ export interface ModelPriceBoardProps {
 
 type MarketFilter = "all" | ModelMarketScope;
 type CapabilityFilter = "all" | ModelCapability;
-type FreshnessFilter = "all" | "fresh" | "stale";
+type FreshnessFilter = "all" | "validated" | "official" | "review";
 
 const MARKET_LABELS: Record<ModelMarketScope, string> = {
   domestic: "国内",
@@ -193,6 +193,52 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
   const [market, setMarket] = useState<MarketFilter>("all");
   const [capability, setCapability] = useState<CapabilityFilter>("all");
   const [freshness, setFreshness] = useState<FreshnessFilter>("all");
+  const [visibleLimit, setVisibleLimit] = useState(20);
+
+  useEffect(() => {
+    function syncFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const nextMarket = params.get("model_market");
+      const nextCapability = params.get("model_capability");
+      const nextFreshness = params.get("model_status");
+      setQuery(params.get("model_q") ?? "");
+      setMarket(nextMarket === "domestic" || nextMarket === "international" ? nextMarket : "all");
+      setCapability(
+        nextCapability === "text" || nextCapability === "reasoning" || nextCapability === "multimodal" || nextCapability === "embedding"
+          ? nextCapability
+          : "all",
+      );
+      setFreshness(
+        nextFreshness === "validated" || nextFreshness === "official" || nextFreshness === "review"
+          ? nextFreshness
+          : "all",
+      );
+      setVisibleLimit(20);
+    }
+    syncFromUrl();
+    window.addEventListener("popstate", syncFromUrl);
+    return () => window.removeEventListener("popstate", syncFromUrl);
+  }, []);
+
+  function writeFilters(
+    next: { query?: string; market?: MarketFilter; capability?: CapabilityFilter; freshness?: FreshnessFilter },
+    historyMode: "push" | "replace" = "push",
+  ) {
+    const values = {
+      query: next.query ?? query,
+      market: next.market ?? market,
+      capability: next.capability ?? capability,
+      freshness: next.freshness ?? freshness,
+    };
+    const params = new URLSearchParams(window.location.search);
+    const assign = (key: string, value: string, defaultValue = "all") => value === defaultValue ? params.delete(key) : params.set(key, value);
+    assign("model_q", values.query, "");
+    assign("model_market", values.market);
+    assign("model_capability", values.capability);
+    assign("model_status", values.freshness);
+    const target = `${window.location.pathname}${params.size ? `?${params.toString()}` : ""}${window.location.hash}`;
+    window.history[historyMode === "push" ? "pushState" : "replaceState"](null, "", target);
+  }
 
   const filteredQuotes = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
@@ -203,17 +249,22 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
         quote.model.toLocaleLowerCase("zh-CN").includes(normalizedQuery);
       const matchesMarket = market === "all" || quote.market === market;
       const matchesCapability = capability === "all" || quote.categories.includes(capability);
-      const matchesFreshness =
-        freshness === "all" ||
-        (freshness === "stale" && quote.isStale) ||
-        (freshness === "fresh" && !quote.isStale);
+      const freshnessState = quote.freshness?.state === "official_only"
+        ? "official"
+        : quote.isStale || quote.freshness?.state === "stale" || quote.freshness?.state === "review_required"
+          ? "review"
+          : "validated";
+      const matchesFreshness = freshness === "all" || freshness === freshnessState;
       return matchesQuery && matchesMarket && matchesCapability && matchesFreshness;
     });
   }, [capability, freshness, market, query, quotes]);
 
   const supplierCount = new Set(filteredQuotes.map((quote) => quote.vendor)).size;
   const modelCount = new Set(filteredQuotes.map((quote) => `${quote.vendor}\u0000${quote.model}`)).size;
-  const staleCount = filteredQuotes.filter((quote) => quote.isStale).length;
+  const reviewCount = filteredQuotes.filter((quote) => quote.isStale || quote.freshness?.state === "stale" || quote.freshness?.state === "review_required").length;
+  const officialCount = filteredQuotes.filter((quote) => quote.freshness?.state === "official_only").length;
+  const validatedCount = filteredQuotes.length - reviewCount - officialCount;
+  const visibleQuotes = filteredQuotes.slice(0, visibleLimit);
   const hasFilters = query.length > 0 || market !== "all" || capability !== "all" || freshness !== "all";
   const indexDirection = (index.change30d ?? 0) > 0 ? "上涨" : (index.change30d ?? 0) < 0 ? "下降" : "持平";
 
@@ -222,6 +273,8 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
     setMarket("all");
     setCapability("all");
     setFreshness("all");
+    setVisibleLimit(20);
+    writeFilters({ query: "", market: "all", capability: "all", freshness: "all" });
   }
 
   return (
@@ -279,7 +332,11 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
             搜索厂商或模型
             <input
               className={fieldClass}
-              onChange={(event) => setQuery(event.target.value)}
+               onChange={(event) => {
+                 setQuery(event.target.value);
+                 setVisibleLimit(20);
+                 writeFilters({ query: event.target.value }, "replace");
+               }}
               placeholder="例如：DeepSeek、Qwen、GPT"
               type="search"
               value={query}
@@ -287,7 +344,12 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
           </label>
           <label className="grid gap-1.5 text-xs font-semibold text-[var(--ink)]">
             市场范围
-            <select className={fieldClass} onChange={(event) => setMarket(event.target.value as MarketFilter)} value={market}>
+            <select className={fieldClass} onChange={(event) => {
+              const value = event.target.value as MarketFilter;
+              setMarket(value);
+              setVisibleLimit(20);
+              writeFilters({ market: value });
+            }} value={market}>
               <option value="all">国内与国际</option>
               <option value="domestic">国内</option>
               <option value="international">国际</option>
@@ -297,7 +359,12 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
             模型分类
             <select
               className={fieldClass}
-              onChange={(event) => setCapability(event.target.value as CapabilityFilter)}
+               onChange={(event) => {
+                 const value = event.target.value as CapabilityFilter;
+                 setCapability(value);
+                 setVisibleLimit(20);
+                 writeFilters({ capability: value });
+               }}
               value={capability}
             >
               <option value="all">全部分类</option>
@@ -309,10 +376,16 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
           </label>
           <label className="grid gap-1.5 text-xs font-semibold text-[var(--ink)]">
             数据新鲜度
-            <select className={fieldClass} onChange={(event) => setFreshness(event.target.value as FreshnessFilter)} value={freshness}>
+            <select className={fieldClass} onChange={(event) => {
+              const value = event.target.value as FreshnessFilter;
+              setFreshness(value);
+              setVisibleLimit(20);
+              writeFilters({ freshness: value });
+            }} value={freshness}>
               <option value="all">全部状态</option>
-              <option value="fresh">已通过自动校验</option>
-              <option value="stale">需人工复核</option>
+              <option value="validated">已通过自动校验</option>
+              <option value="official">官方审核基线</option>
+              <option value="review">需人工复核</option>
             </select>
           </label>
           <button
@@ -326,7 +399,7 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
         </div>
         <p className="mt-4 mb-0 text-xs text-[var(--muted)]" aria-live="polite">
           显示 {filteredQuotes.length} 个价格档 · {modelCount} 个具体模型 · {supplierCount} 家厂商
-          {staleCount > 0 ? ` · ${staleCount} 条触发人工复核` : " · 当前结果均已通过自动校验"}
+          {` · ${validatedCount} 条自动校验 · ${officialCount} 条官方基线 · ${reviewCount} 条人工复核`}
         </p>
       </div>
 
@@ -355,7 +428,7 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
                 </tr>
               </thead>
               <tbody>
-                {filteredQuotes.map((quote) => (
+                {visibleQuotes.map((quote) => (
                   <tr key={quote.id}>
                     <th className="min-w-56 text-left" scope="row">
                       <span className="block text-xs font-semibold text-[var(--accent)]">{quote.vendor}</span>
@@ -391,7 +464,7 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
           </div>
 
           <div className="mt-6 grid gap-4 lg:hidden">
-            {filteredQuotes.map((quote) => (
+            {visibleQuotes.map((quote) => (
               <article className="border-t-2 border-[var(--accent)] bg-[var(--surface)] p-5 ring-1 ring-[var(--border)]" key={quote.id}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
@@ -429,6 +502,14 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
               </article>
             ))}
           </div>
+          {visibleQuotes.length < filteredQuotes.length ? (
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-y border-[var(--border)] bg-[var(--info-bg)] p-4">
+              <p className="m-0 text-sm text-[var(--text)]">已显示 {visibleQuotes.length} / {filteredQuotes.length} 个价格档</p>
+              <button className="button button-secondary button-compact" onClick={() => setVisibleLimit((value) => value + 20)} type="button">
+                再显示 20 条
+              </button>
+            </div>
+          ) : null}
         </>
       )}
     </section>

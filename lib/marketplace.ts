@@ -56,16 +56,34 @@ export type MarketplaceRequestRecord = {
   updatedAt: string;
 };
 
-export type MarketplaceQuoteRecord = {
+export type MarketplaceSupplierQuoteRecord = {
   id: string;
   demandId: string;
   demandTitle: string;
   unitPrice: number;
   pricingUnit: PricingUnit;
+  currency: "CNY";
   leadTime: string;
   validDays: number;
+  validUntil: string;
   scopeNote: string;
-  status: "已提交";
+  status: "已提交" | "已过期";
+  createdAt: string;
+};
+
+export type MarketplaceNormalizedQuoteRecord = {
+  id: string;
+  demandId: string;
+  demandTitle: string;
+  standardizedUnitPrice: number;
+  pricingUnit: PricingUnit;
+  currency: "CNY";
+  deliveryWindow: string;
+  validUntil: string;
+  standardizedScope: string;
+  standardizationVersion: "kai-demo-v2";
+  standardizationNote: string;
+  status: "已标准化" | "已过期";
   createdAt: string;
 };
 
@@ -84,7 +102,7 @@ export type CreateProcurementRequest = {
   category: ResourceCategory;
   pricingUnit: PricingUnit;
   quantity: number;
-  durationHours: number;
+  durationHours: number | null;
   region: string;
   deliveryDate: string;
   requirements: string;
@@ -119,6 +137,11 @@ export type MarketplaceListResponse<T> = {
   items: T[];
   count: number;
   updatedAt: string;
+  pageInfo: {
+    hasMore: boolean;
+    nextCursor: string | null;
+    limit: number;
+  };
 };
 
 export class MarketplaceInputError extends Error {
@@ -140,7 +163,10 @@ function objectValue(value: unknown): Record<string, unknown> {
 
 function stringValue(value: unknown, field: string, min: number, max: number) {
   if (typeof value !== "string") throw new MarketplaceInputError(`${field} 格式不正确。`, field);
-  const normalized = value.trim();
+  const normalized = value.normalize("NFKC").trim();
+  if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(normalized)) {
+    throw new MarketplaceInputError(`${field} 包含不支持的控制字符。`, field);
+  }
   if (normalized.length < min || normalized.length > max) {
     throw new MarketplaceInputError(`${field} 长度应为 ${min}–${max} 个字符。`, field);
   }
@@ -175,8 +201,17 @@ function swapLegValue(value: unknown, field: string): MarketplaceSwapLeg {
     category,
     pricingUnit: pricingUnitValue(leg.pricingUnit, category, `${field}.pricingUnit`),
     quantity: positiveNumber(leg.quantity, `${field}.quantity`),
-    description: stringValue(leg.description, `${field}.description`, 8, 500),
+    description: demoStringValue(leg.description, `${field}.description`, 8, 500),
   };
+}
+
+function demoStringValue(value: unknown, field: string, min: number, max: number) {
+  const normalized = stringValue(value, field, min, max);
+  const containsContactData = /(?:https?:\/\/|www\.|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|(?:\+?86[- ]?)?1[3-9]\d{9})/iu.test(normalized);
+  if (containsContactData) {
+    throw new MarketplaceInputError(`${field} 请勿填写邮箱、手机号或外部链接。`, field);
+  }
+  return normalized;
 }
 
 export function parseCreateRequest(value: unknown): CreateMarketplaceRequest {
@@ -187,19 +222,34 @@ export function parseCreateRequest(value: unknown): CreateMarketplaceRequest {
     }
     const category = categoryValue(input.category, "category");
     const deliveryDate = stringValue(input.deliveryDate, "deliveryDate", 10, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(deliveryDate)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(deliveryDate) || Number.isNaN(Date.parse(`${deliveryDate}T00:00:00Z`))) {
       throw new MarketplaceInputError("开始日期格式不正确。", "deliveryDate");
+    }
+    const parsedDate = new Date(`${deliveryDate}T00:00:00Z`);
+    if (parsedDate.toISOString().slice(0, 10) !== deliveryDate) {
+      throw new MarketplaceInputError("开始日期不是有效的日历日期。", "deliveryDate");
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const latest = new Date();
+    latest.setUTCFullYear(latest.getUTCFullYear() + 3);
+    if (deliveryDate < today || deliveryDate > latest.toISOString().slice(0, 10)) {
+      throw new MarketplaceInputError("开始日期应在今天至未来三年内。", "deliveryDate");
+    }
+    const pricingUnit = pricingUnitValue(input.pricingUnit, category, "pricingUnit");
+    const usesDurationHours = ["卡时", "服务器时", "模型实例时", "预留容量时"].includes(pricingUnit);
+    if (!usesDurationHours && input.durationHours !== null && input.durationHours !== undefined) {
+      throw new MarketplaceInputError("该计价单位不使用持续小时，请按计价单位填写数量。", "durationHours");
     }
     return {
       requestType: "procurement",
       dealMode: input.dealMode,
       category,
-      pricingUnit: pricingUnitValue(input.pricingUnit, category, "pricingUnit"),
+      pricingUnit,
       quantity: positiveNumber(input.quantity, "quantity"),
-      durationHours: positiveNumber(input.durationHours, "durationHours", 1_000_000),
+      durationHours: usesDurationHours ? positiveNumber(input.durationHours, "durationHours", 1_000_000) : null,
       region: stringValue(input.region, "region", 2, 40),
       deliveryDate,
-      requirements: stringValue(input.requirements, "requirements", 8, 1_000),
+      requirements: demoStringValue(input.requirements, "requirements", 8, 1_000),
     };
   }
 
@@ -230,7 +280,7 @@ export function parseCreateQuote(value: unknown): CreateMarketplaceQuote {
     unitPrice: positiveNumber(input.unitPrice, "unitPrice", 100_000_000),
     leadTime: stringValue(input.leadTime, "leadTime", 2, 80),
     validDays,
-    scopeNote: stringValue(input.scopeNote, "scopeNote", 8, 1_000),
+    scopeNote: demoStringValue(input.scopeNote, "scopeNote", 8, 1_000),
   };
 }
 
@@ -239,12 +289,12 @@ export function parseCreateDraft(value: unknown): CreateMarketplaceDraft {
   return {
     title: stringValue(input.title, "title", 3, 100),
     category: categoryValue(input.category, "category"),
-    capacity: stringValue(input.capacity, "capacity", 8, 500),
+    capacity: demoStringValue(input.capacity, "capacity", 8, 500),
   };
 }
 
-export function createMarketplaceId(prefix: "R" | "X" | "Q" | "D") {
+export function createMarketplaceId(prefix: "R" | "X" | "Q" | "D" | "E") {
   const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
-  const random = crypto.randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase();
+  const random = crypto.randomUUID().replaceAll("-", "").toUpperCase();
   return `KAI-${prefix}-${date}-${random}`;
 }

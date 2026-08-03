@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { RequestWorkbench, type RequestPrefill } from "@/components/request-workbench";
 import { resourceListings, serviceAliases } from "@/lib/data";
-import type { DealMode } from "@/lib/types";
+import { categoryPricingUnits, marketplaceCategories } from "@/lib/marketplace";
+import type { DealMode, PricingUnit, ResourceCategory } from "@/lib/types";
 
 export const metadata: Metadata = {
   title: "发布算力需求",
@@ -21,8 +22,18 @@ export default async function RequestPage({ searchParams }: RequestPageProps) {
   const listingId = first(params.listing) ?? first(params.resource);
   const serviceSlug = first(params.service) ?? first(params.alias);
   const requestedMode = first(params.mode) ?? first(params.deal);
+  const requestedCategory = first(params.category);
+  const requestedUnit = first(params.unit);
+  const requestedTitle = first(params.title);
+  const requestedRegion = first(params.region);
   const listing = listingId ? resourceListings.find((item) => item.id === listingId) : undefined;
   const service = serviceSlug ? serviceAliases.find((item) => item.slug === serviceSlug) : undefined;
+  const directCategory = marketplaceCategories.includes(requestedCategory as ResourceCategory)
+    ? requestedCategory as ResourceCategory
+    : undefined;
+  const directUnit = directCategory && categoryPricingUnits[directCategory].includes(requestedUnit as PricingUnit)
+    ? requestedUnit as PricingUnit
+    : undefined;
 
   const mode: DealMode =
     requestedMode === "swap" || requestedMode === "service" || requestedMode === "rental"
@@ -41,7 +52,14 @@ export default async function RequestPage({ searchParams }: RequestPageProps) {
           category: service.category,
           pricingUnit: service.pricingUnit,
         }
-      : undefined;
+      : directCategory
+        ? {
+            title: requestedTitle,
+            category: directCategory,
+            pricingUnit: directUnit ?? categoryPricingUnits[directCategory][0],
+            region: requestedRegion,
+          }
+        : undefined;
 
   return (
     <>

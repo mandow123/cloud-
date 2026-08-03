@@ -5,6 +5,7 @@ Description=Refresh KAI Cloud model prices every day at 06:00 China Standard Tim
 OnCalendar=*-*-* 06:00:00 Asia/Shanghai
 Persistent=true
 RandomizedDelaySec=0
+AccuracySec=1min
 Unit=kai-cloud-market-update.service
 
 [Install]

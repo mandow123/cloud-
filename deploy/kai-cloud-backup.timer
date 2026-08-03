@@ -1,0 +1,12 @@
+[Unit]
+Description=Create an hourly KAI Cloud recovery bundle
+
+[Timer]
+OnCalendar=*-*-* *:15:00 Asia/Shanghai
+Persistent=true
+RandomizedDelaySec=0
+AccuracySec=1min
+Unit=kai-cloud-backup.service
+
+[Install]
+WantedBy=timers.target

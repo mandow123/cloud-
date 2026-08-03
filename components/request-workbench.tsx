@@ -1,6 +1,12 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import {
+  createIdempotencyKey,
+  MarketplaceApiError,
+  marketplaceErrorMessage,
+  marketplacePost,
+} from "@/lib/client/marketplace-client";
 import type { MarketplaceRequestRecord } from "@/lib/marketplace";
 import type { DealMode, PricingUnit, ResourceCategory } from "@/lib/types";
 
@@ -82,30 +88,42 @@ function validPositive(value: string) {
   return Number.isFinite(parsed) && parsed > 0;
 }
 
-
-async function createServerRequest(payload: unknown) {
-  const response = await fetch("/api/requests", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const result = (await response.json()) as {
-    record?: MarketplaceRequestRecord;
-    error?: { message?: string };
-  };
-  if (!response.ok || !result.record) {
-    throw new Error(result.error?.message || "需求服务暂时不可用，请稍后再试。");
+function durationConfig(unit: PricingUnit) {
+  if (unit === "百万 Token") {
+    return {
+      required: false,
+      label: "无需另填时长",
+      defaultValue: "",
+      help: "数量请直接按百万 Token 填写；服务端不会换算或提交小时数。",
+    };
   }
-  return result.record;
+  if (unit === "机柜月" || unit === "kW 月") {
+    return {
+      required: false,
+      label: "无需另填时长",
+      defaultValue: "",
+      help: `数量请直接按${unit}填写；服务端不会换算或提交小时数。`,
+    };
+  }
+  return {
+    required: true,
+    label: "持续时长（小时）",
+    defaultValue: "24",
+    help: "仅小时类计价单位需要填写，提交值保持小时口径。",
+  };
 }
 
-function ErrorText({ children }: { children?: string }) {
+function ErrorText({ children, id }: { children?: string; id?: string }) {
   if (!children) return null;
   return (
-    <span className="text-xs font-normal text-[var(--error)]" role="alert">
+    <span className="text-xs font-normal text-[var(--error)]" id={id} role="alert">
       {children}
     </span>
   );
+}
+
+function focusFirstInvalid(form: HTMLFormElement | null) {
+  window.requestAnimationFrame(() => form?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus());
 }
 
 function UnitOptions({ category }: { category: ResourceCategory }) {
@@ -137,7 +155,7 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
     category: initialCategory,
     pricingUnit: initialUnit,
     quantity: "1",
-    duration: "24",
+    duration: durationConfig(initialUnit).defaultValue,
     region: initialPrefill?.region ?? "",
     deliveryDate: "",
     requirements: initialPrefill?.title ? `希望获取「${initialPrefill.title}」的标准化演示方案。` : "",
@@ -165,6 +183,11 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
   const confirmationRef = useRef<HTMLHeadingElement>(null);
   const procurementTabRef = useRef<HTMLButtonElement>(null);
   const swapTabRef = useRef<HTMLButtonElement>(null);
+  const procurementFormRef = useRef<HTMLFormElement>(null);
+  const swapFormRef = useRef<HTMLFormElement>(null);
+  const procurementKeyRef = useRef<string | null>(null);
+  const swapKeyRef = useRef<string | null>(null);
+  const submissionLockRef = useRef(false);
 
   useEffect(() => {
     if (confirmation) confirmationRef.current?.focus();
@@ -173,18 +196,42 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
   function updateProcurement<Key extends keyof ProcurementValues>(key: Key, value: ProcurementValues[Key]) {
     setProcurement((current) => ({ ...current, [key]: value }));
     setProcurementErrors((current) => ({ ...current, [key]: undefined }));
+    procurementKeyRef.current = null;
+    setServerError(null);
     setConfirmation(null);
   }
 
   function updateProcurementCategory(category: ResourceCategory) {
-    setProcurement((current) => ({ ...current, category, pricingUnit: firstUnit(category) }));
+    const pricingUnit = firstUnit(category);
+    setProcurement((current) => ({
+      ...current,
+      category,
+      pricingUnit,
+      duration: durationConfig(pricingUnit).defaultValue,
+    }));
     setProcurementErrors((current) => ({ ...current, category: undefined, pricingUnit: undefined }));
+    procurementKeyRef.current = null;
+    setServerError(null);
+    setConfirmation(null);
+  }
+
+  function updateProcurementUnit(pricingUnit: PricingUnit) {
+    setProcurement((current) => ({
+      ...current,
+      pricingUnit,
+      duration: durationConfig(pricingUnit).defaultValue,
+    }));
+    setProcurementErrors((current) => ({ ...current, pricingUnit: undefined, duration: undefined }));
+    procurementKeyRef.current = null;
+    setServerError(null);
     setConfirmation(null);
   }
 
   function updateSwap<Key extends keyof SwapValues>(key: Key, value: SwapValues[Key]) {
     setSwap((current) => ({ ...current, [key]: value }));
     setSwapErrors((current) => ({ ...current, [key]: undefined }));
+    swapKeyRef.current = null;
+    setServerError(null);
     setConfirmation(null);
   }
 
@@ -199,48 +246,82 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
         ? { ...current, offeredCategory: undefined, offeredUnit: undefined }
         : { ...current, wantedCategory: undefined, wantedUnit: undefined },
     );
+    swapKeyRef.current = null;
+    setServerError(null);
     setConfirmation(null);
   }
 
   async function submitProcurement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submissionLockRef.current) return;
     const nextErrors: Partial<Record<keyof ProcurementValues, string>> = {};
+    const duration = durationConfig(procurement.pricingUnit);
 
     if (!validPositive(procurement.quantity)) nextErrors.quantity = "数量必须大于 0。";
-    if (!validPositive(procurement.duration)) nextErrors.duration = "时长必须大于 0。";
+    if (duration.required && !validPositive(procurement.duration)) nextErrors.duration = "持续时长必须大于 0 小时。";
     if (!procurement.region) nextErrors.region = "请选择期望区域。";
     if (!procurement.deliveryDate) nextErrors.deliveryDate = "请选择期望开始日期。";
     if (procurement.requirements.trim().length < 8) nextErrors.requirements = "请用至少 8 个字描述交付要求。";
     if (!procurement.consent) nextErrors.consent = "请确认演示服务器提交说明。";
 
     setProcurementErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0) return;
+    if (Object.keys(nextErrors).length > 0) {
+      focusFirstInvalid(procurementFormRef.current);
+      return;
+    }
 
+    submissionLockRef.current = true;
     setSubmitting(true);
     setServerError(null);
     try {
-      const record = await createServerRequest({
-        requestType: "procurement",
-        dealMode: procurement.dealMode,
-        category: procurement.category,
-        pricingUnit: procurement.pricingUnit,
-        quantity: Number(procurement.quantity),
-        durationHours: Number(procurement.duration),
-        region: procurement.region,
-        deliveryDate: procurement.deliveryDate,
-        requirements: procurement.requirements.trim(),
-      });
+      const idempotencyKey = procurementKeyRef.current ?? createIdempotencyKey("request-procurement");
+      procurementKeyRef.current = idempotencyKey;
+      const { record } = await marketplacePost<MarketplaceRequestRecord>(
+        "/api/requests",
+        {
+          requestType: "procurement",
+          dealMode: procurement.dealMode,
+          category: procurement.category,
+          pricingUnit: procurement.pricingUnit,
+          quantity: Number(procurement.quantity),
+          durationHours: duration.required ? Number(procurement.duration) : null,
+          region: procurement.region,
+          deliveryDate: procurement.deliveryDate,
+          requirements: procurement.requirements.trim(),
+        },
+        idempotencyKey,
+      );
+      procurementKeyRef.current = null;
       setConfirmation({ id: record.id, mode: "procurement", title: record.title });
       window.dispatchEvent(new CustomEvent("kai-server-records-changed"));
     } catch (error) {
-      setServerError(error instanceof Error ? error.message : "需求服务暂时不可用，请稍后再试。");
+      const message = marketplaceErrorMessage(error, "需求服务暂时不可用，请稍后再试。");
+      const fieldMap: Record<string, keyof ProcurementValues> = {
+        dealMode: "dealMode",
+        category: "category",
+        pricingUnit: "pricingUnit",
+        quantity: "quantity",
+        durationHours: "duration",
+        region: "region",
+        deliveryDate: "deliveryDate",
+        requirements: "requirements",
+      };
+      const field = error instanceof MarketplaceApiError && error.field ? fieldMap[error.field] : undefined;
+      if (field) {
+        setProcurementErrors((current) => ({ ...current, [field]: message }));
+        focusFirstInvalid(procurementFormRef.current);
+      } else {
+        setServerError(message);
+      }
     } finally {
+      submissionLockRef.current = false;
       setSubmitting(false);
     }
   }
 
   async function submitSwap(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submissionLockRef.current) return;
     const nextErrors: Partial<Record<keyof SwapValues, string>> = {};
 
     if (!validPositive(swap.offeredQuantity)) nextErrors.offeredQuantity = "可提供数量必须大于 0。";
@@ -252,40 +333,73 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
     if (!swap.consent) nextErrors.consent = "请确认演示服务器提交说明。";
 
     setSwapErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0) return;
+    if (Object.keys(nextErrors).length > 0) {
+      focusFirstInvalid(swapFormRef.current);
+      return;
+    }
 
+    submissionLockRef.current = true;
     setSubmitting(true);
     setServerError(null);
     try {
-      const record = await createServerRequest({
-        requestType: "swap",
-        offered: {
-          category: swap.offeredCategory,
-          pricingUnit: swap.offeredUnit,
-          quantity: Number(swap.offeredQuantity),
-          description: swap.offeredDescription.trim(),
+      const idempotencyKey = swapKeyRef.current ?? createIdempotencyKey("request-swap");
+      swapKeyRef.current = idempotencyKey;
+      const { record } = await marketplacePost<MarketplaceRequestRecord>(
+        "/api/requests",
+        {
+          requestType: "swap",
+          offered: {
+            category: swap.offeredCategory,
+            pricingUnit: swap.offeredUnit,
+            quantity: Number(swap.offeredQuantity),
+            description: swap.offeredDescription.trim(),
+          },
+          wanted: {
+            category: swap.wantedCategory,
+            pricingUnit: swap.wantedUnit,
+            quantity: Number(swap.wantedQuantity),
+            description: swap.wantedDescription.trim(),
+          },
+          region: swap.region,
+          cashDirection: swap.cashDirection,
+          cashAmount: swap.cashDirection === "none" ? null : Number(swap.cashAmount),
         },
-        wanted: {
-          category: swap.wantedCategory,
-          pricingUnit: swap.wantedUnit,
-          quantity: Number(swap.wantedQuantity),
-          description: swap.wantedDescription.trim(),
-        },
-        region: swap.region,
-        cashDirection: swap.cashDirection,
-        cashAmount: swap.cashDirection === "none" ? null : Number(swap.cashAmount),
-      });
+        idempotencyKey,
+      );
+      swapKeyRef.current = null;
       setConfirmation({ id: record.id, mode: "swap", title: record.title });
       window.dispatchEvent(new CustomEvent("kai-server-records-changed"));
     } catch (error) {
-      setServerError(error instanceof Error ? error.message : "需求服务暂时不可用，请稍后再试。");
+      const message = marketplaceErrorMessage(error, "需求服务暂时不可用，请稍后再试。");
+      const fieldMap: Record<string, keyof SwapValues> = {
+        "offered.category": "offeredCategory",
+        "offered.pricingUnit": "offeredUnit",
+        "offered.quantity": "offeredQuantity",
+        "offered.description": "offeredDescription",
+        "wanted.category": "wantedCategory",
+        "wanted.pricingUnit": "wantedUnit",
+        "wanted.quantity": "wantedQuantity",
+        "wanted.description": "wantedDescription",
+        region: "region",
+        cashDirection: "cashDirection",
+        cashAmount: "cashAmount",
+      };
+      const field = error instanceof MarketplaceApiError && error.field ? fieldMap[error.field] : undefined;
+      if (field) {
+        setSwapErrors((current) => ({ ...current, [field]: message }));
+        focusFirstInvalid(swapFormRef.current);
+      } else {
+        setServerError(message);
+      }
     } finally {
+      submissionLockRef.current = false;
       setSubmitting(false);
     }
   }
 
   function chooseTab(tab: "procurement" | "swap") {
     setActiveTab(tab);
+    setServerError(null);
     setConfirmation(null);
   }
 
@@ -351,46 +465,60 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
 
         {activeTab === "procurement" ? (
           <div aria-labelledby="procurement-tab" className="border-x border-b border-[var(--border)] bg-[var(--surface)] p-5 sm:p-7" id="procurement-panel" role="tabpanel">
-            <form noValidate onSubmit={submitProcurement}>
+            <form noValidate onSubmit={submitProcurement} ref={procurementFormRef}>
               <fieldset className="m-0 border-0 p-0">
                 <legend className="mb-5 text-xl font-semibold text-[var(--ink)]">需求基础信息</legend>
                 <div className="grid gap-5 sm:grid-cols-2">
                   <label className={fieldLabelClass}>
                     交易方式
                     <select
+                      aria-describedby={procurementErrors.dealMode ? "procurement-deal-mode-error" : undefined}
+                      aria-invalid={Boolean(procurementErrors.dealMode)}
                       className={inputClass}
+                      id="procurement-deal-mode"
                       onChange={(event) => updateProcurement("dealMode", event.target.value as "rental" | "service")}
                       value={procurement.dealMode}
                     >
                       <option value="rental">算力租赁</option>
                       <option value="service">服务采购</option>
                     </select>
+                    <ErrorText id="procurement-deal-mode-error">{procurementErrors.dealMode}</ErrorText>
                   </label>
                   <label className={fieldLabelClass}>
                     资源类型
                     <select
+                      aria-describedby={procurementErrors.category ? "procurement-category-error" : undefined}
+                      aria-invalid={Boolean(procurementErrors.category)}
                       className={inputClass}
+                      id="procurement-category"
                       onChange={(event) => updateProcurementCategory(event.target.value as ResourceCategory)}
                       value={procurement.category}
                     >
                       <CategoryOptions />
                     </select>
+                    <ErrorText id="procurement-category-error">{procurementErrors.category}</ErrorText>
                   </label>
                   <label className={fieldLabelClass}>
                     计价单位
                     <select
+                      aria-describedby={procurementErrors.pricingUnit ? "procurement-unit-error" : undefined}
+                      aria-invalid={Boolean(procurementErrors.pricingUnit)}
                       className={inputClass}
-                      onChange={(event) => updateProcurement("pricingUnit", event.target.value as PricingUnit)}
+                      id="procurement-unit"
+                      onChange={(event) => updateProcurementUnit(event.target.value as PricingUnit)}
                       value={procurement.pricingUnit}
                     >
                       <UnitOptions category={procurement.category} />
                     </select>
+                    <ErrorText id="procurement-unit-error">{procurementErrors.pricingUnit}</ErrorText>
                   </label>
                   <label className={fieldLabelClass}>
-                    需求数量
+                    需求数量（{procurement.pricingUnit}）
                     <input
+                      aria-describedby={procurementErrors.quantity ? "procurement-quantity-error" : undefined}
                       aria-invalid={Boolean(procurementErrors.quantity)}
                       className={inputClass}
+                      id="procurement-quantity"
                       inputMode="decimal"
                       min="0.01"
                       onChange={(event) => updateProcurement("quantity", event.target.value)}
@@ -398,27 +526,39 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
                       type="number"
                       value={procurement.quantity}
                     />
-                    <ErrorText>{procurementErrors.quantity}</ErrorText>
+                    <ErrorText id="procurement-quantity-error">{procurementErrors.quantity}</ErrorText>
                   </label>
-                  <label className={fieldLabelClass}>
-                    持续时长（小时）
-                    <input
-                      aria-invalid={Boolean(procurementErrors.duration)}
-                      className={inputClass}
-                      inputMode="numeric"
-                      min="1"
-                      onChange={(event) => updateProcurement("duration", event.target.value)}
-                      step="1"
-                      type="number"
-                      value={procurement.duration}
-                    />
-                    <ErrorText>{procurementErrors.duration}</ErrorText>
-                  </label>
+                  {durationConfig(procurement.pricingUnit).required ? (
+                    <label className={fieldLabelClass}>
+                      {durationConfig(procurement.pricingUnit).label}
+                      <input
+                        aria-describedby={`procurement-duration-help${procurementErrors.duration ? " procurement-duration-error" : ""}`}
+                        aria-invalid={Boolean(procurementErrors.duration)}
+                        className={inputClass}
+                        id="procurement-duration"
+                        inputMode="numeric"
+                        min="1"
+                        onChange={(event) => updateProcurement("duration", event.target.value)}
+                        step="1"
+                        type="number"
+                        value={procurement.duration}
+                      />
+                      <span className="text-xs font-normal text-[var(--muted)]" id="procurement-duration-help">{durationConfig(procurement.pricingUnit).help}</span>
+                      <ErrorText id="procurement-duration-error">{procurementErrors.duration}</ErrorText>
+                    </label>
+                  ) : (
+                    <div className="border border-[var(--border)] bg-[var(--info-bg)] p-3 text-sm" role="note">
+                      <strong className="block text-[var(--ink)]">{durationConfig(procurement.pricingUnit).label}</strong>
+                      <span className="mt-1 block text-xs text-[var(--text)]">{durationConfig(procurement.pricingUnit).help}</span>
+                    </div>
+                  )}
                   <label className={fieldLabelClass}>
                     期望区域
                     <select
+                      aria-describedby={procurementErrors.region ? "procurement-region-error" : undefined}
                       aria-invalid={Boolean(procurementErrors.region)}
                       className={inputClass}
+                      id="procurement-region"
                       onChange={(event) => updateProcurement("region", event.target.value)}
                       value={procurement.region}
                     >
@@ -427,34 +567,38 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
                         <option key={region}>{region}</option>
                       ))}
                     </select>
-                    <ErrorText>{procurementErrors.region}</ErrorText>
+                    <ErrorText id="procurement-region-error">{procurementErrors.region}</ErrorText>
                   </label>
                   <label className={fieldLabelClass}>
                     期望开始日期
                     <input
+                      aria-describedby={procurementErrors.deliveryDate ? "procurement-delivery-error" : undefined}
                       aria-invalid={Boolean(procurementErrors.deliveryDate)}
                       className={inputClass}
+                      id="procurement-delivery"
                       onChange={(event) => updateProcurement("deliveryDate", event.target.value)}
                       type="date"
                       value={procurement.deliveryDate}
                     />
-                    <ErrorText>{procurementErrors.deliveryDate}</ErrorText>
+                    <ErrorText id="procurement-delivery-error">{procurementErrors.deliveryDate}</ErrorText>
                   </label>
                   <label className={`${fieldLabelClass} sm:col-span-2`}>
                     交付与 SLA 要求
                     <textarea
+                      aria-describedby={procurementErrors.requirements ? "procurement-requirements-error" : undefined}
                       aria-invalid={Boolean(procurementErrors.requirements)}
                       className={`${inputClass} min-h-28 resize-y`}
+                      id="procurement-requirements"
                       onChange={(event) => updateProcurement("requirements", event.target.value)}
                       placeholder="例如：支持容器交付，期望 99.9% SLA，需要明确网络费用口径"
                       value={procurement.requirements}
                     />
-                    <ErrorText>{procurementErrors.requirements}</ErrorText>
+                    <ErrorText id="procurement-requirements-error">{procurementErrors.requirements}</ErrorText>
                   </label>
                 </div>
               </fieldset>
 
-              <Consent checked={procurement.consent} error={procurementErrors.consent} onChange={(checked) => updateProcurement("consent", checked)} />
+              <Consent checked={procurement.consent} error={procurementErrors.consent} id="procurement-consent" onChange={(checked) => updateProcurement("consent", checked)} />
               {serverError ? <p className="mt-5 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-4 text-base text-[var(--error)]" role="alert">{serverError}</p> : null}
               <button className="button button-primary mt-6 w-full sm:w-auto" disabled={submitting} type="submit">
                 {submitting ? "正在提交…" : "提交演示需求"}
@@ -463,7 +607,7 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
           </div>
         ) : (
           <div aria-labelledby="swap-tab" className="border-x border-b border-[var(--border)] bg-[var(--surface)] p-5 sm:p-7" id="swap-panel" role="tabpanel">
-            <form noValidate onSubmit={submitSwap}>
+            <form noValidate onSubmit={submitSwap} ref={swapFormRef}>
               <SwapLeg
                 category={swap.offeredCategory}
                 categoryError={swapErrors.offeredCategory}
@@ -478,6 +622,7 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
                 quantityError={swapErrors.offeredQuantity}
                 side="offered"
                 unit={swap.offeredUnit}
+                unitError={swapErrors.offeredUnit}
               />
               <div aria-hidden="true" className="my-5 text-center text-xl font-semibold text-[var(--accent)]">
                 置换为
@@ -496,6 +641,7 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
                 quantityError={swapErrors.wantedQuantity}
                 side="wanted"
                 unit={swap.wantedUnit}
+                unitError={swapErrors.wantedUnit}
               />
 
               <fieldset className="mt-6 border-0 border-t border-[var(--border)] p-0 pt-6">
@@ -504,8 +650,10 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
                   <label className={fieldLabelClass}>
                     期望区域
                     <select
+                      aria-describedby={swapErrors.region ? "swap-region-error" : undefined}
                       aria-invalid={Boolean(swapErrors.region)}
                       className={inputClass}
+                      id="swap-region"
                       onChange={(event) => updateSwap("region", event.target.value)}
                       value={swap.region}
                     >
@@ -514,12 +662,15 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
                         <option key={region}>{region}</option>
                       ))}
                     </select>
-                    <ErrorText>{swapErrors.region}</ErrorText>
+                    <ErrorText id="swap-region-error">{swapErrors.region}</ErrorText>
                   </label>
                   <label className={fieldLabelClass}>
                     现金补差
                     <select
+                      aria-describedby={swapErrors.cashDirection ? "swap-cash-direction-error" : undefined}
+                      aria-invalid={Boolean(swapErrors.cashDirection)}
                       className={inputClass}
+                      id="swap-cash-direction"
                       onChange={(event) => updateSwap("cashDirection", event.target.value as SwapValues["cashDirection"])}
                       value={swap.cashDirection}
                     >
@@ -527,13 +678,16 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
                       <option value="offer">我方可补差</option>
                       <option value="request">期望对方补差</option>
                     </select>
+                    <ErrorText id="swap-cash-direction-error">{swapErrors.cashDirection}</ErrorText>
                   </label>
                   {swap.cashDirection !== "none" ? (
                     <label className={fieldLabelClass}>
                       补差上限（人民币元）
                       <input
+                        aria-describedby={swapErrors.cashAmount ? "swap-cash-amount-error" : undefined}
                         aria-invalid={Boolean(swapErrors.cashAmount)}
                         className={inputClass}
+                        id="swap-cash-amount"
                         inputMode="decimal"
                         min="0.01"
                         onChange={(event) => updateSwap("cashAmount", event.target.value)}
@@ -541,13 +695,13 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
                         type="number"
                         value={swap.cashAmount}
                       />
-                      <ErrorText>{swapErrors.cashAmount}</ErrorText>
+                      <ErrorText id="swap-cash-amount-error">{swapErrors.cashAmount}</ErrorText>
                     </label>
                   ) : null}
                 </div>
               </fieldset>
 
-              <Consent checked={swap.consent} error={swapErrors.consent} onChange={(checked) => updateSwap("consent", checked)} />
+              <Consent checked={swap.consent} error={swapErrors.consent} id="swap-consent" onChange={(checked) => updateSwap("consent", checked)} />
               {serverError ? <p className="mt-5 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-4 text-base text-[var(--error)]" role="alert">{serverError}</p> : null}
               <button className="button button-primary mt-6 w-full sm:w-auto" disabled={submitting} type="submit">
                 {submitting ? "正在提交…" : "提交演示置换需求"}
@@ -578,18 +732,21 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
   );
 }
 
-function Consent({ checked, error, onChange }: { checked: boolean; error?: string; onChange: (checked: boolean) => void }) {
+function Consent({ checked, error, id, onChange }: { checked: boolean; error?: string; id: string; onChange: (checked: boolean) => void }) {
   return (
     <label className="mt-6 flex items-start gap-3 border border-[var(--border)] bg-[var(--info-bg)] p-4 text-sm text-[var(--text)]">
       <input
+        aria-describedby={error ? `${id}-error` : undefined}
+        aria-invalid={Boolean(error)}
         checked={checked}
         className="mt-1 size-4 shrink-0 accent-[var(--brand)]"
+        id={id}
         onChange={(event) => onChange(event.target.checked)}
         type="checkbox"
       />
       <span>
         我确认仅提交演示业务字段到 KAI Cloud 演示服务器，并且不含真实个人资料、商业机密或访问凭据。
-        <ErrorText>{error}</ErrorText>
+        <ErrorText id={`${id}-error`}>{error}</ErrorText>
       </span>
     </label>
   );
@@ -601,6 +758,7 @@ type SwapLegProps = {
   category: ResourceCategory;
   categoryError?: string;
   unit: PricingUnit;
+  unitError?: string;
   quantity: string;
   quantityError?: string;
   description: string;
@@ -619,26 +777,38 @@ function SwapLeg(props: SwapLegProps) {
         <label className={fieldLabelClass}>
           资源类型
           <select
+            aria-describedby={props.categoryError ? `${props.side}-category-error` : undefined}
             aria-invalid={Boolean(props.categoryError)}
             className={inputClass}
+            id={`${props.side}-category`}
             onChange={(event) => props.onCategoryChange(event.target.value as ResourceCategory)}
             value={props.category}
           >
             <CategoryOptions />
           </select>
-          <ErrorText>{props.categoryError}</ErrorText>
+          <ErrorText id={`${props.side}-category-error`}>{props.categoryError}</ErrorText>
         </label>
         <label className={fieldLabelClass}>
           计价单位
-          <select className={inputClass} onChange={(event) => props.onUnitChange(event.target.value as PricingUnit)} value={props.unit}>
+          <select
+            aria-describedby={props.unitError ? `${props.side}-unit-error` : undefined}
+            aria-invalid={Boolean(props.unitError)}
+            className={inputClass}
+            id={`${props.side}-unit`}
+            onChange={(event) => props.onUnitChange(event.target.value as PricingUnit)}
+            value={props.unit}
+          >
             <UnitOptions category={props.category} />
           </select>
+          <ErrorText id={`${props.side}-unit-error`}>{props.unitError}</ErrorText>
         </label>
         <label className={fieldLabelClass}>
           数量
           <input
+            aria-describedby={props.quantityError ? `${props.side}-quantity-error` : undefined}
             aria-invalid={Boolean(props.quantityError)}
             className={inputClass}
+            id={`${props.side}-quantity`}
             inputMode="decimal"
             min="0.01"
             onChange={(event) => props.onQuantityChange(event.target.value)}
@@ -646,18 +816,20 @@ function SwapLeg(props: SwapLegProps) {
             type="number"
             value={props.quantity}
           />
-          <ErrorText>{props.quantityError}</ErrorText>
+          <ErrorText id={`${props.side}-quantity-error`}>{props.quantityError}</ErrorText>
         </label>
         <label className={`${fieldLabelClass} sm:col-span-2`}>
           规格、容量与交付边界
           <textarea
+            aria-describedby={props.descriptionError ? `${props.side}-description-error` : undefined}
             aria-invalid={Boolean(props.descriptionError)}
             className={`${inputClass} min-h-24 resize-y`}
+            id={`${props.side}-description`}
             onChange={(event) => props.onDescriptionChange(event.target.value)}
             placeholder={props.side === "offered" ? "描述可提供的型号、容量、可用时段和交付形态" : "描述期望获得的型号、容量、时段和 SLA"}
             value={props.description}
           />
-          <ErrorText>{props.descriptionError}</ErrorText>
+          <ErrorText id={`${props.side}-description-error`}>{props.descriptionError}</ErrorText>
         </label>
       </div>
     </fieldset>

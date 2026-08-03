@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { DM_Sans, Noto_Sans_SC, Work_Sans } from "next/font/google";
-import { headers } from "next/headers";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import "./globals.css";
@@ -26,10 +25,8 @@ const chineseFont = Noto_Sans_SC({
 });
 
 export async function generateMetadata(): Promise<Metadata> {
-  const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "cloud.kai.com";
-  const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  const metadataBase = new URL(`${protocol}://${host}`);
+  const configuredOrigin = typeof process !== "undefined" ? process.env.KAI_PUBLIC_ORIGIN : undefined;
+  const metadataBase = new URL(configuredOrigin ?? "https://cloud.kai.com");
   const title = "KAI Cloud｜中国 Token 学院算力市场";
   const description = "聚合 GPU、Token、模型容量、整机柜与云厂商资源，以标准化行情驱动算力租赁与置换。";
 
