@@ -19,3 +19,6 @@ tests
 id_rsa*
 id_ed25519*
 .ssh
+.npmrc
+.yarnrc*
+.pnpmfile.cjs
