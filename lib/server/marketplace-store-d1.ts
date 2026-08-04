@@ -19,6 +19,7 @@ import { resolveMarketplaceCapacityLimits } from "@/lib/server/marketplace-capac
 import {
   MARKETPLACE_MIGRATION_CHECKSUM,
   MARKETPLACE_MIGRATION_VERSION,
+  marketplaceDataRepairStatements,
   marketplaceLegacyImportStatements,
   marketplaceSchemaStatements,
 } from "@/lib/server/marketplace-schema";
@@ -309,6 +310,7 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
         if (legacyTables.every(Boolean)) {
           await db.batch(marketplaceLegacyImportStatements.map((sql) => db.prepare(sql)));
         }
+        await db.batch(marketplaceDataRepairStatements.map((sql) => db.prepare(sql)));
         await db.prepare(`INSERT OR IGNORE INTO marketplace_schema_migrations (
           version, checksum, applied_at
         ) VALUES (?, ?, ?)`).bind(

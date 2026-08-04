@@ -22,6 +22,7 @@ import { resolveMarketplaceCapacityLimits } from "@/lib/server/marketplace-capac
 import {
   MARKETPLACE_MIGRATION_CHECKSUM,
   MARKETPLACE_MIGRATION_VERSION,
+  marketplaceDataRepairStatements,
   marketplaceLegacyImportStatements,
   marketplaceSchemaStatements,
 } from "@/lib/server/marketplace-schema";
@@ -234,6 +235,7 @@ function applyMigration(db: DatabaseSync) {
     ) {
       for (const statement of marketplaceLegacyImportStatements) db.exec(statement);
     }
+    for (const statement of marketplaceDataRepairStatements) db.exec(statement);
     db.prepare("INSERT INTO marketplace_schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)").run(
       MARKETPLACE_MIGRATION_VERSION,
       MARKETPLACE_MIGRATION_CHECKSUM,

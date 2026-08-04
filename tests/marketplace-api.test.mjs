@@ -8,6 +8,8 @@ import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
+import { marketplaceSchemaStatements } from "../db/schema.ts";
+
 const SESSION_COOKIE_PATTERN = /^kai_session_dev=[a-f0-9]{64}$/u;
 
 function futureDate(days = 14) {
@@ -335,7 +337,7 @@ test("legacy marketplace tables import once without exposing supplier free text 
     assert.equal(readyResponse.status, 200);
     const ready = await readyResponse.json();
     assert.equal(ready.status, "ok");
-    assert.equal(ready.database.schemaVersion, 2);
+    assert.equal(ready.database.schemaVersion, 3);
     await stopServer(server);
 
     const migratedDb = new DatabaseSync(databasePath, { readOnly: true });
@@ -343,7 +345,7 @@ test("legacy marketplace tables import once without exposing supplier free text 
       const request = migratedDb.prepare(
         "SELECT owner_actor_id FROM marketplace_requests_v2 WHERE id = ?",
       ).get(legacyRequestId);
-      assert.equal(request.owner_actor_id, "legacy-demo");
+      assert.equal(request.owner_actor_id, "legacy-import");
 
       const quote = migratedDb.prepare(`SELECT
         raw_unit_price, standardized_unit_price, raw_scope_note,
@@ -352,22 +354,114 @@ test("legacy marketplace tables import once without exposing supplier free text 
       assert.equal(quote.raw_scope_note, privateScope);
       assert.ok(!quote.standardized_scope_note.includes(privateScope));
       assert.notEqual(quote.standardized_unit_price, quote.raw_unit_price);
-      assert.equal(quote.standardization_version, "kai-demo-v2");
+      assert.equal(quote.standardization_version, "kai-standard-v1");
 
       const draft = migratedDb.prepare(
         "SELECT owner_actor_id FROM marketplace_drafts_v2 WHERE id = ?",
       ).get("KAI-LEGACY-DRAFT-001");
-      assert.equal(draft.owner_actor_id, "legacy-demo");
+      assert.equal(draft.owner_actor_id, "legacy-import");
 
       const migration = migratedDb.prepare(
         "SELECT version, checksum FROM marketplace_schema_migrations ORDER BY version DESC LIMIT 1",
       ).get();
       const schemaSource = await readFile("db/schema.ts", "utf8");
       const declaredChecksum = schemaSource.match(/MARKETPLACE_MIGRATION_CHECKSUM = "([0-9a-f]{64})"/u)?.[1];
-      assert.equal(migration.version, 2);
+      assert.equal(migration.version, 3);
       assert.equal(migration.checksum, declaredChecksum);
     } finally {
       migratedDb.close();
+    }
+  } finally {
+    await stopServer(server);
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("schema v3 repairs already-migrated v2 marketplace enum values before public reads", async () => {
+  const dataDirectory = await mkdtemp(join(tmpdir(), "kai-marketplace-v2-repair-test-"));
+  const databasePath = join(dataDirectory, "kai-cloud.sqlite");
+  const requestId = "KAI-V2-REPAIR-DEMAND-001";
+  const quoteId = "KAI-V2-REPAIR-QUOTE-001";
+  const createdAt = new Date().toISOString();
+  const validUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1_000).toISOString();
+  let server;
+
+  try {
+    await writeFreshMarketSnapshot(dataDirectory);
+    const v2Database = new DatabaseSync(databasePath, { enableForeignKeyConstraints: true });
+    try {
+      for (const statement of marketplaceSchemaStatements) v2Database.exec(statement);
+      v2Database.exec("PRAGMA ignore_check_constraints = ON");
+      v2Database.prepare(`INSERT INTO marketplace_schema_migrations (version, checksum, applied_at)
+        VALUES (2, ?, ?)`).run("d74de64ac6ae258827f09dec9e5f2edf2e4c45b9a9d90749e8e72856d90889b5", createdAt);
+      v2Database.prepare(`INSERT INTO marketplace_requests_v2 (
+        id, owner_actor_id, idempotency_key, payload_hash, visibility,
+        request_type, kind, title, category, region, pricing_unit, quantity,
+        duration_hours, delivery_date, summary, offered_json, wanted_json,
+        cash_direction, cash_amount, status, created_at, updated_at, version
+      ) VALUES (?, 'legacy-demo', ?, 'legacy', 'market', 'procurement', 'rental',
+        'Historical H100 request', 'gpu', '华北', '卡时', 8, 168, ?,
+        'Historical public summary', NULL, NULL, 'none', NULL, '匹配中', ?, ?, 1)`).run(
+        requestId,
+        `legacy-${requestId}`,
+        futureDate(),
+        createdAt,
+        createdAt,
+      );
+      v2Database.prepare(`INSERT INTO marketplace_quotes_v2 (
+        id, supplier_actor_id, request_owner_actor_id, idempotency_key, payload_hash,
+        demand_id, demand_title, raw_unit_price, standardized_unit_price,
+        pricing_unit, currency, lead_time, valid_days, valid_until,
+        raw_scope_note, standardized_scope_note, standardization_version,
+        standardization_note, supplier_status, normalized_status, created_at
+      ) VALUES (?, 'legacy-demo', 'legacy-demo', ?, 'legacy', ?,
+        'Historical H100 request', 31.2, 32.14, '卡时', 'CNY', '48 小时', 7, ?,
+        'PRIVATE_RAW_SCOPE', 'KAI 演示统一口径', 'kai-demo-v2',
+        '旧版演示报价说明', '已提交', '已标准化', ?)`).run(
+        quoteId,
+        `legacy-${quoteId}`,
+        requestId,
+        validUntil,
+        createdAt,
+      );
+      v2Database.exec("PRAGMA ignore_check_constraints = OFF");
+    } finally {
+      v2Database.close();
+    }
+
+    server = await startServer(dataDirectory);
+    const readyResponse = await fetch(`${server.baseUrl}/api/ready`);
+    assert.equal(readyResponse.status, 200);
+    const ready = await readyResponse.json();
+    assert.equal(ready.database.schemaVersion, 3);
+
+    const marketResponse = await fetch(`${server.baseUrl}/api/requests?view=market&limit=50`);
+    assert.equal(marketResponse.status, 200);
+    const market = await marketResponse.json();
+    assert.equal(market.items.find((item) => item.id === requestId)?.region, "北京");
+    await stopServer(server);
+
+    const repaired = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      const request = repaired.prepare(
+        "SELECT owner_actor_id, region FROM marketplace_requests_v2 WHERE id = ?",
+      ).get(requestId);
+      assert.equal(request.owner_actor_id, "legacy-import");
+      assert.equal(request.region, "北京");
+      const quote = repaired.prepare(`SELECT supplier_actor_id, request_owner_actor_id,
+        lead_time, standardized_scope_note, standardization_version, standardization_note
+        FROM marketplace_quotes_v2 WHERE id = ?`).get(quoteId);
+      assert.equal(quote.supplier_actor_id, "legacy-import");
+      assert.equal(quote.request_owner_actor_id, "legacy-import");
+      assert.equal(quote.lead_time, "48 小时内");
+      assert.equal(quote.standardization_version, "kai-standard-v1");
+      assert.doesNotMatch(JSON.stringify(quote), /demo|演示|非实时成交价/u);
+      const migration = repaired.prepare(
+        "SELECT version FROM marketplace_schema_migrations ORDER BY version DESC LIMIT 1",
+      ).get();
+      assert.equal(migration.version, 3);
+    } finally {
+      repaired.close();
     }
   } finally {
     await stopServer(server);
@@ -607,7 +701,7 @@ test("marketplace API enforces A/B/C isolation, projections, CSRF and idempotenc
     const ready = await (await fetch(`${fixture.server.baseUrl}/api/ready`)).json();
     assert.equal(ready.status, "ok");
     assert.equal(ready.database.backend, "sqlite");
-    assert.equal(ready.database.schemaVersion, 2);
+    assert.equal(ready.database.schemaVersion, 3);
     assert.equal(ready.market.source, "persistent");
     assert.equal(ready.market.ready, true);
 
