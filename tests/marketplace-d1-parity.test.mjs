@@ -5,10 +5,13 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 async function loadBuiltD1Store() {
-  const assets = await readdir("dist/server/assets");
-  const filename = assets.find((entry) => /^marketplace-store-d1-[A-Za-z0-9_-]+\.js$/u.test(entry));
-  assert.ok(filename, "the production build must contain the D1 store chunk");
-  return import(pathToFileURL(resolve("dist/server/assets", filename)).href);
+  const candidateDirectories = ["dist/server/assets", "dist/server/_next/static"];
+  for (const directory of candidateDirectories) {
+    const assets = await readdir(directory).catch(() => []);
+    const filename = assets.find((entry) => /^marketplace-store-d1-[A-Za-z0-9_-]+\.js$/u.test(entry));
+    if (filename) return import(pathToFileURL(resolve(directory, filename)).href);
+  }
+  assert.fail("the production build must contain the D1 store chunk");
 }
 
 async function migrationMetadata() {

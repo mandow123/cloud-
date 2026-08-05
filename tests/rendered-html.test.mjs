@@ -33,12 +33,13 @@ test("server-renders the finished KAI Cloud home page", async () => {
   const html = await response.text();
   assert.match(html, /KAI Cloud/);
   assert.match(html, /中国 Token 学院算力市场/);
-  assert.match(html, /先看清价格/);
+  assert.match(html, /今日算力报价/);
   assert.match(html, /发布算力需求/);
-  assert.match(html, /需求服务已接通|交易链路已接通|供应方报价会回流到需求方工作台/);
+  assert.match(html, /提交后在交易工作台查看报价进度/);
   assert.match(html, /每日北京时间 06:00/);
-  assert.match(html, /模型调用成本指数/);
-  assert.match(html, /供应方报价会回流到需求方工作台/);
+  assert.match(html, /主流模型成本指数/);
+  assert.match(html, /登记可供算力/);
+  assert.doesNotMatch(html, /先看清价格|十个业务叫法/);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
 });
 
@@ -89,7 +90,7 @@ test("all primary public and member routes render", async () => {
     ["/market", /行情中心/],
     ["/resources", /资源市场/],
     ["/request", /发布.*需求|租赁.*置换/],
-    ["/member", /会员中心|需求方|供应方/],
+    ["/member", /交易工作台|需求方|供应方/],
     ["/partners", /供应商合作/],
     ["/methodology", /数据方法|价格口径/],
   ];
