@@ -18,14 +18,23 @@ const CATEGORY_LABELS: Record<ResourceCategory, string> = {
   cloud_vendor: "云厂商资源",
 };
 
-type RangeDays = 7 | 30 | 90;
+const RANGE_OPTIONS = [7, 30, 90, 180, 360, 720] as const;
+type RangeDays = (typeof RANGE_OPTIONS)[number];
+const MAX_RENDERED_POINTS = 120;
 
 function isCategory(value: string | null): value is ResourceCategory {
   return CATEGORY_ORDER.includes(value as ResourceCategory);
 }
 
 function isRange(value: string | null): value is `${RangeDays}` {
-  return value === "7" || value === "30" || value === "90";
+  return RANGE_OPTIONS.some((days) => String(days) === value);
+}
+
+function samplePoints<T>(points: readonly T[], limit = MAX_RENDERED_POINTS) {
+  if (points.length <= limit) return points;
+  return Array.from({ length: limit }, (_, index) =>
+    points[Math.round((index * (points.length - 1)) / (limit - 1))],
+  );
 }
 
 function shortDate(value: string) {
@@ -62,6 +71,7 @@ export function MarketDashboard({
     () => activeSeries?.points.slice(-range) ?? [],
     [activeSeries, range],
   );
+  const renderedPoints = useMemo(() => samplePoints(points), [points]);
 
   useEffect(() => {
     function syncFromUrl() {
@@ -166,7 +176,7 @@ export function MarketDashboard({
               </div>
               <div className="border-b border-[var(--border)] p-4">
                 <dt className="text-xs font-semibold text-[var(--muted)]">观察窗口</dt>
-                <dd className="mt-1 text-2xl font-semibold tabular-nums text-[var(--ink)]">90 天</dd>
+                <dd className="mt-1 text-2xl font-semibold tabular-nums text-[var(--ink)]">最长 720 天</dd>
               </div>
               <div className="border-r border-[var(--border)] p-4">
                 <dt className="text-xs font-semibold text-[var(--muted)]">数据口径</dt>
@@ -194,6 +204,23 @@ export function MarketDashboard({
             {modelBoard}
           </div>
         ) : null}
+
+        <section
+          aria-labelledby="card-hour-primary-title"
+          className="mb-10 grid gap-5 border-l-4 border-[var(--accent)] bg-[var(--info-bg)] p-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:p-6"
+        >
+          <div>
+            <p className="kicker">GPU card-hour primary market</p>
+            <h2 className="m-0 text-2xl" id="card-hour-primary-title">卡时首期采用供应商直售</h2>
+            <p className="mb-0 mt-2 max-w-3xl text-sm leading-6">
+              供应商登记真实可交付的 GPU 型号、卡数与连续时间，买方按订单购买和使用。购买结果只用于该订单交付，不形成可再次转售的卡时余额。
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <a className="button button-primary" href="/request?mode=rental">发布卡时采购需求</a>
+            <a className="button button-secondary" href="/member?role=supplier#supply-register">登记可售卡时</a>
+          </div>
+        </section>
 
         <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -262,9 +289,9 @@ export function MarketDashboard({
                 ))}
               </select>
             </div>
-            <div className="flex items-center gap-1 border-t border-[var(--border)] p-3 lg:border-t-0 lg:border-l">
+            <div className="flex flex-wrap items-center gap-1 border-t border-[var(--border)] p-3 lg:border-t-0 lg:border-l">
               <span className="mr-2 text-xs font-semibold text-[var(--muted)]">观察区间</span>
-              {([7, 30, 90] as RangeDays[]).map((days) => (
+              {RANGE_OPTIONS.map((days) => (
                 <button
                   key={days}
                   type="button"
@@ -346,7 +373,7 @@ export function MarketDashboard({
                   />
                 ))}
                 <div className="absolute inset-0 flex items-end gap-px px-1 pt-3" aria-hidden="true">
-                  {points.map((point) => {
+                  {renderedPoints.map((point) => {
                     const p25 = ((point.p25 - minValue) / chartSpan) * 84 + 6;
                     const p50 = ((point.p50 - minValue) / chartSpan) * 84 + 6;
                     const p75 = ((point.p75 - minValue) / chartSpan) * 84 + 6;
@@ -377,11 +404,19 @@ export function MarketDashboard({
                 {formatPrice(latest.p25, activeSeries.pricingUnit)} 至 {formatPrice(latest.p75, activeSeries.pricingUnit)}。
               </p>
 
+              {points.length > renderedPoints.length ? (
+                <p className="mt-3 text-xs leading-5 text-[var(--muted)]">
+                  长期区间按等距代表点绘制，涨跌幅、样本均值和文字结论均使用完整日度序列计算。
+                </p>
+              ) : null}
+
               <table className="sr-only">
-                <caption>{activeSeries.label}近 {range} 天行情数据</caption>
+                <caption>
+                  {activeSeries.label}近 {range} 天完整统计；下表为 {renderedPoints.length} 个等距代表点
+                </caption>
                 <thead><tr><th>日期</th><th>P25</th><th>P50</th><th>P75</th><th>样本量</th></tr></thead>
                 <tbody>
-                  {points.map((point) => (
+                  {renderedPoints.map((point) => (
                     <tr key={point.date}>
                       <td>{point.date}</td><td>{point.p25}</td><td>{point.p50}</td><td>{point.p75}</td><td>{point.sampleCount}</td>
                     </tr>

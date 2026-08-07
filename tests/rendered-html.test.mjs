@@ -151,6 +151,21 @@ test("model market renders per-model prices, source status, and the 06:00 update
   assert.doesNotMatch(html, /模型 Token 综合行情/);
 });
 
+test("infrastructure market exposes six observation windows and a supplier-direct card-hour boundary", async () => {
+  const response = await render("/market");
+  const html = await response.text();
+
+  for (const days of [7, 30, 90, 180, 360, 720]) {
+    assert.match(html, new RegExp(`${days}(?:\\s|<!--.*?-->)*天`));
+  }
+  assert.match(html, /卡时首期采用供应商直售/);
+  assert.match(html, /不形成可再次转售的卡时余额/);
+  assert.match(html, /发布卡时采购需求/);
+  assert.match(html, /登记可售卡时/);
+  assert.doesNotMatch(html, />购买卡时</u);
+  assert.doesNotMatch(html, /现金投资|现金取出|保本理财|申购|赎回/u);
+});
+
 test("all ten business aliases are reachable from the home page", async () => {
   const response = await render("/");
   const html = await response.text();

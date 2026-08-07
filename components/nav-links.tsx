@@ -7,6 +7,7 @@ const navigation = [
   { href: "/market", label: "行情中心" },
   { href: "/resources", label: "资源市场" },
   { href: "/partners", label: "供应商合作" },
+  { href: "/supply", label: "上架算力" },
   { href: "/member", label: "交易工作台" },
 ];
 

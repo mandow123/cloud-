@@ -17,6 +17,10 @@ export type MarketplacePage<T> = {
   items: T[];
   count: number;
   updatedAt: string | null;
+  servedAt?: string;
+  source?: string;
+  refreshAfterSeconds?: number | null;
+  refreshPolicy?: string | null;
   pageInfo: MarketplacePageInfo;
   view: string;
 };
@@ -163,6 +167,14 @@ export async function marketplaceGet<T>(path: string, timeoutMs = 12_000) {
   return fetchJson<T>(path, { cache: "no-store" }, timeoutMs);
 }
 
+export async function exchangeGet<T>(path: string, role: "buyer" | "supplier" | "ops", timeoutMs = 12_000) {
+  await getMarketplaceSession();
+  return fetchJson<T>(path, {
+    cache: "no-store",
+    headers: { "x-kai-workspace-role": role },
+  }, timeoutMs);
+}
+
 export async function marketplacePost<TRecord>(
   path: string,
   payload: unknown,
@@ -192,6 +204,37 @@ export async function marketplacePost<TRecord>(
     return result;
   });
 
+  try {
+    return await send(await getMarketplaceSession());
+  } catch (error) {
+    if (error instanceof MarketplaceApiError && error.code === "CSRF_REJECTED") {
+      return send(await getMarketplaceSession(true));
+    }
+    throw error;
+  }
+}
+
+export async function exchangePost<TRecord>(
+  path: string,
+  role: "buyer" | "supplier" | "ops",
+  payload: unknown,
+  idempotencyKey: string,
+  timeoutMs = 15_000,
+) {
+  const send = async (session: MarketplaceSession) => fetchJson<{ record: TRecord; replayed: boolean }>(
+    path,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-kai-csrf": session.csrfToken,
+        "x-kai-workspace-role": role,
+        "Idempotency-Key": idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    timeoutMs,
+  );
   try {
     return await send(await getMarketplaceSession());
   } catch (error) {

@@ -1,4 +1,5 @@
 import { resolveMarketplaceActor, type MarketplaceActor } from "@/lib/server/marketplace-actor";
+import { readAccountSessionToken, resolveAccountSession } from "@/lib/server/account-auth";
 import { getMarketplaceStore, type MarketplaceStore } from "@/lib/server/marketplace-store";
 
 export type MarketplaceAuthorization = {
@@ -10,7 +11,11 @@ export type MarketplaceAuthorization = {
  * rotates expired/unknown cookies. */
 export async function authorizeMarketplaceRequest(request: Request): Promise<MarketplaceAuthorization> {
   const store = await getMarketplaceStore();
-  const actor = await resolveMarketplaceActor(request);
+  const browserActor = await resolveMarketplaceActor(request);
+  const account = readAccountSessionToken(request) ? await resolveAccountSession(request) : null;
+  const actor: MarketplaceActor = account
+    ? { ...browserActor, id: account.activeOrganization.id, source: "account-session" }
+    : browserActor;
   return { actor, store };
 }
 

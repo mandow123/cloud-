@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import {
@@ -84,22 +85,42 @@ test("every listing quote declares price range, scope, freshness and reference s
     assert.equal(quote.disclaimer, MARKET_REFERENCE_NOTICE);
     assert.match(quote.disclaimer, /市场参考报价/);
     assert.match(quote.disclaimer, /询价确认/);
-    assert.doesNotMatch(JSON.stringify(listing), /演示|虚构|非实时成交价|模拟/u);
+    assert.doesNotMatch(JSON.stringify(listing), /演示|虚构|非实时成交价|模拟|初始化样本|平台初始化/u);
   }
 });
 
-test("market series provide deterministic 90-day quartiles for four categories", () => {
+test("market series provide deterministic 720-day quartiles without rewriting the prior 90-day suffix", () => {
+  const expectedSuffix = {
+    "market-gpu-card-hour": "62d2e7f699dbedfbdd861724ca190b505b57a615b686392a667dd94c076fbf3e",
+    "market-token-million": "70c2e12856eae369f182359776acf14b2f5a933e392eac989de58afb76a38948",
+    "market-rack-kw-month": "ab06f5739e6193588c700c2c0007c28ef015cb34ae1604c5327d2a4a9a2b2862",
+    "market-cloud-server-hour": "ba242c0e750a5257116a515c35fdf90e28557ae6f70ad9569226510fa9c4ee37",
+  };
+  const supportedRanges = [7, 30, 90, 180, 360, 720];
   assert.equal(marketSeries.length, 4);
   assert.deepEqual(
     marketSeries.map((series) => series.category),
     RESOURCE_CATEGORIES,
   );
   for (const series of marketSeries) {
-    assert.equal(series.points.length, 90);
-    assert.equal(series.points[0].date, "2026-05-04");
+    assert.equal(series.points.length, 720);
+    assert.equal(series.points[0].date, "2024-08-12");
+    assert.equal(series.points.at(-90).date, "2026-05-04");
     assert.equal(series.points.at(-1).date, "2026-08-01");
+    assert.equal(
+      createHash("sha256").update(JSON.stringify(series.points.slice(-90))).digest("hex"),
+      expectedSuffix[series.id],
+    );
+    assert.equal(new Set(series.points.map((point) => point.date)).size, 720);
+    for (let index = 1; index < series.points.length; index += 1) {
+      assert.equal(
+        Date.parse(series.points[index].date) - Date.parse(series.points[index - 1].date),
+        86_400_000,
+      );
+    }
+    for (const range of supportedRanges) assert.equal(series.points.slice(-range).length, range);
     assert.ok(series.points.every((point) => point.p25 <= point.p50 && point.p50 <= point.p75));
-    assert.ok(series.points.every((point) => point.sampleCount > 0));
+    assert.ok(series.points.every((point) => Number.isInteger(point.sampleCount) && point.sampleCount > 0));
     assert.equal(series.disclaimer, MARKET_REFERENCE_NOTICE);
   }
 });

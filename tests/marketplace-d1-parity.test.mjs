@@ -56,6 +56,7 @@ class FakeD1Database {
     this.demandQuoteCount = demandQuoteCount;
     this.totalQuoteCount = totalQuoteCount;
     this.quoteBatch = null;
+    this.curatedBatch = null;
     this.quoteBatchCompleted = false;
     this.demand = {
       id: "KAI-R-20260803-ABCDEF0123456789",
@@ -89,6 +90,10 @@ class FakeD1Database {
   }
 
   async batch(statements) {
+    if (statements[0]?.sql.includes("INSERT INTO marketplace_requests_v2")) {
+      this.curatedBatch = statements;
+      return statements.map(() => ({ success: true, meta: { changes: 1 } }));
+    }
     if (statements[0]?.sql.includes("INSERT INTO marketplace_quotes_v2")) {
       this.quoteBatch = statements;
       this.quoteBatchCompleted = true;
@@ -114,7 +119,7 @@ class FakeD1Database {
         version: this.quoteBatchCompleted ? this.versionAfterBatch : this.demand.version,
       };
     }
-    if (statement.sql.includes("COUNT(*) AS count FROM marketplace_quotes_v2 WHERE demand_id")) {
+    if (statement.sql.includes("WHERE demand_id = ? AND valid_until > ?")) {
       return { count: this.demandQuoteCount };
     }
     if (statement.sql.includes("COUNT(*) AS count FROM marketplace_quotes_v2")) {
@@ -159,14 +164,29 @@ test("D1 quote batch couples conditional insert to expected demand version", asy
   assert.equal(result.replayed, false);
   assert.equal(result.record.demandId, database.demand.id);
   assert.equal(database.quoteBatch.length, 4);
+  assert.equal(database.curatedBatch.length, 10);
+  assert.match(database.curatedBatch[0].sql, /updated_at = CASE[\s\S]*marketplace_requests_v2\.updated_at > \?/u);
+  assert.match(database.curatedBatch[0].sql, /duration_hours IS NOT excluded\.duration_hours/u);
+  assert.match(database.curatedBatch[1].sql, /@superseded:/u);
+  assert.match(database.curatedBatch[1].sql, /EXISTS \([\s\S]*payload_hash = \?/u);
 
   const [insert, update, submittedEvent, normalizedEvent] = database.quoteBatch;
   assert.match(insert.sql, /WHERE id = \? AND visibility = 'market' AND version = \?/u);
-  assert.deepEqual(insert.values.slice(-5), [database.demand.id, 7, database.demand.id, 25, 50_000]);
+  assert.deepEqual(insert.values.slice(-6), [
+    database.demand.id,
+    7,
+    database.demand.id,
+    result.record.createdAt,
+    25,
+    50_000,
+  ]);
   assert.match(update.sql, /WHERE id = \? AND version = \?/u);
+  assert.match(update.sql, /updated_at = CASE WHEN updated_at > \? THEN updated_at ELSE \? END/u);
   assert.match(update.sql, /EXISTS \(SELECT 1 FROM marketplace_quotes_v2 WHERE id = \?\)/u);
-  assert.equal(update.values[2], 7);
-  assert.equal(update.values[3], result.record.id);
+  assert.equal(update.values[0], result.record.createdAt);
+  assert.equal(update.values[1], result.record.createdAt);
+  assert.equal(update.values[3], 7);
+  assert.equal(update.values[4], result.record.id);
   assert.equal(submittedEvent.values.at(-1), result.record.id);
   assert.equal(normalizedEvent.values.at(-1), result.record.id);
 });
@@ -188,8 +208,8 @@ test("D1 lost update returns state conflict with a no-op atomic batch", async ()
     createD1MarketplaceStore(database).createQuote(context(), input(database.demand.id)),
     (error) => error?.name === "MarketplaceStateConflictError" && error?.message === "STATE_CONFLICT",
   );
-  assert.equal(database.quoteBatch[0].values.at(-4), 7, "the insert must use the version read before the batch");
-  assert.equal(database.quoteBatch[1].values[2], 7, "the status update must use the same expected version");
+  assert.equal(database.quoteBatch[0].values.at(-5), 7, "the insert must use the version read before the batch");
+  assert.equal(database.quoteBatch[1].values[3], 7, "the status update must use the same expected version");
   assert.deepEqual(database.quoteResults.map((result) => result.meta.changes), [0, 0, 0, 0]);
 });
 

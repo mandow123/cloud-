@@ -105,3 +105,21 @@ test("scoped market surfaces use release wording", async () => {
     for (const term of forbidden) assert.ok(!source.includes(term));
   }
 });
+
+test("supplier demand data does not alter the approved member and resource presentation", async () => {
+  const [home, workspace, explorer] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/member-workspace.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/resource-explorer.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(home, /每日北京时间 06:00 更新 · 平台初始化样本，供应商接入后核验更新/u);
+  assert.match(workspace, /<th scope="col">需求<\/th><th scope="col">类别<\/th><th scope="col">区域<\/th><th scope="col">数量<\/th><th scope="col">状态<\/th>/u);
+  for (const term of ["本页最近更新", "上次检查", "立即刷新", "当前响应：", "连续时间 / 期望开始日"]) {
+    assert.ok(!workspace.includes(term));
+  }
+  for (const term of ["页面每 5 分钟", "报价有效至", "参考报价已过期", "算力资源为带独立更新时间的参考目录"]) {
+    assert.ok(!explorer.includes(term));
+  }
+  assert.match(explorer, /目录资源池/u);
+  assert.match(explorer, /平台初始化样本，供应商接入后核验更新/u);
+});

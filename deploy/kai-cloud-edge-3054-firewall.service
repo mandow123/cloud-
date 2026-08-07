@@ -1,0 +1,13 @@
+[Unit]
+Description=Restrict KAI Cloud port 3054 to the AWS VPC
+Before=kai-cloud-edge-3054.socket
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=-/usr/sbin/nft delete table inet kai_cloud_3054
+ExecStart=/usr/sbin/nft -f /etc/kai-cloud/kai-cloud-edge-3054.nft
+ExecStop=-/usr/sbin/nft delete table inet kai_cloud_3054
+
+[Install]
+WantedBy=multi-user.target

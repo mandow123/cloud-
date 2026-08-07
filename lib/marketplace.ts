@@ -81,7 +81,7 @@ export type MarketplaceSupplierQuoteRecord = {
   validDays: number;
   validUntil: string;
   scopeNote: string;
-  status: "已提交" | "已过期";
+  status: "已提交" | "已过期" | "需求已更新 · 需重新报价";
   createdAt: string;
 };
 
@@ -97,7 +97,7 @@ export type MarketplaceNormalizedQuoteRecord = {
   standardizedScope: string;
   standardizationVersion: "kai-standard-v1";
   standardizationNote: string;
-  status: "已标准化" | "已过期";
+  status: "已标准化" | "已过期" | "需求已更新 · 需重新报价";
   createdAt: string;
 };
 

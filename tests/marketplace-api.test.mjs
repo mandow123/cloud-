@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { marketplaceSchemaStatements } from "../db/schema.ts";
+import { curatedMarketDemands } from "../lib/server/curated-market-demands.ts";
 
 const SESSION_COOKIE_PATTERN = /^kai_session_dev=[a-f0-9]{64}$/u;
 
@@ -223,6 +224,159 @@ async function openSession(baseUrl, headers = {}) {
   assert.ok(Date.parse(body.session.expiresAt) > Date.now());
   return new MarketplaceClient(baseUrl, cookie, body.session.csrfToken, body.session);
 }
+
+test("fresh marketplace publishes five server-side KAI procurement calls that suppliers can quote", async () => {
+  const fixture = await createFixture();
+  try {
+    const supplier = await openSession(fixture.server.baseUrl);
+    const outsider = await openSession(fixture.server.baseUrl);
+    const response = await supplier.get("/api/requests?view=market&limit=20");
+    assert.equal(response.status, 200);
+    const market = await response.json();
+    const expectedIds = new Set(curatedMarketDemands().map((demand) => demand.id));
+    const curated = market.items.filter((item) => expectedIds.has(item.id));
+
+    assert.equal(curated.length, 5);
+    assert.equal(new Set(curated.map((item) => item.id)).size, 5);
+    assert.ok(new Set(curated.map((item) => item.category)).size >= 3);
+    assert.equal(market.source, "KAI Cloud 匿名需求池（服务端）");
+    assert.equal(market.refreshAfterSeconds, 60);
+    assert.match(market.refreshPolicy, /每周一 06:10.*系统滚动生成/u);
+    assert.ok(Date.parse(market.updatedAt) > 0);
+    assert.ok(Date.parse(market.servedAt) > 0);
+
+    const serialized = JSON.stringify(market);
+    assert.doesNotMatch(serialized, /owner_actor_id|ownerActorId|idempotency|payloadHash|companyName|contactName|contactMethod|@|1[3-9]\d{9}/iu);
+    assert.doesNotMatch(serialized, /演示|模拟|虚构|非实时成交价|现金投资|现金取出|保本理财|申购|赎回/u);
+
+    for (const [index, demand] of curated.slice(0, 3).entries()) {
+      const quoteResponse = await supplier.postJson("/api/quotes", {
+        demandId: demand.id,
+        unitPrice: 18.5 + index,
+        leadTime: "48 小时内",
+        validDays: 7,
+        scopeNote: "人民币含税、含电费，基础网络与故障响应按标准服务口径提供。",
+      }, { idempotencyKey: idempotencyKey(`curated-quote-${index}`) });
+      assert.equal(quoteResponse.status, 201);
+    }
+    const supplierQuotes = await supplier.get("/api/quotes?view=supplier&limit=20").then((result) => result.json());
+    const outsiderBuyerQuotes = await outsider.get("/api/quotes?view=buyer&limit=20").then((result) => result.json());
+    assert.equal(supplierQuotes.count, 3);
+    assert.equal(outsiderBuyerQuotes.count, 0);
+  } finally {
+    await destroyFixture(fixture);
+  }
+});
+
+test("curated demand revision is monotonic and supersedes quotes without losing replay history", async () => {
+  const fixture = await createFixture();
+  const databasePath = join(fixture.dataDirectory, "kai-cloud.sqlite");
+  const quoteKey = idempotencyKey("curated-v1-quote");
+  try {
+    const supplier = await openSession(fixture.server.baseUrl);
+    const market = await supplier.get("/api/requests?view=market&limit=20").then((response) => response.json());
+    const demand = market.items.find((item) => item.title.includes("H100 80GB"));
+    assert.ok(demand);
+
+    const quotePayload = {
+      demandId: demand.id,
+      unitPrice: 19.8,
+      leadTime: "48 小时内",
+      validDays: 7,
+      scopeNote: "人民币含税含电，基础网络与故障响应按当前需求口径提供。",
+    };
+    const createdQuoteResponse = await supplier.postJson("/api/quotes", quotePayload, { idempotencyKey: quoteKey });
+    assert.equal(createdQuoteResponse.status, 201);
+    const createdQuote = (await createdQuoteResponse.json()).record;
+
+    await stopServer(fixture.server);
+    const futureUpdatedAt = new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString();
+    const before = new DatabaseSync(databasePath, { enableForeignKeyConstraints: true });
+    let originalCreatedAt;
+    try {
+      const request = before.prepare("SELECT created_at FROM marketplace_requests_v2 WHERE id = ?").get(demand.id);
+      originalCreatedAt = request.created_at;
+      before.prepare(`UPDATE marketplace_requests_v2
+        SET payload_hash = 'kai-curated-demand-v1', summary = '旧版公开要求',
+            status = '方案待确认', updated_at = ?, version = 7
+        WHERE id = ?`).run(futureUpdatedAt, demand.id);
+      before.prepare(`UPDATE marketplace_quotes_v2
+        SET standardization_version = 'kai-standard-v1@revision:kai-curated-demand-v1',
+            valid_until = ?
+        WHERE id = ?`).run(new Date(Date.now() + 7 * 24 * 60 * 60 * 1_000).toISOString(), createdQuote.id);
+    } finally {
+      before.close();
+    }
+
+    fixture.server = await startServer(fixture.dataDirectory);
+    supplier.moveTo(fixture.server.baseUrl);
+    const supplierQuotes = await supplier.get("/api/quotes?view=supplier&limit=20").then((response) => response.json());
+    assert.equal(supplierQuotes.items.find((item) => item.id === createdQuote.id)?.status, "需求已更新 · 需重新报价");
+
+    const upgraded = new DatabaseSync(databasePath, { readOnly: true });
+    let upgradedVersion;
+    let upgradedTimestamp;
+    let supersededVersion;
+    try {
+      const request = upgraded.prepare(`SELECT payload_hash, status, created_at, updated_at, version
+        FROM marketplace_requests_v2 WHERE id = ?`).get(demand.id);
+      assert.match(request.payload_hash, /^kai-curated-demand-v3:/u);
+      assert.equal(request.status, "已记录");
+      assert.equal(request.created_at, originalCreatedAt);
+      assert.ok(request.updated_at >= futureUpdatedAt);
+      assert.equal(request.version, 8);
+      upgradedVersion = request.version;
+      upgradedTimestamp = request.updated_at;
+      const quote = upgraded.prepare(`SELECT valid_until, standardization_version
+        FROM marketplace_quotes_v2 WHERE id = ?`).get(createdQuote.id);
+      assert.ok(Date.parse(quote.valid_until) <= Date.now());
+      assert.match(quote.standardization_version, /@revision:kai-curated-demand-v1@superseded:/u);
+      supersededVersion = quote.standardization_version;
+    } finally {
+      upgraded.close();
+    }
+
+    const replayResponse = await supplier.postJson("/api/quotes", quotePayload, { idempotencyKey: quoteKey });
+    assert.equal(replayResponse.status, 200);
+    const replay = await replayResponse.json();
+    assert.equal(replay.replayed, true);
+    assert.equal(replay.record.id, createdQuote.id);
+    assert.equal(replay.record.status, "需求已更新 · 需重新报价");
+
+    const freshQuoteResponse = await supplier.postJson("/api/quotes", {
+      ...quotePayload,
+      unitPrice: 20.1,
+    }, { idempotencyKey: idempotencyKey("curated-v3-quote") });
+    assert.equal(freshQuoteResponse.status, 201);
+    const freshQuote = (await freshQuoteResponse.json()).record;
+    const afterFreshQuote = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      const request = afterFreshQuote.prepare("SELECT payload_hash, updated_at, version FROM marketplace_requests_v2 WHERE id = ?").get(demand.id);
+      assert.equal(request.updated_at, upgradedTimestamp, "a new quote must not move a future demand timestamp backwards");
+      assert.equal(request.version, upgradedVersion + 1);
+      upgradedVersion = request.version;
+      const quote = afterFreshQuote.prepare("SELECT standardization_version FROM marketplace_quotes_v2 WHERE id = ?").get(freshQuote.id);
+      assert.equal(quote.standardization_version, `kai-standard-v1@revision:${request.payload_hash}`);
+    } finally {
+      afterFreshQuote.close();
+    }
+
+    await stopServer(fixture.server);
+    fixture.server = await startServer(fixture.dataDirectory);
+    const repeated = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      const request = repeated.prepare("SELECT updated_at, version FROM marketplace_requests_v2 WHERE id = ?").get(demand.id);
+      assert.equal(request.version, upgradedVersion);
+      assert.equal(request.updated_at, upgradedTimestamp);
+      const quote = repeated.prepare("SELECT standardization_version FROM marketplace_quotes_v2 WHERE id = ?").get(createdQuote.id);
+      assert.equal(quote.standardization_version, supersededVersion);
+    } finally {
+      repeated.close();
+    }
+  } finally {
+    await destroyFixture(fixture);
+  }
+});
 
 test("legacy marketplace tables import once without exposing supplier free text to buyers", async () => {
   const dataDirectory = await mkdtemp(join(tmpdir(), "kai-marketplace-legacy-test-"));
@@ -578,7 +732,7 @@ test("marketplace API enforces A/B/C isolation, projections, CSRF and idempotenc
 
     const marketForB = await (await supplierB.get("/api/requests?view=market&limit=50")).json();
     const serializedMarket = JSON.stringify(marketForB);
-    assert.equal(marketForB.count, 2);
+    assert.equal(marketForB.count, 2 + curatedMarketDemands().length);
     assert.ok(marketForB.items.some((item) => item.id === requestRecord.id));
     assert.ok(!serializedMarket.includes(privateRequirement));
     assert.ok(!serializedMarket.includes(privateOffer));
@@ -797,6 +951,43 @@ test("readiness rejects bundled and stale market fallbacks", async () => {
   } finally {
     await stopServer(server);
     await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("readiness rejects an invalid exchange migration history and accepts an upgraded database copy without enabling external capabilities",async()=>{
+  const dataDirectory=await mkdtemp(join(tmpdir(),"kai-readiness-missing-migration-"));
+  const upgradedDirectory=await mkdtemp(join(tmpdir(),"kai-readiness-upgraded-copy-"));
+  const databasePath=join(dataDirectory,"kai-cloud.sqlite"),upgradedPath=join(upgradedDirectory,"kai-cloud.sqlite");
+  let server,upgradedServer,beforeReadyRequestCount;
+  try{
+    await writeFreshMarketSnapshot(dataDirectory);await writeFreshMarketSnapshot(upgradedDirectory);
+    const incomplete=new DatabaseSync(databasePath);incomplete.exec("CREATE TABLE exchange_orphan(id TEXT PRIMARY KEY)");incomplete.close();
+    server=await startServer(dataDirectory);
+    const rejectedResponse=await fetch(`${server.baseUrl}/api/ready`);assert.equal(rejectedResponse.status,503);
+    const rejected=await rejectedResponse.json();assert.equal(rejected.status,"error");assert.equal(rejected.storage.exchange.ready,false);assert.equal(rejected.storage.exchange.errorCode,"EXCHANGE_SCHEMA_HISTORY_INVALID");
+    assert.equal(rejected.storage.supply.ready,true);assert.equal(rejected.storage.admin.ready,true);assert.equal(rejected.storage.auth.ready,true);
+    await stopServer(server);server=null;
+
+    upgradedServer=await startServer(upgradedDirectory);
+    const sourceResponse=await fetch(`${upgradedServer.baseUrl}/api/ready`);assert.equal(sourceResponse.status,200);
+    await stopServer(upgradedServer);upgradedServer=null;
+    const sourceDb=new DatabaseSync(upgradedPath);sourceDb.exec("PRAGMA wal_checkpoint(TRUNCATE)");sourceDb.close();
+    await rm(databasePath,{force:true});await rm(`${databasePath}-wal`,{force:true});await rm(`${databasePath}-shm`,{force:true});await copyFile(upgradedPath,databasePath);
+    const beforeProbe=new DatabaseSync(databasePath,{readOnly:true});beforeReadyRequestCount=beforeProbe.prepare("SELECT COUNT(*) AS count FROM marketplace_requests_v2").get().count;beforeProbe.close();
+
+    server=await startServer(dataDirectory);
+    const readyResponse=await fetch(`${server.baseUrl}/api/ready`);assert.equal(readyResponse.status,200);
+    const ready=await readyResponse.json();assert.equal(ready.status,"ok");
+    for(const key of ["marketplace","exchange","supply","admin","auth"])assert.equal(ready.storage[key].ready,true,key);
+    for(const key of ["larkAdminLogin","emailOtpLogin","alipayLive","sshProvisioning"]){assert.equal(ready.capabilities[key].available,false,key);assert.equal(ready.capabilities[key].failClosed,true,key);assert.ok(ready.capabilities[key].missing.length>0,key);}
+    await stopServer(server);server=null;
+    const inspected=new DatabaseSync(databasePath,{readOnly:true});
+    try{
+      for(const table of ["marketplace_requests_v2","exchange_orders","supply_asset_pools","admin_user_accounts","admin_memberships","admin_membership_roles"]){const row=inspected.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get();assert.equal(row.count,0,`${table} readiness must not create business or role rows`);if(table==="marketplace_requests_v2")assert.equal(row.count,beforeReadyRequestCount,"readiness must not change marketplace request count");}
+    }finally{inspected.close();}
+  }finally{
+    await stopServer(server);await stopServer(upgradedServer);
+    await rm(dataDirectory,{recursive:true,force:true});await rm(upgradedDirectory,{recursive:true,force:true});
   }
 });
 

@@ -42,6 +42,9 @@ export default function PartnersPage() {
               <p className="section-lead">
                 面向 GPU、Token、模型实例、整机柜与云厂商资源的供应方。KAI Cloud 以统一计价口径连接供需双方。
               </p>
+              <Link className="button button-primary mt-6" href="/supply">
+                进入上架中心
+              </Link>
             </div>
             <div className="border-l-2 border-[var(--accent)] pl-5 text-sm text-[var(--text)]">
               <strong className="block text-[var(--ink)]">本机入驻预登记</strong>

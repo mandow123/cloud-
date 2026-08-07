@@ -10,6 +10,7 @@ import {
   requireIdempotencyKey,
 } from "@/lib/server/api-guard";
 import { authorizeMarketplaceRequest, persistMarketplaceSession } from "@/lib/server/marketplace-auth";
+import { requireTradingAccountSession } from "@/lib/server/entity-ownership";
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
   const context = beginApiRequest(request);
   let actor: MarketplaceActor | undefined;
   try {
+    await requireTradingAccountSession(request);
     const authorization = await authorizeMarketplaceRequest(request);
     actor = authorization.actor;
     prepareWrite(request, actor);

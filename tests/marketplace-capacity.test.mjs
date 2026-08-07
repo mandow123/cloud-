@@ -252,7 +252,8 @@ test("SQLite enforces global record and per-demand quote caps without breaking r
   const database = new DatabaseSync(join(fixture.dataDirectory, "kai-cloud.sqlite"), { readOnly: true });
   try {
     const count = (table) => database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count;
-    assert.equal(count("marketplace_requests_v2"), 3);
+    const userRequestCount = database.prepare("SELECT COUNT(*) AS count FROM marketplace_requests_v2 WHERE owner_actor_id <> 'system:kai-market'").get().count;
+    assert.equal(userRequestCount, 3);
     assert.equal(count("marketplace_quotes_v2"), 2);
     assert.equal(count("marketplace_drafts_v2"), 1);
     assert.equal(count("marketplace_events_v2"), 8);
@@ -283,7 +284,7 @@ test("SQLite session ceiling blocks fresh-cookie rotation before records grow", 
   const database = new DatabaseSync(join(fixture.dataDirectory, "kai-cloud.sqlite"), { readOnly: true });
   try {
     assert.equal(database.prepare("SELECT COUNT(*) AS count FROM marketplace_sessions_v2").get().count, 1);
-    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM marketplace_requests_v2").get().count, 1);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM marketplace_requests_v2 WHERE owner_actor_id <> 'system:kai-market'").get().count, 1);
   } finally {
     database.close();
     await rm(fixture.dataDirectory, { recursive: true, force: true });

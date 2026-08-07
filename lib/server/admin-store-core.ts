@@ -1,0 +1,244 @@
+import { adminOperationsSchemaStatements, ADMIN_OPERATIONS_SCHEMA_VERSION } from "../../db/admin-operations-schema.ts";
+import { adminIdentitySchemaStatements } from "../../db/admin-identity-schema.ts";
+import { ADMIN_ROLES, type AdminRole } from "../admin-auth-types.ts";
+import { adminPermissionsForRoles } from "./admin-auth.ts";
+import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
+import { readAdminProjection, type AdminProjectionAdapter } from "./admin-projections.ts";
+import type { AdminEntityOwnership, AdminListQuery, AdminMutationContext, AdminOperationsStore, AdminProjectionName, AdminRefundCase, AdminRefundExecution, AdminSourceSystem, AdminWorkItem } from "./admin-store.ts";
+
+export type AdminSql = Readonly<{ sql: string; values?: readonly unknown[] }>;
+export type AdminRunResult = Readonly<{ changes: number }>;
+export interface AdminDatabaseAdapter extends AdminProjectionAdapter {
+  first<T>(sql: string, values?: readonly unknown[]): Promise<T | null>;
+  all<T>(sql: string, values?: readonly unknown[]): Promise<T[]>;
+  batch(statements: readonly AdminSql[]): Promise<AdminRunResult[]>;
+  ensureSchema(statements: readonly string[], version: number): Promise<void>;
+}
+type Row = Record<string, unknown>;
+const now = () => new Date().toISOString();
+const id = (prefix: string) => `KAI-${prefix}-${crypto.randomUUID().replaceAll("-", "").toUpperCase()}`;
+const text = (value: unknown, field: string, max = 200) => { const v = typeof value === "string" ? value.trim() : ""; if (!v || v.length > max) throw new ExchangeInputError(`${field} is required and must be at most ${max} characters.`, field); return v; };
+const optionalText = (value: unknown, field: string, max = 200) => value == null || value === "" ? null : text(value, field, max);
+const positiveInt = (value: unknown, field: string) => { const v = Number(value); if (!Number.isSafeInteger(v) || v < 1) throw new ExchangeInputError(`${field} must be a positive integer.`, field); return v; };
+const nonNegativeInt = (value: unknown, field: string) => { const v = Number(value); if (!Number.isSafeInteger(v) || v < 0) throw new ExchangeInputError(`${field} must be a non-negative integer.`, field); return v; };
+const source = (value: unknown, allowed: readonly AdminSourceSystem[] = ["MARKETPLACE","EXCHANGE","SUPPLY_PILOT","ADMIN"]) => { const v = value as AdminSourceSystem; if (!allowed.includes(v)) throw new ExchangeInputError("Unsupported sourceSystem.", "sourceSystem"); return v; };
+const reason = (value: unknown) => { const v = text(value, "reason", 1000); if (v.length < 8) throw new ExchangeInputError("reason must contain at least 8 characters.", "reason"); return v; };
+const limit = (query?: AdminListQuery) => Math.min(100, Math.max(1, Number(query?.limit ?? 50) || 50));
+const jsonObject = (value: unknown, field: string) => { if (value == null) return {}; if (!value || typeof value !== "object" || Array.isArray(value)) throw new ExchangeInputError(`${field} must be an object.`, field); const encoded = JSON.stringify(value); if (encoded.length > 12000) throw new ExchangeInputError(`${field} is too large.`, field); return value as Record<string, unknown>; };
+const adminOrganizationId = (context: AdminMutationContext) => text(context.organizationId, "organizationId");
+const email = (value: unknown) => { const normalized=typeof value==="string"?value.trim().toLowerCase():""; if(normalized.length>254||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(normalized))throw new ExchangeInputError("email must be a valid address.","email"); return normalized; };
+const roles = (value: unknown) => { if(!Array.isArray(value))throw new ExchangeInputError("roles must be an array.","roles"); const unique=[...new Set(value)]; if(unique.some((role)=>typeof role!=="string"||!ADMIN_ROLES.includes(role as AdminRole)))throw new ExchangeInputError("roles contains an unsupported administrator role.","roles"); return unique as AdminRole[]; };
+async function digestHex(value:string){const bytes=new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value)));return Array.from(bytes,(byte)=>byte.toString(16).padStart(2,"0")).join("");}
+async function digestId(prefix:string,value:string){return `${prefix}_${(await digestHex(value)).slice(0,40)}`;}
+
+const ROLE_DESCRIPTIONS: Readonly<Record<AdminRole,string>> = {
+  ROLE_ADMIN:"Administrator accounts and role assignments",
+  INTAKE_OPERATOR:"Supply submissions and buyer demand review",
+  INVENTORY_OPERATOR:"KAI-owned assets and capacity pools",
+  VERIFICATION_REVIEWER:"Verification evidence and decisions",
+  MARKET_OPERATOR:"Capacity lots, listings and matching",
+  FULFILLMENT_OPERATOR:"Delivery, access, metering and cleanup",
+  FINANCE_OPERATOR:"Payment lookup, reconciliation and refund requests",
+  FINANCE_APPROVER:"Independent refund approval",
+  SUPPORT_READONLY:"Masked customer and order support view",
+  AUDITOR:"Read-only audit and operational evidence",
+};
+
+function workItem(row: Row): AdminWorkItem { return { id:String(row.id),sourceSystem:row.source_system as AdminSourceSystem,entityType:String(row.entity_type),entityId:String(row.entity_id),workType:String(row.work_type),title:String(row.title),summary:String(row.summary),status:row.status as AdminWorkItem["status"],priority:row.priority as AdminWorkItem["priority"],assigneePrincipalId:row.assignee_principal_id==null?null:String(row.assignee_principal_id),dueAt:row.due_at==null?null:String(row.due_at),metadata:JSON.parse(String(row.metadata_json)),createdBy:String(row.created_by),version:Number(row.version),createdAt:String(row.created_at),updatedAt:String(row.updated_at) }; }
+function refundExecution(row: Row): AdminRefundExecution { return { refundCaseId:String(row.refund_case_id),provider:"ALIPAY",refundRequestId:String(row.refund_request_id),orderId:String(row.order_id),status:row.status as AdminRefundExecution["status"],attemptCount:Number(row.attempt_count),attemptedBy:String(row.attempted_by),claimToken:String(row.claim_token),providerTransactionRef:row.provider_transaction_ref==null?null:String(row.provider_transaction_ref),lastErrorCode:row.last_error_code==null?null:String(row.last_error_code),lastErrorMessage:row.last_error_message==null?null:String(row.last_error_message),lastAttemptAt:String(row.last_attempt_at),completedAt:row.completed_at==null?null:String(row.completed_at),version:Number(row.version),createdAt:String(row.created_at),updatedAt:String(row.updated_at) }; }
+function refund(row: Row, execution: AdminRefundExecution | null = null): AdminRefundCase { return { id:String(row.id),sourceSystem:row.source_system as AdminRefundCase["sourceSystem"],entityType:String(row.entity_type),entityId:String(row.entity_id),amountCents:Number(row.amount_cents),currency:"CNY",businessExpectedVersion:Number(row.business_expected_version),status:row.status as AdminRefundCase["status"],requestedBy:String(row.requested_by),requestReason:String(row.request_reason),decidedBy:row.decided_by==null?null:String(row.decided_by),decisionReason:row.decision_reason==null?null:String(row.decision_reason),version:Number(row.version),createdAt:String(row.created_at),updatedAt:String(row.updated_at),decidedAt:row.decided_at==null?null:String(row.decided_at),execution }; }
+function ownership(row: Row): AdminEntityOwnership { return { sourceSystem:row.source_system as AdminSourceSystem,entityType:String(row.entity_type),entityId:String(row.entity_id),organizationId:String(row.organization_id),accountId:String(row.account_id),legacyActorId:row.legacy_actor_id==null?null:String(row.legacy_actor_id),boundByPrincipalId:String(row.bound_by_principal_id),createdAt:String(row.created_at),updatedAt:String(row.updated_at),version:Number(row.version),classification:"BOUND" }; }
+async function receipt<T>(db: AdminDatabaseAdapter, context: AdminMutationContext, commandType: string): Promise<T | null> { const row=await db.first<Row>("SELECT command_type,payload_hash,response_json FROM admin_command_receipts WHERE actor_principal_id=? AND idempotency_key=?",[context.principalId,context.idempotencyKey]); if (!row) return null; if (row.command_type!==commandType || row.payload_hash!==context.payloadHash) throw new ExchangeIdempotencyConflictError(); return JSON.parse(String(row.response_json)) as T; }
+const auditSql = (actor:string, sourceSystem:AdminSourceSystem, entityType:string, entityId:string, action:string, why:string, digest:string, at:string):AdminSql => ({sql:"INSERT INTO admin_audit_events(id,actor_principal_id,source_system,entity_type,entity_id,action,reason,payload_digest,occurred_at) VALUES(?,?,?,?,?,?,?,?,?)",values:[id("AAE"),actor,sourceSystem,entityType,entityId,action,why,digest,at]});
+const receiptSql = (context:AdminMutationContext, command:string, response:unknown, at:string):AdminSql => ({sql:"INSERT INTO admin_command_receipts(actor_principal_id,idempotency_key,command_type,payload_hash,response_json,created_at) VALUES(?,?,?,?,?,?)",values:[context.principalId,context.idempotencyKey,command,context.payloadHash,JSON.stringify(response),at]});
+
+const PRINCIPAL_SELECT = `SELECT a.id AS account_id,a.display_name,a.primary_email,
+  m.id AS membership_id,m.organization_id,m.status AS membership_status,m.updated_at AS membership_updated_at,
+  o.name AS organization_name,pm.invited_by_principal_id,pm.invited_at,pm.version AS management_version,pm.updated_at AS management_updated_at
+  FROM admin_memberships m
+  JOIN admin_user_accounts a ON a.id=m.account_id
+  JOIN admin_organizations o ON o.id=m.organization_id
+  LEFT JOIN admin_principal_management pm ON pm.membership_id=m.id`;
+
+async function principalRecord(db:AdminDatabaseAdapter,row:Row){
+  const membershipId=String(row.membership_id);
+  const roleRows=await db.all<{role:string}>("SELECT role FROM admin_membership_roles WHERE membership_id=? ORDER BY role",[membershipId]);
+  const assigned=roles(roleRows.map((item)=>item.role));
+  return {
+    id:String(row.account_id),membershipId,displayName:String(row.display_name),primaryEmail:row.primary_email==null?null:String(row.primary_email),
+    organizationId:String(row.organization_id),organizationName:String(row.organization_name),status:String(row.membership_status),
+    roles:assigned,permissions:adminPermissionsForRoles(assigned),version:Number(row.management_version??0),
+    invitedByPrincipalId:row.invited_by_principal_id==null?null:String(row.invited_by_principal_id),invitedAt:row.invited_at==null?null:String(row.invited_at),
+    updatedAt:String(row.management_updated_at??row.membership_updated_at),source:"IDENTITY_FACTS",
+  };
+}
+
+async function findPrincipal(db:AdminDatabaseAdapter,accountId:string,organizationId:string){
+  const row=await db.first<Row>(`${PRINCIPAL_SELECT} WHERE a.id=? AND m.organization_id=? AND (pm.membership_id IS NOT NULL OR EXISTS (SELECT 1 FROM admin_membership_roles r WHERE r.membership_id=m.id))`,[accountId,organizationId]);
+  if(!row)throw new ExchangeDomainError("EXCHANGE_NOT_FOUND",404,"Administrator principal not found.");
+  return {row,record:await principalRecord(db,row)};
+}
+
+async function ensureRoleAdminContinuity(db:AdminDatabaseAdapter,membershipId:string,nextStatus:string,nextRoles:readonly AdminRole[]){
+  const currentlyAdmin=await db.first<{present:number}>("SELECT 1 AS present FROM admin_membership_roles WHERE membership_id=? AND role='ROLE_ADMIN' LIMIT 1",[membershipId]);
+  if(!currentlyAdmin||nextStatus==="ACTIVE"&&nextRoles.includes("ROLE_ADMIN"))return;
+  const other=await db.first<{count:number}>(`SELECT COUNT(*) AS count FROM admin_memberships m JOIN admin_membership_roles r ON r.membership_id=m.id
+    WHERE r.role='ROLE_ADMIN' AND m.status='ACTIVE' AND m.id<>?`,[membershipId]);
+  if(Number(other?.count??0)<1)throw new ExchangeDomainError("ADMIN_LAST_ROLE_ADMIN",409,"At least one active ROLE_ADMIN must remain.");
+}
+
+function managementVersionWrite(row:Row,context:AdminMutationContext,at:string):AdminSql[]{
+  const membershipId=String(row.membership_id),current=Number(row.management_version??0);
+  if(current===0)return [{sql:"INSERT INTO admin_principal_management(membership_id,invited_by_principal_id,invited_at,updated_by_principal_id,version,updated_at) VALUES(?,NULL,NULL,?,1,?)",values:[membershipId,context.principalId,at]}];
+  return [
+    {sql:"UPDATE admin_principal_management SET updated_by_principal_id=?,version=version+1,updated_at=? WHERE membership_id=? AND version=?",values:[context.principalId,at,membershipId,current]},
+    {sql:"SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END"},
+  ];
+}
+
+function guardedMembershipStatusWrite(membershipId:string,status:"ACTIVE"|"SUSPENDED",at:string):AdminSql[]{
+  return [
+    {sql:`UPDATE admin_memberships SET status=?,updated_at=? WHERE id=? AND (
+      ?='ACTIVE' OR status<>'ACTIVE'
+      OR NOT EXISTS (SELECT 1 FROM admin_membership_roles own_role WHERE own_role.membership_id=admin_memberships.id AND own_role.role='ROLE_ADMIN')
+      OR EXISTS (SELECT 1 FROM admin_memberships other_membership JOIN admin_membership_roles other_role ON other_role.membership_id=other_membership.id
+        WHERE other_role.role='ROLE_ADMIN' AND other_membership.status='ACTIVE' AND other_membership.id<>admin_memberships.id)
+    )`,values:[status,at,membershipId,status]},
+    {sql:"SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END"},
+  ];
+}
+
+function guardedRoleAssignmentWrites(membershipId:string,currentRoles:readonly AdminRole[],nextRoles:readonly AdminRole[],context:AdminMutationContext,at:string):AdminSql[]{
+  const statements:AdminSql[]=[];
+  if(currentRoles.includes("ROLE_ADMIN")&&!nextRoles.includes("ROLE_ADMIN")){
+    statements.push(
+      {sql:`DELETE FROM admin_membership_roles WHERE membership_id=? AND role='ROLE_ADMIN' AND (
+        NOT EXISTS (SELECT 1 FROM admin_memberships own_membership WHERE own_membership.id=? AND own_membership.status='ACTIVE')
+        OR EXISTS (SELECT 1 FROM admin_memberships other_membership JOIN admin_membership_roles other_role ON other_role.membership_id=other_membership.id
+          WHERE other_role.role='ROLE_ADMIN' AND other_membership.status='ACTIVE' AND other_membership.id<>?)
+      )`,values:[membershipId,membershipId,membershipId]},
+      {sql:"SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END"},
+    );
+  }
+  statements.push({sql:"DELETE FROM admin_membership_roles WHERE membership_id=? AND role<>'ROLE_ADMIN'",values:[membershipId]});
+  if(nextRoles.includes("ROLE_ADMIN")&&!currentRoles.includes("ROLE_ADMIN"))statements.push({sql:"INSERT INTO admin_membership_roles(membership_id,role,granted_at,granted_by) VALUES(?,'ROLE_ADMIN',?,?)",values:[membershipId,at,context.principalId]});
+  statements.push(...nextRoles.filter((role)=>role!=="ROLE_ADMIN").map((role)=>({sql:"INSERT INTO admin_membership_roles(membership_id,role,granted_at,granted_by) VALUES(?,?,?,?)",values:[membershipId,role,at,context.principalId]})));
+  return statements;
+}
+
+async function translateContinuityFailure(db:AdminDatabaseAdapter,membershipId:string,nextStatus:string,nextRoles:readonly AdminRole[],error:unknown):Promise<never>{
+  await ensureRoleAdminContinuity(db,membershipId,nextStatus,nextRoles);
+  throw error;
+}
+
+export async function createAdminOperationsStore(db: AdminDatabaseAdapter): Promise<AdminOperationsStore> {
+  await db.ensureSchema([...adminIdentitySchemaStatements,...adminOperationsSchemaStatements], ADMIN_OPERATIONS_SCHEMA_VERSION);
+  const store: AdminOperationsStore = {
+    async readProjection(name, query={}) { return readAdminProjection(db,name,query); },
+    async search(query={}) { const names:AdminProjectionName[]=["supply-offers","demands","matches","pools","verifications","orders","payments"]; const lists=await Promise.all(names.map((name)=>readAdminProjection(db,name,{...query,limit:Math.min(limit(query),25)}))); return lists.flat().sort((a,b)=>String(b.updatedAt??b.createdAt??"").localeCompare(String(a.updatedAt??a.createdAt??""))).slice(0,limit(query)); },
+    async dashboard() { const names:AdminProjectionName[]=["supply-offers","demands","matches","pools","verifications","orders","payments"]; const entries=await Promise.all(names.map(async(name)=>[name,(await readAdminProjection(db,name,{limit:100})).length] as const)); const open=await db.first<{count:number}>("SELECT COUNT(*) count FROM admin_work_items WHERE status IN ('OPEN','CLAIMED','WAITING')"); const refunds=await db.first<{count:number}>("SELECT COUNT(*) count FROM admin_approvals WHERE approval_type='REFUND' AND status='PENDING'"); return { sourceSystems:["MARKETPLACE","EXCHANGE","SUPPLY_PILOT","ADMIN"], counts:Object.fromEntries(entries), openWorkItems:Number(open?.count??0), pendingRefundApprovals:Number(refunds?.count??0), generatedAt:now() }; },
+    async listWorkItems(query={}) { const where:string[]=[]; const values:unknown[]=[]; if(query.status){where.push("status=?");values.push(query.status);} if(query.sourceSystem){where.push("source_system=?");values.push(query.sourceSystem);} values.push(limit(query)); return (await db.all<Row>(`SELECT * FROM admin_work_items ${where.length?`WHERE ${where.join(" AND ")}`:""} ORDER BY CASE priority WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'NORMAL' THEN 2 ELSE 3 END,due_at,created_at DESC LIMIT ?`,values)).map(workItem); },
+    async createWorkItem(context,input) { const replay=await receipt<{record:AdminWorkItem}>(db,context,"CREATE_WORK_ITEM"); if(replay)return {...replay,replayed:true}; const at=now(), record:AdminWorkItem={id:id("AWI"),sourceSystem:source(input.sourceSystem),entityType:text(input.entityType,"entityType"),entityId:text(input.entityId,"entityId"),workType:text(input.workType,"workType"),title:text(input.title,"title",160),summary:text(input.summary,"summary",1000),status:"OPEN",priority:(input.priority??"NORMAL") as AdminWorkItem["priority"],assigneePrincipalId:optionalText(input.assigneePrincipalId,"assigneePrincipalId"),dueAt:optionalText(input.dueAt,"dueAt"),metadata:jsonObject(input.metadata,"metadata"),createdBy:context.principalId,version:1,createdAt:at,updatedAt:at}; if(!["LOW","NORMAL","HIGH","CRITICAL"].includes(record.priority))throw new ExchangeInputError("Unsupported priority.","priority"); const response={record}; await db.batch([{sql:"INSERT INTO admin_work_items(id,source_system,entity_type,entity_id,work_type,title,summary,status,priority,assignee_principal_id,due_at,metadata_json,created_by,version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",values:[record.id,record.sourceSystem,record.entityType,record.entityId,record.workType,record.title,record.summary,record.status,record.priority,record.assigneePrincipalId,record.dueAt,JSON.stringify(record.metadata),record.createdBy,1,at,at]},auditSql(context.principalId,record.sourceSystem,record.entityType,record.entityId,"WORK_ITEM_CREATED",record.summary,context.payloadHash,at),receiptSql(context,"CREATE_WORK_ITEM",response,at)]); return {...response,replayed:false}; },
+    async updateWorkItem(workId,context,input) { const replay=await receipt<{record:AdminWorkItem}>(db,context,"UPDATE_WORK_ITEM"); if(replay)return {...replay,replayed:true}; const currentRow=await db.first<Row>("SELECT * FROM admin_work_items WHERE id=?",[workId]); if(!currentRow)throw new ExchangeDomainError("EXCHANGE_NOT_FOUND",404,"Admin work item not found."); const current=workItem(currentRow), expected=positiveInt(input.expectedVersion,"expectedVersion"); if(current.version!==expected)throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT",409,"Admin work item version changed."); const status=(input.status??current.status) as AdminWorkItem["status"],priority=(input.priority??current.priority) as AdminWorkItem["priority"]; if(!["OPEN","CLAIMED","WAITING","RESOLVED","CANCELLED"].includes(status))throw new ExchangeInputError("Unsupported status.","status"); if(!["LOW","NORMAL","HIGH","CRITICAL"].includes(priority))throw new ExchangeInputError("Unsupported priority.","priority"); const why=reason(input.reason),at=now(); const record={...current,status,priority,assigneePrincipalId:input.assigneePrincipalId===undefined?current.assigneePrincipalId:optionalText(input.assigneePrincipalId,"assigneePrincipalId"),dueAt:input.dueAt===undefined?current.dueAt:optionalText(input.dueAt,"dueAt"),version:current.version+1,updatedAt:at}; const response={record}; await db.batch([{sql:"UPDATE admin_work_items SET status=?,priority=?,assignee_principal_id=?,due_at=?,version=version+1,updated_at=? WHERE id=? AND version=?",values:[record.status,record.priority,record.assigneePrincipalId,record.dueAt,at,workId,expected]},{sql:"SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END"},auditSql(context.principalId,current.sourceSystem,current.entityType,current.entityId,"WORK_ITEM_UPDATED",why,context.payloadHash,at),receiptSql(context,"UPDATE_WORK_ITEM",response,at)]); return {...response,replayed:false}; },
+    async listRefundCases(query={}) { const values:unknown[]=[]; let where="approval_type='REFUND'"; if(query.status){where+=" AND status=?";values.push(query.status);} values.push(limit(query)); const rows=await db.all<Row>(`SELECT * FROM admin_approvals WHERE ${where} ORDER BY created_at DESC LIMIT ?`,values); return Promise.all(rows.map(async(row)=>{const executionRow=await db.first<Row>("SELECT * FROM admin_refund_executions WHERE refund_case_id=?",[row.id]);return refund(row,executionRow?refundExecution(executionRow):null);})); },
+    async requestRefund(context,input) { const replay=await receipt<{record:AdminRefundCase}>(db,context,"REQUEST_REFUND"); if(replay)return {...replay,replayed:true}; const at=now(),why=reason(input.reason),src=source(input.sourceSystem,["EXCHANGE","SUPPLY_PILOT"]) as AdminRefundCase["sourceSystem"],entityType=text(input.entityType,"entityType"),entityId=text(input.entityId,"entityId"),amountCents=positiveInt(input.amountCents,"amountCents"),businessExpectedVersion=positiveInt(input.expectedVersion,"expectedVersion"); let business:Row|null=null; if(src==="EXCHANGE"&&entityType==="PAYMENT_INTENT")business=await db.first<Row>("SELECT amount_cents,currency,version,status FROM exchange_payment_intents WHERE id=?",[entityId]); else if(src==="SUPPLY_PILOT"&&entityType==="PAYMENT")business=await db.first<Row>("SELECT o.amount_cents,o.currency,p.version,p.status FROM supply_trial_payments p JOIN supply_trial_orders o ON o.id=p.order_id WHERE p.order_id=?",[entityId]); else throw new ExchangeInputError("Refunds must reference an EXCHANGE PAYMENT_INTENT or SUPPLY_PILOT PAYMENT.","entityType"); if(!business)throw new ExchangeDomainError("EXCHANGE_NOT_FOUND",404,"Referenced payment was not found."); if(Number(business.version)!==businessExpectedVersion)throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT",409,"Referenced payment version changed."); if(!["CAPTURED","REFUND_PENDING"].includes(String(business.status)))throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT",409,"Referenced payment is not refundable."); if(String(business.currency)!=="CNY"||amountCents>Number(business.amount_cents))throw new ExchangeDomainError("EXCHANGE_AMOUNT_TOO_LARGE",422,"Refund amount exceeds the referenced payment."); const record:AdminRefundCase={id:id("ARF"),sourceSystem:src,entityType,entityId,amountCents,currency:"CNY",businessExpectedVersion,status:"PENDING",requestedBy:context.principalId,requestReason:why,decidedBy:null,decisionReason:null,version:1,createdAt:at,updatedAt:at,decidedAt:null,execution:null}; const response={record}; await db.batch([{sql:"INSERT INTO admin_approvals(id,approval_type,source_system,entity_type,entity_id,amount_cents,currency,business_expected_version,status,requested_by,request_reason,version,created_at,updated_at) VALUES(?,'REFUND',?,?,?,?,'CNY',?,'PENDING',?,?,1,?,?)",values:[record.id,record.sourceSystem,record.entityType,record.entityId,record.amountCents,record.businessExpectedVersion,record.requestedBy,record.requestReason,at,at]},auditSql(context.principalId,src,record.entityType,record.entityId,"REFUND_REQUESTED",why,context.payloadHash,at),receiptSql(context,"REQUEST_REFUND",response,at)]); return {...response,replayed:false}; },
+    async decideRefund(caseId,context,input) { const replay=await receipt<{record:AdminRefundCase}>(db,context,"DECIDE_REFUND"); if(replay)return {...replay,replayed:true}; const row=await db.first<Row>("SELECT * FROM admin_approvals WHERE id=? AND approval_type='REFUND'",[caseId]); if(!row)throw new ExchangeDomainError("EXCHANGE_NOT_FOUND",404,"Refund case not found."); const current=refund(row),expected=positiveInt(input.expectedVersion,"expectedVersion"); if(current.requestedBy===context.principalId)throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN",403,"Refund requester cannot approve their own request."); if(current.status!=="PENDING")throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT",409,"Refund case is no longer pending."); if(current.version!==expected)throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT",409,"Refund case version changed."); const decision=input.decision; if(decision!=="APPROVED"&&decision!=="REJECTED")throw new ExchangeInputError("decision must be APPROVED or REJECTED.","decision"); const why=reason(input.reason),at=now(); const record:AdminRefundCase={...current,status:decision,decidedBy:context.principalId,decisionReason:why,version:current.version+1,updatedAt:at,decidedAt:at}; const response={record}; await db.batch([{sql:"UPDATE admin_approvals SET status=?,decided_by=?,decision_reason=?,version=version+1,updated_at=?,decided_at=? WHERE id=? AND version=? AND status='PENDING' AND requested_by<>?",values:[decision,context.principalId,why,at,at,caseId,expected,context.principalId]},{sql:"SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END"},auditSql(context.principalId,current.sourceSystem,current.entityType,current.entityId,`REFUND_${decision}`,why,context.payloadHash,at),receiptSql(context,"DECIDE_REFUND",response,at)]); return {...response,replayed:false}; },
+    async getRefundCase(caseId) { const row=await db.first<Row>("SELECT * FROM admin_approvals WHERE id=? AND approval_type='REFUND'",[caseId]); if(!row)return null; const executionRow=await db.first<Row>("SELECT * FROM admin_refund_executions WHERE refund_case_id=?",[caseId]); return refund(row,executionRow?refundExecution(executionRow):null); },
+    async beginRefundExecution(caseId,context,executionReason) {
+      const current=await store.getRefundCase(caseId);
+      if(!current)throw new ExchangeDomainError("EXCHANGE_NOT_FOUND",404,"Refund case not found.");
+      if(current.status!=="APPROVED")throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT",409,"Refund case has not been approved.");
+      if(current.requestedBy===context.principalId)throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN",403,"Refund requester cannot execute their own request.");
+      if(current.execution?.status==="SUCCEEDED")return {record:current,claimed:false};
+      const why=reason(executionReason),at=now(),claimToken=id("RFC"),refundRequestId=`KAI-RF-${caseId.replaceAll(/[^A-Za-z0-9_-]/gu,"")}`.slice(0,64);
+      let result:AdminRunResult;
+      if(!current.execution){
+        [result]=await db.batch([{sql:"INSERT INTO admin_refund_executions(refund_case_id,provider,refund_request_id,order_id,status,attempt_count,attempted_by,claim_token,last_attempt_at,version,created_at,updated_at) VALUES(?,'ALIPAY',?,?,'PROCESSING',1,?,?,?,1,?,?) ON CONFLICT(refund_case_id) DO NOTHING",values:[caseId,refundRequestId,current.entityId,context.principalId,claimToken,at,at,at]}]);
+      }else{
+        const staleBefore=new Date(Date.now()-5*60_000).toISOString();
+        [result]=await db.batch([{sql:"UPDATE admin_refund_executions SET status='PROCESSING',attempt_count=attempt_count+1,attempted_by=?,claim_token=?,last_error_code=NULL,last_error_message=NULL,last_attempt_at=?,completed_at=NULL,version=version+1,updated_at=? WHERE refund_case_id=? AND version=? AND (status='FAILED' OR (status='PROCESSING' AND last_attempt_at<?))",values:[context.principalId,claimToken,at,at,caseId,current.execution.version,staleBefore]}]);
+      }
+      const record=await store.getRefundCase(caseId);
+      if(!record)throw new Error("ADMIN_REFUND_CASE_MISSING");
+      const claimed=result.changes===1&&record.execution?.claimToken===claimToken;
+      if(claimed)await db.batch([auditSql(context.principalId,current.sourceSystem,current.entityType,current.entityId,"REFUND_EXECUTION_STARTED",why,context.payloadHash,at)]);
+      return {record,claimed};
+    },
+    async finishRefundExecution(caseId,context,input) {
+      const current=await store.getRefundCase(caseId);
+      if(!current?.execution)throw new ExchangeDomainError("EXCHANGE_NOT_FOUND",404,"Refund execution not found.");
+      if(current.execution.status!=="PROCESSING"||current.execution.claimToken!==input.claimToken)throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT",409,"Refund execution claim is no longer active.");
+      const at=now(),status=input.status,errorCode=input.status==="FAILED"?optionalText(input.errorCode,"errorCode",100):null,errorMessage=input.status==="FAILED"?optionalText(input.errorMessage,"errorMessage",1000):null,providerTransactionRef=optionalText(input.providerTransactionRef,"providerTransactionRef",200);
+      await db.batch([{sql:"UPDATE admin_refund_executions SET status=?,provider_transaction_ref=?,last_error_code=?,last_error_message=?,completed_at=?,version=version+1,updated_at=? WHERE refund_case_id=? AND version=? AND status='PROCESSING' AND claim_token=?",values:[status,providerTransactionRef,errorCode,errorMessage,at,at,caseId,current.execution.version,input.claimToken]},{sql:"SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END"},auditSql(context.principalId,current.sourceSystem,current.entityType,current.entityId,status==="SUCCEEDED"?"REFUND_EXECUTION_SUCCEEDED":"REFUND_EXECUTION_FAILED",status==="SUCCEEDED"?"Approved refund completed at the payment provider.":`Approved refund failed: ${errorCode??"UNKNOWN"}.`,context.payloadHash,at)]);
+      const record=await store.getRefundCase(caseId);if(!record)throw new Error("ADMIN_REFUND_CASE_MISSING");return {record};
+    },
+    async listPrincipals(query={}) {
+      const where=["(pm.membership_id IS NOT NULL OR EXISTS (SELECT 1 FROM admin_membership_roles r WHERE r.membership_id=m.id))"],values:unknown[]=[];
+      if(query.status){where.push("m.status=?");values.push(query.status);}
+      if(query.q){where.push("(a.display_name LIKE ? OR a.primary_email LIKE ? OR a.id LIKE ?)");const q=`%${query.q}%`;values.push(q,q,q);}
+      values.push(limit(query));
+      const rows=await db.all<Row>(`${PRINCIPAL_SELECT} WHERE ${where.join(" AND ")} ORDER BY a.display_name,a.id LIMIT ?`,values);
+      return Promise.all(rows.map((row)=>principalRecord(db,row)));
+    },
+    async listRoles(query={}) {
+      const q=query.q?.trim().toLowerCase();
+      return ADMIN_ROLES.map((code)=>({code,name:code,description:ROLE_DESCRIPTIONS[code],status:"ACTIVE",permissions:adminPermissionsForRoles([code]),version:1,source:"AUTHORIZATION_POLICY"}))
+        .filter((item)=>!q||item.code.toLowerCase().includes(q)||item.description.toLowerCase().includes(q)).slice(0,limit(query));
+    },
+    async invitePrincipal(context,input) {
+      const replay=await receipt<{record:Record<string,unknown>}>(db,context,"INVITE_ADMIN_PRINCIPAL");if(replay)return{...replay,replayed:true};
+      const organizationId=adminOrganizationId(context),expected=nonNegativeInt(input.expectedVersion,"expectedVersion");if(expected!==0)throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT",409,"A new administrator invitation must use expectedVersion 0.");
+      const normalizedEmail=email(input.email),displayName=text(input.displayName,"displayName",120),assignedRoles=roles(input.roles),why=reason(input.reason),at=now();
+      if(!assignedRoles.length)throw new ExchangeInputError("roles must contain at least one administrator role.","roles");
+      const organization=await db.first<Row>("SELECT id,name,status FROM admin_organizations WHERE id=?",[organizationId]);
+      if(!organization||organization.status!=="ACTIVE")throw new ExchangeDomainError("ADMIN_ORGANIZATION_UNAVAILABLE",409,"The administrator organization is not active.");
+      const subject=await digestHex(normalizedEmail);
+      const existingIdentity=await db.first<Row>("SELECT id,account_id FROM admin_account_identities WHERE provider='EMAIL' AND tenant_key='EXTERNAL' AND provider_subject=?",[subject]);
+      const existingAccount=existingIdentity?await db.first<Row>("SELECT id,status FROM admin_user_accounts WHERE id=?",[existingIdentity.account_id]):await db.first<Row>("SELECT id,status FROM admin_user_accounts WHERE primary_email=?",[normalizedEmail]);
+      if(existingAccount&&existingAccount.status!=="ACTIVE")throw new ExchangeDomainError("ADMIN_ACCOUNT_SUSPENDED",409,"The invited account is suspended.");
+      const accountId=existingAccount?String(existingAccount.id):await digestId("acct",`EMAIL:EXTERNAL:${subject}`);
+      const membershipId=await digestId("mbr",`${accountId}:${organizationId}`);
+      const identityId=existingIdentity?String(existingIdentity.id):await digestId("ident",`EMAIL:EXTERNAL:${subject}`);
+      const occupied=await db.first<Row>(`SELECT m.id FROM admin_memberships m LEFT JOIN admin_principal_management pm ON pm.membership_id=m.id
+        WHERE m.id=? AND (pm.membership_id IS NOT NULL OR EXISTS (SELECT 1 FROM admin_membership_roles r WHERE r.membership_id=m.id))`,[membershipId]);
+      if(occupied)throw new ExchangeDomainError("ADMIN_PRINCIPAL_EXISTS",409,"This administrator has already been invited.");
+      const record={id:accountId,membershipId,displayName,primaryEmail:normalizedEmail,organizationId,organizationName:String(organization.name),status:"ACTIVE",roles:assignedRoles,permissions:adminPermissionsForRoles(assignedRoles),version:1,invitedByPrincipalId:context.principalId,invitedAt:at,updatedAt:at,source:"IDENTITY_FACTS"};
+      const response={record};
+      const statements:AdminSql[]=[
+        {sql:"INSERT OR IGNORE INTO admin_user_accounts(id,display_name,primary_email,status,created_at,updated_at) VALUES(?,?,?,'ACTIVE',?,?)",values:[accountId,displayName,normalizedEmail,at,at]},
+        {sql:"INSERT OR IGNORE INTO admin_memberships(id,account_id,organization_id,status,created_at,updated_at) VALUES(?,?,?,'PENDING',?,?)",values:[membershipId,accountId,organizationId,at,at]},
+        existingIdentity?{sql:"UPDATE admin_account_identities SET organization_id=? WHERE id=?",values:[organizationId,identityId]}:{sql:"INSERT INTO admin_account_identities(id,account_id,organization_id,provider,tenant_key,provider_subject,normalized_email,verified_at,created_at) VALUES(?,?,?,'EMAIL','EXTERNAL',?,?,?,?)",values:[identityId,accountId,organizationId,subject,normalizedEmail,at,at]},
+        {sql:"UPDATE admin_memberships SET status='ACTIVE',updated_at=? WHERE id=?",values:[at,membershipId]},
+        {sql:"DELETE FROM admin_membership_roles WHERE membership_id=?",values:[membershipId]},
+        ...assignedRoles.map((role)=>({sql:"INSERT INTO admin_membership_roles(membership_id,role,granted_at,granted_by) VALUES(?,?,?,?)",values:[membershipId,role,at,context.principalId]})),
+        {sql:"INSERT INTO admin_principal_management(membership_id,invited_by_principal_id,invited_at,updated_by_principal_id,version,updated_at) VALUES(?,?,?,?,1,?)",values:[membershipId,context.principalId,at,context.principalId,at]},
+        auditSql(context.principalId,"ADMIN","ADMIN_PRINCIPAL",accountId,"ADMIN_PRINCIPAL_INVITED",why,context.payloadHash,at),receiptSql(context,"INVITE_ADMIN_PRINCIPAL",response,at),
+      ];
+      await db.batch(statements);return{...response,replayed:false};
+    },
+    async updatePrincipalStatus(accountIdValue,context,input) {
+      const accountId=text(accountIdValue,"accountId"),command=`UPDATE_ADMIN_PRINCIPAL_STATUS:${accountId}`,replay=await receipt<{record:Record<string,unknown>}>(db,context,command);if(replay)return{...replay,replayed:true};
+      const organizationId=adminOrganizationId(context),found=await findPrincipal(db,accountId,organizationId),expected=nonNegativeInt(input.expectedVersion,"expectedVersion");
+      if(Number(found.record.version)!==expected)throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT",409,"Administrator principal version changed.");
+      const status=input.status;if(status!=="ACTIVE"&&status!=="SUSPENDED")throw new ExchangeInputError("status must be ACTIVE or SUSPENDED.","status");
+      const why=reason(input.reason),at=now();await ensureRoleAdminContinuity(db,String(found.row.membership_id),status,found.record.roles as AdminRole[]);
+      const record={...found.record,status,version:expected+1,updatedAt:at};const response={record};
+      try{await db.batch([...managementVersionWrite(found.row,context,at),...guardedMembershipStatusWrite(String(found.row.membership_id),status,at),auditSql(context.principalId,"ADMIN","ADMIN_PRINCIPAL",accountId,`ADMIN_PRINCIPAL_${status}`,why,context.payloadHash,at),receiptSql(context,command,response,at)]);}catch(error){return translateContinuityFailure(db,String(found.row.membership_id),status,found.record.roles as AdminRole[],error);}
+      return{...response,replayed:false};
+    },
+    async assignPrincipalRoles(accountIdValue,context,input) {
+      const accountId=text(accountIdValue,"accountId"),command=`ASSIGN_ADMIN_PRINCIPAL_ROLES:${accountId}`,replay=await receipt<{record:Record<string,unknown>}>(db,context,command);if(replay)return{...replay,replayed:true};
+      const organizationId=adminOrganizationId(context),found=await findPrincipal(db,accountId,organizationId),expected=nonNegativeInt(input.expectedVersion,"expectedVersion");
+      if(Number(found.record.version)!==expected)throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT",409,"Administrator principal version changed.");
+      const assignedRoles=roles(input.roles),why=reason(input.reason),at=now(),membershipId=String(found.row.membership_id);
+      await ensureRoleAdminContinuity(db,membershipId,String(found.record.status),assignedRoles);
+      const record={...found.record,roles:assignedRoles,permissions:adminPermissionsForRoles(assignedRoles),version:expected+1,updatedAt:at};const response={record};
+      try{await db.batch([...managementVersionWrite(found.row,context,at),...guardedRoleAssignmentWrites(membershipId,found.record.roles as AdminRole[],assignedRoles,context,at),{sql:"UPDATE admin_memberships SET updated_at=? WHERE id=?",values:[at,membershipId]},auditSql(context.principalId,"ADMIN","ADMIN_PRINCIPAL",accountId,"ADMIN_PRINCIPAL_ROLES_ASSIGNED",why,context.payloadHash,at),receiptSql(context,command,response,at)]);}catch(error){return translateContinuityFailure(db,membershipId,String(found.record.status),assignedRoles,error);}
+      return{...response,replayed:false};
+    },
+    async listAuditEvents(query={}) { const values:unknown[]=[]; let where=""; if(query.sourceSystem){where="WHERE source_system=?";values.push(query.sourceSystem);} values.push(limit(query)); return (await db.all<Row>(`SELECT * FROM admin_audit_events ${where} ORDER BY occurred_at DESC LIMIT ?`,values)).map(r=>({id:String(r.id),actorPrincipalId:String(r.actor_principal_id),sourceSystem:r.source_system,entityType:String(r.entity_type),entityId:String(r.entity_id),action:String(r.action),reason:String(r.reason),payloadDigest:String(r.payload_digest),occurredAt:String(r.occurred_at)})); },
+    async bindEntityOrganization(context,input) { const replay=await receipt<{record:AdminEntityOwnership}>(db,context,"BIND_ENTITY_ORGANIZATION"); if(replay)return {...replay,replayed:true}; const src=source(input.sourceSystem),entityType=text(input.entityType,"entityType"),entityId=text(input.entityId,"entityId"),organizationId=text(input.organizationId,"organizationId"),accountId=text(input.accountId,"accountId"),legacyActorId=optionalText(input.legacyActorId,"legacyActorId"),why=reason(input.reason),expected=nonNegativeInt(input.expectedVersion,"expectedVersion"),at=now(); const existing=await store.getEntityOwnership(src,entityType,entityId); if(existing && expected!==existing.version)throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT",409,"Ownership binding version changed."); if(!existing && expected!==0)throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT",409,"Ownership binding does not exist."); const record:AdminEntityOwnership={sourceSystem:src,entityType,entityId,organizationId,accountId,legacyActorId,boundByPrincipalId:context.principalId,createdAt:existing?.createdAt??at,updatedAt:at,version:(existing?.version??0)+1,classification:"BOUND"}; const response={record}; const write=existing?{sql:"UPDATE admin_entity_ownership SET organization_id=?,account_id=?,legacy_actor_id=?,bound_by_principal_id=?,updated_at=?,version=version+1 WHERE source_system=? AND entity_type=? AND entity_id=? AND version=?",values:[organizationId,accountId,legacyActorId,context.principalId,at,src,entityType,entityId,existing.version]}:{sql:"INSERT INTO admin_entity_ownership(source_system,entity_type,entity_id,organization_id,account_id,legacy_actor_id,bound_by_principal_id,created_at,updated_at,version) VALUES(?,?,?,?,?,?,?,?,?,1)",values:[src,entityType,entityId,organizationId,accountId,legacyActorId,context.principalId,at,at]}; await db.batch([write,{sql:"SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END"},auditSql(context.principalId,src,entityType,entityId,"ENTITY_OWNERSHIP_BOUND",why,context.payloadHash,at),receiptSql(context,"BIND_ENTITY_ORGANIZATION",response,at)]); return {...response,replayed:false}; },
+    async getEntityOwnership(src,entityType,entityId) { const row=await db.first<Row>("SELECT * FROM admin_entity_ownership WHERE source_system=? AND entity_type=? AND entity_id=?",[src,entityType,entityId]); return row?ownership(row):null; },
+  };
+  return store;
+}

@@ -1,0 +1,11 @@
+[Unit]
+Description=KAI Cloud private ALB ingress on port 3054
+Requires=kai-cloud-edge-3054-firewall.service
+After=kai-cloud-edge-3054-firewall.service
+
+[Socket]
+ListenStream=172.31.31.78:3054
+Accept=no
+
+[Install]
+WantedBy=sockets.target

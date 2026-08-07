@@ -10,6 +10,7 @@ import {
   type MarketplaceSupplierQuoteRecord,
 } from "@/lib/marketplace";
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
+import { isCuratedMarketDemandId } from "@/lib/server/curated-market-demands";
 
 export const MARKETPLACE_SCHEMA_VERSION = 2;
 export const MARKETPLACE_RETENTION_DAYS = 30;
@@ -57,6 +58,7 @@ export type MarketplaceQuoteWriteRecord = {
 };
 
 export interface MarketplaceStore {
+  close?(): void | Promise<void>;
   establishSession(actor: MarketplaceActor): Promise<void>;
   touchSession(actor: MarketplaceActor): Promise<boolean>;
   consumeWriteAllowance(actorId: string, routeScope: "requests" | "quotes" | "drafts"): Promise<void>;
@@ -238,7 +240,9 @@ export function publicRequestRecord(record: MarketplaceRequestRecord): Marketpla
   } : null;
   return {
     ...record,
-    summary: `匿名市场需求：${categoryLabel[record.category]}，${record.region}，${record.quantity} ${record.pricingUnit}。`,
+    summary: isCuratedMarketDemandId(record.id)
+      ? record.summary
+      : `匿名市场需求：${categoryLabel[record.category]}，${record.region}，${record.quantity} ${record.pricingUnit}。`,
     offered: publicLeg(record.offered, "可提供资源"),
     wanted: publicLeg(record.wanted, "所需资源"),
     cashAmount: record.cashDirection === "none" ? null : 0,
@@ -340,4 +344,12 @@ export function getMarketplaceStore() {
     throw error;
   });
   return globalThis.__kaiMarketplaceStorePromise;
+}
+
+export async function createMarketplaceReadinessStore():Promise<MarketplaceStore>{
+  try{
+    const cloudflare=await import("cloudflare:workers");
+    if(cloudflare.env.DB)return (await import("./marketplace-store-d1.ts")).createD1MarketplaceStore(cloudflare.env.DB,{readinessOnly:true});
+  }catch{/* Node deployments do not expose the Workers module. */}
+  return (await import("./marketplace-store-sqlite.ts")).createSqliteMarketplaceStore({readinessOnly:true});
 }

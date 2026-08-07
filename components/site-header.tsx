@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AccountNav } from "./account-nav";
 import { MobileDemandCta } from "./mobile-demand-cta";
 import { NavLinks } from "./nav-links";
 import { ThemeControl } from "./theme-control";
@@ -13,6 +14,7 @@ export function SiteHeader() {
         </Link>
         <NavLinks />
         <div className="header-actions">
+          <AccountNav />
           <ThemeControl />
           <Link className="button button-primary button-compact" href="/request">
             发布算力需求

@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 const quickActions = [
   { code: "01", title: "查价格", copy: "GPU、模型 Token、机柜容量分项行情", href: "/market" },
   { code: "02", title: "买 / 租算力", copy: "按型号、地区、交付周期发布采购需求", href: "/request?mode=rental" },
-  { code: "03", title: "登记出售", copy: "供应方登记可供容量并响应市场需求", href: "/member?role=supplier#supply-register" },
+  { code: "03", title: "登记出售", copy: "供应方登记可供容量并响应市场需求", href: "/supply" },
   { code: "04", title: "发起置换", copy: "分别填写可提供资源与所需资源", href: "/request?mode=swap" },
 ];
 

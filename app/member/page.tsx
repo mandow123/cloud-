@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { MemberWorkspace } from "@/components/member-workspace";
+import { AccountWorkspace } from "@/components/account-workspace";
 
 export const metadata: Metadata = {
   title: "交易工作台",
-  description: "使用 KAI Cloud 需求方与供应方工作台；无需密码，需求、草稿与报价由服务端保存。",
+  description: "使用 KAI Cloud 正式账户查看买方需求、供应资源、报价与交易状态。",
 };
 
 export default function MemberPage() {
@@ -25,7 +25,7 @@ export default function MemberPage() {
         </div>
       </header>
       <div className="shell py-12 sm:py-16">
-        <MemberWorkspace />
+        <AccountWorkspace />
       </div>
     </>
   );

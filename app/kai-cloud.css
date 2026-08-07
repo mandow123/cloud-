@@ -38,6 +38,123 @@
   font-size: 0.9375rem;
 }
 
+.account-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.account-nav a {
+  color: var(--ink);
+  font-size: 0.9375rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.account-nav a:hover,
+.account-nav a:focus-visible,
+.login-admin-link a {
+  color: var(--accent);
+}
+
+.login-page {
+  display: grid;
+  grid-template-columns: minmax(0, 680px) minmax(280px, 1fr);
+  gap: clamp(32px, 7vw, 96px);
+  padding-block: clamp(48px, 8vw, 104px);
+}
+
+.login-panel {
+  border-top: 4px solid var(--accent);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  padding: clamp(24px, 4vw, 48px);
+}
+
+.login-panel h1,
+.login-aside h2 {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.15;
+}
+
+.login-panel h1 {
+  font-size: clamp(2rem, 5vw, 3.25rem);
+}
+
+.login-panel form {
+  display: grid;
+  gap: 20px;
+  margin-top: 32px;
+}
+
+.login-alert,
+.login-receipt {
+  margin-top: 24px;
+  border-left: 4px solid var(--error);
+  background: var(--error-bg);
+  padding: 14px 16px;
+}
+
+.login-receipt {
+  display: grid;
+  gap: 4px;
+  border-left-color: var(--accent);
+  background: var(--info-bg);
+}
+
+.login-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.login-admin-link {
+  margin: 28px 0 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.login-aside {
+  border-left: 2px solid var(--accent);
+  padding-left: 24px;
+}
+
+.login-aside ol {
+  display: grid;
+  gap: 14px;
+  padding-left: 22px;
+}
+
+.account-gate {
+  max-width: 760px;
+  border-top: 4px solid var(--accent);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  padding: clamp(24px, 4vw, 40px);
+}
+
+.account-gate h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+}
+
+@media (max-width: 880px) {
+  .login-page {
+    grid-template-columns: 1fr;
+  }
+
+  .account-nav {
+    display: none;
+  }
+}
+
 .kai-root:not(:has(.mandow-hound-root)) .kicker {
   font-size: 0.875rem;
   letter-spacing: 0.1em;

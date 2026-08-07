@@ -1,7 +1,7 @@
 {
   "schemaVersion": "kai-model-market-snapshot/1",
-  "publishedAt": "2026-08-03T03:20:03.078Z",
-  "sourcePendingGeneratedAt": "2026-08-03T03:19:44.923Z",
+  "publishedAt": "2026-08-05T20:52:31.525Z",
+  "sourcePendingGeneratedAt": "2026-08-05T20:52:29.830Z",
   "marketDefinition": {
     "kind": "per_model_quotes",
     "pricingUnit": "per_million_tokens",
@@ -9,7 +9,7 @@
     "disclaimer": "不同模型价格不可直接求均价；综合指标仅为固定篮子趋势指数。"
   },
   "exchangeRate": {
-    "usdCny": 6.75132782,
+    "usdCny": 6.74995672,
     "source": "ECB_DAILY_REFERENCE",
     "state": "current",
     "sourceUrl": "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml",
@@ -139,12 +139,12 @@
       "sourceName": "DeepSeek API Pricing",
       "sourceUrl": "https://api-docs.deepseek.com/quick_start/pricing/",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -194,12 +194,12 @@
       "sourceName": "DeepSeek API Pricing",
       "sourceUrl": "https://api-docs.deepseek.com/quick_start/pricing/",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "official_only",
         "reason": "NO_SECONDARY_MAPPING",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -251,12 +251,12 @@
       "sourceName": "阿里云百炼模型价格",
       "sourceUrl": "https://help.aliyun.com/en/model-studio/model-pricing",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -309,12 +309,12 @@
       "sourceName": "阿里云百炼推荐模型清单",
       "sourceUrl": "https://help.aliyun.com/zh/model-studio/text-generation-model",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -367,12 +367,12 @@
       "sourceName": "阿里云百炼推荐模型清单",
       "sourceUrl": "https://help.aliyun.com/zh/model-studio/text-generation-model",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -425,12 +425,12 @@
       "sourceName": "阿里云百炼 Qwen3.6 Flash",
       "sourceUrl": "https://help.aliyun.com/zh/model-studio/qwen3-6-flash",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -483,12 +483,12 @@
       "sourceName": "阿里云百炼 Qwen3.6 Flash",
       "sourceUrl": "https://help.aliyun.com/zh/model-studio/qwen3-6-flash",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -541,12 +541,12 @@
       "sourceName": "火山方舟",
       "sourceUrl": "https://www.volcengine.com/product/ark",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -599,12 +599,12 @@
       "sourceName": "火山方舟",
       "sourceUrl": "https://www.volcengine.com/product/ark",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -657,12 +657,12 @@
       "sourceName": "百度千帆模型价格",
       "sourceUrl": "https://cloud.baidu.com/doc/qianfan/s/wmh4sv6ya",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -715,12 +715,12 @@
       "sourceName": "百度千帆模型价格",
       "sourceUrl": "https://cloud.baidu.com/doc/qianfan/s/wmh4sv6ya",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -772,12 +772,12 @@
       "sourceName": "百度千帆模型价格",
       "sourceUrl": "https://cloud.baidu.com/doc/qianfan/s/wmh4sv6ya",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -830,12 +830,12 @@
       "sourceName": "腾讯云 TokenHub 定价",
       "sourceUrl": "https://cloud.tencent.com/document/product/1823/130055",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -888,12 +888,12 @@
       "sourceName": "腾讯云 TokenHub 定价",
       "sourceUrl": "https://cloud.tencent.com/document/product/1823/130055",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -946,12 +946,12 @@
       "sourceName": "腾讯云 TokenHub 定价",
       "sourceUrl": "https://cloud.tencent.com/document/product/1823/130055",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -1004,12 +1004,12 @@
       "sourceName": "腾讯云 TokenHub 定价",
       "sourceUrl": "https://cloud.tencent.com/document/product/1823/130055",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -1062,12 +1062,12 @@
       "sourceName": "智谱开放平台定价",
       "sourceUrl": "https://bigmodel.cn/pricing",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -1120,12 +1120,12 @@
       "sourceName": "智谱开放平台定价",
       "sourceUrl": "https://bigmodel.cn/pricing",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -1178,12 +1178,12 @@
       "sourceName": "智谱开放平台定价",
       "sourceUrl": "https://bigmodel.cn/pricing",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -1236,12 +1236,12 @@
       "sourceName": "智谱开放平台定价",
       "sourceUrl": "https://bigmodel.cn/pricing",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -1294,12 +1294,12 @@
       "sourceName": "智谱开放平台定价",
       "sourceUrl": "https://bigmodel.cn/pricing",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -1353,12 +1353,12 @@
       "sourceName": "Kimi K3 官方定价",
       "sourceUrl": "https://platform.kimi.com/docs/pricing/chat-k3.md",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -1393,31 +1393,31 @@
       "prices": {
         "original": {
           "currency": "CNY",
-          "input": 6.41376143,
-          "cachedInput": 1.08021245,
-          "output": 27.00531128
+          "input": 6.41245888,
+          "cachedInput": 1.07999308,
+          "output": 26.99982688
         },
         "cny": {
-          "input": 6.41376143,
-          "cachedInput": 1.08021245,
-          "output": 27.00531128
+          "input": 6.41245888,
+          "cachedInput": 1.07999308,
+          "output": 26.99982688
         }
       },
-      "inputCnyPerMillion": 6.41376143,
-      "cachedInputCnyPerMillion": 1.08021245,
-      "outputCnyPerMillion": 27.00531128,
-      "originalInputPerMillion": 6.41376143,
-      "originalCachedInputPerMillion": 1.08021245,
-      "originalOutputPerMillion": 27.00531128,
+      "inputCnyPerMillion": 6.41245888,
+      "cachedInputCnyPerMillion": 1.07999308,
+      "outputCnyPerMillion": 26.99982688,
+      "originalInputPerMillion": 6.41245888,
+      "originalCachedInputPerMillion": 1.07999308,
+      "originalOutputPerMillion": 26.99982688,
       "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
       "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
       "sourceStatus": "aggregated",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "current",
         "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": {
         "catalog": "LiteLLM",
@@ -1474,12 +1474,12 @@
       "sourceName": "Kimi K2.7 Code 官方定价",
       "sourceUrl": "https://platform.kimi.com/docs/pricing/chat-k27-code.md",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -1532,12 +1532,12 @@
       "sourceName": "Kimi K2.7 Code 官方定价",
       "sourceUrl": "https://platform.kimi.com/docs/pricing/chat-k27-code.md",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -1590,12 +1590,12 @@
       "sourceName": "MiniMax Pay-as-you-go Pricing",
       "sourceUrl": "https://platform.minimaxi.com/docs/guides/pricing-paygo.md",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -1648,12 +1648,12 @@
       "sourceName": "MiniMax Pay-as-you-go Pricing",
       "sourceUrl": "https://platform.minimaxi.com/docs/guides/pricing-paygo.md",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -1707,12 +1707,12 @@
       "sourceName": "MiniMax Pay-as-you-go Pricing",
       "sourceUrl": "https://platform.minimaxi.com/docs/guides/pricing-paygo.md",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -1766,12 +1766,12 @@
       "sourceName": "MiniMax Pay-as-you-go Pricing",
       "sourceUrl": "https://platform.minimaxi.com/docs/guides/pricing-paygo.md",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -1823,12 +1823,12 @@
       "sourceName": "百川模型价格",
       "sourceUrl": "https://platform.baichuan-ai.com/prices",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -1881,12 +1881,12 @@
       "sourceName": "讯飞星火 API 文档",
       "sourceUrl": "https://www.xfyun.cn/doc/spark/HTTP%E8%B0%83%E7%94%A8%E6%96%87%E6%A1%A3.html",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "review_required",
         "reason": "NO_REVIEWED_PUBLIC_PRICE",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -1939,12 +1939,12 @@
       "sourceName": "讯飞星火 API 文档",
       "sourceUrl": "https://www.xfyun.cn/doc/spark/HTTP%E8%B0%83%E7%94%A8%E6%96%87%E6%A1%A3.html",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "review_required",
         "reason": "NO_REVIEWED_PUBLIC_PRICE",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -1997,12 +1997,12 @@
       "sourceName": "讯飞星火 API 文档",
       "sourceUrl": "https://www.xfyun.cn/doc/spark/HTTP%E8%B0%83%E7%94%A8%E6%96%87%E6%A1%A3.html",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "review_required",
         "reason": "NO_REVIEWED_PUBLIC_PRICE",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -2042,26 +2042,26 @@
           "output": 30
         },
         "cny": {
-          "input": 33.7566391,
-          "cachedInput": 3.37566391,
-          "output": 202.5398346
+          "input": 33.7497836,
+          "cachedInput": 3.37497836,
+          "output": 202.4987016
         }
       },
-      "inputCnyPerMillion": 33.7566391,
-      "cachedInputCnyPerMillion": 3.37566391,
-      "outputCnyPerMillion": 202.5398346,
+      "inputCnyPerMillion": 33.7497836,
+      "cachedInputCnyPerMillion": 3.37497836,
+      "outputCnyPerMillion": 202.4987016,
       "originalInputPerMillion": 5,
       "originalCachedInputPerMillion": 0.5,
       "originalOutputPerMillion": 30,
       "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
       "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
       "sourceStatus": "aggregated",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "current",
         "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": {
         "catalog": "LiteLLM",
@@ -2105,26 +2105,26 @@
           "output": 12
         },
         "cny": {
-          "input": 13.50265564,
-          "cachedInput": 1.35026556,
-          "output": 81.01593384
+          "input": 13.49991344,
+          "cachedInput": 1.34999134,
+          "output": 80.99948064
         }
       },
-      "inputCnyPerMillion": 13.50265564,
-      "cachedInputCnyPerMillion": 1.35026556,
-      "outputCnyPerMillion": 81.01593384,
+      "inputCnyPerMillion": 13.49991344,
+      "cachedInputCnyPerMillion": 1.34999134,
+      "outputCnyPerMillion": 80.99948064,
       "originalInputPerMillion": 2,
       "originalCachedInputPerMillion": 0.2,
       "originalOutputPerMillion": 12,
       "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
       "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
       "sourceStatus": "aggregated",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "current",
         "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": {
         "catalog": "LiteLLM",
@@ -2168,26 +2168,26 @@
           "output": 1.2
         },
         "cny": {
-          "input": 1.35026556,
-          "cachedInput": 0.13502656,
-          "output": 8.10159338
+          "input": 1.34999134,
+          "cachedInput": 0.13499913,
+          "output": 8.09994806
         }
       },
-      "inputCnyPerMillion": 1.35026556,
-      "cachedInputCnyPerMillion": 0.13502656,
-      "outputCnyPerMillion": 8.10159338,
+      "inputCnyPerMillion": 1.34999134,
+      "cachedInputCnyPerMillion": 0.13499913,
+      "outputCnyPerMillion": 8.09994806,
       "originalInputPerMillion": 0.2,
       "originalCachedInputPerMillion": 0.02,
       "originalOutputPerMillion": 1.2,
       "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
       "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
       "sourceStatus": "aggregated",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "current",
         "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": {
         "catalog": "LiteLLM",
@@ -2231,26 +2231,26 @@
           "output": 30
         },
         "cny": {
-          "input": 33.7566391,
+          "input": 33.7497836,
           "cachedInput": null,
-          "output": 202.5398346
+          "output": 202.4987016
         }
       },
-      "inputCnyPerMillion": 33.7566391,
+      "inputCnyPerMillion": 33.7497836,
       "cachedInputCnyPerMillion": null,
-      "outputCnyPerMillion": 202.5398346,
+      "outputCnyPerMillion": 202.4987016,
       "originalInputPerMillion": 5,
       "originalCachedInputPerMillion": null,
       "originalOutputPerMillion": 30,
       "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
       "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
       "sourceStatus": "aggregated",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "current",
         "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": {
         "catalog": "LiteLLM",
@@ -2294,26 +2294,26 @@
           "output": 15
         },
         "cny": {
-          "input": 16.87831955,
+          "input": 16.8748918,
           "cachedInput": null,
-          "output": 101.2699173
+          "output": 101.2493508
         }
       },
-      "inputCnyPerMillion": 16.87831955,
+      "inputCnyPerMillion": 16.8748918,
       "cachedInputCnyPerMillion": null,
-      "outputCnyPerMillion": 101.2699173,
+      "outputCnyPerMillion": 101.2493508,
       "originalInputPerMillion": 2.5,
       "originalCachedInputPerMillion": null,
       "originalOutputPerMillion": 15,
       "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
       "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
       "sourceStatus": "aggregated",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "current",
         "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": {
         "catalog": "LiteLLM",
@@ -2357,26 +2357,26 @@
           "output": 4.5
         },
         "cny": {
-          "input": 5.06349587,
+          "input": 5.06246754,
           "cachedInput": null,
-          "output": 30.38097519
+          "output": 30.37480524
         }
       },
-      "inputCnyPerMillion": 5.06349587,
+      "inputCnyPerMillion": 5.06246754,
       "cachedInputCnyPerMillion": null,
-      "outputCnyPerMillion": 30.38097519,
+      "outputCnyPerMillion": 30.37480524,
       "originalInputPerMillion": 0.75,
       "originalCachedInputPerMillion": null,
       "originalOutputPerMillion": 4.5,
       "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
       "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
       "sourceStatus": "aggregated",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "current",
         "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": {
         "catalog": "LiteLLM",
@@ -2420,26 +2420,26 @@
           "output": 1.25
         },
         "cny": {
-          "input": 1.35026556,
+          "input": 1.34999134,
           "cachedInput": null,
-          "output": 8.43915978
+          "output": 8.4374459
         }
       },
-      "inputCnyPerMillion": 1.35026556,
+      "inputCnyPerMillion": 1.34999134,
       "cachedInputCnyPerMillion": null,
-      "outputCnyPerMillion": 8.43915978,
+      "outputCnyPerMillion": 8.4374459,
       "originalInputPerMillion": 0.2,
       "originalCachedInputPerMillion": null,
       "originalOutputPerMillion": 1.25,
       "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
       "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
       "sourceStatus": "aggregated",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "current",
         "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": {
         "catalog": "LiteLLM",
@@ -2483,26 +2483,26 @@
           "output": 50
         },
         "cny": {
-          "input": 67.5132782,
-          "cachedInput": 6.75132782,
-          "output": 337.566391
+          "input": 67.4995672,
+          "cachedInput": 6.74995672,
+          "output": 337.497836
         }
       },
-      "inputCnyPerMillion": 67.5132782,
-      "cachedInputCnyPerMillion": 6.75132782,
-      "outputCnyPerMillion": 337.566391,
+      "inputCnyPerMillion": 67.4995672,
+      "cachedInputCnyPerMillion": 6.74995672,
+      "outputCnyPerMillion": 337.497836,
       "originalInputPerMillion": 10,
       "originalCachedInputPerMillion": 1,
       "originalOutputPerMillion": 50,
       "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
       "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
       "sourceStatus": "aggregated",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "current",
         "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": {
         "catalog": "LiteLLM",
@@ -2546,26 +2546,26 @@
           "output": 25
         },
         "cny": {
-          "input": 33.7566391,
-          "cachedInput": 3.37566391,
-          "output": 168.7831955
+          "input": 33.7497836,
+          "cachedInput": 3.37497836,
+          "output": 168.748918
         }
       },
-      "inputCnyPerMillion": 33.7566391,
-      "cachedInputCnyPerMillion": 3.37566391,
-      "outputCnyPerMillion": 168.7831955,
+      "inputCnyPerMillion": 33.7497836,
+      "cachedInputCnyPerMillion": 3.37497836,
+      "outputCnyPerMillion": 168.748918,
       "originalInputPerMillion": 5,
       "originalCachedInputPerMillion": 0.5,
       "originalOutputPerMillion": 25,
       "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
       "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
       "sourceStatus": "aggregated",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "current",
         "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": {
         "catalog": "LiteLLM",
@@ -2609,26 +2609,26 @@
           "output": 25
         },
         "cny": {
-          "input": 33.7566391,
-          "cachedInput": 3.37566391,
-          "output": 168.7831955
+          "input": 33.7497836,
+          "cachedInput": 3.37497836,
+          "output": 168.748918
         }
       },
-      "inputCnyPerMillion": 33.7566391,
-      "cachedInputCnyPerMillion": 3.37566391,
-      "outputCnyPerMillion": 168.7831955,
+      "inputCnyPerMillion": 33.7497836,
+      "cachedInputCnyPerMillion": 3.37497836,
+      "outputCnyPerMillion": 168.748918,
       "originalInputPerMillion": 5,
       "originalCachedInputPerMillion": 0.5,
       "originalOutputPerMillion": 25,
       "sourceName": "Anthropic Claude Pricing",
       "sourceUrl": "https://platform.claude.com/docs/en/about-claude/pricing",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -2668,26 +2668,26 @@
           "output": 10
         },
         "cny": {
-          "input": 13.50265564,
+          "input": 13.49991344,
           "cachedInput": null,
-          "output": 67.5132782
+          "output": 67.4995672
         }
       },
-      "inputCnyPerMillion": 13.50265564,
+      "inputCnyPerMillion": 13.49991344,
       "cachedInputCnyPerMillion": null,
-      "outputCnyPerMillion": 67.5132782,
+      "outputCnyPerMillion": 67.4995672,
       "originalInputPerMillion": 2,
       "originalCachedInputPerMillion": null,
       "originalOutputPerMillion": 10,
       "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
       "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
       "sourceStatus": "aggregated",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "current",
         "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": {
         "catalog": "LiteLLM",
@@ -2731,26 +2731,26 @@
           "output": 12
         },
         "cny": {
-          "input": 13.50265564,
-          "cachedInput": 1.35026556,
-          "output": 81.01593384
+          "input": 13.49991344,
+          "cachedInput": 1.34999134,
+          "output": 80.99948064
         }
       },
-      "inputCnyPerMillion": 13.50265564,
-      "cachedInputCnyPerMillion": 1.35026556,
-      "outputCnyPerMillion": 81.01593384,
+      "inputCnyPerMillion": 13.49991344,
+      "cachedInputCnyPerMillion": 1.34999134,
+      "outputCnyPerMillion": 80.99948064,
       "originalInputPerMillion": 2,
       "originalCachedInputPerMillion": 0.2,
       "originalOutputPerMillion": 12,
       "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
       "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
       "sourceStatus": "aggregated",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "current",
         "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": {
         "catalog": "LiteLLM",
@@ -2791,26 +2791,26 @@
           "output": 18
         },
         "cny": {
-          "input": 27.00531128,
-          "cachedInput": 2.70053113,
-          "output": 121.52390076
+          "input": 26.99982688,
+          "cachedInput": 2.69998269,
+          "output": 121.49922096
         }
       },
-      "inputCnyPerMillion": 27.00531128,
-      "cachedInputCnyPerMillion": 2.70053113,
-      "outputCnyPerMillion": 121.52390076,
+      "inputCnyPerMillion": 26.99982688,
+      "cachedInputCnyPerMillion": 2.69998269,
+      "outputCnyPerMillion": 121.49922096,
       "originalInputPerMillion": 4,
       "originalCachedInputPerMillion": 0.4,
       "originalOutputPerMillion": 18,
       "sourceName": "Google Gemini API Pricing",
       "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "official_only",
         "reason": "NO_SECONDARY_MAPPING",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -2850,26 +2850,26 @@
           "output": 9
         },
         "cny": {
-          "input": 10.12699173,
-          "cachedInput": 1.01269917,
-          "output": 60.76195038
+          "input": 10.12493508,
+          "cachedInput": 1.01249351,
+          "output": 60.74961048
         }
       },
-      "inputCnyPerMillion": 10.12699173,
-      "cachedInputCnyPerMillion": 1.01269917,
-      "outputCnyPerMillion": 60.76195038,
+      "inputCnyPerMillion": 10.12493508,
+      "cachedInputCnyPerMillion": 1.01249351,
+      "outputCnyPerMillion": 60.74961048,
       "originalInputPerMillion": 1.5,
       "originalCachedInputPerMillion": 0.15,
       "originalOutputPerMillion": 9,
       "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
       "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
       "sourceStatus": "aggregated",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "current",
         "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": {
         "catalog": "LiteLLM",
@@ -2912,26 +2912,26 @@
           "output": 1.5
         },
         "cny": {
-          "input": 1.68783196,
+          "input": 1.68748918,
           "cachedInput": null,
-          "output": 10.12699173
+          "output": 10.12493508
         }
       },
-      "inputCnyPerMillion": 1.68783196,
+      "inputCnyPerMillion": 1.68748918,
       "cachedInputCnyPerMillion": null,
-      "outputCnyPerMillion": 10.12699173,
+      "outputCnyPerMillion": 10.12493508,
       "originalInputPerMillion": 0.25,
       "originalCachedInputPerMillion": null,
       "originalOutputPerMillion": 1.5,
       "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
       "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
       "sourceStatus": "aggregated",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "current",
         "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": {
         "catalog": "LiteLLM",
@@ -2970,26 +2970,26 @@
           "output": 1.5
         },
         "cny": {
-          "input": 3.37566391,
+          "input": 3.37497836,
           "cachedInput": null,
-          "output": 10.12699173
+          "output": 10.12493508
         }
       },
-      "inputCnyPerMillion": 3.37566391,
+      "inputCnyPerMillion": 3.37497836,
       "cachedInputCnyPerMillion": null,
-      "outputCnyPerMillion": 10.12699173,
+      "outputCnyPerMillion": 10.12493508,
       "originalInputPerMillion": 0.5,
       "originalCachedInputPerMillion": null,
       "originalOutputPerMillion": 1.5,
       "sourceName": "Google Gemini API Pricing",
       "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "official_only",
         "reason": "NO_SECONDARY_MAPPING",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -3025,26 +3025,26 @@
           "output": 6
         },
         "cny": {
-          "input": 13.50265564,
-          "cachedInput": 2.02539835,
-          "output": 40.50796692
+          "input": 13.49991344,
+          "cachedInput": 2.02498702,
+          "output": 40.49974032
         }
       },
-      "inputCnyPerMillion": 13.50265564,
-      "cachedInputCnyPerMillion": 2.02539835,
-      "outputCnyPerMillion": 40.50796692,
+      "inputCnyPerMillion": 13.49991344,
+      "cachedInputCnyPerMillion": 2.02498702,
+      "outputCnyPerMillion": 40.49974032,
       "originalInputPerMillion": 2,
       "originalCachedInputPerMillion": 0.3,
       "originalOutputPerMillion": 6,
       "sourceName": "xAI API Pricing",
       "sourceUrl": "https://docs.x.ai/developers/pricing",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "official_only",
         "reason": "NO_SECONDARY_MAPPING",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -3080,26 +3080,26 @@
           "output": 12
         },
         "cny": {
-          "input": 27.00531128,
-          "cachedInput": 4.05079669,
-          "output": 81.01593384
+          "input": 26.99982688,
+          "cachedInput": 4.04997403,
+          "output": 80.99948064
         }
       },
-      "inputCnyPerMillion": 27.00531128,
-      "cachedInputCnyPerMillion": 4.05079669,
-      "outputCnyPerMillion": 81.01593384,
+      "inputCnyPerMillion": 26.99982688,
+      "cachedInputCnyPerMillion": 4.04997403,
+      "outputCnyPerMillion": 80.99948064,
       "originalInputPerMillion": 4,
       "originalCachedInputPerMillion": 0.6,
       "originalOutputPerMillion": 12,
       "sourceName": "xAI API Pricing",
       "sourceUrl": "https://docs.x.ai/developers/pricing",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "official_only",
         "reason": "NO_SECONDARY_MAPPING",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -3139,26 +3139,26 @@
           "output": 1.5
         },
         "cny": {
-          "input": 3.37566391,
-          "cachedInput": 0.33756639,
-          "output": 10.12699173
+          "input": 3.37497836,
+          "cachedInput": 0.33749784,
+          "output": 10.12493508
         }
       },
-      "inputCnyPerMillion": 3.37566391,
-      "cachedInputCnyPerMillion": 0.33756639,
-      "outputCnyPerMillion": 10.12699173,
+      "inputCnyPerMillion": 3.37497836,
+      "cachedInputCnyPerMillion": 0.33749784,
+      "outputCnyPerMillion": 10.12493508,
       "originalInputPerMillion": 0.5,
       "originalCachedInputPerMillion": 0.05,
       "originalOutputPerMillion": 1.5,
       "sourceName": "LiteLLM 聚合目录（官方页面待复核）",
       "sourceUrl": "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
       "sourceStatus": "aggregated",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": false,
       "freshness": {
         "state": "current",
         "reason": "EXACT_MATCH_WITHIN_THRESHOLD",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": {
         "catalog": "LiteLLM",
@@ -3202,26 +3202,26 @@
           "output": 7.5
         },
         "cny": {
-          "input": 10.12699173,
-          "cachedInput": 1.01269917,
-          "output": 50.63495865
+          "input": 10.12493508,
+          "cachedInput": 1.01249351,
+          "output": 50.6246754
         }
       },
-      "inputCnyPerMillion": 10.12699173,
-      "cachedInputCnyPerMillion": 1.01269917,
-      "outputCnyPerMillion": 50.63495865,
+      "inputCnyPerMillion": 10.12493508,
+      "cachedInputCnyPerMillion": 1.01249351,
+      "outputCnyPerMillion": 50.6246754,
       "originalInputPerMillion": 1.5,
       "originalCachedInputPerMillion": 0.15,
       "originalOutputPerMillion": 7.5,
       "sourceName": "Mistral Model Selection Guide",
       "sourceUrl": "https://docs.mistral.ai/models/model-selection-guide",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -3261,26 +3261,26 @@
           "output": 0.6
         },
         "cny": {
-          "input": 1.01269917,
-          "cachedInput": 0.10126992,
-          "output": 4.05079669
+          "input": 1.01249351,
+          "cachedInput": 0.10124935,
+          "output": 4.04997403
         }
       },
-      "inputCnyPerMillion": 1.01269917,
-      "cachedInputCnyPerMillion": 0.10126992,
-      "outputCnyPerMillion": 4.05079669,
+      "inputCnyPerMillion": 1.01249351,
+      "cachedInputCnyPerMillion": 0.10124935,
+      "outputCnyPerMillion": 4.04997403,
       "originalInputPerMillion": 0.15,
       "originalCachedInputPerMillion": 0.015,
       "originalOutputPerMillion": 0.6,
       "sourceName": "Mistral Model Selection Guide",
       "sourceUrl": "https://docs.mistral.ai/models/model-selection-guide",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     },
@@ -3320,26 +3320,26 @@
           "output": 10
         },
         "cny": {
-          "input": 16.87831955,
+          "input": 16.8748918,
           "cachedInput": null,
-          "output": 67.5132782
+          "output": 67.4995672
         }
       },
-      "inputCnyPerMillion": 16.87831955,
+      "inputCnyPerMillion": 16.8748918,
       "cachedInputCnyPerMillion": null,
-      "outputCnyPerMillion": 67.5132782,
+      "outputCnyPerMillion": 67.4995672,
       "originalInputPerMillion": 2.5,
       "originalCachedInputPerMillion": null,
       "originalOutputPerMillion": 10,
       "sourceName": "Cohere Command A Model Card",
       "sourceUrl": "https://docs.cohere.com/docs/command-a",
       "sourceStatus": "official_page",
-      "updatedAt": "2026-08-03T03:19:44.923Z",
+      "updatedAt": "2026-08-05T20:52:29.830Z",
       "isStale": true,
       "freshness": {
         "state": "stale",
         "reason": "SECONDARY_MODEL_NOT_FOUND",
-        "checkedAt": "2026-08-03T03:19:44.923Z"
+        "checkedAt": "2026-08-05T20:52:29.830Z"
       },
       "secondarySource": null
     }
@@ -3592,16 +3592,20 @@
         "baseReferenceCostCny": 42.195798875
       }
     ],
-    "current": 100,
-    "value": 100,
-    "updatedAt": "2026-08-03T03:20:03.078Z",
-    "change1d": 0,
-    "change30d": 0,
+    "current": 99.9892,
+    "value": 99.9892,
+    "updatedAt": "2026-08-05T20:52:31.525Z",
+    "change1d": null,
+    "change30d": null,
     "sampleSize": 34,
     "history": [
       {
         "date": "2026-08-03",
         "value": 100
+      },
+      {
+        "date": "2026-08-06",
+        "value": 99.9892
       }
     ]
   }

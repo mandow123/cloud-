@@ -16,6 +16,7 @@ import {
 } from "@/lib/marketplace";
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
 import { resolveMarketplaceCapacityLimits } from "@/lib/server/marketplace-capacity";
+import { CURATED_DEMAND_OWNER, curatedMarketDemands } from "@/lib/server/curated-market-demands";
 import {
   MARKETPLACE_MIGRATION_CHECKSUM,
   MARKETPLACE_MIGRATION_VERSION,
@@ -145,7 +146,7 @@ function leadTimeFromRow(value: string): MarketplaceQuoteLeadTime {
 function publicStandardizationText(value: string) {
   return value
     .replaceAll("演示", "平台参考")
-    .replaceAll("虚构", "初始化")
+    .replaceAll("虚构", "目录数据")
     .replaceAll("非实时成交价", "询价确认");
 }
 
@@ -173,6 +174,7 @@ function mapRequest(row: RequestRow): MarketplaceRequestRecord {
 }
 
 function mapSupplierQuote(row: QuoteRow): MarketplaceSupplierQuoteRecord {
+  const superseded = row.standardization_version.includes("@superseded:");
   return {
     id: row.id,
     demandId: row.demand_id,
@@ -184,12 +186,15 @@ function mapSupplierQuote(row: QuoteRow): MarketplaceSupplierQuoteRecord {
     validDays: row.valid_days,
     validUntil: row.valid_until,
     scopeNote: row.raw_scope_note,
-    status: Date.parse(row.valid_until) <= Date.now() ? "已过期" : row.supplier_status,
+    status: superseded
+      ? "需求已更新 · 需重新报价"
+      : Date.parse(row.valid_until) <= Date.now() ? "已过期" : row.supplier_status,
     createdAt: row.created_at,
   };
 }
 
 function mapNormalizedQuote(row: QuoteRow): MarketplaceNormalizedQuoteRecord {
+  const superseded = row.standardization_version.includes("@superseded:");
   return {
     id: row.id,
     demandId: row.demand_id,
@@ -202,7 +207,9 @@ function mapNormalizedQuote(row: QuoteRow): MarketplaceNormalizedQuoteRecord {
     standardizedScope: publicStandardizationText(row.standardized_scope_note),
     standardizationVersion: "kai-standard-v1",
     standardizationNote: publicStandardizationText(row.standardization_note),
-    status: Date.parse(row.valid_until) <= Date.now() ? "已过期" : row.normalized_status,
+    status: superseded
+      ? "需求已更新 · 需重新报价"
+      : Date.parse(row.valid_until) <= Date.now() ? "已过期" : row.normalized_status,
     createdAt: row.created_at,
   };
 }
@@ -269,11 +276,92 @@ function replayOrConflict<Row extends { payload_hash: string }, Record>(row: Row
   return { record: mapper(row), replayed: true } as const;
 }
 
-export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
+export function createD1MarketplaceStore(value: unknown,options:{readinessOnly?:boolean}={}): MarketplaceStore {
   const db = value as D1Database;
   const capacityLimits = resolveMarketplaceCapacityLimits();
   let schemaPromise: Promise<void> | undefined;
   let nextMaintenanceAt = 0;
+  const upsertCuratedMarketDemands = async () => {
+    const appliedAt = new Date().toISOString();
+    await db.batch(curatedMarketDemands().flatMap((demand) => [db.prepare(`INSERT INTO marketplace_requests_v2 (
+      id, owner_actor_id, idempotency_key, payload_hash, visibility,
+      request_type, kind, title, category, region, pricing_unit, quantity,
+      duration_hours, delivery_date, summary, offered_json, wanted_json,
+      cash_direction, cash_amount, status, created_at, updated_at, version
+    ) VALUES (?, ?, ?, ?, 'market', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'none', NULL, ?, ?, ?, 1)
+    ON CONFLICT(id) DO UPDATE SET
+      payload_hash = excluded.payload_hash,
+      kind = excluded.kind,
+      title = excluded.title,
+      category = excluded.category,
+      region = excluded.region,
+      pricing_unit = excluded.pricing_unit,
+      quantity = excluded.quantity,
+      duration_hours = excluded.duration_hours,
+      delivery_date = excluded.delivery_date,
+      summary = excluded.summary,
+      status = excluded.status,
+      updated_at = CASE
+        WHEN marketplace_requests_v2.updated_at > ? THEN marketplace_requests_v2.updated_at
+        ELSE ?
+      END,
+      version = marketplace_requests_v2.version + 1
+    WHERE marketplace_requests_v2.owner_actor_id = ?
+      AND (marketplace_requests_v2.payload_hash <> excluded.payload_hash
+        OR marketplace_requests_v2.kind <> excluded.kind
+        OR marketplace_requests_v2.title <> excluded.title
+        OR marketplace_requests_v2.category <> excluded.category
+        OR marketplace_requests_v2.region <> excluded.region
+        OR marketplace_requests_v2.pricing_unit <> excluded.pricing_unit
+        OR marketplace_requests_v2.quantity <> excluded.quantity
+        OR marketplace_requests_v2.duration_hours IS NOT excluded.duration_hours
+        OR marketplace_requests_v2.delivery_date IS NOT excluded.delivery_date
+        OR marketplace_requests_v2.summary <> excluded.summary)`).bind(
+        demand.id,
+        demand.ownerActorId,
+        demand.idempotencyKey,
+        demand.payloadHash,
+        demand.requestType,
+        demand.kind,
+        demand.title,
+        demand.category,
+        demand.region,
+        demand.pricingUnit,
+        demand.quantity,
+        demand.durationHours,
+        demand.deliveryDate,
+        demand.summary,
+        demand.status,
+        demand.createdAt,
+        demand.updatedAt,
+        appliedAt,
+        appliedAt,
+        CURATED_DEMAND_OWNER,
+      ), db.prepare(`UPDATE marketplace_quotes_v2
+        SET valid_until = CASE WHEN valid_until > ? THEN ? ELSE valid_until END,
+            standardization_version = CASE
+              WHEN standardization_version LIKE 'kai-standard-v1@revision:%'
+                THEN standardization_version || '@superseded:' || ?
+              ELSE 'kai-standard-v1@revision:legacy@superseded:' || ?
+            END
+        WHERE demand_id = ?
+          AND standardization_version NOT LIKE '%@superseded:%'
+          AND standardization_version <> 'kai-standard-v1@revision:' || ?
+          AND EXISTS (
+            SELECT 1 FROM marketplace_requests_v2
+            WHERE id = ? AND owner_actor_id = ? AND payload_hash = ?
+          )`).bind(
+            appliedAt,
+            appliedAt,
+            appliedAt,
+            appliedAt,
+            demand.id,
+            demand.payloadHash,
+            demand.id,
+            CURATED_DEMAND_OWNER,
+            demand.payloadHash,
+          )]));
+  };
   const pruneExpiredMarketplaceData = async (force = false) => {
     if (!force && Date.now() < nextMaintenanceAt) return;
     nextMaintenanceAt = Date.now() + MAINTENANCE_INTERVAL_MS;
@@ -291,6 +379,7 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
       )`).bind(capacityLimits.sessions),
       db.prepare("DELETE FROM marketplace_write_limits_v2 WHERE updated_at < ?").bind(cutoff),
     ]);
+    await upsertCuratedMarketDemands();
   };
   const ensureSchema = () => {
     schemaPromise ??= (async () => {
@@ -319,7 +408,7 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
           new Date().toISOString(),
         ).run();
       }
-      await pruneExpiredMarketplaceData(true);
+      if(!options.readinessOnly)await pruneExpiredMarketplaceData(true);
     })().catch((error) => {
       schemaPromise = undefined;
       throw error;
@@ -442,7 +531,7 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
             duration_hours, delivery_date, summary, offered_json, wanted_json,
             cash_direction, cash_amount, status, created_at, updated_at, version
           ) SELECT ?, ?, ?, ?, 'market', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1
-          WHERE (SELECT COUNT(*) FROM marketplace_requests_v2) < ?`).bind(
+          WHERE (SELECT COUNT(*) FROM marketplace_requests_v2 WHERE owner_actor_id <> ?) < ?`).bind(
             record.id,
             context.actorId,
             context.idempotencyKey,
@@ -464,6 +553,7 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
             record.status,
             record.createdAt,
             record.updatedAt,
+            CURATED_DEMAND_OWNER,
             capacityLimits.requests,
           ),
           eventStatement(db, context.actorId, "request", record.id, "REQUEST_CREATED", "需求已记录并生成匿名市场投影。", record.createdAt, { kind: "request", id: record.id }),
@@ -521,7 +611,8 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
             SELECT 1 FROM marketplace_requests_v2
             WHERE id = ? AND visibility = 'market' AND version = ?
           )
-            AND (SELECT COUNT(*) FROM marketplace_quotes_v2 WHERE demand_id = ?) < ?
+            AND (SELECT COUNT(*) FROM marketplace_quotes_v2
+              WHERE demand_id = ? AND valid_until > ? AND standardization_version NOT LIKE '%@superseded:%') < ?
             AND (SELECT COUNT(*) FROM marketplace_quotes_v2) < ?`).bind(
             records.supplier.id,
             context.actorId,
@@ -539,7 +630,7 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
             records.supplier.validUntil,
             records.supplier.scopeNote,
             records.normalized.standardizedScope,
-            records.normalized.standardizationVersion,
+            `kai-standard-v1@revision:${demand.payload_hash}`,
             records.normalized.standardizationNote,
             records.supplier.status,
             records.normalized.status,
@@ -547,13 +638,17 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
             demand.id,
             demand.version,
             demand.id,
+            records.supplier.createdAt,
             capacityLimits.quotesPerDemand,
             capacityLimits.quotes,
           ),
           db.prepare(`UPDATE marketplace_requests_v2
-            SET status = '方案待确认', updated_at = ?, version = version + 1
+            SET status = '方案待确认',
+                updated_at = CASE WHEN updated_at > ? THEN updated_at ELSE ? END,
+                version = version + 1
             WHERE id = ? AND version = ?
               AND EXISTS (SELECT 1 FROM marketplace_quotes_v2 WHERE id = ?)`).bind(
+                records.supplier.createdAt,
                 records.supplier.createdAt,
                 demand.id,
                 demand.version,
@@ -574,8 +669,9 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
           .bind(input.demandId).first<RequestRow>();
         if (!currentDemand) throw new MarketplaceAccessError("DEMAND_NOT_AVAILABLE");
         if (currentDemand.version !== demand.version) throw new MarketplaceStateConflictError();
-        const demandQuoteCount = await db.prepare("SELECT COUNT(*) AS count FROM marketplace_quotes_v2 WHERE demand_id = ?")
-          .bind(demand.id).first<{ count: number }>();
+        const demandQuoteCount = await db.prepare(`SELECT COUNT(*) AS count FROM marketplace_quotes_v2
+          WHERE demand_id = ? AND valid_until > ? AND standardization_version NOT LIKE '%@superseded:%'`)
+          .bind(demand.id, records.supplier.createdAt).first<{ count: number }>();
         if ((demandQuoteCount?.count ?? capacityLimits.quotesPerDemand) >= capacityLimits.quotesPerDemand) {
           throw new MarketplaceDemandQuoteLimitError();
         }
@@ -638,7 +734,7 @@ export function createD1MarketplaceStore(value: unknown): MarketplaceStore {
     },
     async health() {
       await ensureSchema();
-      await pruneExpiredMarketplaceData();
+      if(!options.readinessOnly)await pruneExpiredMarketplaceData();
       const [migration, requests, quotes, drafts, events] = await Promise.all([
         db.prepare("SELECT version, checksum FROM marketplace_schema_migrations ORDER BY version DESC LIMIT 1")
           .first<{ version: number; checksum: string }>(),

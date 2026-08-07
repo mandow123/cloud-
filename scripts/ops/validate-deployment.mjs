@@ -165,12 +165,23 @@ async function main() {
   assert(app.ports?.length === 1 && app.ports[0].host_ip === "127.0.0.1", "app port must bind loopback only");
   assert(app.healthcheck?.test?.join(" ").includes("/api/live"), "app healthcheck must use /api/live");
   assert(app.environment.HOST === "0.0.0.0", "app must bind its container listener through HOST");
+  assert(app.environment.KAI_ENVIRONMENT === "LIVE", "production app must expose the LIVE environment label");
   assert(app.environment.KAI_DB_DIR === "/app/db", "app must use the isolated KAI_DB_DIR");
   assert(app.environment.KAI_TRUST_PROXY === "1", "loopback-only app must trust the configured reverse proxy");
   assert(app.environment.KAI_REQUIRE_HTTPS_WRITES === "1", "production writes must require HTTPS");
   assert(app.environment.KAI_ENABLE_HSTS === candidateEnvironment.KAI_ENABLE_HSTS, "app must receive the validated HSTS flag");
   assert(app.environment.KAI_PUBLIC_ORIGIN === candidateEnvironment.KAI_PUBLIC_ORIGIN, "app must receive the canonical HTTPS origin");
   assert(app.environment.KAI_CURSOR_SECRET === candidateEnvironment.KAI_CURSOR_SECRET, "app must receive the validated cursor secret");
+  assert(app.environment.KAI_ADMIN_LOCAL_AUTH === "0", "production Compose must keep LOCAL administrator login disabled");
+  for (const name of [
+    "KAI_LARK_APP_ID", "KAI_LARK_APP_SECRET", "KAI_LARK_REDIRECT_URI", "KAI_LARK_ALLOWED_TENANT_KEYS",
+    "KAI_EMAIL_OTP_WEBHOOK_URL", "KAI_EMAIL_OTP_WEBHOOK_TOKEN", "KAI_EMAIL_OTP_HMAC_SECRET",
+    "KAI_ADMIN_BOOTSTRAP_CODE",
+    "KAI_ALIPAY_APP_ID", "KAI_ALIPAY_PRIVATE_KEY", "KAI_ALIPAY_PUBLIC_KEY", "KAI_ALIPAY_SELLER_ID",
+    "KAI_SSH_PROVISIONER_URL", "KAI_SSH_PROVISIONER_TOKEN",
+  ]) {
+    assert(Object.hasOwn(app.environment, name), `app must declare the ${name} production integration boundary`);
+  }
   assert(app.environment.KAI_RELEASE_SHA === candidateEnvironment.KAI_RELEASE_SHA, "app must expose the validated release SHA");
   assert(app.environment.KAI_IMAGE_REFERENCE === candidateEnvironment.KAI_IMAGE_REFERENCE, "app must receive its immutable image reference for the startup gate");
   assert(volumeByTarget(app, "/app/db") && !volumeByTarget(app, "/app/db").read_only, "app requires a writable /app/db mount");
@@ -231,6 +242,7 @@ async function main() {
   assert(promotionScript.includes("git\", [\"archive\", \"--format=tar\", \"HEAD\"]") && promotionScript.includes("selectRepositoryDigest") && promotionScript.includes("--initial-release"), "promotion must build the exact commit, capture its digest, and require explicit rollback context");
   assert(localImageValidator.includes("validateImageInspection") && localImageValidator.includes("{{.Server.Os}}/{{.Server.Arch}}"), "target-host gate must validate local digest, revision, and platform");
   assert(Dockerfile.includes("/app/scripts/ops ./scripts/ops"), "runtime image must contain operations scripts");
+  assert(Dockerfile.includes("/app/drizzle ./drizzle"), "runtime image must contain SQLite exchange migrations");
   assert(Dockerfile.includes("/api/live"), "runtime image healthcheck must use /api/live");
   assert(Dockerfile.includes("HOST=0.0.0.0"), "runtime image must bind the standalone server through HOST");
   assert(Dockerfile.includes("ARG KAI_RELEASE_SHA") && Dockerfile.includes("org.opencontainers.image.revision=\"${KAI_RELEASE_SHA}\""), "runtime image must embed the exact release SHA as an OCI revision label");

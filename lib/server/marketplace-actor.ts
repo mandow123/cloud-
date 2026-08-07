@@ -4,7 +4,7 @@ const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 
 export type MarketplaceActor = {
   id: string;
-  source: "platform" | "anonymous-session";
+  source: "platform" | "anonymous-session" | "account-session";
   sessionHash: string;
   csrfToken: string;
   expiresAt: string;

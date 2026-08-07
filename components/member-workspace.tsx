@@ -43,6 +43,7 @@ type CollectionState<T> = {
 
 const WATCHLIST_KEY = "kai-cloud-watchlist-v1";
 const ROLE_KEY = "kai-cloud-role-v1";
+const MARKET_REQUEST_REFRESH_MS = 60_000;
 const DEFAULT_WATCHLIST_IDS = resourceListings.slice(0, 3).map((listing) => listing.id);
 
 const categoryLabel: Record<ResourceCategory, string> = {
@@ -80,7 +81,7 @@ function shortDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit" }).format(date);
 }
 
-function useMarketplaceCollection<T>(path: string) {
+function useMarketplaceCollection<T>(path: string, refreshMs: number | null = null) {
   const [state, setState] = useState<CollectionState<T>>({
     items: [],
     count: 0,
@@ -89,8 +90,11 @@ function useMarketplaceCollection<T>(path: string) {
     error: null,
     pageInfo: null,
   });
+  const inFlightRef = useRef(false);
 
   const load = useCallback(async (cursor: string | null = null) => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     setState((current) => ({ ...current, status: "loading", error: null }));
     const separator = path.includes("?") ? "&" : "?";
     const requestPath = cursor ? `${path}${separator}cursor=${encodeURIComponent(cursor)}` : path;
@@ -117,12 +121,20 @@ function useMarketplaceCollection<T>(path: string) {
         status: "error",
         error: marketplaceErrorMessage(error, "暂时无法读取这组记录。"),
       }));
+    } finally {
+      inFlightRef.current = false;
     }
   }, [path]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!refreshMs) return;
+    const timer = window.setInterval(() => void load(null), refreshMs);
+    return () => window.clearInterval(timer);
+  }, [load, refreshMs]);
 
   return {
     state,
@@ -137,7 +149,10 @@ export function MemberWorkspace() {
   const [role, setRole] = useState<MemberRole>("buyer");
   const [watchlistIds, setWatchlistIds] = useState<string[]>(DEFAULT_WATCHLIST_IDS);
   const buyerRequests = useMarketplaceCollection<MarketplaceRequestRecord>("/api/requests?view=mine&limit=20");
-  const marketRequests = useMarketplaceCollection<MarketplaceRequestRecord>("/api/requests?view=market&limit=20");
+  const marketRequests = useMarketplaceCollection<MarketplaceRequestRecord>(
+    "/api/requests?view=market&limit=20",
+    MARKET_REQUEST_REFRESH_MS,
+  );
   const buyerQuotes = useMarketplaceCollection<MarketplaceNormalizedQuoteRecord>("/api/quotes?view=buyer&limit=20");
   const supplierQuotes = useMarketplaceCollection<MarketplaceSupplierQuoteRecord>("/api/quotes?view=supplier&limit=20");
   const supplierDrafts = useMarketplaceCollection<MarketplaceDraftRecord>("/api/drafts?view=mine&limit=20");

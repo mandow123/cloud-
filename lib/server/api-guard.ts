@@ -12,6 +12,8 @@ import {
   MarketplaceStateConflictError,
 } from "@/lib/server/marketplace-errors";
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
+import { AccountAuthError } from "@/lib/server/account-auth";
+import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "@/lib/server/exchange-errors";
 
 const BODY_LIMIT = 32 * 1024;
 
@@ -195,12 +197,28 @@ export function readPageQuery<View extends string>(
 export function apiErrorResponse(error: unknown, extraHeaders?: HeadersInit, context?: ApiRequestContext) {
   const requestId = context?.requestId ?? crypto.randomUUID();
   const headers = new Headers(extraHeaders);
-  if (error instanceof MarketplaceInputError) {
+  if (error instanceof AccountAuthError) {
+    return jsonResponse(
+      { error: { code: error.code, message: error.message, requestId } },
+      error.status,
+      headers,
+      context ? { ...context, errorCode: error.code, errorName: error.name } : undefined,
+    );
+  }
+  if (error instanceof MarketplaceInputError || error instanceof ExchangeInputError) {
     return jsonResponse(
       { error: { code: "VALIDATION_ERROR", message: error.message, field: error.field, requestId } },
       400,
       headers,
       context ? { ...context, errorCode: "VALIDATION_ERROR", errorName: error.name } : undefined,
+    );
+  }
+  if (error instanceof ExchangeDomainError) {
+    return jsonResponse(
+      { error: { code: error.code, message: error.message, requestId } },
+      error.status,
+      headers,
+      context ? { ...context, errorCode: error.code, errorName: error.name } : undefined,
     );
   }
   if (error instanceof MarketplaceCsrfError) {
@@ -217,7 +235,7 @@ export function apiErrorResponse(error: unknown, extraHeaders?: HeadersInit, con
     const message = error.code === "DEMAND_NOT_AVAILABLE" ? "该需求当前不可响应。" : "对应需求不存在。";
     return jsonResponse({ error: { code: error.code, message, requestId } }, 404, headers, context ? { ...context, errorCode: error.code, errorName: error.name } : undefined);
   }
-  if (error instanceof MarketplaceIdempotencyConflictError) {
+  if (error instanceof MarketplaceIdempotencyConflictError || error instanceof ExchangeIdempotencyConflictError) {
     return jsonResponse(
       { error: { code: "IDEMPOTENCY_CONFLICT", message: "同一提交标识对应了不同内容，请刷新后重试。", requestId } },
       409,

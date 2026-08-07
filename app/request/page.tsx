@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AccountRequired } from "@/components/account-required";
 import { RequestWorkbench, type RequestPrefill } from "@/components/request-workbench";
 import { resourceListings, serviceAliases } from "@/lib/data";
 import { categoryPricingUnits, marketplaceCategories } from "@/lib/marketplace";
@@ -80,7 +81,9 @@ export default async function RequestPage({ searchParams }: RequestPageProps) {
       </header>
 
       <div className="shell py-12 sm:py-16">
-        <RequestWorkbench initialMode={mode} initialPrefill={prefill} />
+        <AccountRequired purpose="发布算力需求">
+          <RequestWorkbench initialMode={mode} initialPrefill={prefill} />
+        </AccountRequired>
       </div>
     </>
   );
