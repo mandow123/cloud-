@@ -33,11 +33,16 @@ function objectRows(value: unknown) {
 
 const metrics = [
   { label: "供给记录", paths: ["counts.supply-offers"], href: "/admin/supply-offers" },
-  { label: "买方需求", paths: ["counts.demands"], href: "/admin/demands" },
   { label: "验真任务", paths: ["counts.verifications"], href: "/admin/verifications" },
-  { label: "匹配记录", paths: ["counts.matches"], href: "/admin/matches" },
+  { label: "容量批次", paths: ["counts.capacity-lots"], href: "/admin/capacity-lots" },
+  { label: "有效挂牌", paths: ["counts.listings"], href: "/admin/listings" },
+  { label: "买方需求", paths: ["counts.demands"], href: "/admin/demands" },
+  { label: "容量置换", paths: ["counts.swaps"], href: "/admin/swaps" },
   { label: "订单记录", paths: ["counts.orders"], href: "/admin/orders" },
-  { label: "支付记录", paths: ["counts.payments"], href: "/admin/payments/refunds" },
+  { label: "交付任务", paths: ["counts.delivery"], href: "/admin/delivery" },
+  { label: "计量会话", paths: ["counts.metering"], href: "/admin/metering" },
+  { label: "结算记录", paths: ["counts.settlements"], href: "/admin/settlements" },
+  { label: "KAI-SCH 快照", paths: ["counts.standardization"], href: "/admin/standardization" },
   { label: "开放待办", paths: ["openWorkItems"], href: "/admin/work-items" },
   { label: "待审批退款", paths: ["pendingRefundApprovals"], href: "/admin/payments/refunds", critical: true },
 ] as const;

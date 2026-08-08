@@ -1,0 +1,509 @@
+.page {
+  background: var(--canvas);
+  color: var(--text);
+}
+
+.hero {
+  border-bottom: 1px solid var(--border);
+  background: var(--info-bg);
+}
+
+.shell {
+  width: min(calc(100% - 64px), 1240px);
+  margin-inline: auto;
+}
+
+.heroInner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr);
+  align-items: end;
+  gap: clamp(32px, 6vw, 88px);
+  padding-block: clamp(52px, 7vw, 88px);
+}
+
+.kicker {
+  margin: 0 0 12px;
+  color: var(--accent);
+  font-size: .8125rem;
+  font-weight: 750;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.title {
+  max-width: 850px;
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(2.45rem, 5vw, 4.8rem);
+  line-height: 1.06;
+  letter-spacing: -.055em;
+}
+
+.lead {
+  max-width: 760px;
+  margin: 22px 0 0;
+  color: var(--text);
+  font-size: 1.125rem;
+  line-height: 1.75;
+}
+
+.heroNote {
+  border-left: 3px solid var(--accent);
+  padding: 4px 0 4px 22px;
+}
+
+.heroNote strong,
+.heroNote span {
+  display: block;
+}
+
+.heroNote strong {
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.heroNote span {
+  margin-top: 8px;
+  font-size: .875rem;
+  line-height: 1.7;
+}
+
+.content {
+  padding-block: 40px 88px;
+}
+
+.statusBar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.statusItem {
+  min-width: 0;
+  padding: 16px 18px;
+}
+
+.statusItem + .statusItem {
+  border-left: 1px solid var(--border);
+}
+
+.statusItem span,
+.metric span,
+.incomeItem span {
+  display: block;
+  color: var(--muted);
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+.statusItem strong {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: .9375rem;
+}
+
+.notice,
+.warning,
+.state {
+  margin-top: 20px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  background: var(--surface);
+  padding: 18px 20px;
+}
+
+.notice strong,
+.warning strong,
+.state strong {
+  display: block;
+  color: var(--ink);
+}
+
+.notice p,
+.warning p,
+.state p {
+  margin: 6px 0 0;
+}
+
+.warning {
+  border-left-color: var(--warning);
+  background: var(--warning-bg);
+}
+
+.state {
+  min-height: 180px;
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+
+.stateError {
+  border-left-color: var(--error);
+  background: var(--error-bg);
+}
+
+.retry,
+.primaryLink,
+.secondaryLink {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 9px 16px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.retry,
+.primaryLink {
+  background: var(--brand);
+  color: #fff;
+}
+
+.retry {
+  margin: 16px auto 0;
+  cursor: pointer;
+}
+
+.secondaryLink {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.threeWay {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 28px;
+  border: 1px solid var(--border);
+  background: var(--border);
+}
+
+.definition {
+  min-height: 175px;
+  background: var(--surface);
+  padding: 22px;
+}
+
+.definition b {
+  display: block;
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: .6875rem;
+  letter-spacing: .08em;
+}
+
+.definition h2 {
+  margin: 10px 0 0;
+  font-size: 1.25rem;
+}
+
+.definition p {
+  margin: 10px 0 0;
+  font-size: .875rem;
+}
+
+.section {
+  margin-top: 48px;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: 14px;
+}
+
+.sectionHead h2 {
+  margin: 0;
+  font-size: clamp(1.65rem, 3vw, 2.25rem);
+}
+
+.sectionHead p {
+  max-width: 620px;
+  margin: 0;
+  text-align: right;
+}
+
+.priceStrip,
+.metricGrid,
+.incomeGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.incomeGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.priceItem,
+.metric,
+.incomeItem {
+  min-width: 0;
+  padding: 20px;
+}
+
+.priceItem + .priceItem,
+.metric + .metric,
+.incomeItem + .incomeItem {
+  border-left: 1px solid var(--border);
+}
+
+.priceItem span {
+  display: block;
+  color: var(--muted);
+  font-size: .75rem;
+}
+
+.priceItem strong,
+.metric strong,
+.incomeItem strong {
+  display: block;
+  margin-top: 7px;
+  color: var(--ink);
+  font-size: clamp(1.45rem, 3vw, 2rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+.metric small,
+.incomeItem small {
+  display: block;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: .75rem;
+  line-height: 1.55;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.tableWrap:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.table {
+  width: 100%;
+  min-width: 960px;
+  border-collapse: collapse;
+  font-size: .875rem;
+}
+
+.table caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.table th,
+.table td {
+  border-bottom: 1px solid var(--border);
+  padding: 15px 16px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.table thead th {
+  background: var(--table-head);
+  color: var(--ink);
+  font-size: .75rem;
+  white-space: nowrap;
+}
+
+.table tbody th {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.table tbody tr:last-child th,
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.primaryValue {
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.secondaryValue {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: .75rem;
+}
+
+.equivalentLine {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) minmax(150px, .9fr);
+  gap: 16px;
+  margin: 0;
+}
+
+.equivalentLine div {
+  min-width: 0;
+}
+
+.equivalentLine dt {
+  color: var(--muted);
+  font-size: .6875rem;
+  font-weight: 700;
+  letter-spacing: .03em;
+}
+
+.equivalentLine dd {
+  margin: 3px 0 0;
+  color: var(--ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.equivalentLine small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: .6875rem;
+  font-weight: 400;
+}
+
+.staleTag {
+  display: inline-flex;
+  border: 1px solid var(--warning);
+  padding: 2px 7px;
+  color: var(--warning);
+  font-size: .6875rem;
+  font-weight: 750;
+}
+
+.policyGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, .6fr);
+  gap: 28px;
+  margin-top: 32px;
+}
+
+.policyBlock {
+  border-top: 3px solid var(--accent);
+  background: var(--surface);
+  padding: 24px;
+}
+
+.policyBlock h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.policyBlock p {
+  margin: 12px 0 0;
+}
+
+.policyBlock ul {
+  margin: 14px 0 0;
+  padding-left: 20px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+@media (max-width: 900px) {
+  .heroInner,
+  .policyGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .statusBar,
+  .threeWay,
+  .metricGrid,
+  .incomeGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .statusItem:nth-child(3),
+  .definition:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+
+  .statusItem + .statusItem,
+  .definition + .definition,
+  .metric + .metric,
+  .incomeItem + .incomeItem {
+    border-left: 0;
+  }
+
+  .statusItem:nth-child(2),
+  .metric:nth-child(even),
+  .incomeItem:nth-child(even) {
+    border-left: 1px solid var(--border);
+  }
+
+  .sectionHead {
+    display: block;
+  }
+
+  .sectionHead p {
+    margin-top: 8px;
+    text-align: left;
+  }
+}
+
+@media (max-width: 620px) {
+  .shell {
+    width: min(calc(100% - 32px), 1240px);
+  }
+
+  .statusBar,
+  .threeWay,
+  .metricGrid,
+  .incomeGrid,
+  .priceStrip {
+    display: block;
+  }
+
+  .statusItem,
+  .definition,
+  .metric,
+  .incomeItem,
+  .priceItem {
+    border-left: 0 !important;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .title {
+    font-size: clamp(2.2rem, 14vw, 3.35rem);
+  }
+
+  .equivalentLine {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .retry,
+  .primaryLink,
+  .secondaryLink {
+    scroll-behavior: auto;
+  }
+}

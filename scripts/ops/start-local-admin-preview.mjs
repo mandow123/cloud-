@@ -9,8 +9,8 @@ process.env.PORT = rawPort;
 process.env.KAI_PUBLIC_ORIGIN = `http://127.0.0.1:${rawPort}`;
 process.env.KAI_ENVIRONMENT = "LOCAL";
 process.env.KAI_ADMIN_LOCAL_AUTH = "1";
-process.env.KAI_ADMIN_LOCAL_ROLES = "ROLE_ADMIN";
-process.env.KAI_ADMIN_LOCAL_SUBJECT = "local-preview-admin";
-process.env.KAI_ADMIN_LOCAL_DISPLAY_NAME = "KAI 本地管理员";
+process.env.KAI_ADMIN_LOCAL_ROLES = "ROOT";
+process.env.KAI_ADMIN_LOCAL_SUBJECT = "local-preview-root";
+process.env.KAI_ADMIN_LOCAL_DISPLAY_NAME = "KAI 本地 Root";
 
 await import("../../dist/standalone/server.js");

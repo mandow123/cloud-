@@ -89,6 +89,14 @@ function validRoles(values: readonly string[]): AdminRole[] {
   return roles as AdminRole[];
 }
 
+async function readMembershipRoles(db: AccountAuthDatabaseAdapter, membershipId: string) {
+  const rows = await db.all<Row>(`SELECT role FROM admin_membership_roles WHERE membership_id=?
+    UNION ALL
+    SELECT 'ROOT' AS role FROM admin_root_membership WHERE membership_id=?
+    ORDER BY role`, [membershipId, membershipId]);
+  return validRoles(rows.map((item) => text(item, "role")));
+}
+
 function account(row: Row): UserAccount {
   return { id: text(row, "account_id"), displayName: text(row, "display_name"), primaryEmail: nullableText(row, "primary_email"), status: text(row, "account_status") as UserAccount["status"] };
 }
@@ -107,10 +115,10 @@ async function readIdentity(db: AccountAuthDatabaseAdapter, provider: string, te
     JOIN admin_memberships m ON m.account_id=a.id AND m.organization_id=o.id
     WHERE i.provider=? AND i.tenant_key=? AND i.provider_subject=?`, [provider, tenantKey, subject]);
   if (!row) return null;
-  const roleRows = await db.all<Row>("SELECT role FROM admin_membership_roles WHERE membership_id=? ORDER BY role", [text(row, "membership_id")]);
+  const membershipId = text(row, "membership_id");
   return {
     account: account(row), organization: organization(row),
-    membership: { id: text(row, "membership_id"), accountId: text(row, "account_id"), organizationId: text(row, "organization_id"), status: text(row, "membership_status") as Membership["status"], roles: validRoles(roleRows.map((item) => text(item, "role"))) },
+    membership: { id: membershipId, accountId: text(row, "account_id"), organizationId: text(row, "organization_id"), status: text(row, "membership_status") as Membership["status"], roles: await readMembershipRoles(db, membershipId) },
   };
 }
 
@@ -124,10 +132,9 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
     const results: Array<Membership & { organization: Organization }> = [];
     for (const row of rows) {
       const membershipId = text(row, "membership_id");
-      const roleRows = await db.all<Row>("SELECT role FROM admin_membership_roles WHERE membership_id=? ORDER BY role", [membershipId]);
       results.push({
         id: membershipId, accountId: text(row, "account_id"), organizationId: text(row, "organization_id"),
-        status: text(row, "membership_status") as Membership["status"], roles: validRoles(roleRows.map((item) => text(item, "role"))),
+        status: text(row, "membership_status") as Membership["status"], roles: await readMembershipRoles(db, membershipId),
         organization: { id: text(row, "organization_id"), name: text(row, "organization_name"), externalKey: text(row, "external_key"), status: text(row, "organization_status") as Organization["status"] },
       });
     }
@@ -169,20 +176,28 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
     },
     async activateMembership(membershipId, roles, updatedAt) {
       const normalized = validRoles(roles);
+      const persisted = normalized.filter((role) => role !== "ROOT");
       const statements: AuthSql[] = [
         { sql: "UPDATE admin_memberships SET status='ACTIVE',updated_at=? WHERE id=?", values: [updatedAt, membershipId] },
         { sql: "DELETE FROM admin_membership_roles WHERE membership_id=?", values: [membershipId] },
-        ...normalized.map((role) => ({ sql: "INSERT INTO admin_membership_roles(membership_id,role,granted_at,granted_by) VALUES(?,?,?,NULL)", values: [membershipId, role, updatedAt] })),
+        ...persisted.map((role) => ({ sql: "INSERT INTO admin_membership_roles(membership_id,role,granted_at,granted_by) VALUES(?,?,?,NULL)", values: [membershipId, role, updatedAt] })),
       ];
+      if (normalized.includes("ROOT")) {
+        statements.push(
+          { sql: `INSERT OR IGNORE INTO admin_root_membership(singleton,membership_id,account_id,organization_id,established_via,established_at)
+            SELECT 1,id,account_id,organization_id,'LOCAL_CONFIG',? FROM admin_memberships WHERE id=?`, values: [updatedAt, membershipId] },
+          { sql: "SELECT CASE WHEN EXISTS (SELECT 1 FROM admin_root_membership WHERE singleton=1 AND membership_id=?) THEN 1 ELSE abs(-9223372036854775808) END", values: [membershipId] },
+        );
+      }
       const results = await db.batch(statements);
       if (results[0]?.changes !== 1) throw new Error("ADMIN_MEMBERSHIP_NOT_FOUND");
     },
     async isAdminBootstrapClosed() {
       const row = await db.first<{ closed: number }>(`SELECT 1 AS closed FROM admin_bootstrap_claim
         UNION ALL
-        SELECT 1 AS closed FROM admin_membership_roles r
+        SELECT 1 AS closed FROM admin_root_membership r
         JOIN admin_memberships m ON m.id=r.membership_id
-        WHERE r.role='ROLE_ADMIN' AND m.status='ACTIVE'
+        WHERE m.status='ACTIVE'
         LIMIT 1`);
       return row != null;
     },
@@ -196,9 +211,9 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
           AND m.status IN ('PENDING','ACTIVE') AND a.status='ACTIVE' AND o.status='ACTIVE'
           AND NOT EXISTS (SELECT 1 FROM admin_bootstrap_claim)
           AND NOT EXISTS (
-            SELECT 1 FROM admin_membership_roles r
+            SELECT 1 FROM admin_root_membership r
             JOIN admin_memberships existing ON existing.id=r.membership_id
-            WHERE r.role='ROLE_ADMIN' AND existing.status='ACTIVE'
+            WHERE existing.status='ACTIVE'
           )`, [input.sessionId, input.claimedAt, input.membershipId, input.accountId, input.organizationId]);
       return result.changes > 0;
     },
@@ -217,10 +232,10 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
         JOIN admin_memberships m ON m.account_id=s.account_id AND m.organization_id=s.organization_id
         WHERE s.token_hash=?`, [tokenHash]);
       if (!row || row.revoked_at != null) return null;
-      const roleRows = await db.all<Row>("SELECT role FROM admin_membership_roles WHERE membership_id=? ORDER BY role", [text(row, "membership_id")]);
+      const membershipId = text(row, "membership_id");
       return {
         account: account(row), organization: organization(row),
-        membership: { id: text(row, "membership_id"), accountId: text(row, "account_id"), organizationId: text(row, "organization_id"), status: text(row, "membership_status") as Membership["status"], roles: validRoles(roleRows.map((item) => text(item, "role"))) },
+        membership: { id: membershipId, accountId: text(row, "account_id"), organizationId: text(row, "organization_id"), status: text(row, "membership_status") as Membership["status"], roles: await readMembershipRoles(db, membershipId) },
         session: { id: text(row, "session_id"), accountId: text(row, "account_id"), organizationId: text(row, "organization_id"), authMethod: text(row, "auth_method") as AdminAuthMethod, createdAt: text(row, "session_created_at"), lastSeenAt: text(row, "last_seen_at"), idleExpiresAt: text(row, "idle_expires_at"), absoluteExpiresAt: text(row, "absolute_expires_at") },
       };
     },

@@ -80,7 +80,7 @@ export function BuyerOrderList() {
         <div className="mt-8 border-y border-[var(--border)] bg-[var(--info-bg)] p-7">
           <h2 className="m-0 text-2xl">还没有容量订单</h2>
           <p>从已核验的在售资源中选择数量和连续服务时间，提交后会出现在这里。</p>
-          <Link className="button button-primary min-h-12 w-full justify-center sm:w-auto" href="/resources">查看在售容量</Link>
+          <Link className="button button-primary min-h-12 w-full justify-center sm:w-auto" href="/market/listings">查看在售容量</Link>
         </div>
       ) : null}
 

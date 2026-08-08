@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { KaiStandardSlot } from "@/components/kai-standard-slot";
 import { PartnerForm } from "@/components/partner-form";
 
 export const metadata: Metadata = {
@@ -45,6 +46,7 @@ export default function PartnersPage() {
               <Link className="button button-primary mt-6" href="/supply">
                 进入上架中心
               </Link>
+              <KaiStandardSlot slot="partners-supply-entry-v1" />
             </div>
             <div className="border-l-2 border-[var(--accent)] pl-5 text-sm text-[var(--text)]">
               <strong className="block text-[var(--ink)]">本机入驻预登记</strong>

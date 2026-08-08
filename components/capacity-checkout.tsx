@@ -127,7 +127,7 @@ export function CapacityCheckout({ listingVersionId }: { listingVersionId: strin
 
   if (loading) return <p className="border-l-2 border-[var(--accent)] pl-4">正在读取报价与可售时间…</p>;
   if (error && !listing) return <div role="alert" className="border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-5 text-[var(--error)]">{error}</div>;
-  if (!listing) return <div className="bg-[var(--warning-bg)] p-6"><h2 className="m-0 text-2xl">该报价当前不可购买</h2><p>报价可能已过期、撤回，或对应容量时间窗已经结束。</p><Link className="button button-secondary" href="/resources">返回资源市场</Link></div>;
+  if (!listing) return <div className="bg-[var(--warning-bg)] p-6"><h2 className="m-0 text-2xl">该报价当前不可购买</h2><p>报价可能已过期、撤回，或对应容量时间窗已经结束。</p><Link className="button button-secondary" href="/market/listings">返回在售资源</Link></div>;
 
   const vocabulary = capacityDisplay(listing.productCode);
 

@@ -1,5 +1,22 @@
 export type AdminSourceSystem = "MARKETPLACE" | "EXCHANGE" | "SUPPLY_PILOT" | "ADMIN";
-export type AdminProjectionName = "supply-offers" | "demands" | "matches" | "pools" | "verifications" | "orders" | "payments";
+export type AdminProjectionName =
+  | "supply-offers"
+  | "demands"
+  | "matches"
+  | "pools"
+  | "verifications"
+  | "capacity-lots"
+  | "listings"
+  | "withdrawals"
+  | "swaps"
+  | "orders"
+  | "delivery"
+  | "metering"
+  | "payments"
+  | "settlements"
+  | "commissions"
+  | "standardization"
+  | "exceptions";
 export type AdminMutationContext = Readonly<{ principalId: string; organizationId?: string; idempotencyKey: string; payloadHash: string }>;
 export type AdminListQuery = Readonly<{ limit?: number; status?: string | null; q?: string | null; sourceSystem?: AdminSourceSystem | null }>;
 

@@ -110,7 +110,7 @@ export async function bootstrapFirstAdministrator(
   }
 
   const membership = await store.getMembership(context.account.id, context.activeOrganization.id);
-  if (!membership || membership.status !== "ACTIVE" || !membership.roles.includes("ROLE_ADMIN")) {
+  if (!membership || membership.status !== "ACTIVE" || !membership.roles.includes("ROOT")) {
     await store.recordAudit({ accountId: context.account.id, organizationId: context.activeOrganization.id, sessionId: context.sessionId, eventType: "ADMIN_BOOTSTRAP_SESSION_REFRESH_FAILED", outcome: "ERROR", target: "/api/auth/bootstrap-admin", metadata: {}, occurredAt });
     throw new AccountAuthError("ADMIN_BOOTSTRAP_SESSION_REFRESH_FAILED", 503, "管理员已经建立，请重新登录以刷新权限。");
   }

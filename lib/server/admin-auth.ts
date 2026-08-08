@@ -3,8 +3,12 @@ import { AccountAuthError, requireAccountSession } from "./account-auth.ts";
 import { getAccountAuthStore } from "./account-auth-store.ts";
 
 const allPermissions = [...ADMIN_PERMISSIONS] as readonly AdminPermission[];
+const delegatedAdminPermissions = ADMIN_PERMISSIONS.filter((permission) =>
+  permission !== "ROOT_CONTROL" && permission !== "IDENTITY_MANAGE" && permission !== "MEMBERSHIP_MANAGE"
+);
 const ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly AdminPermission[]>> = {
-  ROLE_ADMIN: allPermissions,
+  ROOT: allPermissions,
+  ROLE_ADMIN: delegatedAdminPermissions,
   INTAKE_OPERATOR: ["ADMIN_PANEL_READ", "SUPPLY_INTAKE_READ", "SUPPLY_INTAKE_REVIEW"],
   INVENTORY_OPERATOR: ["ADMIN_PANEL_READ", "KAI_SELF_INVENTORY_READ", "KAI_SELF_INVENTORY_WRITE"],
   VERIFICATION_REVIEWER: ["ADMIN_PANEL_READ", "VERIFICATION_QUEUE_READ", "VERIFICATION_REVIEW"],

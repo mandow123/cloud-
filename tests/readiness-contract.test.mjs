@@ -13,7 +13,7 @@ test("liveness remains a lightweight process-only check",()=>{
 test("readiness probes every storage domain without creating identities or granting roles",()=>{
   const route=source("app/api/ready/route.ts"),readiness=source("lib/server/readiness.ts");
   assert.match(route,/evaluateReadiness/);
-  for(const dependency of ["createMarketplaceReadinessStore","getExchangeStore","getSupplyStore","getAdminOperationsStore","getAccountAuthStore"])assert.match(readiness,new RegExp(dependency));
+  for(const dependency of ["createMarketplaceReadinessStore","getExchangeStore","getSupplyStore","getAdminOperationsStore","getAccountAuthStore","getStandardizationStore"])assert.match(readiness,new RegExp(dependency));
   assert.doesNotMatch(readiness,/resolveOrCreateIdentity|activateMembership|invitePrincipal|createOffer|createResource|createCheckout/);
   assert.match(readiness,/failClosed:true/);
 });

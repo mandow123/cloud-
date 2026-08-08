@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -81,7 +81,7 @@ test("formal login can bootstrap once, rotates the session, and never audits the
     );
     const issued = await bootstrapFirstAdministrator(authRequest(initial.cookie), BOOTSTRAP_CODE, { store, env: { KAI_ADMIN_BOOTSTRAP_CODE: BOOTSTRAP_CODE }, now: NOW });
     assert.equal(issued.context.membership.status, "ACTIVE");
-    assert.deepEqual(issued.context.membership.roles, ["ROLE_ADMIN"]);
+    assert.ok(issued.context.membership.roles.includes("ROOT"));
     assert.equal(await resolveAccountSession(authRequest(initial.cookie), { store, now: NOW, touch: false }), null);
     assert.ok(await resolveAccountSession(authRequest(issued.cookie), { store, now: NOW, touch: false }));
     const db = new DatabaseSync(databasePath, { readOnly: true });
@@ -135,7 +135,7 @@ async function concurrentBootstrapHarness(storeA, storeB) {
     await storeA.getMembership(first.context.account.id, first.context.activeOrganization.id),
     await storeB.getMembership(second.context.account.id, second.context.activeOrganization.id),
   ];
-  assert.equal(memberships.filter((item) => item?.status === "ACTIVE" && item.roles.includes("ROLE_ADMIN")).length, 1);
+  assert.equal(memberships.filter((item) => item?.status === "ACTIVE" && item.roles.includes("ROOT")).length, 1);
   assert.equal(await storeA.isAdminBootstrapClosed(), true);
 }
 
@@ -154,4 +154,25 @@ test("two concurrent D1 identities can establish at most one first administrator
   const storeB = await createD1AccountAuthStore(d1);
   try { await concurrentBootstrapHarness(storeA, storeB); }
   finally { d1.close(); }
+});
+
+test("the additive Root migration promotes the trusted legacy bootstrap claimant", () => {
+  const database = new DatabaseSync(":memory:", { enableForeignKeyConstraints: true });
+  try {
+    database.exec(readFileSync(new URL("../drizzle/0014_admin_identity.sql", import.meta.url), "utf8"));
+    database.exec(readFileSync(new URL("../drizzle/0018_admin_bootstrap.sql", import.meta.url), "utf8"));
+    database.exec(`
+      INSERT INTO admin_user_accounts VALUES('acct-root','Legacy Root',NULL,'ACTIVE','2026-08-08T00:00:00Z','2026-08-08T00:00:00Z');
+      INSERT INTO admin_organizations VALUES('org-root','KAI','KAI:ROOT','ACTIVE','2026-08-08T00:00:00Z','2026-08-08T00:00:00Z');
+      INSERT INTO admin_memberships VALUES('mbr-root','acct-root','org-root','PENDING','2026-08-08T00:00:00Z','2026-08-08T00:00:00Z');
+      INSERT INTO admin_account_sessions VALUES('as-root','acct-root','org-root','token-root','EMAIL_OTP','2026-08-08T00:00:00Z','2026-08-08T00:00:00Z','2026-08-08T00:30:00Z','2026-08-08T08:00:00Z',NULL);
+      INSERT INTO admin_bootstrap_claim VALUES(1,'mbr-root','acct-root','org-root','as-root','2026-08-08T00:01:00Z');
+    `);
+    database.exec(readFileSync(new URL("../drizzle/0020_admin_root.sql", import.meta.url), "utf8"));
+    const root = database.prepare("SELECT membership_id,account_id,established_via FROM admin_root_membership WHERE singleton=1").get();
+    assert.deepEqual({ ...root }, { membership_id: "mbr-root", account_id: "acct-root", established_via: "BOOTSTRAP" });
+    assert.throws(() => database.prepare("UPDATE admin_memberships SET status='SUSPENDED' WHERE id='mbr-root'").run(), /must remain active/i);
+  } finally {
+    database.close();
+  }
 });

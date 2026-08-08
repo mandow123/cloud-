@@ -144,6 +144,18 @@ export async function localAdminLogin() {
   return typeof result.redirectUrl === "string" ? result.redirectUrl : "/admin";
 }
 
+export async function bootstrapRootAccount(code: string) {
+  const result = await adminFetch("/api/auth/bootstrap-admin", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code }),
+  }, 30_000);
+  if (!result || typeof result !== "object") {
+    throw new AdminApiError("Root 初始化接口未返回可核验结果。", 200, "INVALID_RESPONSE");
+  }
+  return result as Record<string, unknown>;
+}
+
 export async function adminGetSession() {
   const payload = await adminFetch("/api/auth/session");
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;

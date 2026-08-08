@@ -27,7 +27,10 @@ export function LiveExchangeMarket() {
             <h1 id="live-listings-title" className="m-0 text-4xl sm:text-5xl">选择资源，锁定连续服务时间</h1>
             <p className="section-lead max-w-4xl">这里仅列出已核验、报价仍有效且容量时间窗连续的资源。提交订单时，平台同时锁定数量和时间。</p>
           </div>
-          <Link className="button button-secondary" href="/supplier">上架可售容量</Link>
+          <div className="flex flex-wrap gap-3">
+            <Link className="button button-secondary" href="/buyer/orders">我的采购订单</Link>
+            <Link className="button button-secondary" href="/supplier">上架可售容量</Link>
+          </div>
         </div>
         {error ? <div role="alert" className="mt-7 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-4 text-[var(--error)]">{error}</div> : null}
         {!page && !error ? <p className="mt-7 border-l-2 border-[var(--accent)] pl-4">正在核对可售时间窗…</p> : null}

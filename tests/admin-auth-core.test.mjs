@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ADMIN_ROLES } from "../lib/admin-auth-types.ts";
+import { ADMIN_PERMISSIONS, ADMIN_ROLES } from "../lib/admin-auth-types.ts";
 import { adminPermissionsForRoles, requireAdminPermission } from "../lib/server/admin-auth.ts";
 import { AccountAuthError, createAccountSession, resolveAccountSession } from "../lib/server/account-auth.ts";
 import { readAuthJson } from "../lib/server/account-auth-http.ts";
@@ -9,7 +9,10 @@ import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.
 import { createLocalTestAccountSession } from "../lib/server/account-auth-local.ts";
 
 test("approved admin roles are exact and finance duties stay separated", () => {
-  assert.deepEqual(ADMIN_ROLES, ["ROLE_ADMIN","INTAKE_OPERATOR","INVENTORY_OPERATOR","VERIFICATION_REVIEWER","MARKET_OPERATOR","FULFILLMENT_OPERATOR","FINANCE_OPERATOR","FINANCE_APPROVER","SUPPORT_READONLY","AUDITOR"]);
+  assert.deepEqual(ADMIN_ROLES, ["ROOT","ROLE_ADMIN","INTAKE_OPERATOR","INVENTORY_OPERATOR","VERIFICATION_REVIEWER","MARKET_OPERATOR","FULFILLMENT_OPERATOR","FINANCE_OPERATOR","FINANCE_APPROVER","SUPPORT_READONLY","AUDITOR"]);
+  assert.deepEqual(adminPermissionsForRoles(["ROOT"]), ADMIN_PERMISSIONS);
+  assert.ok(!adminPermissionsForRoles(["ROLE_ADMIN"]).includes("ROOT_CONTROL"));
+  assert.ok(!adminPermissionsForRoles(ADMIN_ROLES.filter((role) => role !== "ROOT")).includes("ROOT_CONTROL"));
   assert.ok(adminPermissionsForRoles(["FINANCE_OPERATOR"]).includes("REFUND_REQUEST"));
   assert.ok(!adminPermissionsForRoles(["FINANCE_OPERATOR"]).includes("REFUND_APPROVE"));
   assert.ok(adminPermissionsForRoles(["FINANCE_APPROVER"]).includes("REFUND_APPROVE"));
@@ -71,4 +74,15 @@ test("LOCAL login is limited to same-origin localhost and roles come only from s
   assert.deepEqual(issued.context.membership.roles,["INVENTORY_OPERATOR"]);
   await assert.rejects(createLocalTestAccountSession(request,{store,env:{...env,NODE_ENV:"production"}}),(error)=>error instanceof AccountAuthError&&error.status===403);
   await assert.rejects(createLocalTestAccountSession(new Request("http://evil.test/api/auth/local",{method:"POST",headers:{origin:"http://evil.test","sec-fetch-site":"same-origin"}}),{store,env}),(error)=>error instanceof AccountAuthError&&error.status===403);
+});
+
+test("LOCAL preview can establish exactly one immutable Root account", async () => {
+  const store=await createSqliteAccountAuthStore(":memory:");
+  const request=new Request("http://localhost/api/auth/local",{method:"POST",headers:{origin:"http://localhost","sec-fetch-site":"same-origin"}});
+  const env={NODE_ENV:"development",KAI_ADMIN_LOCAL_AUTH:"1",KAI_ADMIN_LOCAL_ROLES:"ROOT",KAI_ADMIN_LOCAL_SUBJECT:"root-one"};
+  const issued=await createLocalTestAccountSession(request,{store,env,now:new Date("2026-08-08T00:00:00Z")});
+  assert.deepEqual(issued.context.membership.roles,["ROOT"]);
+  assert.deepEqual(adminPermissionsForRoles(issued.context.membership.roles),ADMIN_PERMISSIONS);
+  await assert.rejects(createLocalTestAccountSession(request,{store,env:{...env,KAI_ADMIN_LOCAL_SUBJECT:"root-two"},now:new Date("2026-08-08T00:01:00Z")}));
+  store.close();
 });

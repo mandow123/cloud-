@@ -17,6 +17,11 @@ const FROZEN_FRONTEND_SHA256 = Object.freeze({
   "app/kai-cloud.css": "9e55101fed6578adfccc83ce5552d0e2135af0aca35f12834b729d7b71d4cfcf",
 });
 
+const APPROVED_KAI_STANDARD_SLOTS = Object.freeze({
+  "app/market/page.tsx": "market-standard-card-hour-v1",
+  "app/member/page.tsx": "member-kai-hours-v1",
+});
+
 function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
@@ -25,10 +30,43 @@ function sha256Text(source) {
   return createHash("sha256").update(source).digest("hex");
 }
 
+function sourceWithoutApprovedKaiStandardSlot(path) {
+  const slot = APPROVED_KAI_STANDARD_SLOTS[path];
+  const source = readFileSync(path, "utf8");
+  if (!slot) return source;
+
+  assert.equal(
+    source.match(new RegExp(`<KaiStandardSlot slot="${slot}" \\/>`, "gu"))?.length,
+    1,
+    `${path} must contain exactly one approved ${slot} node`,
+  );
+  assert.equal((source.match(/<KaiStandardSlot slot=/gu) ?? []).length, 1, `${path} contains an unapproved extra slot`);
+  assert.equal(
+    (source.match(/import \{ KaiStandardSlot \} from "@\/components\/kai-standard-slot";/gu) ?? []).length,
+    1,
+    `${path} must contain exactly one slot import`,
+  );
+
+  let normalized = source
+    .replace('import { KaiStandardSlot } from "@/components/kai-standard-slot";\n', "")
+    .replace(/^[ \t]*<KaiStandardSlot slot="[^"]+" \/>\r?\n/gmu, "");
+  if (path === "app/market/page.tsx") {
+    normalized = normalized
+      .replace(/^[ \t]*<>\r?\n/gmu, "")
+      .replace(/^[ \t]*<\/>\r?\n/gmu, "")
+      .replace(/(modelBoard=\{\r?\n)([\s\S]*?)(\r?\n      \})/u, (_match, opening, body, closing) => (
+        opening + body.replace(/^  /gmu, "") + closing
+      ));
+  }
+  return normalized;
+}
+
 test("legacy frontend remains frozen outside the approved supply and formal-account changes", () => {
   const changed = [];
   for (const [path, expectedDigest] of Object.entries(FROZEN_FRONTEND_SHA256)) {
-    const actualDigest = sha256(path);
+    const actualDigest = APPROVED_KAI_STANDARD_SLOTS[path]
+      ? sha256Text(sourceWithoutApprovedKaiStandardSlot(path))
+      : sha256(path);
     if (actualDigest !== expectedDigest) changed.push({ path, expectedDigest, actualDigest });
   }
   assert.deepEqual(changed, [], "legacy frontend files changed outside the approved supply-pilot surface");

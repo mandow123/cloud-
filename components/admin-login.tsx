@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { adminErrorMessage, localAdminLogin } from "@/components/admin-api-client";
+import { adminErrorMessage, bootstrapRootAccount, localAdminLogin } from "@/components/admin-api-client";
 
 export function AdminLogin({ environment, localLoginEnabled }: { environment: string; localLoginEnabled: boolean }) {
   const [busy, setBusy] = useState(false);
+  const [bootstrapBusy, setBootstrapBusy] = useState(false);
+  const [bootstrapCode, setBootstrapCode] = useState("");
   const [error, setError] = useState("");
   const isLocal = environment.toUpperCase() === "LOCAL";
 
@@ -19,6 +21,18 @@ export function AdminLogin({ environment, localLoginEnabled }: { environment: st
     }
   }
 
+  async function bootstrapRoot() {
+    setBootstrapBusy(true);
+    setError("");
+    try {
+      await bootstrapRootAccount(bootstrapCode);
+      window.location.assign("/admin");
+    } catch (bootstrapError) {
+      setError(adminErrorMessage(bootstrapError, "Root 初始化未完成。"));
+      setBootstrapBusy(false);
+    }
+  }
+
   return (
     <div className="admin-login-main">
       <section className="admin-login-card" aria-labelledby="admin-login-title">
@@ -30,13 +44,23 @@ export function AdminLogin({ environment, localLoginEnabled }: { environment: st
 
         <div className="admin-login-actions">
           <a className="admin-button primary" href="/api/auth/lark/start?returnTo=%2Fadmin">使用飞书登录</a>
+          {!isLocal ? <a className="admin-button secondary" href="/login?returnTo=%2Fadmin%2Flogin">使用邮箱登录</a> : null}
           {isLocal && localLoginEnabled ? <button className="admin-button secondary" disabled={busy} onClick={() => void loginLocally()} type="button">{busy ? "正在建立 LOCAL 会话…" : "LOCAL 受控测试登录"}</button> : null}
         </div>
 
         {isLocal ? (
           <div className="admin-local-panel">
             <strong>LOCAL 环境</strong>
-            <p>{localLoginEnabled ? "测试登录只调用受控 `/api/auth/local`，角色来自服务端环境配置；前端不会要求密钥，也不会指定或伪造管理员身份。" : "LOCAL 测试登录未由服务端显式开启；请配置本地认证服务后再试。"}</p>
+            <p>{localLoginEnabled ? "测试登录只调用受控 `/api/auth/local`，唯一 Root 身份来自服务端配置；前端不会要求密钥，也不会指定或伪造管理员身份。" : "LOCAL Root 登录未由服务端显式开启；请配置本地认证服务后再试。"}</p>
+          </div>
+        ) : null}
+
+        {!isLocal ? (
+          <div className="admin-local-panel">
+            <strong>首次初始化唯一 Root</strong>
+            <p>先使用飞书或邮箱完成正式登录，再输入服务器生成的一次性引导码。Root 建立后该入口会永久关闭，不能再创建第二个 Root。</p>
+            <label><span>一次性 Root 引导码</span><input autoComplete="off" onChange={(event) => setBootstrapCode(event.target.value)} type="password" value={bootstrapCode} /></label>
+            <button className="admin-button secondary" disabled={bootstrapBusy || bootstrapCode.length < 32} onClick={() => void bootstrapRoot()} type="button">{bootstrapBusy ? "正在建立 Root…" : "建立唯一 Root 账号"}</button>
           </div>
         ) : null}
 

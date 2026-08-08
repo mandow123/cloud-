@@ -1,4 +1,5 @@
 export const ADMIN_ROLES = [
+  "ROOT",
   "ROLE_ADMIN",
   "INTAKE_OPERATOR",
   "INVENTORY_OPERATOR",
@@ -14,6 +15,7 @@ export const ADMIN_ROLES = [
 export type AdminRole = (typeof ADMIN_ROLES)[number];
 
 export const ADMIN_PERMISSIONS = [
+  "ROOT_CONTROL",
   "ADMIN_PANEL_READ",
   "IDENTITY_READ",
   "IDENTITY_MANAGE",

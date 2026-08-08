@@ -2,6 +2,7 @@ import { ADMIN_IDENTITY_SCHEMA_VERSION } from "../../db/admin-identity-schema.ts
 import { ADMIN_OPERATIONS_SCHEMA_VERSION } from "../../db/admin-operations-schema.ts";
 import { EXCHANGE_SCHEMA_VERSION } from "../../db/exchange-schema.ts";
 import { SUPPLY_SCHEMA_VERSION } from "../../db/supply-schema.ts";
+import { STANDARDIZATION_SCHEMA_VERSION } from "../../db/standardization-schema.ts";
 import { alipayReadiness } from "./alipay-live.ts";
 import { getAccountAuthStore } from "./account-auth-store.ts";
 import { getAdminOperationsStore } from "./admin-store.ts";
@@ -10,6 +11,7 @@ import { readMarketSnapshot } from "./market-snapshot.ts";
 import { assertMarketplaceSecurityConfiguration, createMarketplaceReadinessStore } from "./marketplace-store.ts";
 import { sshProvisionerReadiness } from "./ssh-provisioner.ts";
 import { getSupplyStore } from "./supply-store.ts";
+import { getStandardizationStore } from "./standardization-store.ts";
 
 type Environment = Record<string,string|undefined>;
 type CheckResult = Readonly<{ready:boolean;schemaVersion:number;probe:"read-only";errorCode?:string}>;
@@ -65,12 +67,13 @@ export async function evaluateReadiness(){
       return{ready:health.integrity==="ok",...health,probe:"read-only" as const};
     }catch(error){return{ready:false,backend:"unknown" as const,schemaVersion:0,integrity:"error" as const,probe:"read-only" as const,errorCode:errorCode(error)};}
   })();
-  const [marketplace,exchange,supply,admin,auth,marketResult]=await Promise.all([
+  const [marketplace,exchange,supply,admin,auth,standardization,marketResult]=await Promise.all([
     marketplacePromise,
     storeCheck(EXCHANGE_SCHEMA_VERSION,async()=>{const products=await (await getExchangeStore()).listProductVersions();if(products.length<1)throw new Error("EXCHANGE_REFERENCE_DATA_MISSING");}),
     storeCheck(SUPPLY_SCHEMA_VERSION,async()=>{await (await getSupplyStore()).listOffers("__readiness_probe__");}),
     storeCheck(ADMIN_OPERATIONS_SCHEMA_VERSION,async()=>{await (await getAdminOperationsStore()).listAuditEvents({limit:1});}),
     storeCheck(ADMIN_IDENTITY_SCHEMA_VERSION,async()=>{await (await getAccountAuthStore()).listMemberships("__readiness_probe__");}),
+    storeCheck(STANDARDIZATION_SCHEMA_VERSION,async()=>{await (await getStandardizationStore()).getQuotes();}),
     readMarketSnapshot().then((value)=>({ok:true as const,value})).catch((error)=>({ok:false as const,error})),
   ]);
   let market:{source:string;publishedAt:string|null;ageHours:number|null;stale:boolean;ready:boolean;errorCode?:string};
@@ -79,7 +82,7 @@ export async function evaluateReadiness(){
     const stale=ageHours===null||ageHours>26||ageHours< -1;
     market={source:marketResult.value.source,publishedAt:marketResult.value.snapshot.publishedAt,ageHours:ageHours===null?null:Math.round(ageHours*10)/10,stale,ready:marketResult.value.source==="persistent"&&!stale};
   }else market={source:"unavailable",publishedAt:null,ageHours:null,stale:true,ready:false,errorCode:errorCode(marketResult.error)};
-  const storage={marketplace,exchange,supply,admin,auth};
+  const storage={marketplace,exchange,supply,admin,auth,standardization};
   const ready=market.ready&&Object.values(storage).every((item)=>item.ready);
   return{
     ready,

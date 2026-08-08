@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AccountWorkspace } from "@/components/account-workspace";
+import { KaiStandardSlot } from "@/components/kai-standard-slot";
 
 export const metadata: Metadata = {
   title: "交易工作台",
@@ -20,6 +21,7 @@ export default function MemberPage() {
             <div className="border-l-2 border-[var(--accent)] pl-5 text-sm text-[var(--text)]">
               <strong className="block text-[var(--ink)]">当前设备会话</strong>
               需求、可供资源与报价按当前会话保存，关注列表和需求方/供应方视角留在本机。请勿输入个人资料、商业机密或访问凭据。
+              <KaiStandardSlot slot="member-kai-hours-v1" />
             </div>
           </div>
         </div>
