@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { KaiStandardSlot } from "@/components/kai-standard-slot";
 import { LiveModelPriceBoard } from "@/components/live-model-price-board";
 import { MarketDashboard } from "@/components/market-dashboard";
 import type { ModelCostIndexSnapshot, ModelTokenPriceQuote } from "@/components/model-price-board";
@@ -19,17 +18,14 @@ export default async function MarketPage() {
     <MarketDashboard
       series={infrastructureSeries}
       modelBoard={
-        <>
-          <LiveModelPriceBoard
-            initialSource={source}
-            initialSnapshot={{
-              quotes: snapshot.quotes as ModelTokenPriceQuote[],
-              index: snapshot.index as ModelCostIndexSnapshot,
-              publishedAt: snapshot.publishedAt,
-            }}
-          />
-          <KaiStandardSlot slot="market-standard-card-hour-v1" />
-        </>
+        <LiveModelPriceBoard
+          initialSource={source}
+          initialSnapshot={{
+            quotes: snapshot.quotes as ModelTokenPriceQuote[],
+            index: snapshot.index as ModelCostIndexSnapshot,
+            publishedAt: snapshot.publishedAt,
+          }}
+        />
       }
     />
   );

@@ -722,7 +722,7 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
         <p className="kicker">Before you start</p>
         <h2 className="m-0 text-xl">需求服务已接通</h2>
         <ul className="mt-4 grid gap-3 pl-5 text-sm text-[var(--text)]">
-          <li>业务字段会保存到 KAI Cloud 服务器，交易工作台可再次读取。</li>
+          <li>业务字段会保存到 KAI Cloud 服务器，会员中心可再次读取。</li>
           <li>不要填写姓名、手机号、公司机密、账号或访问密钥。</li>
           <li>市场参考报价不是要约，具体价格与交付条件以询价确认为准。</li>
         </ul>
@@ -874,7 +874,7 @@ function RequestConfirmation({ confirmation, headingRef }: { confirmation: Confi
           </li>
         ))}
       </ol>
-      <p className="m-0 border-t border-[var(--border)] pt-4 text-xs text-[var(--muted)]">刷新页面后确认区会消失；交易工作台仍可从服务端读取这条记录。</p>
+      <p className="m-0 border-t border-[var(--border)] pt-4 text-xs text-[var(--muted)]">刷新页面后确认区会消失；会员中心仍可从服务端读取这条记录。</p>
     </section>
   );
 }

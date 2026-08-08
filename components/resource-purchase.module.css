@@ -1,0 +1,32 @@
+.purchaseLink {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 8px;
+  background: #117f7b;
+  padding: 0 13px;
+  color: #fff;
+  font-size: .8125rem;
+  font-weight: 750;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.purchaseLink:hover,
+.purchaseLink:focus-visible {
+  background: #0d6d69;
+  color: #fff;
+}
+
+.mobileActions {
+  width: 118px;
+  display: grid;
+  flex: none;
+  gap: 2px;
+}
+
+.mobileActions .purchaseLink {
+  width: 100%;
+}

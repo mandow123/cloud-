@@ -39,16 +39,6 @@ function formatSnapshotTime(value: string) {
   }).format(date);
 }
 
-function formatSnapshotDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "当前行情";
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    month: "long",
-    day: "numeric",
-  }).format(date);
-}
-
 export function LiveHomeMarketHero({
   initialSummary,
   initialSource,
@@ -104,17 +94,17 @@ export function LiveHomeMarketHero({
           minimumFractionDigits: 2,
         }).format(summary.gpuP50)}`,
         unit: `/ ${summary.gpuPricingUnit}`,
-        change: summary.gpuResourceTitle,
+        change: `${summary.gpuResourceTitle} · 市场参考报价`,
       },
       {
-        label: "主流模型成本指数",
+        label: "模型调用成本指数",
         value: summary.indexCurrent.toFixed(1),
-        unit: "固定模型篮子",
+        unit: "固定篮子",
         change: indexChanges.every((value) => value === null)
           ? `样本积累中 · ${changeSummary}`
           : changeSummary,
       },
-      { label: "模型分项报价", value: String(summary.quoteCount), unit: "个价格档位", change: "输入 / 缓存 / 输出分别计价" },
+      { label: "模型分项价格", value: String(summary.quoteCount), unit: "个价格档位", change: "输入 / 缓存 / 输出" },
     ];
   }, [summary]);
 
@@ -122,7 +112,7 @@ export function LiveHomeMarketHero({
     <section className="kai-hero">
       <div className="shell">
         <div className="hero-status" role="status">
-          <span><strong>{checkState === "error" ? "更新失败，显示上次数据" : checkState === "checking" ? "正在核对发布时间" : source === "persistent" ? "行情库已更新" : "显示上次发布行情"}</strong> · 发布时间 {formatSnapshotTime(summary.publishedAt)}</span>
+          <span><strong>{checkState === "error" ? "行情检查失败，保留上一版" : checkState === "checking" ? "正在检查最新行情" : source === "persistent" ? "模型行情后端已同步" : "模型行情安全快照"}</strong> · 最近发布 {formatSnapshotTime(summary.publishedAt)}</span>
           <span>{summary.quoteCount} 个模型价格档位 · 每日北京时间 06:00 更新{checkState === "error" ? <button className="ml-2 font-semibold underline" onClick={() => {
             setCheckState("checking");
             setRefreshKey((value) => value + 1);
@@ -132,37 +122,22 @@ export function LiveHomeMarketHero({
         <div className="hero-grid">
           <div className="hero-copy">
             <p className="hero-eyebrow">中国 Token 学院算力市场</p>
-            <div className="hero-heading-row">
-              <h1 className="hero-title">今日算力报价</h1>
-              <span>{formatSnapshotDate(summary.publishedAt)}</span>
-            </div>
+            <h1 className="hero-title">先看清价格，<br />再发布算力需求。</h1>
             <p className="hero-lead">
-              GPU、模型 Token、整机柜与云厂商资源，按统一口径显示价格、样本和有效期。
+              把 GPU、模型 Token、整机柜和云厂商资源放进同一套计价口径。先比较，再租赁、采购或置换。
             </p>
-            <dl className="hero-primary-quote">
-              <dt>{summary.gpuResourceTitle}<span>市场 P50</span></dt>
-              <dd>
-                {new Intl.NumberFormat("zh-CN", {
-                  style: "currency",
-                  currency: summary.gpuCurrency,
-                  minimumFractionDigits: 2,
-                }).format(summary.gpuP50)}
-                <span>/ {summary.gpuPricingUnit}</span>
-              </dd>
-            </dl>
             <div className="hero-actions">
-              <Link className="button hero-primary-action" href="/market">查看全部报价</Link>
-              <Link className="button hero-secondary-action" href="/request">发布采购需求</Link>
-              <Link className="hero-supply-action" href="/member?role=supplier#supply-register">登记可供算力 →</Link>
+              <Link className="button hero-primary-action" href="/request">发布需求 · 约 2 分钟</Link>
+              <Link className="button hero-secondary-action" href="/market">查看今日完整行情</Link>
             </div>
-            <p className="hero-boundary">成交前需确认税费、电费、网络、可用容量与交付时间。</p>
+            <p className="hero-boundary">市场参考报价，具体以询价确认为准；请勿填写个人资料、公司机密或访问凭据。</p>
           </div>
 
           <aside className="signal-board" aria-labelledby="signal-board-title">
             <div className="signal-board-head">
               <div>
-                <p className="signal-kicker">行情摘要</p>
-                <h2 id="signal-board-title">截至 {formatSnapshotTime(summary.publishedAt)}</h2>
+                <p className="signal-kicker">Today / Decision signals</p>
+                <h2 id="signal-board-title">今天先看这三项</h2>
               </div>
               <Link href="/methodology">数据口径</Link>
             </div>
@@ -174,7 +149,7 @@ export function LiveHomeMarketHero({
                 </div>
               ))}
             </dl>
-            <p className="signal-note">指数只比较固定模型篮子的成本变化，不是统一 Token 单价；各模型输入、缓存与输出价格在行情页分项展示。</p>
+            <p className="signal-note">模型价格按具体型号、服务档位和上下文档位展示；综合指标只表达固定篮子的成本变化，不代表统一 Token 单价，具体以询价确认为准。</p>
           </aside>
         </div>
       </div>

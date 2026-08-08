@@ -38,123 +38,6 @@
   font-size: 0.9375rem;
 }
 
-.account-nav {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  white-space: nowrap;
-}
-
-.account-nav a {
-  color: var(--ink);
-  font-size: 0.9375rem;
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.account-nav a:hover,
-.account-nav a:focus-visible,
-.login-admin-link a {
-  color: var(--accent);
-}
-
-.login-page {
-  display: grid;
-  grid-template-columns: minmax(0, 680px) minmax(280px, 1fr);
-  gap: clamp(32px, 7vw, 96px);
-  padding-block: clamp(48px, 8vw, 104px);
-}
-
-.login-panel {
-  border-top: 4px solid var(--accent);
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  border-left: 1px solid var(--border);
-  background: var(--surface);
-  padding: clamp(24px, 4vw, 48px);
-}
-
-.login-panel h1,
-.login-aside h2 {
-  margin: 0;
-  color: var(--ink);
-  line-height: 1.15;
-}
-
-.login-panel h1 {
-  font-size: clamp(2rem, 5vw, 3.25rem);
-}
-
-.login-panel form {
-  display: grid;
-  gap: 20px;
-  margin-top: 32px;
-}
-
-.login-alert,
-.login-receipt {
-  margin-top: 24px;
-  border-left: 4px solid var(--error);
-  background: var(--error-bg);
-  padding: 14px 16px;
-}
-
-.login-receipt {
-  display: grid;
-  gap: 4px;
-  border-left-color: var(--accent);
-  background: var(--info-bg);
-}
-
-.login-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.login-admin-link {
-  margin: 28px 0 0;
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
-}
-
-.login-aside {
-  border-left: 2px solid var(--accent);
-  padding-left: 24px;
-}
-
-.login-aside ol {
-  display: grid;
-  gap: 14px;
-  padding-left: 22px;
-}
-
-.account-gate {
-  max-width: 760px;
-  border-top: 4px solid var(--accent);
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  border-left: 1px solid var(--border);
-  background: var(--surface);
-  padding: clamp(24px, 4vw, 40px);
-}
-
-.account-gate h2 {
-  margin: 0;
-  color: var(--ink);
-  font-size: clamp(1.75rem, 4vw, 2.5rem);
-}
-
-@media (max-width: 880px) {
-  .login-page {
-    grid-template-columns: 1fr;
-  }
-
-  .account-nav {
-    display: none;
-  }
-}
-
 .kai-root:not(:has(.mandow-hound-root)) .kicker {
   font-size: 0.875rem;
   letter-spacing: 0.1em;
@@ -187,11 +70,6 @@
 .kai-root:not(:has(.mandow-hound-root)) select,
 .kai-root:not(:has(.mandow-hound-root)) textarea {
   font-size: 1rem;
-}
-
-.kai-root:not(:has(.mandow-hound-root)) .data-table-wrap {
-  max-width: 100%;
-  overflow-x: auto;
 }
 
 .mobile-demand-cta {
@@ -232,30 +110,16 @@
   font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.1em;
-}
-
-.hero-heading-row {
-  display: flex;
-  align-items: baseline;
-  gap: 18px;
-  border-bottom: 1px solid #31474a;
-  padding-bottom: 22px;
-}
-
-.hero-heading-row > span {
-  flex: none;
-  color: #9fb2b4;
-  font-family: var(--font-display), monospace;
-  font-size: 0.9375rem;
-  font-weight: 600;
+  text-transform: uppercase;
 }
 
 .hero-title {
+  max-width: 850px;
   margin: 0;
   color: #f2f7f7;
-  font-size: clamp(2.6rem, 5vw, 4.25rem);
-  line-height: 1.08;
-  letter-spacing: -0.035em;
+  font-size: clamp(3.5rem, 6vw, 5.5rem);
+  line-height: 1.02;
+  letter-spacing: -0.055em;
 }
 
 .hero-lead {
@@ -264,40 +128,6 @@
   color: #cad7d8;
   font-size: 1.25rem;
   line-height: 1.75;
-}
-
-.hero-primary-quote {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 24px;
-  align-items: end;
-  margin: 30px 0 0;
-  border-bottom: 1px solid #31474a;
-  padding-bottom: 26px;
-}
-
-.hero-primary-quote dt {
-  color: #cad7d8;
-  font-weight: 650;
-}
-
-.hero-primary-quote dt span,
-.hero-primary-quote dd span {
-  display: block;
-  margin-top: 4px;
-  color: #9fb2b4;
-  font-size: 0.8125rem;
-  font-weight: 400;
-}
-
-.hero-primary-quote dd {
-  margin: 0;
-  color: #f2f7f7;
-  font-family: var(--font-display), monospace;
-  font-size: clamp(2rem, 4vw, 3.25rem);
-  font-weight: 700;
-  line-height: 1;
-  text-align: right;
 }
 
 .hero-actions {
@@ -327,16 +157,6 @@
 .hero-secondary-action:hover {
   border-color: #69d1cb;
   color: #69d1cb;
-}
-
-.hero-supply-action {
-  min-height: 48px;
-  display: inline-flex;
-  align-items: center;
-  padding-inline: 8px;
-  color: #69d1cb;
-  font-size: 0.9375rem;
-  font-weight: 700;
 }
 
 .hero-boundary {
@@ -580,48 +400,8 @@
 
 .service-layout {
   display: grid;
-  grid-template-columns: minmax(220px, 0.5fr) minmax(0, 1.5fr);
-  gap: clamp(36px, 6vw, 88px);
-}
-
-.service-intro {
-  align-self: start;
-  border-top: 3px solid var(--accent);
-  padding-top: 22px;
-}
-
-.service-intro .section-heading {
-  font-size: clamp(1.75rem, 3vw, 2.35rem);
-}
-
-.service-intro > p:last-child {
-  margin: 16px 0 0;
-  color: var(--text);
-  font-size: 1rem;
-}
-
-.service-groups {
-  display: grid;
-  gap: 32px;
-}
-
-.service-group > header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 20px;
-  border-bottom: 1px solid var(--border-strong);
-  padding-bottom: 10px;
-}
-
-.service-group h3 {
-  margin: 0;
-  font-size: 1.25rem;
-}
-
-.service-group header span {
-  color: var(--muted);
-  font-size: 0.875rem;
+  grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1.28fr);
+  gap: clamp(48px, 8vw, 120px);
 }
 
 .service-list {
@@ -631,7 +411,7 @@
 }
 
 .service-list a {
-  min-height: 86px;
+  min-height: 74px;
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr) auto;
   gap: 12px;
@@ -656,16 +436,7 @@
 }
 
 .service-list strong {
-  display: block;
   font-size: 1rem;
-}
-
-.service-list small {
-  display: block;
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 0.8125rem;
-  font-weight: 400;
 }
 
 .action-close {
@@ -697,7 +468,8 @@
 }
 
 @media (max-width: 980px) {
-  .hero-grid {
+  .hero-grid,
+  .service-layout {
     grid-template-columns: 1fr;
   }
 
@@ -757,12 +529,7 @@
   }
 
   .hero-title {
-    font-size: clamp(2.35rem, 10vw, 3.15rem);
-  }
-
-  .hero-heading-row,
-  .hero-primary-quote {
-    align-items: start;
+    font-size: clamp(2.45rem, 12vw, 3.25rem);
   }
 
   .hero-lead {
@@ -788,10 +555,6 @@
 
   .quick-grid,
   .service-list {
-    grid-template-columns: 1fr;
-  }
-
-  .service-layout {
     grid-template-columns: 1fr;
   }
 

@@ -12,10 +12,10 @@ export const metadata: Metadata = {
 };
 
 const quickActions = [
-  { code: "01", title: "查价格", copy: "GPU、模型 Token、机柜容量分项行情", href: "/market" },
-  { code: "02", title: "买 / 租算力", copy: "按型号、地区、交付周期发布采购需求", href: "/request?mode=rental" },
-  { code: "03", title: "登记出售", copy: "供应方登记可供容量并响应市场需求", href: "/supply" },
-  { code: "04", title: "发起置换", copy: "分别填写可提供资源与所需资源", href: "/request?mode=swap" },
+  { code: "01", title: "租 GPU", copy: "H20、A800 等卡时与服务器时", href: "/resources?category=gpu&deal=rental" },
+  { code: "02", title: "买 Token", copy: "逐模型比较输入、缓存与输出价", href: "/market#model-token-market" },
+  { code: "03", title: "找机柜", copy: "整机柜、功率与预留容量", href: "/resources?category=rack_capacity" },
+  { code: "04", title: "做置换", copy: "我可提供 / 我需要双边撮合", href: "/request?mode=swap" },
 ];
 
 const HOMEPAGE_QUOTE_CATEGORIES: readonly ResourceCategory[] = [
@@ -70,29 +70,14 @@ function requestHref(listing: ResourceListing) {
   }).toString()}`;
 }
 
-function serviceHref(alias: (typeof serviceAliases)[number]) {
+const serviceEntries = serviceAliases.map((alias) => {
   const params = new URLSearchParams({
     category: alias.category,
     deal: alias.dealMode,
     unit: alias.pricingUnit,
   });
-  return `/resources?${params.toString()}`;
-}
-
-const serviceGroups = [
-  {
-    key: "procurement",
-    title: "租赁与服务采购",
-    note: "7 个入口",
-    entries: serviceAliases.filter((alias) => alias.dealMode !== "swap"),
-  },
-  {
-    key: "swap",
-    title: "资源置换",
-    note: "3 个入口",
-    entries: serviceAliases.filter((alias) => alias.dealMode === "swap"),
-  },
-] as const;
+  return [alias.label, `/resources?${params.toString()}`] as const;
+});
 
 export default async function Home() {
   const { snapshot, source } = await readMarketSnapshot();
@@ -117,11 +102,11 @@ export default async function Home() {
       <section className="quick-decision" aria-labelledby="quick-decision-title">
         <div className="shell">
           <div className="section-top">
-          <div>
-              <p className="kicker">交易入口</p>
-              <h2 className="section-heading" id="quick-decision-title">选择交易动作</h2>
+            <div>
+              <p className="kicker">Choose a task</p>
+              <h2 className="section-heading" id="quick-decision-title">你今天要解决什么？</h2>
             </div>
-            <p>行情、采购、出售和置换，从实际任务直接进入。</p>
+            <p>四个入口直达价格或需求，不必先理解平台架构。</p>
           </div>
           <div className="quick-grid">
             {quickActions.map((item) => (
@@ -139,9 +124,9 @@ export default async function Home() {
       <section className="shell market-snapshot" aria-labelledby="market-snapshot-title">
         <div className="section-top">
           <div>
-            <p className="kicker">当日行情</p>
+            <p className="kicker">Market snapshot</p>
             <h2 className="section-heading" id="market-snapshot-title">今日关键报价</h2>
-            <p className="section-lead">按 P50 展示四类资源，计价口径、样本量和有效期随报价列出。</p>
+            <p className="section-lead">四类资源均直接引用统一目录，价格、口径和时效可追溯到具体资源。</p>
           </div>
           <Link className="button button-secondary" href="/market">全部行情</Link>
         </div>
@@ -153,7 +138,7 @@ export default async function Home() {
         >
           <table className="data-table snapshot-table">
             <thead>
-              <tr><th>资源 / 编号</th><th>地区</th><th className="num">市场参考报价</th><th>税费 / 电费 / 网络</th><th>样本 / 时效</th><th>操作</th></tr>
+              <tr><th>资源 / 编号</th><th>地区</th><th className="num">市场参考报价</th><th>税费 / 电费 / 网络</th><th>样本 / 时效</th><th><span className="sr-only">操作</span></th></tr>
             </thead>
             <tbody>
               {quoteRows.map((listing) => (
@@ -187,28 +172,14 @@ export default async function Home() {
 
       <section className="service-section" aria-labelledby="service-entry-title">
         <div className="shell service-layout">
-          <div className="service-intro">
-            <p className="kicker">业务名称索引</p>
-            <h2 className="section-heading" id="service-entry-title">租赁、服务与置换</h2>
-            <p>每个入口已经带上资源类型、交易方式和计价单位，可直接筛选资源。</p>
+          <div>
+            <p className="kicker">Ten business entries</p>
+            <h2 className="section-heading" id="service-entry-title">十个业务叫法，统一进入一个市场</h2>
+            <p className="section-lead">熟悉的名称保留为快捷入口，底层统一映射到资源类型、交易方式与计价单位。</p>
           </div>
-          <div className="service-groups">
-            {serviceGroups.map((group) => (
-              <section className="service-group" aria-labelledby={`service-group-${group.key}`} key={group.key}>
-                <header>
-                  <h3 id={`service-group-${group.key}`}>{group.title}</h3>
-                  <span>{group.note}</span>
-                </header>
-                <div className="service-list">
-                  {group.entries.map((alias, index) => (
-                    <Link href={serviceHref(alias)} key={alias.slug}>
-                      <span>{String(index + 1).padStart(2, "0")}</span>
-                      <span><strong>{alias.label}</strong><small>{alias.pricingUnit}</small></span>
-                      <em>→</em>
-                    </Link>
-                  ))}
-                </div>
-              </section>
+          <div className="service-list">
+            {serviceEntries.map(([label, href], index) => (
+              <Link href={href} key={label}><span>{String(index + 1).padStart(2, "0")}</span><strong>{label}</strong><em>→</em></Link>
             ))}
           </div>
         </div>
@@ -216,13 +187,13 @@ export default async function Home() {
 
       <section className="shell action-close" aria-labelledby="action-close-title">
         <div>
-          <p className="kicker">下一步</p>
-          <h2 id="action-close-title">提交采购或置换需求</h2>
-          <p>填写资源型号、地区、数量和交付时间；提交后在交易工作台查看报价进度。</p>
+          <p className="kicker">From price to action</p>
+          <h2 id="action-close-title">看到合适价格，就把需求交给同一套后端。</h2>
+          <p>提交后获得服务端需求编号；供应方报价会回流到需求方工作台。</p>
         </div>
         <div>
-          <Link className="button button-primary" href="/request">发布采购需求</Link>
-          <Link className="button button-secondary" href="/member">查看交易工作台</Link>
+          <Link className="button button-primary" href="/request">发布算力需求</Link>
+          <Link className="button button-secondary" href="/member">打开会员工作台</Link>
         </div>
       </section>
     </>

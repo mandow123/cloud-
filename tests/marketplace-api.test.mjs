@@ -9,6 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { marketplaceSchemaStatements } from "../db/schema.ts";
+import { resourceListings } from "../lib/catalog.mjs";
 import { curatedMarketDemands } from "../lib/server/curated-market-demands.ts";
 
 const SESSION_COOKIE_PATTERN = /^kai_session_dev=[a-f0-9]{64}$/u;
@@ -1070,6 +1071,36 @@ test("marketplace streaming body limit returns 413 before persisting a draft", a
     await errorBody(response, 413, "PAYLOAD_TOO_LARGE");
     const drafts = await (await client.get("/api/drafts?view=mine&limit=50")).json();
     assert.equal(drafts.count, 0);
+  } finally {
+    await destroyFixture(fixture);
+  }
+});
+
+test("catalog purchase submits a priced procurement intent without exposing unverified inventory as an order", async () => {
+  const fixture = await createFixture();
+  try {
+    const client = await openSession(fixture.server.baseUrl);
+    const resource = resourceListings.find((item) => item.id === "cloud-capacity-swap-nm");
+    assert.ok(resource);
+    const response = await client.postJson("/api/v1/catalog-purchase-intents", {
+      resourceId: resource.id,
+      quantity: 2,
+      durationHours: 24,
+      deliveryDate: futureDate(7),
+      note: "需要标准网络与交付窗口确认。",
+    }, { idempotencyKey: idempotencyKey("catalog-purchase") });
+    assert.equal(response.status, 201);
+    const body = await response.json();
+    assert.equal(body.record.requestType, "procurement");
+    assert.equal(body.record.quantity, 2);
+    assert.equal(body.record.durationHours, 24);
+    assert.match(body.record.summary, new RegExp(resource.id, "u"));
+    assert.equal(body.priceSnapshot.unitPrice, resource.quote.median);
+    assert.equal(body.priceSnapshot.pricingUnit, resource.pricingUnit);
+    assert.equal(body.priceSnapshot.estimatedAmount, resource.quote.median * 2 * 24);
+
+    const mine = await (await client.get("/api/requests?view=mine&limit=20")).json();
+    assert.ok(mine.items.some((item) => item.id === body.record.id));
   } finally {
     await destroyFixture(fixture);
   }

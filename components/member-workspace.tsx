@@ -43,7 +43,6 @@ type CollectionState<T> = {
 
 const WATCHLIST_KEY = "kai-cloud-watchlist-v1";
 const ROLE_KEY = "kai-cloud-role-v1";
-const MARKET_REQUEST_REFRESH_MS = 60_000;
 const DEFAULT_WATCHLIST_IDS = resourceListings.slice(0, 3).map((listing) => listing.id);
 
 const categoryLabel: Record<ResourceCategory, string> = {
@@ -81,7 +80,7 @@ function shortDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit" }).format(date);
 }
 
-function useMarketplaceCollection<T>(path: string, refreshMs: number | null = null) {
+function useMarketplaceCollection<T>(path: string) {
   const [state, setState] = useState<CollectionState<T>>({
     items: [],
     count: 0,
@@ -90,11 +89,8 @@ function useMarketplaceCollection<T>(path: string, refreshMs: number | null = nu
     error: null,
     pageInfo: null,
   });
-  const inFlightRef = useRef(false);
 
   const load = useCallback(async (cursor: string | null = null) => {
-    if (inFlightRef.current) return;
-    inFlightRef.current = true;
     setState((current) => ({ ...current, status: "loading", error: null }));
     const separator = path.includes("?") ? "&" : "?";
     const requestPath = cursor ? `${path}${separator}cursor=${encodeURIComponent(cursor)}` : path;
@@ -121,20 +117,12 @@ function useMarketplaceCollection<T>(path: string, refreshMs: number | null = nu
         status: "error",
         error: marketplaceErrorMessage(error, "暂时无法读取这组记录。"),
       }));
-    } finally {
-      inFlightRef.current = false;
     }
   }, [path]);
 
   useEffect(() => {
     void load();
   }, [load]);
-
-  useEffect(() => {
-    if (!refreshMs) return;
-    const timer = window.setInterval(() => void load(null), refreshMs);
-    return () => window.clearInterval(timer);
-  }, [load, refreshMs]);
 
   return {
     state,
@@ -149,10 +137,7 @@ export function MemberWorkspace() {
   const [role, setRole] = useState<MemberRole>("buyer");
   const [watchlistIds, setWatchlistIds] = useState<string[]>(DEFAULT_WATCHLIST_IDS);
   const buyerRequests = useMarketplaceCollection<MarketplaceRequestRecord>("/api/requests?view=mine&limit=20");
-  const marketRequests = useMarketplaceCollection<MarketplaceRequestRecord>(
-    "/api/requests?view=market&limit=20",
-    MARKET_REQUEST_REFRESH_MS,
-  );
+  const marketRequests = useMarketplaceCollection<MarketplaceRequestRecord>("/api/requests?view=market&limit=20");
   const buyerQuotes = useMarketplaceCollection<MarketplaceNormalizedQuoteRecord>("/api/quotes?view=buyer&limit=20");
   const supplierQuotes = useMarketplaceCollection<MarketplaceSupplierQuoteRecord>("/api/quotes?view=supplier&limit=20");
   const supplierDrafts = useMarketplaceCollection<MarketplaceDraftRecord>("/api/drafts?view=mine&limit=20");
@@ -185,16 +170,8 @@ export function MemberWorkspace() {
   useEffect(() => {
     const syncLocalData = () => {
       setWatchlistIds(readStringArray(WATCHLIST_KEY, DEFAULT_WATCHLIST_IDS));
-      const requestedRole = new URLSearchParams(window.location.search).get("role");
-      const savedRole = requestedRole ?? sessionStorage.getItem(ROLE_KEY);
-      if (savedRole === "buyer" || savedRole === "supplier") {
-        setRole(savedRole);
-        if (requestedRole === "supplier" && window.location.hash === "#supply-register") {
-          window.requestAnimationFrame(() => {
-            window.requestAnimationFrame(() => document.getElementById("supply-register")?.scrollIntoView({ block: "start" }));
-          });
-        }
-      }
+      const savedRole = sessionStorage.getItem(ROLE_KEY);
+      if (savedRole === "buyer" || savedRole === "supplier") setRole(savedRole);
     };
     syncLocalData();
 
@@ -277,7 +254,7 @@ export function MemberWorkspace() {
       setDraftError(null);
       void supplierDrafts.reload();
     } catch (error) {
-      setDraftError(marketplaceErrorMessage(error, "可供资源登记保存失败。"));
+      setDraftError(marketplaceErrorMessage(error, "资源草稿保存失败。"));
     } finally {
       draftLockRef.current = false;
       setDraftSubmitting(false);
@@ -662,22 +639,22 @@ function SupplierDrafts({
 }) {
   const drafts = collection.items;
   return (
-    <section aria-labelledby="supplier-drafts-title" id="supply-register">
-      <div id="supplier-drafts-title"><SectionIntro kicker="供应方 / 可供资源" title="可供容量登记" description="登记结果保存到当前交易工作台，完成核验前不会公开展示。" /></div>
+    <section aria-labelledby="supplier-drafts-title">
+      <div id="supplier-drafts-title"><SectionIntro kicker="Supplier / Drafts" title="资源草稿" description="草稿写入当前工作台，但不会自动成为公开资源。" /></div>
       <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
         <form className="border-t-2 border-[var(--accent)] bg-[var(--surface)] p-5" noValidate onSubmit={onSubmit}>
-          <h3 className="mt-0 text-lg">登记一条可供资源</h3>
+          <h3 className="mt-0 text-lg">新建资源草稿</h3>
           <div className="grid gap-4">
             <label className={labelClass}>资源名称<input className={inputClass} onChange={(event) => onUpdate({ ...values, title: event.target.value })} placeholder="使用脱敏资源代号" value={values.title} /></label>
             <label className={labelClass}>资源类型<select className={inputClass} onChange={(event) => onUpdate({ ...values, category: event.target.value as ResourceCategory })} value={values.category}>{Object.entries(categoryLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             <label className={labelClass}>容量摘要<textarea className={`${inputClass} min-h-24 resize-y`} onChange={(event) => onUpdate({ ...values, capacity: event.target.value })} placeholder="例如：16 卡，可按周排期，交付前确认库存" value={values.capacity} /></label>
           </div>
           {draftError ? <p className="text-sm text-[var(--error)]" role="alert">{draftError}</p> : null}
-          <button className="button button-primary mt-4" disabled={submitting} type="submit">{submitting ? "正在保存…" : "保存登记"}</button>
+          <button className="button button-primary mt-4" disabled={submitting} type="submit">{submitting ? "正在保存…" : "保存到工作台"}</button>
         </form>
         <div className="grid content-start gap-3">
-          <CollectionStatus collection={collection} label="可供资源登记" onLoadMore={onLoadMore} onRetry={onRetry} />
-          {collection.status === "ready" && drafts.length === 0 ? <EmptyState description="当前会话还没有登记可供资源。保存左侧表单后会在这里出现。" /> : drafts.map((draft) => (
+          <CollectionStatus collection={collection} label="资源草稿" onLoadMore={onLoadMore} onRetry={onRetry} />
+          {collection.status === "ready" && drafts.length === 0 ? <EmptyState description="当前会话暂无资源草稿。保存左侧表单后会在这里出现。" /> : drafts.map((draft) => (
             <article className="border border-[var(--border)] bg-[var(--surface)] p-4" key={draft.id}>
               <div className="flex items-start justify-between gap-3"><div><span className="font-mono text-xs text-[var(--accent)]">{draft.id}</span><h3 className="mb-1 mt-2 text-base">{draft.title}</h3></div><span className="text-xs font-semibold text-[var(--muted)]">{draft.status}</span></div>
               <p className="m-0 text-sm">{categoryLabel[draft.category]} · {draft.capacity}</p>

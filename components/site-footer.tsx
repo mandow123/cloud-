@@ -32,7 +32,7 @@ export async function SiteFooter() {
           <p className="footer-label">平台说明</p>
           <Link href="/methodology">数据方法</Link>
           <Link href="/partners">供应商合作</Link>
-          <Link href="/member">交易工作台</Link>
+          <Link href="/member">会员工作台</Link>
         </div>
         <div className="footer-disclaimer">
           <p className="footer-label">报价说明</p>

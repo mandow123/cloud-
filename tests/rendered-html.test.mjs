@@ -33,13 +33,12 @@ test("server-renders the finished KAI Cloud home page", async () => {
   const html = await response.text();
   assert.match(html, /KAI Cloud/);
   assert.match(html, /中国 Token 学院算力市场/);
-  assert.match(html, /今日算力报价/);
+  assert.match(html, /先看清价格/);
   assert.match(html, /发布算力需求/);
-  assert.match(html, /提交后在交易工作台查看报价进度/);
+  assert.match(html, /需求服务已接通|交易链路已接通|供应方报价会回流到需求方工作台/);
   assert.match(html, /每日北京时间 06:00/);
-  assert.match(html, /主流模型成本指数/);
-  assert.match(html, /登记可供算力/);
-  assert.doesNotMatch(html, /先看清价格|十个业务叫法/);
+  assert.match(html, /模型调用成本指数/);
+  assert.match(html, /供应方报价会回流到需求方工作台/);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
 });
 
@@ -90,7 +89,7 @@ test("all primary public and member routes render", async () => {
     ["/market", /行情中心/],
     ["/resources", /资源市场/],
     ["/request", /发布.*需求|租赁.*置换/],
-    ["/member", /交易工作台|需求方|供应方/],
+    ["/member", /会员中心|需求方|供应方/],
     ["/partners", /供应商合作/],
     ["/methodology", /数据方法|价格口径/],
   ];
@@ -151,21 +150,6 @@ test("model market renders per-model prices, source status, and the 06:00 update
   assert.doesNotMatch(html, /模型 Token 综合行情/);
 });
 
-test("infrastructure market exposes six observation windows and a supplier-direct card-hour boundary", async () => {
-  const response = await render("/market");
-  const html = await response.text();
-
-  for (const days of [7, 30, 90, 180, 360, 720]) {
-    assert.match(html, new RegExp(`${days}(?:\\s|<!--.*?-->)*天`));
-  }
-  assert.match(html, /卡时首期采用供应商直售/);
-  assert.match(html, /不形成可再次转售的卡时余额/);
-  assert.match(html, /发布卡时采购需求/);
-  assert.match(html, /登记可售卡时/);
-  assert.doesNotMatch(html, />购买卡时</u);
-  assert.doesNotMatch(html, /现金投资|现金取出|保本理财|申购|赎回/u);
-});
-
 test("all ten business aliases are reachable from the home page", async () => {
   const response = await render("/");
   const html = await response.text();
@@ -186,6 +170,24 @@ test("a dynamic resource detail exposes complete reference quote scope", async (
   assert.match(html, /含税|税费/);
   assert.match(html, /有效期|更新/);
   assert.match(html, /发布需求|询价/);
+});
+
+test("resources expose the approved purchase action and a clearly priced purchase page", async () => {
+  const listing = resourceListings[0];
+  const resourcesResponse = await render("/resources");
+  assert.equal(resourcesResponse.status, 200);
+  const resourcesHtml = await resourcesResponse.text();
+  assert.match(resourcesHtml, new RegExp(`/checkout/${listing.id}`));
+  assert.match(resourcesHtml, /购买/);
+
+  const checkoutResponse = await render(`/checkout/${listing.id}`);
+  assert.equal(checkoutResponse.status, 200);
+  const checkoutHtml = await checkoutResponse.text();
+  assert.match(checkoutHtml, /购买/);
+  assert.match(checkoutHtml, /市场参考单价/);
+  assert.match(checkoutHtml, /预计金额/);
+  assert.match(checkoutHtml, new RegExp(String(listing.quote.median)));
+  assert.match(checkoutHtml, /平台确认库存与正式价格/);
 });
 
 test("starter artifacts are removed and brand assets are wired", async () => {

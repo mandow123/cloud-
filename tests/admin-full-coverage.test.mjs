@@ -27,8 +27,9 @@ test("admin navigation and pages expose the complete backend lifecycle", () => {
 });
 
 test("admin lifecycle pages stay isolated from the frozen public frontend", () => {
-  const frozen = source("tests/kai-standard-frontend-freeze.test.mjs");
-  assert.match(frozen, /the three owned pages differ from the development baseline only by their approved slot insertion/u);
+  const frozen = source("tests/public-frontend-freeze.test.mjs");
+  assert.match(frozen, /complete public frontend is byte-identical to the deployed bb7fd32 baseline/u);
+  assert.match(frozen, /only approved existing-frontend change is the pinned purchase control under compare/u);
   for (const path of [
     "app/page.tsx",
     "app/market/page.tsx",

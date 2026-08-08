@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import purchaseStyles from "@/components/resource-purchase.module.css";
 import { filterAndSortResources, formatPrice, parseResourceQuery } from "@/lib/market";
 import type { DealMode, ResourceCategory, ResourceListing } from "@/lib/types";
 
@@ -379,6 +380,13 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                               />
                               加入对比
                             </label>
+                            <Link
+                              className={purchaseStyles.purchaseLink}
+                              href={`/checkout/${encodeURIComponent(resource.id)}`}
+                              aria-label={`购买 ${resource.title}，参考价 ${formatPrice(resource.quote.median, resource.pricingUnit)}`}
+                            >
+                              <span>购买</span><span aria-hidden="true">→</span>
+                            </Link>
                           </td>
                         </tr>
                       ))}
@@ -397,10 +405,19 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                           </h2>
                           <p className="mt-1 mb-0 text-xs text-[var(--muted)]">{publicCatalogText(resource.supplierName)} · 供应商目录</p>
                         </div>
-                        <label className="inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center gap-2 text-xs font-semibold text-[var(--text)]">
-                          <input type="checkbox" checked={compareIds.includes(resource.id)} onChange={() => toggleCompare(resource.id)} />
-                          对比
-                        </label>
+                        <div className={purchaseStyles.mobileActions}>
+                          <label className="inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center gap-2 text-xs font-semibold text-[var(--text)]">
+                            <input type="checkbox" checked={compareIds.includes(resource.id)} onChange={() => toggleCompare(resource.id)} />
+                            加入对比
+                          </label>
+                          <Link
+                            className={purchaseStyles.purchaseLink}
+                            href={`/checkout/${encodeURIComponent(resource.id)}`}
+                            aria-label={`购买 ${resource.title}，参考价 ${formatPrice(resource.quote.median, resource.pricingUnit)}`}
+                          >
+                            <span>购买</span><span aria-hidden="true">→</span>
+                          </Link>
+                        </div>
                       </div>
                       <p className="mt-5 mb-0 text-sm leading-6 text-[var(--text)]">{publicCatalogText(resource.summary)}</p>
                       <dl className="mt-5 grid grid-cols-2 gap-4 border-y border-[var(--border)] py-4 text-sm">
