@@ -52,9 +52,11 @@ function safeReturnTo(value: string | null | undefined) {
   return value?.startsWith("/") && !value.startsWith("//") && !value.includes("\\") ? value : "/member";
 }
 
-function secureRequest(request: Request) {
+function secureRequest(request: Request, env: Environment = environment()) {
   if (new URL(request.url).protocol === "https:") return true;
-  return environment().KAI_TRUST_PROXY === "1" && request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase() === "https";
+  if (env.KAI_TRUST_PROXY !== "1") return false;
+  if (request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase() === "https") return true;
+  try { return new URL(env.KAI_PUBLIC_ORIGIN || "").protocol === "https:"; } catch { return false; }
 }
 
 function cookieValue(request: Request, name: string) {
@@ -66,8 +68,8 @@ function cookieValue(request: Request, name: string) {
   return null;
 }
 
-function transactionCookie(request: Request, value: string, maxAgeSeconds: number) {
-  const secure = secureRequest(request);
+function transactionCookie(request: Request, value: string, maxAgeSeconds: number, env: Environment = environment()) {
+  const secure = secureRequest(request, env);
   const name = secure ? SECURE_TRANSACTION_COOKIE : DEVELOPMENT_TRANSACTION_COOKIE;
   return [
     `${name}=${encodeURIComponent(value)}`,
@@ -79,8 +81,8 @@ function transactionCookie(request: Request, value: string, maxAgeSeconds: numbe
   ].filter(Boolean).join("; ");
 }
 
-export function clearKaiIdentityTransactionCookie(request: Request) {
-  return transactionCookie(request, "", 0);
+export function clearKaiIdentityTransactionCookie(request: Request, env?: Environment) {
+  return transactionCookie(request, "", 0, env);
 }
 
 function oidcConfiguration(env: Environment) {
@@ -215,14 +217,14 @@ export async function beginKaiIdentityLogin(request: Request, options: { env?: E
     code_challenge: challenge,
     code_challenge_method: "S256",
   }).toString();
-  return { location: authorization.toString(), transactionCookie: transactionCookie(request, await sealTransaction(transaction, config.secret), TRANSACTION_MAX_AGE_SECONDS) };
+  return { location: authorization.toString(), transactionCookie: transactionCookie(request, await sealTransaction(transaction, config.secret), TRANSACTION_MAX_AGE_SECONDS, env) };
 }
 
 export async function completeKaiIdentityLogin(request: Request, options: { env?: Environment; fetcher?: typeof fetch; store?: AccountAuthStore; now?: Date } = {}): Promise<KaiIdentityCompletion> {
   const env = options.env ?? environment();
   const config = oidcConfiguration(env);
   const now = options.now ?? new Date();
-  const cookieName = secureRequest(request) ? SECURE_TRANSACTION_COOKIE : DEVELOPMENT_TRANSACTION_COOKIE;
+  const cookieName = secureRequest(request, env) ? SECURE_TRANSACTION_COOKIE : DEVELOPMENT_TRANSACTION_COOKIE;
   const sealed = cookieValue(request, cookieName);
   if (!sealed) throw new AccountAuthError("OIDC_TRANSACTION_INVALID", 401, "登录事务不存在，请重新登录。");
   const transaction = await openTransaction(sealed, config.secret, now);
@@ -253,5 +255,5 @@ export async function completeKaiIdentityLogin(request: Request, options: { env?
     verifiedAt: now.toISOString(),
   });
   const issued = await createAccountSession(request, identity, "KAI_IDENTITY_OIDC", { store, now });
-  return { issued, returnTo: transaction.returnTo, clearTransactionCookie: clearKaiIdentityTransactionCookie(request) };
+  return { issued, returnTo: transaction.returnTo, clearTransactionCookie: clearKaiIdentityTransactionCookie(request, env) };
 }

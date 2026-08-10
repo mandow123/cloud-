@@ -52,7 +52,9 @@ function cookieValue(request: Request, name: string) {
 
 function secureRequest(request: Request) {
   if (new URL(request.url).protocol === "https:") return true;
-  return typeof process !== "undefined" && process.env.KAI_TRUST_PROXY === "1" && request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase() === "https";
+  if (typeof process === "undefined" || process.env.KAI_TRUST_PROXY !== "1") return false;
+  if (request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase() === "https") return true;
+  try { return new URL(process.env.KAI_PUBLIC_ORIGIN || "").protocol === "https:"; } catch { return false; }
 }
 
 function sessionCookie(request: Request, token: string, maxAgeSeconds: number) {

@@ -90,3 +90,23 @@ test("KAI Identity rejects a callback whose state does not match the sealed tran
   const callback = new Request("http://localhost:3014/api/auth/kai/callback?code=one-time-code&state=wrong", { headers: { cookie: started.transactionCookie.split(";", 1)[0] } });
   await assert.rejects(completeKaiIdentityLogin(callback, { env, now, fetcher }), (error) => error instanceof AccountAuthError && error.code === "OIDC_STATE_INVALID");
 });
+
+test("production canonical HTTPS origin keeps the OIDC transaction cookie Secure behind a trusted proxy", async () => {
+  const env = {
+    NODE_ENV: "production",
+    KAI_TRUST_PROXY: "1",
+    KAI_PUBLIC_ORIGIN: "https://cloud.kai.com",
+    KAI_ACCOUNT_OIDC_CLIENT_ID: "kaic_cloud_test_123456",
+    KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: "oidc-transaction-secret-000000000000000000000000",
+  };
+  const fetcher = async () => Response.json({
+    issuer: KAI_IDENTITY_ISSUER,
+    authorization_endpoint: `${KAI_IDENTITY_ISSUER}/auth`,
+    token_endpoint: `${KAI_IDENTITY_ISSUER}/token`,
+    jwks_uri: `${KAI_IDENTITY_ISSUER}/jwks`,
+    userinfo_endpoint: `${KAI_IDENTITY_ISSUER}/me`,
+  });
+  const started = await beginKaiIdentityLogin(new Request("http://cloud.kai.com/api/auth/kai/start"), { env, fetcher });
+  assert.match(started.transactionCookie, /^__Host-kai_oidc_transaction=/u);
+  assert.match(started.transactionCookie, /; Secure$/u);
+});
