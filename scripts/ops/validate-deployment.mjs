@@ -175,6 +175,7 @@ async function main() {
   assert(app.environment.KAI_ADMIN_LOCAL_AUTH === "0", "production Compose must keep LOCAL administrator login disabled");
   for (const name of [
     "KAI_ADMIN_USERNAME", "KAI_ADMIN_PASSWORD_HASH", "KAI_ADMIN_DISPLAY_NAME",
+    "KAI_EMAIL_OTP_WEBHOOK_URL", "KAI_EMAIL_OTP_WEBHOOK_TOKEN", "KAI_EMAIL_OTP_HMAC_SECRET",
     "KAI_ALIPAY_APP_ID", "KAI_ALIPAY_PRIVATE_KEY", "KAI_ALIPAY_PUBLIC_KEY", "KAI_ALIPAY_SELLER_ID",
     "KAI_SSH_PROVISIONER_URL", "KAI_SSH_PROVISIONER_TOKEN",
   ]) {

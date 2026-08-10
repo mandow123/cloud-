@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { AccountAuthError, assertAccountAuthSameOrigin, createAccountSession } from "../lib/server/account-auth.ts";
@@ -28,7 +28,7 @@ test("admin write entry points reject same-site cross-origin requests before any
   assert.ok(postBody.indexOf("requireAdminPermission(request") < postBody.indexOf("getStandardizationStore()"));
 });
 
-test("unauthenticated and non-password Root checks fail before backend data access", async () => {
+test("unauthenticated and email-authenticated Root checks fail before backend data access", async () => {
   await assert.rejects(
     requireAdminPermission(new Request("https://cloud.kai.com/api/v1/admin/dashboard"), ["ADMIN_PANEL_READ"]),
     (error) => error instanceof AccountAuthError && error.status === 401,
@@ -37,12 +37,12 @@ test("unauthenticated and non-password Root checks fail before backend data acce
   const store = await createSqliteAccountAuthStore(":memory:");
   const now = new Date();
   const identityInput = {
-    provider: "LOCAL",
-    tenantKey: "LOCAL",
+    provider: "EMAIL",
+    tenantKey: "EXTERNAL",
     subject: "non-root-admin-boundary",
     displayName: "Non Root",
-    normalizedEmail: null,
-    organizationExternalKey: "LOCAL:non-root-admin-boundary",
+    normalizedEmail: "non-root@example.test",
+    organizationExternalKey: "EMAIL:non-root-admin-boundary",
     organizationName: "Non Root Organization",
     verifiedAt: now.toISOString(),
   };
@@ -50,9 +50,9 @@ test("unauthenticated and non-password Root checks fail before backend data acce
   await store.activateMembership(identity.membership.id, ["ROOT"], now.toISOString());
   const active = await store.resolveOrCreateIdentity(identityInput);
   const issued = await createAccountSession(
-    new Request("https://cloud.kai.com/api/auth/local"),
+    new Request("https://cloud.kai.com/api/auth/email/verify"),
     active,
-    "LOCAL_TEST",
+    "EMAIL_OTP",
     { store, now },
   );
   const previous = globalThis.__kaiAccountAuthStorePromise;
@@ -80,12 +80,4 @@ test("administrator UI exposes only the independent password entry point", () =>
   assert.match(login, /\/api\/auth\/admin\/password/u);
   assert.doesNotMatch(login, /飞书|邮箱登录|bootstrap-admin|bootstrapRootAccount/u);
   assert.match(source("app/api/auth/admin/password/route.ts"), /createAdminPasswordSession/u);
-  for (const path of [
-    "app/api/auth/email/request/route.ts",
-    "app/api/auth/email/verify/route.ts",
-    "app/api/auth/email/local-inbox/route.ts",
-    "lib/server/account-auth-otp.ts",
-  ]) assert.equal(existsSync(new URL(`../${path}`, import.meta.url)), false, `${path} must stay removed`);
-  assert.doesNotMatch(source("deploy/compose.production.yml"), /KAI_EMAIL_OTP/u);
-  assert.doesNotMatch(source("lib/server/readiness.ts"), /emailOtpLogin|KAI_EMAIL_OTP/u);
 });

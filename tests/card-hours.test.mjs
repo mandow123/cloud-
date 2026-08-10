@@ -9,7 +9,7 @@ const account = {
   activeOrganization: { id: "org-buyer", name: "Buyer Org", externalKey: "BUYER", status: "ACTIVE" },
   membership: { id: "mbr-buyer", accountId: "acct-buyer", organizationId: "org-buyer", status: "ACTIVE", roles: [] },
   sessionId: "session-buyer",
-  authMethod: "ADMIN_PASSWORD",
+  authMethod: "EMAIL_OTP",
 };
 
 test("card-hour conversion is exact at the 5-card-hour RMB boundary", () => {

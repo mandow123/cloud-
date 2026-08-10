@@ -34,7 +34,7 @@ export function AccountRequired({ children, purpose }: { children: ReactNode; pu
         <h2 id="account-gate-title">登录后继续{purpose}</h2>
         <p>正式上架、发布需求和创建订单必须绑定个人或企业主体。行情与公开资源仍可匿名浏览。</p>
         <Link className="button button-primary" href={`/login?returnTo=${encodeURIComponent(returnTo)}`}>
-          查看账户入口说明
+          邮箱验证码登录
         </Link>
       </section>
     );

@@ -98,7 +98,7 @@ export function PersonalCenterOverview() {
           <h2 className="m-0 text-2xl" id="personal-sign-in-title">登录后管理个人交易</h2>
           <p className="mb-0 mt-2 text-sm">购买申请、正式订单、支付与验收只按已登录账户的当前交易主体读取；公开资源仍可匿名浏览。</p>
         </div>
-        <Link className="button button-primary min-h-12 justify-center" href="/login?returnTo=%2Fmember">查看账户入口说明</Link>
+        <Link className="button button-primary min-h-12 justify-center" href="/login?returnTo=%2Fmember">邮箱验证码登录</Link>
       </section>
     );
   }
