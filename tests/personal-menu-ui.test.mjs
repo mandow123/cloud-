@@ -8,9 +8,9 @@ async function source(path) {
   return readFile(new URL(path, ROOT), "utf8");
 }
 
-test("the personal entry is placed between theme control and demand publishing", async () => {
+test("the personal entry is the rightmost action after demand publishing", async () => {
   const header = await source("components/site-header.tsx");
-  assert.match(header, /<ThemeControl\s*\/>[\s\S]*<PersonalMenu\s*\/>[\s\S]*href="\/request"/u);
+  assert.match(header, /<ThemeControl\s*\/>[\s\S]*href="\/request"[\s\S]*<PersonalMenu\s*\/>/u);
 });
 
 test("the personal menu reads only the member summary and local comparison contracts", async () => {

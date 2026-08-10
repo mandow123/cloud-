@@ -23,7 +23,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "components/personal-menu.tsx": "257acf460a7a68a55c04d668787b4d86e291eaa9522b8f456ede8666e3c3c05f",
   "components/resource-explorer.tsx": "aedd1b56606181b818b1a5c3b7bf123ba050c3333a56984d9c36778f524da7d0",
   "components/resource-purchase.module.css": "6569ca7f4f35c5cd6f731ee97dba34567d002d5bb370aa9b3058c33628bc6669",
-  "components/site-header.tsx": "f0df0aac0be794e3030aea2d1f98cad48f8a7c94cb5276a6bcd48fca9390b44e",
+  "components/site-header.tsx": "1fdf92590f59af37232c8c16b99fc163798fa135bfbed5663129b3908c16cad5",
 });
 
 function git(args, encoding = "utf8") {

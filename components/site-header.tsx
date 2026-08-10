@@ -15,10 +15,10 @@ export function SiteHeader() {
         <NavLinks />
         <div className="header-actions">
           <ThemeControl />
-          <PersonalMenu />
           <Link className="button button-primary button-compact" href="/request">
             发布算力需求
           </Link>
+          <PersonalMenu />
         </div>
       </div>
       <MobileDemandCta />
