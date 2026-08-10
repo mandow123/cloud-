@@ -56,6 +56,13 @@ export type AdminEntityOwnership = Readonly<{
   legacyActorId: string | null; boundByPrincipalId: string; createdAt: string; updatedAt: string; version: number; classification: "BOUND";
 }>;
 
+export type MemberPersonalCounts = Readonly<{
+  purchaseRequests: number;
+  orders: number;
+  pendingPayment: number;
+  pendingAcceptance: number;
+}>;
+
 export interface AdminOperationsStore {
   dashboard(): Promise<Record<string, unknown>>;
   readProjection(name: AdminProjectionName, query?: AdminListQuery): Promise<AdminProjectionItem[]>;
@@ -77,6 +84,7 @@ export interface AdminOperationsStore {
   listAuditEvents(query?: AdminListQuery): Promise<Record<string, unknown>[]>;
   bindEntityOrganization(context: AdminMutationContext, input: Record<string, unknown>): Promise<{ record: AdminEntityOwnership; replayed: boolean }>;
   getEntityOwnership(sourceSystem: AdminSourceSystem, entityType: string, entityId: string): Promise<AdminEntityOwnership | null>;
+  getMemberPersonalCounts(organizationId: string, asOf: string): Promise<MemberPersonalCounts>;
 }
 
 declare global { var __kaiAdminOperationsStorePromise: Promise<AdminOperationsStore> | undefined; }

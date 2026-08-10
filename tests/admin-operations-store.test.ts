@@ -9,8 +9,10 @@ import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.
 import { accountAuthDigest } from "../lib/server/account-auth.ts";
 import { ADMIN_ROLES } from "../lib/admin-auth-types.ts";
 import { exchangeSchemaStatements } from "../db/exchange-schema.ts";
+import { marketplaceSchemaStatements } from "../db/schema.ts";
 import { supplySchemaStatements } from "../db/supply-schema.ts";
 import { standardizationSchemaStatements } from "../db/standardization-schema.ts";
+import { ADMIN_OPERATIONS_SCHEMA_VERSION } from "../db/admin-operations-schema.ts";
 
 const context=(principalId:string,key:string,payloadHash=key)=>({principalId,idempotencyKey:`admin-test-${key.padEnd(16,"x")}`,payloadHash});
 function fixture(){const directory=mkdtempSync(join(tmpdir(),"kai-admin-"));const path=join(directory,"test.sqlite");const db=new DatabaseSync(path);db.exec("CREATE TABLE exchange_payment_intents(id TEXT PRIMARY KEY,order_id TEXT,provider TEXT,environment TEXT,amount_cents INTEGER,currency TEXT,status TEXT,provider_payment_id TEXT,expires_at TEXT,version INTEGER,created_at TEXT,updated_at TEXT)");db.prepare("INSERT INTO exchange_payment_intents VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run("pay-1","order-1","TEST","TEST",5000,"CNY","CAPTURED",null,"2026-09-01",3,"2026-08-01","2026-08-01");db.exec("CREATE TABLE supply_offers(id TEXT PRIMARY KEY,supplier_actor_id TEXT,supplier_type TEXT,resource_type TEXT,quantity INTEGER,quantity_unit TEXT,pricing_unit TEXT,product_name TEXT,specification TEXT,region TEXT,delivery_form TEXT,status TEXT,version INTEGER,created_at TEXT,updated_at TEXT)");db.prepare("INSERT INTO supply_offers VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run("offer-1","legacy-supplier","COMPANY","GPU_CARD",8,"CARD","CARD_HOUR","H100 cards","8 x H100","上海","ACCOUNT","SUBMITTED",1,"2026-08-01","2026-08-01");db.close();return{path,cleanup:()=>rmSync(directory,{recursive:true,force:true})};}
@@ -21,6 +23,22 @@ test("refund approval is dual-control and never mutates payment state",async()=>
 
 test("approved refund execution is claimed once, records failure, and retries with the stable provider request id",async()=>{const f=fixture();const store=await createSqliteAdminOperationsStore(f.path);try{const requested=await store.requestRefund(context("finance-requester","refund-exec-request"),{sourceSystem:"EXCHANGE",entityType:"PAYMENT_INTENT",entityId:"pay-1",amountCents:1200,expectedVersion:3,reason:"Customer service refund request"});await store.decideRefund(requested.record.id,context("finance-approver","refund-exec-approve"),{expectedVersion:1,decision:"APPROVED",reason:"Independent evidence reviewed"});const first=await store.beginRefundExecution(requested.record.id,context("finance-approver","refund-exec-first"),"Initial approved refund execution");assert.equal(first.claimed,true);assert.equal(first.record.execution?.status,"PROCESSING");const concurrent=await store.beginRefundExecution(requested.record.id,context("finance-other","refund-exec-concurrent"),"Concurrent approved refund execution");assert.equal(concurrent.claimed,false);assert.equal(concurrent.record.execution?.refundRequestId,first.record.execution?.refundRequestId);const failed=await store.finishRefundExecution(requested.record.id,context("finance-approver","refund-exec-fail"),{claimToken:first.record.execution!.claimToken,status:"FAILED",errorCode:"ALIPAY_TIMEOUT",errorMessage:"Provider timeout"});assert.equal(failed.record.execution?.status,"FAILED");const retried=await store.beginRefundExecution(requested.record.id,context("finance-approver","refund-exec-retry"),"Retry after provider timeout");assert.equal(retried.claimed,true);assert.equal(retried.record.execution?.attemptCount,2);assert.equal(retried.record.execution?.refundRequestId,first.record.execution?.refundRequestId);const succeeded=await store.finishRefundExecution(requested.record.id,context("finance-approver","refund-exec-success"),{claimToken:retried.record.execution!.claimToken,status:"SUCCEEDED",providerTransactionRef:"ali-trade-1"});assert.equal(succeeded.record.execution?.status,"SUCCEEDED");const after=await store.beginRefundExecution(requested.record.id,context("finance-other","refund-exec-after"),"Observe completed refund execution");assert.equal(after.claimed,false);assert.equal(after.record.execution?.attemptCount,2);}finally{store.close();f.cleanup();}});
 
+test("refund execution lock serializes different cases for the same payment",async()=>{const f=fixture();const store=await createSqliteAdminOperationsStore(f.path);try{
+  const firstRequest=await store.requestRefund(context("finance-requester","refund-lock-request-a"),{sourceSystem:"EXCHANGE",entityType:"PAYMENT_INTENT",entityId:"pay-1",amountCents:1200,expectedVersion:3,reason:"First independently reviewed refund"});
+  const secondRequest=await store.requestRefund(context("finance-requester","refund-lock-request-b"),{sourceSystem:"EXCHANGE",entityType:"PAYMENT_INTENT",entityId:"pay-1",amountCents:800,expectedVersion:3,reason:"Second independently reviewed refund"});
+  await store.decideRefund(firstRequest.record.id,context("finance-approver","refund-lock-approve-a"),{expectedVersion:1,decision:"APPROVED",reason:"First evidence package approved"});
+  await store.decideRefund(secondRequest.record.id,context("finance-approver","refund-lock-approve-b"),{expectedVersion:1,decision:"APPROVED",reason:"Second evidence package approved"});
+  const firstClaim=await store.beginRefundExecution(firstRequest.record.id,context("finance-approver","refund-lock-claim-a"),"Execute first approved refund");
+  assert.equal(firstClaim.claimed,true);
+  const blockedClaim=await store.beginRefundExecution(secondRequest.record.id,context("finance-other","refund-lock-claim-b"),"Execute second approved refund");
+  assert.equal(blockedClaim.claimed,false);
+  assert.equal(blockedClaim.record.execution,null);
+  await store.finishRefundExecution(firstRequest.record.id,context("finance-approver","refund-lock-finish-a"),{claimToken:firstClaim.record.execution!.claimToken,status:"FAILED",errorCode:"PROVIDER_TIMEOUT",errorMessage:"Retry after releasing payment lock"});
+  const secondClaim=await store.beginRefundExecution(secondRequest.record.id,context("finance-other","refund-lock-retry-b"),"Retry after first payment lock released");
+  assert.equal(secondClaim.claimed,true);
+  assert.equal(secondClaim.record.execution?.status,"PROCESSING");
+}finally{store.close();f.cleanup();}});
+
 test("entity ownership requires expected version and exposes explicit legacy classification",async()=>{const f=fixture();const store=await createSqliteAdminOperationsStore(f.path);try{const legacy=(await store.readProjection("supply-offers"))[0];assert.equal(legacy.sourceSystem,"SUPPLY_PILOT");assert.equal(legacy.ownership.classification,"LEGACY_ANON");await assert.rejects(()=>store.bindEntityOrganization(context("admin","bind-invalid"),{sourceSystem:"SUPPLY_PILOT",entityType:"SUPPLY_OFFER",entityId:"offer-1",organizationId:"org-1",accountId:"acc-1",expectedVersion:1,reason:"Bind verified organization"}),/does not exist/i);const bound=await store.bindEntityOrganization(context("admin","bind-create"),{sourceSystem:"SUPPLY_PILOT",entityType:"SUPPLY_OFFER",entityId:"offer-1",organizationId:"org-1",accountId:"acc-1",legacyActorId:"legacy-supplier",expectedVersion:0,reason:"Bind verified organization"});assert.equal(bound.record.classification,"BOUND");assert.equal(bound.record.version,1);const projected=(await store.readProjection("supply-offers"))[0];assert.equal(projected.ownership.classification,"BOUND");assert.equal(projected.ownership.organizationId,"org-1");}finally{store.close();f.cleanup();}});
 
 test("administrator projections cover the complete persisted business lifecycle", async () => {
@@ -28,7 +46,7 @@ test("administrator projections cover the complete persisted business lifecycle"
   const path = join(directory, "coverage.sqlite");
   const database = new DatabaseSync(path, { enableForeignKeyConstraints: true });
   try {
-    for (const statement of [...exchangeSchemaStatements, ...supplySchemaStatements, ...standardizationSchemaStatements]) {
+    for (const statement of [...marketplaceSchemaStatements, ...exchangeSchemaStatements, ...supplySchemaStatements, ...standardizationSchemaStatements]) {
       database.exec(statement);
     }
   } finally {
@@ -52,6 +70,22 @@ test("administrator projections cover the complete persisted business lifecycle"
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("administrator projections fail closed when a required business table is missing",async()=>{const directory=mkdtempSync(join(tmpdir(),"kai-admin-missing-"));const path=join(directory,"missing.sqlite");const store=await createSqliteAdminOperationsStore(path);try{
+  await assert.rejects(()=>store.readProjection("orders"),/no such table/iu);
+  await assert.rejects(()=>store.dashboard(),/no such table/iu);
+}finally{store.close();rmSync(directory,{recursive:true,force:true});}});
+
+test("administrator dashboard reports exact totals beyond list page limits",async()=>{const directory=mkdtempSync(join(tmpdir(),"kai-admin-count-"));const path=join(directory,"count.sqlite");try{
+  const database=new DatabaseSync(path,{enableForeignKeyConstraints:true});
+  try{
+    for(const statement of [...marketplaceSchemaStatements,...exchangeSchemaStatements,...supplySchemaStatements,...standardizationSchemaStatements])database.exec(statement);
+    const insert=database.prepare("INSERT INTO supply_offers(id,supplier_actor_id,idempotency_key,payload_hash,supplier_type,resource_type,quantity,quantity_unit,pricing_unit,product_name,specification,region,delivery_form,availability_start_at,availability_end_at,notes,status,version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    for(let index=1;index<=135;index+=1)insert.run(`offer-${index}`,`supplier-${index}`,`key-${index}`,`sha256:${String(index).padStart(64,"0")}`,"COMPANY","GPU_CARD",8,"CARD","CARD_HOUR",`H100 cards ${index}`,"8 x H100","上海","ACCOUNT",null,null,null,"SUBMITTED",1,"2026-08-01","2026-08-01");
+  }finally{database.close();}
+  const store=await createSqliteAdminOperationsStore(path);
+  try{const dashboard=await store.dashboard();assert.equal((dashboard.counts as Record<string,number>)["supply-offers"],135);}finally{store.close();}
+}finally{rmSync(directory,{recursive:true,force:true});}});
 
 test("administrator principals come from identity facts and support audited versioned management",async()=>{
   const f=fixture();const auth=await createSqliteAccountAuthStore(f.path);const at="2026-08-07T06:00:00.000Z";
@@ -79,4 +113,10 @@ test("administrator principals come from identity facts and support audited vers
 test("D1 and local admin migrations stay identical",()=>{assert.equal(readFileSync(new URL("../drizzle/0015_admin_operations.sql",import.meta.url),"utf8"),readFileSync(new URL("../.openai/drizzle/0015_admin_operations.sql",import.meta.url),"utf8"));});
 test("administrator management migration stays identical",()=>{assert.equal(readFileSync(new URL("../drizzle/0017_admin_principal_management.sql",import.meta.url),"utf8"),readFileSync(new URL("../.openai/drizzle/0017_admin_principal_management.sql",import.meta.url),"utf8"));});
 test("refund execution migrations stay identical",()=>{assert.equal(readFileSync(new URL("../drizzle/0016_admin_refund_execution.sql",import.meta.url),"utf8"),readFileSync(new URL("../.openai/drizzle/0016_admin_refund_execution.sql",import.meta.url),"utf8"));});
+test("refund payment lock migration is identical and backward compatible with schema v3",()=>{
+  const local=readFileSync(new URL("../drizzle/0021_admin_refund_order_lock.sql",import.meta.url),"utf8");
+  assert.equal(local,readFileSync(new URL("../.openai/drizzle/0021_admin_refund_order_lock.sql",import.meta.url),"utf8"));
+  assert.equal(ADMIN_OPERATIONS_SCHEMA_VERSION,3);
+  assert.doesNotMatch(local,/admin_operations_schema_migrations|VALUES\s*\(\s*4\b/iu);
+});
 test("Root authority migration stays identical",()=>{assert.equal(readFileSync(new URL("../drizzle/0020_admin_root.sql",import.meta.url),"utf8"),readFileSync(new URL("../.openai/drizzle/0020_admin_root.sql",import.meta.url),"utf8"));});

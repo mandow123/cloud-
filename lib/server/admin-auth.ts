@@ -3,21 +3,18 @@ import { AccountAuthError, requireAccountSession } from "./account-auth.ts";
 import { getAccountAuthStore } from "./account-auth-store.ts";
 
 const allPermissions = [...ADMIN_PERMISSIONS] as readonly AdminPermission[];
-const delegatedAdminPermissions = ADMIN_PERMISSIONS.filter((permission) =>
-  permission !== "ROOT_CONTROL" && permission !== "IDENTITY_MANAGE" && permission !== "MEMBERSHIP_MANAGE"
-);
 const ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly AdminPermission[]>> = {
   ROOT: allPermissions,
-  ROLE_ADMIN: delegatedAdminPermissions,
-  INTAKE_OPERATOR: ["ADMIN_PANEL_READ", "SUPPLY_INTAKE_READ", "SUPPLY_INTAKE_REVIEW"],
-  INVENTORY_OPERATOR: ["ADMIN_PANEL_READ", "KAI_SELF_INVENTORY_READ", "KAI_SELF_INVENTORY_WRITE"],
-  VERIFICATION_REVIEWER: ["ADMIN_PANEL_READ", "VERIFICATION_QUEUE_READ", "VERIFICATION_REVIEW"],
-  MARKET_OPERATOR: ["ADMIN_PANEL_READ", "MARKET_READ", "MARKET_PUBLISH"],
-  FULFILLMENT_OPERATOR: ["ADMIN_PANEL_READ", "FULFILLMENT_READ", "FULFILLMENT_OPERATE"],
-  FINANCE_OPERATOR: ["ADMIN_PANEL_READ", "PAYMENT_READ", "PAYMENT_OPERATE", "SETTLEMENT_OPERATE", "REFUND_REQUEST"],
-  FINANCE_APPROVER: ["ADMIN_PANEL_READ", "PAYMENT_READ", "REFUND_APPROVE"],
-  SUPPORT_READONLY: ["ADMIN_PANEL_READ", "SUPPORT_READ"],
-  AUDITOR: ["ADMIN_PANEL_READ", "IDENTITY_READ", "SUPPLY_INTAKE_READ", "KAI_SELF_INVENTORY_READ", "VERIFICATION_QUEUE_READ", "MARKET_READ", "FULFILLMENT_READ", "PAYMENT_READ", "AUDIT_READ"],
+  ROLE_ADMIN: [],
+  INTAKE_OPERATOR: [],
+  INVENTORY_OPERATOR: [],
+  VERIFICATION_REVIEWER: [],
+  MARKET_OPERATOR: [],
+  FULFILLMENT_OPERATOR: [],
+  FINANCE_OPERATOR: [],
+  FINANCE_APPROVER: [],
+  SUPPORT_READONLY: [],
+  AUDITOR: [],
 };
 
 const validRoles = new Set<string>(ADMIN_ROLES);
@@ -41,8 +38,10 @@ export async function authenticateAdminRequest(request: Request): Promise<AdminA
     throw new AccountAuthError("ADMIN_ACCESS_FORBIDDEN", 403, "组织成员关系尚未获批。 ");
   }
   const roles = accountContext.membership.roles;
+  if (!roles.includes("ROOT")) {
+    throw new AccountAuthError("ADMIN_ACCESS_FORBIDDEN", 403, "只有 ROOT 账户可以进入管理员面板。 ");
+  }
   const permissions = adminPermissionsForRoles(roles);
-  if (roles.length === 0) throw new AccountAuthError("ADMIN_ACCESS_FORBIDDEN", 403, "账户没有管理员角色。 ");
   return {
     principal: { id: accountContext.account.id, displayName: accountContext.account.displayName, roles, permissions, status: "ACTIVE" },
     account: accountContext.account, organization: accountContext.activeOrganization, sessionId: accountContext.sessionId,

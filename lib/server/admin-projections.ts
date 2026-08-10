@@ -19,23 +19,12 @@ const anonymousOwnership = {
   classification: "LEGACY_ANON" as const,
 };
 
-function missingTable(error: unknown) {
-  return /no such table|does not exist|D1_ERROR.*table|SQLITE_ERROR.*table/iu.test(
-    error instanceof Error ? error.message : String(error),
-  );
-}
-
 async function safeAll(
   db: AdminProjectionAdapter,
   sql: string,
   values: readonly unknown[] = [],
 ) {
-  try {
-    return await db.all<Row>(sql, values);
-  } catch (error) {
-    if (missingTable(error)) return [];
-    throw error;
-  }
+  return db.all<Row>(sql, values);
 }
 
 function safeJson(value: unknown) {
@@ -638,6 +627,50 @@ async function rawProjection(db: AdminProjectionAdapter, name: AdminProjectionNa
     case "standardization": return standardization(db);
     case "exceptions": return exceptions(db);
   }
+}
+
+const projectionCountQueries: Readonly<Record<AdminProjectionName, readonly string[]>> = {
+  "supply-offers": ["SELECT COUNT(*) count FROM supply_offers"],
+  demands: ["SELECT COUNT(*) count FROM marketplace_requests_v2"],
+  matches: ["SELECT COUNT(*) count FROM admin_work_items WHERE work_type='DEMAND_MATCH'"],
+  pools: ["SELECT COUNT(*) count FROM supply_asset_pools"],
+  verifications: [
+    "SELECT COUNT(*) count FROM exchange_verification_runs",
+    "SELECT COUNT(*) count FROM supply_verification_jobs",
+  ],
+  "capacity-lots": ["SELECT COUNT(*) count FROM exchange_capacity_lots"],
+  listings: ["SELECT COUNT(*) count FROM exchange_listing_versions"],
+  withdrawals: ["SELECT COUNT(*) count FROM exchange_capacity_withdrawals"],
+  swaps: ["SELECT COUNT(*) count FROM exchange_swap_quotes"],
+  orders: [
+    "SELECT COUNT(*) count FROM exchange_orders",
+    "SELECT COUNT(*) count FROM supply_trial_orders",
+  ],
+  delivery: ["SELECT COUNT(*) count FROM exchange_delivery_tasks"],
+  metering: ["SELECT COUNT(*) count FROM exchange_metering_sessions"],
+  payments: [
+    "SELECT COUNT(*) count FROM exchange_payment_intents",
+    "SELECT COUNT(*) count FROM supply_trial_payments",
+  ],
+  settlements: ["SELECT COUNT(*) count FROM exchange_settlements"],
+  commissions: ["SELECT COUNT(*) count FROM exchange_commission_accruals"],
+  standardization: ["SELECT COUNT(*) count FROM standardization_snapshot_batches"],
+  exceptions: [
+    "SELECT COUNT(*) count FROM admin_work_items WHERE status IN ('OPEN','CLAIMED','WAITING') AND priority IN ('HIGH','CRITICAL')",
+    "SELECT COUNT(*) count FROM exchange_payment_intents WHERE status='FAILED'",
+    "SELECT COUNT(*) count FROM exchange_delivery_tasks WHERE status='FAILED'",
+    "SELECT COUNT(*) count FROM admin_refund_executions WHERE status='FAILED'",
+  ],
+};
+
+export async function countAdminProjection(
+  db: AdminProjectionAdapter,
+  name: AdminProjectionName,
+): Promise<number> {
+  const results = await Promise.all(projectionCountQueries[name].map((sql) => safeAll(db, sql)));
+  const count = results.reduce((total, rows) => total + Number(rows[0]?.count ?? 0), 0);
+  if (!Number.isSafeInteger(count) || count < 0) throw new Error("ADMIN_PROJECTION_COUNT_INVALID");
+  return count;
 }
 
 export async function readAdminProjection(

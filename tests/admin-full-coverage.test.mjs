@@ -28,8 +28,8 @@ test("admin navigation and pages expose the complete backend lifecycle", () => {
 
 test("admin lifecycle pages stay isolated from the frozen public frontend", () => {
   const frozen = source("tests/public-frontend-freeze.test.mjs");
-  assert.match(frozen, /complete public frontend is byte-identical to the deployed bb7fd32 baseline/u);
-  assert.match(frozen, /only approved existing-frontend change is the pinned purchase control under compare/u);
+  assert.match(frozen, /public frontend stays frozen outside the approved purchase and personal-account additions/u);
+  assert.match(frozen, /approved purchase and personal-account files are pinned/u);
   for (const path of [
     "app/page.tsx",
     "app/market/page.tsx",

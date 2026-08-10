@@ -5,6 +5,7 @@ import {
   parseAppendStandardizationSnapshot,
 } from "@/lib/standardization";
 import { requireAdminPermission } from "@/lib/server/admin-auth";
+import { assertAccountAuthSameOrigin } from "@/lib/server/account-auth";
 import {
   apiErrorResponse,
   beginApiRequest,
@@ -38,6 +39,7 @@ function validationResponse(error: StandardizationInputError, requestId: string)
 export async function POST(request: Request) {
   const context = beginApiRequest(request);
   try {
+    assertAccountAuthSameOrigin(request);
     const auth = await requireAdminPermission(request, ["MARKET_PUBLISH"]);
     const body = await readJsonBody(request);
     if (!body || typeof body !== "object" || Array.isArray(body)) {

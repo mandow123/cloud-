@@ -3,8 +3,8 @@ import { adminIdentitySchemaStatements } from "../../db/admin-identity-schema.ts
 import { ADMIN_ROLES, type AdminRole } from "../admin-auth-types.ts";
 import { adminPermissionsForRoles } from "./admin-auth.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
-import { readAdminProjection, type AdminProjectionAdapter } from "./admin-projections.ts";
-import type { AdminEntityOwnership, AdminListQuery, AdminMutationContext, AdminOperationsStore, AdminProjectionName, AdminRefundCase, AdminRefundExecution, AdminSourceSystem, AdminWorkItem } from "./admin-store.ts";
+import { countAdminProjection, readAdminProjection, type AdminProjectionAdapter } from "./admin-projections.ts";
+import type { AdminEntityOwnership, AdminListQuery, AdminMutationContext, AdminOperationsStore, AdminProjectionName, AdminRefundCase, AdminRefundExecution, AdminSourceSystem, AdminWorkItem, MemberPersonalCounts } from "./admin-store.ts";
 
 export type AdminSql = Readonly<{ sql: string; values?: readonly unknown[] }>;
 export type AdminRunResult = Readonly<{ changes: number }>;
@@ -148,7 +148,7 @@ export async function createAdminOperationsStore(db: AdminDatabaseAdapter): Prom
       const [entries, open, refunds, criticalExceptions] = await Promise.all([
         Promise.all(ADMIN_PROJECTION_NAMES.map(async (name) => [
           name,
-          (await readAdminProjection(db, name, { limit: 100 })).length,
+          await countAdminProjection(db, name),
         ] as const)),
         db.first<{count:number}>("SELECT COUNT(*) count FROM admin_work_items WHERE status IN ('OPEN','CLAIMED','WAITING')"),
         db.first<{count:number}>("SELECT COUNT(*) count FROM admin_approvals WHERE approval_type='REFUND' AND status='PENDING'"),
@@ -179,10 +179,10 @@ export async function createAdminOperationsStore(db: AdminDatabaseAdapter): Prom
       const why=reason(executionReason),at=now(),claimToken=id("RFC"),refundRequestId=`KAI-RF-${caseId.replaceAll(/[^A-Za-z0-9_-]/gu,"")}`.slice(0,64);
       let result:AdminRunResult;
       if(!current.execution){
-        [result]=await db.batch([{sql:"INSERT INTO admin_refund_executions(refund_case_id,provider,refund_request_id,order_id,status,attempt_count,attempted_by,claim_token,last_attempt_at,version,created_at,updated_at) VALUES(?,'ALIPAY',?,?,'PROCESSING',1,?,?,?,1,?,?) ON CONFLICT(refund_case_id) DO NOTHING",values:[caseId,refundRequestId,current.entityId,context.principalId,claimToken,at,at,at]}]);
+        [result]=await db.batch([{sql:"INSERT INTO admin_refund_executions(refund_case_id,provider,refund_request_id,order_id,status,attempt_count,attempted_by,claim_token,last_attempt_at,version,created_at,updated_at) VALUES(?,'ALIPAY',?,?,'PROCESSING',1,?,?,?,1,?,?) ON CONFLICT DO NOTHING",values:[caseId,refundRequestId,current.entityId,context.principalId,claimToken,at,at,at]}]);
       }else{
         const staleBefore=new Date(Date.now()-5*60_000).toISOString();
-        [result]=await db.batch([{sql:"UPDATE admin_refund_executions SET status='PROCESSING',attempt_count=attempt_count+1,attempted_by=?,claim_token=?,last_error_code=NULL,last_error_message=NULL,last_attempt_at=?,completed_at=NULL,version=version+1,updated_at=? WHERE refund_case_id=? AND version=? AND (status='FAILED' OR (status='PROCESSING' AND last_attempt_at<?))",values:[context.principalId,claimToken,at,at,caseId,current.execution.version,staleBefore]}]);
+        [result]=await db.batch([{sql:"UPDATE OR IGNORE admin_refund_executions SET status='PROCESSING',attempt_count=attempt_count+1,attempted_by=?,claim_token=?,last_error_code=NULL,last_error_message=NULL,last_attempt_at=?,completed_at=NULL,version=version+1,updated_at=? WHERE refund_case_id=? AND version=? AND (status='FAILED' OR (status='PROCESSING' AND last_attempt_at<?))",values:[context.principalId,claimToken,at,at,caseId,current.execution.version,staleBefore]}]);
       }
       const record=await store.getRefundCase(caseId);
       if(!record)throw new Error("ADMIN_REFUND_CASE_MISSING");
@@ -265,6 +265,63 @@ export async function createAdminOperationsStore(db: AdminDatabaseAdapter): Prom
     async listAuditEvents(query={}) { const values:unknown[]=[]; let where=""; if(query.sourceSystem){where="WHERE source_system=?";values.push(query.sourceSystem);} values.push(limit(query)); return (await db.all<Row>(`SELECT * FROM admin_audit_events ${where} ORDER BY occurred_at DESC LIMIT ?`,values)).map(r=>({id:String(r.id),actorPrincipalId:String(r.actor_principal_id),sourceSystem:r.source_system,entityType:String(r.entity_type),entityId:String(r.entity_id),action:String(r.action),reason:String(r.reason),payloadDigest:String(r.payload_digest),occurredAt:String(r.occurred_at)})); },
     async bindEntityOrganization(context,input) { const replay=await receipt<{record:AdminEntityOwnership}>(db,context,"BIND_ENTITY_ORGANIZATION"); if(replay)return {...replay,replayed:true}; const src=source(input.sourceSystem),entityType=text(input.entityType,"entityType"),entityId=text(input.entityId,"entityId"),organizationId=text(input.organizationId,"organizationId"),accountId=text(input.accountId,"accountId"),legacyActorId=optionalText(input.legacyActorId,"legacyActorId"),why=reason(input.reason),expected=nonNegativeInt(input.expectedVersion,"expectedVersion"),at=now(); const existing=await store.getEntityOwnership(src,entityType,entityId); if(existing && expected!==existing.version)throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT",409,"Ownership binding version changed."); if(!existing && expected!==0)throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT",409,"Ownership binding does not exist."); const record:AdminEntityOwnership={sourceSystem:src,entityType,entityId,organizationId,accountId,legacyActorId,boundByPrincipalId:context.principalId,createdAt:existing?.createdAt??at,updatedAt:at,version:(existing?.version??0)+1,classification:"BOUND"}; const response={record}; const write=existing?{sql:"UPDATE admin_entity_ownership SET organization_id=?,account_id=?,legacy_actor_id=?,bound_by_principal_id=?,updated_at=?,version=version+1 WHERE source_system=? AND entity_type=? AND entity_id=? AND version=?",values:[organizationId,accountId,legacyActorId,context.principalId,at,src,entityType,entityId,existing.version]}:{sql:"INSERT INTO admin_entity_ownership(source_system,entity_type,entity_id,organization_id,account_id,legacy_actor_id,bound_by_principal_id,created_at,updated_at,version) VALUES(?,?,?,?,?,?,?,?,?,1)",values:[src,entityType,entityId,organizationId,accountId,legacyActorId,context.principalId,at,at]}; await db.batch([write,{sql:"SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END"},auditSql(context.principalId,src,entityType,entityId,"ENTITY_OWNERSHIP_BOUND",why,context.payloadHash,at),receiptSql(context,"BIND_ENTITY_ORGANIZATION",response,at)]); return {...response,replayed:false}; },
     async getEntityOwnership(src,entityType,entityId) { const row=await db.first<Row>("SELECT * FROM admin_entity_ownership WHERE source_system=? AND entity_type=? AND entity_id=?",[src,entityType,entityId]); return row?ownership(row):null; },
+    async getMemberPersonalCounts(organizationIdValue,asOfValue) {
+      const organizationId=text(organizationIdValue,"organizationId");
+      const asOf=text(asOfValue,"asOf",64);
+      if(Number.isNaN(Date.parse(asOf)))throw new ExchangeInputError("asOf must be a valid timestamp.","asOf");
+      const row=await db.first<Record<string,number>>(`SELECT
+        (SELECT COUNT(*)
+          FROM marketplace_requests_v2 request
+          JOIN admin_entity_ownership own
+            ON own.source_system='MARKETPLACE'
+            AND own.entity_type='DEMAND'
+            AND own.entity_id=request.id
+          WHERE own.organization_id=? AND request.request_type='procurement') purchase_requests,
+        (SELECT COUNT(*)
+          FROM exchange_orders exchange_order
+          JOIN admin_entity_ownership own
+            ON own.source_system='EXCHANGE'
+            AND own.entity_type='ORDER'
+            AND own.entity_id=exchange_order.id
+          WHERE own.organization_id=?) orders,
+        (SELECT COUNT(*)
+          FROM exchange_orders exchange_order
+          JOIN admin_entity_ownership own
+            ON own.source_system='EXCHANGE'
+            AND own.entity_type='ORDER'
+            AND own.entity_id=exchange_order.id
+          JOIN exchange_order_lifecycle lifecycle
+            ON lifecycle.order_id=exchange_order.id
+          JOIN exchange_payment_intents payment
+            ON payment.order_id=exchange_order.id
+          WHERE own.organization_id=?
+            AND exchange_order.status='AWAITING_PAYMENT'
+            AND lifecycle.phase='AWAITING_PAYMENT'
+            AND payment.status='PENDING'
+            AND exchange_order.hold_expires_at>?
+            AND payment.expires_at>?) pending_payment,
+        (SELECT COUNT(*)
+          FROM exchange_orders exchange_order
+          JOIN admin_entity_ownership own
+            ON own.source_system='EXCHANGE'
+            AND own.entity_type='ORDER'
+            AND own.entity_id=exchange_order.id
+          LEFT JOIN exchange_order_lifecycle lifecycle ON lifecycle.order_id=exchange_order.id
+          WHERE own.organization_id=?
+            AND exchange_order.status NOT IN ('CANCELLED','EXPIRED')
+            AND lifecycle.phase='AWAITING_ACCEPTANCE') pending_acceptance`,[
+          organizationId,organizationId,organizationId,asOf,asOf,organizationId,
+        ]);
+      if(!row)throw new Error("MEMBER_PERSONAL_COUNTS_UNAVAILABLE");
+      const result:MemberPersonalCounts={
+        purchaseRequests:Number(row.purchase_requests),
+        orders:Number(row.orders),
+        pendingPayment:Number(row.pending_payment),
+        pendingAcceptance:Number(row.pending_acceptance),
+      };
+      if(Object.values(result).some((value)=>!Number.isSafeInteger(value)||value<0))throw new Error("MEMBER_PERSONAL_COUNTS_INVALID");
+      return result;
+    },
   };
   return store;
 }

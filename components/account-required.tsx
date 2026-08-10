@@ -50,6 +50,16 @@ export function AccountRequired({ children, purpose }: { children: ReactNode; pu
     );
   }
 
+  const activeMembership = session.memberships?.find((membership) => membership.organizationId === session.organization?.id);
+  if (!activeMembership || activeMembership.status !== "ACTIVE") {
+    return (
+      <section className="account-gate" aria-labelledby="membership-gate-title">
+        <p className="kicker">SUBJECT APPROVAL REQUIRED</p>
+        <h2 id="membership-gate-title">当前交易主体尚未启用</h2>
+        <p>可以继续浏览行情、资源和个人资料；购买、供应、订单和支付操作会保持关闭，直到主体审核通过。</p>
+      </section>
+    );
+  }
+
   return <>{children}</>;
 }
-

@@ -342,11 +342,11 @@ export function MemberWorkspace() {
     <section aria-labelledby="member-workspace-heading">
       <div className="mb-8 grid gap-5 border-y border-[var(--border)] bg-[var(--surface)] p-5 sm:grid-cols-[1fr_auto] sm:items-center">
         <div>
-          <p className="m-0 text-xs font-bold uppercase tracking-[0.12em] text-[var(--accent)]">Visitor workspace</p>
+          <p className="m-0 text-xs font-bold uppercase tracking-[0.12em] text-[var(--accent)]">Transaction workspace</p>
           <h2 className="mt-2 text-xl" id="member-workspace-heading">
             选择工作视角
           </h2>
-          <p className="m-0 text-sm text-[var(--text)]">当前为无账号访客会话。工作视角保存在当前标签页；需求、草稿和报价读取同一套服务。</p>
+          <p className="m-0 text-sm text-[var(--text)]">工作视角保存在当前标签页；登录后，需求、草稿和报价按当前交易主体读取。</p>
         </div>
         <div aria-label="会员工作视角" className="inline-grid grid-cols-2 border border-[var(--border-strong)]" role="tablist">
           <RoleButton active={role === "buyer"} controls="buyer-workspace" id="buyer-role" label="需求方" onClick={() => chooseRole("buyer")} onKeyDown={moveRole} />
@@ -528,9 +528,9 @@ function BuyerRequests({
 }) {
   const requests = collection.items;
   return (
-    <section aria-labelledby="buyer-requests-title">
+    <section aria-labelledby="buyer-requests-title" className="scroll-mt-28" id="purchase-requests">
       <div id="buyer-requests-title">
-        <SectionIntro kicker="Buyer / Requests" title="我发布的需求" description="只显示当前访客会话创建的需求；界面不会用预置记录替代加载或错误状态。" />
+        <SectionIntro kicker="Buyer / Requests" title="购买申请与需求" description="登录后只显示当前交易主体创建的购买申请与需求；界面不会用预置记录替代加载或错误状态。" />
       </div>
       <CollectionStatus collection={collection} label="需求" onLoadMore={onLoadMore} onRetry={onRetry} />
       {collection.status === "ready" && requests.length === 0 ? <EmptyState action="发布一条需求" description="当前会话还没有已发布需求。" href="/request" /> : null}

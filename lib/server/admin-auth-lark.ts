@@ -23,6 +23,17 @@ function config(env: Env) {
 }
 function returnPath(value: string|null){return value&&value.startsWith("/")&&!value.startsWith("//")&&value.length<=300?value:"/admin";}
 
+export function adminLarkReturnPath(
+  requestedPath: string,
+  membership: Readonly<{ status: string; roles: readonly string[] }>,
+) {
+  const targetsAdmin = requestedPath === "/admin" || requestedPath.startsWith("/admin/");
+  if (!targetsAdmin || requestedPath === "/admin/login") return requestedPath;
+  return membership.status === "ACTIVE" && membership.roles.includes("ROOT")
+    ? requestedPath
+    : "/admin/login";
+}
+
 export async function createLarkAuthorization(request: Request, options:{store?:AccountAuthStore;env?:Env;now?:Date}={}){
   const env=options.env??runtimeEnv(), cfg=config(env), store=options.store??await getAccountAuthStore(), now=options.now??new Date();
   const state=randomHex(32), verifier=randomHex(48), expiresAt=new Date(now.getTime()+10*60_000).toISOString();
@@ -52,5 +63,5 @@ export async function completeLarkAuthorization(request:Request,options:{store?:
   if(cfg.allowedTenants.length&&!cfg.allowedTenants.includes(tenantKey)) throw new AccountAuthError("LARK_TENANT_FORBIDDEN",403,"该飞书租户未获准访问。 ");
   const identity=await store.resolveOrCreateIdentity({provider:"LARK",tenantKey,subject:openId,displayName:name,normalizedEmail:null,organizationExternalKey:`LARK:${tenantKey}`,organizationName:`Lark tenant ${tenantKey.slice(0,8)}`,verifiedAt:now.toISOString()});
   const issued=await createAccountSession(request,identity,"LARK_OAUTH",{store,now});
-  return {...issued,returnPath:transaction.returnPath,clearOAuthCookie:oauthCookie(request,"",0)};
+  return {...issued,returnPath:adminLarkReturnPath(transaction.returnPath,issued.context.membership),clearOAuthCookie:oauthCookie(request,"",0)};
 }

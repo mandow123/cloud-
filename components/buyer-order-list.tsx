@@ -18,7 +18,7 @@ function money(cents: number) {
 }
 
 function nextAction(order: ExchangeOrder) {
-  if (order.allowedActions.includes("SIMULATE_PAYMENT")) return "完成支付";
+  if (order.allowedActions.includes("SIMULATE_PAYMENT")) return "查看测试支付";
   if (order.allowedActions.includes("CLAIM_DELIVERY_PACKAGE")) return "领取交付信息";
   if (order.allowedActions.includes("TEST_CONNECTION")) return "检查连接";
   if (order.allowedActions.includes("ACCEPT_ORDER")) return "确认验收";

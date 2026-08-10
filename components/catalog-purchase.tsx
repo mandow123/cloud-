@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "@/components/catalog-purchase.module.css";
 import { createIdempotencyKey, marketplaceErrorMessage, marketplacePost } from "@/lib/client/marketplace-client";
 import { formatPrice } from "@/lib/market";
@@ -9,6 +9,12 @@ import type { MarketplaceRequestRecord } from "@/lib/marketplace";
 import type { ResourceListing } from "@/lib/types";
 
 const hourlyUnits = new Set(["卡时", "服务器时", "模型实例时", "预留容量时"]);
+
+type AccountSessionSnapshot = {
+  authenticated?: boolean;
+  organization?: { id?: string } | null;
+  memberships?: Array<{ organizationId?: string; status?: string }>;
+};
 
 function tomorrow() {
   const date = new Date();
@@ -32,8 +38,32 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [accountState, setAccountState] = useState<"loading" | "ready" | "signed-out" | "inactive">("loading");
   const [intent, setIntent] = useState<MarketplaceRequestRecord | null>(null);
   const keyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store", signal: controller.signal })
+      .then(async (response): Promise<AccountSessionSnapshot> => response.ok
+        ? response.json() as Promise<AccountSessionSnapshot>
+        : { authenticated: false })
+      .then((session) => {
+        if (session.authenticated !== true) {
+          setAccountState("signed-out");
+          return;
+        }
+        const active = session.memberships?.some((membership) => (
+          membership.organizationId === session.organization?.id && membership.status === "ACTIVE"
+        ));
+        setAccountState(active ? "ready" : "inactive");
+      })
+      .catch((sessionError: unknown) => {
+        if (sessionError instanceof DOMException && sessionError.name === "AbortError") return;
+        setAccountState("signed-out");
+      });
+    return () => controller.abort();
+  }, []);
   const usesDuration = hourlyUnits.has(resource.pricingUnit);
   const quantityNumber = Number(quantity);
   const durationNumber = usesDuration ? Number(durationHours) : 1;
@@ -154,9 +184,19 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
             <li>买方付款后启动服务</li>
             <li>验收后平台结算供应商</li>
           </ol>
-          <button className={styles.submit} type="button" disabled={busy || estimatedAmount <= 0 || !deliveryDate} onClick={() => void submit()}>
-            <span>{busy ? "正在提交…" : "提交购买"}</span><span aria-hidden="true">→</span>
-          </button>
+          {accountState === "signed-out" ? (
+            <Link className={styles.submit} href={`/login?returnTo=${encodeURIComponent(`/checkout/${resource.id}`)}`}>
+              <span>登录后提交购买</span><span aria-hidden="true">→</span>
+            </Link>
+          ) : accountState === "inactive" ? (
+            <Link className={styles.submit} href="/member#profile">
+              <span>完善交易主体后提交</span><span aria-hidden="true">→</span>
+            </Link>
+          ) : (
+            <button className={styles.submit} type="button" disabled={accountState !== "ready" || busy || estimatedAmount <= 0 || !deliveryDate} onClick={() => void submit()}>
+              <span>{accountState === "loading" ? "正在核对账户…" : busy ? "正在提交…" : "提交购买"}</span><span aria-hidden="true">→</span>
+            </button>
+          )}
         </aside>
       </div>
     </div>

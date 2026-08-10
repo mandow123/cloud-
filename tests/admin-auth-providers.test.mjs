@@ -34,7 +34,7 @@ test("Lark OAuth uses state and S256 PKCE and maps tenant_key plus open_id",asyn
   const state=authorize.searchParams.get("state");assert.ok(state);const cookie=started.cookie.split(";")[0];let calls=0;
   const fetcher=async()=>{calls+=1;return calls===1?new Response(JSON.stringify({access_token:"user-token"}),{status:200}):new Response(JSON.stringify({code:0,data:{tenant_key:"tenant_a",open_id:"ou_test",name:"Tester"}}),{status:200});};
   const result=await completeLarkAuthorization(new Request(`http://localhost/api/auth/lark/callback?code=code_1&state=${state}`,{headers:{cookie}}),{store,env,now:new Date(now.getTime()+1_000),fetcher});
-  assert.equal(result.context.activeOrganization.externalKey,"LARK:tenant_a");assert.equal(result.context.membership.status,"PENDING");assert.equal(result.returnPath,"/admin/orders");
+  assert.equal(result.context.activeOrganization.externalKey,"LARK:tenant_a");assert.equal(result.context.membership.status,"PENDING");assert.equal(result.returnPath,"/admin/login");
   await assert.rejects(completeLarkAuthorization(new Request(`http://localhost/api/auth/lark/callback?code=code_1&state=${state}`,{headers:{cookie}}),{store,env,now:new Date(now.getTime()+2_000),fetcher}),(error)=>error instanceof AccountAuthError&&error.status===401);
 });
 

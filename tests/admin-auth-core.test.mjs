@@ -4,18 +4,17 @@ import test from "node:test";
 import { ADMIN_PERMISSIONS, ADMIN_ROLES } from "../lib/admin-auth-types.ts";
 import { adminPermissionsForRoles, requireAdminPermission } from "../lib/server/admin-auth.ts";
 import { AccountAuthError, createAccountSession, resolveAccountSession } from "../lib/server/account-auth.ts";
-import { readAuthJson } from "../lib/server/account-auth-http.ts";
+import { accountSessionEnvelope, readAuthJson } from "../lib/server/account-auth-http.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
 import { createLocalTestAccountSession } from "../lib/server/account-auth-local.ts";
 
-test("approved admin roles are exact and finance duties stay separated", () => {
+test("only ROOT receives administrator permissions", () => {
   assert.deepEqual(ADMIN_ROLES, ["ROOT","ROLE_ADMIN","INTAKE_OPERATOR","INVENTORY_OPERATOR","VERIFICATION_REVIEWER","MARKET_OPERATOR","FULFILLMENT_OPERATOR","FINANCE_OPERATOR","FINANCE_APPROVER","SUPPORT_READONLY","AUDITOR"]);
   assert.deepEqual(adminPermissionsForRoles(["ROOT"]), ADMIN_PERMISSIONS);
-  assert.ok(!adminPermissionsForRoles(["ROLE_ADMIN"]).includes("ROOT_CONTROL"));
-  assert.ok(!adminPermissionsForRoles(ADMIN_ROLES.filter((role) => role !== "ROOT")).includes("ROOT_CONTROL"));
-  assert.ok(adminPermissionsForRoles(["FINANCE_OPERATOR"]).includes("REFUND_REQUEST"));
-  assert.ok(!adminPermissionsForRoles(["FINANCE_OPERATOR"]).includes("REFUND_APPROVE"));
-  assert.ok(adminPermissionsForRoles(["FINANCE_APPROVER"]).includes("REFUND_APPROVE"));
+  for (const role of ADMIN_ROLES.filter((candidate) => candidate !== "ROOT")) {
+    assert.deepEqual(adminPermissionsForRoles([role]), [], `${role} must not receive admin permissions`);
+  }
+  assert.deepEqual(adminPermissionsForRoles(ADMIN_ROLES.filter((role) => role !== "ROOT")), []);
 });
 
 test("account sessions enforce a thirty-minute idle and eight-hour absolute limit", async () => {
@@ -39,23 +38,42 @@ test("a client supplied ops header never creates an admin principal", async () =
   );
 });
 
-test("requireAdminPermission returns the pinned active account context and denies missing permissions", async () => {
+test("ordinary account sessions never expose an administrator principal", async () => {
+  const store = await createSqliteAccountAuthStore(":memory:");
+  const now = new Date();
+  const identity = await store.resolveOrCreateIdentity({ provider:"EMAIL",tenantKey:"EXTERNAL",subject:"ordinary",displayName:"Ordinary",normalizedEmail:"ordinary@example.com",organizationExternalKey:"EMAIL:ordinary",organizationName:"Ordinary Org",verifiedAt:now.toISOString() });
+  await store.activateMembership(identity.membership.id,["SUPPORT_READONLY"],now.toISOString());
+  const active = await store.resolveOrCreateIdentity({ provider:"EMAIL",tenantKey:"EXTERNAL",subject:"ordinary",displayName:"Ordinary",normalizedEmail:"ordinary@example.com",organizationExternalKey:"EMAIL:ordinary",organizationName:"Ordinary Org",verifiedAt:now.toISOString() });
+  const issued = await createAccountSession(new Request("http://localhost/api/auth/email/verify"),active,"EMAIL_OTP",{store,now});
+  const envelope = await accountSessionEnvelope(issued.context, store);
+  assert.equal(envelope.authenticated, true);
+  assert.equal("admin" in envelope, false);
+  store.close();
+});
+
+test("requireAdminPermission accepts ROOT and rejects every non-ROOT role", async () => {
   const store = await createSqliteAccountAuthStore(":memory:");
   const now = new Date();
   const identity = await store.resolveOrCreateIdentity({ provider:"LOCAL",tenantKey:"LOCAL",subject:"permission-test",displayName:"Permission Tester",normalizedEmail:null,organizationExternalKey:"LOCAL:PERMISSION",organizationName:"Permission Org",verifiedAt:now.toISOString() });
-  await store.activateMembership(identity.membership.id,["INVENTORY_OPERATOR"],now.toISOString());
+  await store.activateMembership(identity.membership.id,["ROOT"],now.toISOString());
   const active = await store.resolveOrCreateIdentity({ provider:"LOCAL",tenantKey:"LOCAL",subject:"permission-test",displayName:"Permission Tester",normalizedEmail:null,organizationExternalKey:"LOCAL:PERMISSION",organizationName:"Permission Org",verifiedAt:now.toISOString() });
   const issued = await createAccountSession(new Request("http://localhost/api/auth/local"),active,"LOCAL_TEST",{store,now});
   const previous = globalThis.__kaiAccountAuthStorePromise;
   globalThis.__kaiAccountAuthStorePromise = Promise.resolve(store);
   try {
     const request = new Request("http://localhost/api/admin/inventory",{headers:{cookie:issued.cookie.split(";")[0]}});
-    const context = await requireAdminPermission(request,["KAI_SELF_INVENTORY_WRITE"]);
+    const context = await requireAdminPermission(request,["KAI_SELF_INVENTORY_WRITE", "REFUND_APPROVE"]);
     assert.equal(context.account.id,active.account.id);
     assert.equal(context.organization.id,active.organization.id);
     assert.equal(context.sessionId,issued.context.sessionId);
-    assert.deepEqual(context.principal.roles,["INVENTORY_OPERATOR"]);
-    await assert.rejects(requireAdminPermission(request,["REFUND_APPROVE"]),(error)=>error instanceof AccountAuthError&&error.status===403);
+    assert.deepEqual(context.principal.roles,["ROOT"]);
+
+    const other = await store.resolveOrCreateIdentity({ provider:"LOCAL",tenantKey:"LOCAL",subject:"non-root-test",displayName:"Non Root",normalizedEmail:null,organizationExternalKey:"LOCAL:NON_ROOT",organizationName:"Non Root Org",verifiedAt:now.toISOString() });
+    await store.activateMembership(other.membership.id,["INVENTORY_OPERATOR"],now.toISOString());
+    const activeOther = await store.resolveOrCreateIdentity({ provider:"LOCAL",tenantKey:"LOCAL",subject:"non-root-test",displayName:"Non Root",normalizedEmail:null,organizationExternalKey:"LOCAL:NON_ROOT",organizationName:"Non Root Org",verifiedAt:now.toISOString() });
+    const otherIssued = await createAccountSession(new Request("http://localhost/api/auth/local"),activeOther,"LOCAL_TEST",{store,now});
+    const otherRequest = new Request("http://localhost/api/admin/inventory",{headers:{cookie:otherIssued.cookie.split(";")[0]}});
+    await assert.rejects(requireAdminPermission(otherRequest,["ADMIN_PANEL_READ"]),(error)=>error instanceof AccountAuthError&&error.status===403);
   } finally {
     globalThis.__kaiAccountAuthStorePromise = previous;
   }

@@ -1,3 +1,6 @@
+// 0021 only adds backward-compatible write guards. Keep the application
+// schema gate at v3 so the currently deployed v3 application can be restored
+// without a database rollback.
 export const ADMIN_OPERATIONS_SCHEMA_VERSION = 3;
 
 export const adminOperationsSchemaStatements = [
@@ -67,6 +70,22 @@ export const adminOperationsSchemaStatements = [
     FOREIGN KEY (refund_case_id) REFERENCES admin_approvals(id)
   )`,
   `CREATE INDEX IF NOT EXISTS admin_refund_executions_status_idx ON admin_refund_executions(status,last_attempt_at)`,
+  `CREATE TRIGGER IF NOT EXISTS admin_refund_executions_order_processing_insert_guard
+    BEFORE INSERT ON admin_refund_executions
+    WHEN NEW.status='PROCESSING' AND EXISTS (
+      SELECT 1 FROM admin_refund_executions
+      WHERE order_id=NEW.order_id AND status='PROCESSING'
+    )
+    BEGIN SELECT RAISE(IGNORE); END`,
+  `CREATE TRIGGER IF NOT EXISTS admin_refund_executions_order_processing_update_guard
+    BEFORE UPDATE OF order_id,status ON admin_refund_executions
+    WHEN NEW.status='PROCESSING' AND EXISTS (
+      SELECT 1 FROM admin_refund_executions
+      WHERE order_id=NEW.order_id
+        AND refund_case_id<>OLD.refund_case_id
+        AND status='PROCESSING'
+    )
+    BEGIN SELECT RAISE(IGNORE); END`,
   `CREATE TABLE IF NOT EXISTS admin_audit_events (
     id TEXT PRIMARY KEY,
     actor_principal_id TEXT NOT NULL,

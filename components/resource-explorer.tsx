@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import purchaseStyles from "@/components/resource-purchase.module.css";
 import { filterAndSortResources, formatPrice, parseResourceQuery } from "@/lib/market";
@@ -19,6 +19,28 @@ const DEAL_LABELS: Record<DealMode, string> = {
   service: "服务采购",
   swap: "资源置换",
 };
+
+const COMPARE_KEY = "kai-cloud-compare-v1";
+
+function readCompareIds() {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(COMPARE_KEY) ?? "[]") as unknown;
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === "string").slice(0, 3)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCompareIds(ids: string[]) {
+  try {
+    window.localStorage.setItem(COMPARE_KEY, JSON.stringify(ids));
+    window.dispatchEvent(new CustomEvent("kai-compare-changed", { detail: ids }));
+  } catch {
+    // Comparing remains available for this page when browser storage is unavailable.
+  }
+}
 
 function unique(values: string[]) {
   return Array.from(new Set(values)).sort((left, right) => left.localeCompare(right, "zh-CN"));
@@ -86,6 +108,17 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [compareMessage, setCompareMessage] = useState("");
 
+  useEffect(() => {
+    const syncCompareIds = () => setCompareIds(readCompareIds());
+    syncCompareIds();
+    window.addEventListener("storage", syncCompareIds);
+    window.addEventListener("kai-compare-changed", syncCompareIds);
+    return () => {
+      window.removeEventListener("storage", syncCompareIds);
+      window.removeEventListener("kai-compare-changed", syncCompareIds);
+    };
+  }, []);
+
   const queryObject = useMemo(
     () => Object.fromEntries(searchParams.entries()),
     [searchParams],
@@ -123,15 +156,25 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
     setCompareIds((current) => {
       if (current.includes(id)) {
         setCompareMessage("");
-        return current.filter((item) => item !== id);
+        const next = current.filter((item) => item !== id);
+        saveCompareIds(next);
+        return next;
       }
       if (current.length >= 3) {
         setCompareMessage("一次最多比较 3 项资源，请先移除一项。 ");
         return current;
       }
       setCompareMessage("");
-      return [...current, id];
+      const next = [...current, id];
+      saveCompareIds(next);
+      return next;
     });
+  }
+
+  function clearCompare() {
+    setCompareIds([]);
+    setCompareMessage("");
+    saveCompareIds([]);
   }
 
   const activeFilterCount = ["category", "deal", "region", "delivery", "unit", "q"]
@@ -275,7 +318,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                   <button
                     className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center border-0 bg-transparent px-2 text-xs font-semibold text-[var(--accent)] underline underline-offset-4"
                     type="button"
-                    onClick={() => { setCompareIds([]); setCompareMessage(""); }}
+                    onClick={clearCompare}
                   >
                     清空对比
                   </button>

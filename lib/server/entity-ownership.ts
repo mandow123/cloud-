@@ -1,6 +1,6 @@
-import type { AccountSessionContext } from "@/lib/server/account-auth";
-import { accountAuthDigest, requireAccountSession } from "@/lib/server/account-auth";
-import { getAdminOperationsStore, type AdminSourceSystem } from "@/lib/server/admin-store";
+import type { AccountSessionContext } from "./account-auth.ts";
+import { AccountAuthError, accountAuthDigest, requireAccountSession } from "./account-auth.ts";
+import { getAdminOperationsStore, type AdminSourceSystem } from "./admin-store.ts";
 
 export async function bindNewEntityToOrganization(input: {
   account: AccountSessionContext;
@@ -31,5 +31,9 @@ export async function bindNewEntityToOrganization(input: {
  * Application and deployment environments never set this value. */
 export async function requireTradingAccountSession(request: Request) {
   if (process.env.KAI_ALLOW_LEGACY_ANON_WRITES === "TEST_ONLY_UNSAFE") return null;
-  return requireAccountSession(request);
+  const account = await requireAccountSession(request);
+  if (account.membership.status !== "ACTIVE") {
+    throw new AccountAuthError("TRADING_SUBJECT_INACTIVE", 403, "当前交易主体尚未启用，不能创建购买、供应或订单记录。 ");
+  }
+  return account;
 }

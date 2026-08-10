@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { MobileDemandCta } from "./mobile-demand-cta";
 import { NavLinks } from "./nav-links";
+import { PersonalMenu } from "./personal-menu";
 import { ThemeControl } from "./theme-control";
 
 export function SiteHeader() {
@@ -14,6 +15,7 @@ export function SiteHeader() {
         <NavLinks />
         <div className="header-actions">
           <ThemeControl />
+          <PersonalMenu />
           <Link className="button button-primary button-compact" href="/request">
             发布算力需求
           </Link>

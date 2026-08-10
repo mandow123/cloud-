@@ -11,6 +11,7 @@ import {
 } from "@/lib/server/api-guard";
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
 import { authorizeMarketplaceRequest, persistMarketplaceSession } from "@/lib/server/marketplace-auth";
+import { bindNewEntityToOrganization, requireTradingAccountSession } from "@/lib/server/entity-ownership";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
   const context = beginApiRequest(request);
   let actor: MarketplaceActor | undefined;
   try {
+    const account = await requireTradingAccountSession(request);
     const authorization = await authorizeMarketplaceRequest(request);
     actor = authorization.actor;
     prepareWrite(request, actor);
@@ -70,6 +72,15 @@ export async function POST(request: Request) {
       idempotencyKey,
       payloadHash: await mutationHash({ resourceId, input }),
     }, input);
+    if (account) {
+      await bindNewEntityToOrganization({
+        account,
+        sourceSystem: "MARKETPLACE",
+        entityType: "DEMAND",
+        entityId: result.record.id,
+        businessIdempotencyKey: idempotencyKey,
+      });
+    }
     const multiplier = hourlyUnits.has(resource.pricingUnit) ? quantity * Number(durationHours) : quantity;
     const headers = new Headers(actor.responseHeaders);
     headers.set("idempotency-replayed", String(result.replayed));
