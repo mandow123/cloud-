@@ -1,4 +1,4 @@
-export const ADMIN_IDENTITY_SCHEMA_VERSION = 3;
+export const ADMIN_IDENTITY_SCHEMA_VERSION = 4;
 
 const roleCheck = "'ROLE_ADMIN','INTAKE_OPERATOR','INVENTORY_OPERATOR','VERIFICATION_REVIEWER','MARKET_OPERATOR','FULFILLMENT_OPERATOR','FINANCE_OPERATOR','FINANCE_APPROVER','SUPPORT_READONLY','AUDITOR'";
 
@@ -78,6 +78,42 @@ export const adminIdentitySchemaStatements = [
   )`,
   `CREATE INDEX IF NOT EXISTS admin_sessions_account_idx
     ON admin_account_sessions(account_id, revoked_at, absolute_expires_at)`,
+  `CREATE TABLE IF NOT EXISTS admin_password_principals (
+    username TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL UNIQUE,
+    organization_id TEXT NOT NULL,
+    membership_id TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (account_id) REFERENCES admin_user_accounts(id),
+    FOREIGN KEY (organization_id) REFERENCES admin_organizations(id),
+    FOREIGN KEY (membership_id) REFERENCES admin_memberships(id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS admin_password_sessions (
+    id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL,
+    organization_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    idle_expires_at TEXT NOT NULL,
+    absolute_expires_at TEXT NOT NULL,
+    revoked_at TEXT,
+    FOREIGN KEY (account_id) REFERENCES admin_user_accounts(id),
+    FOREIGN KEY (organization_id) REFERENCES admin_organizations(id),
+    CHECK (idle_expires_at > created_at),
+    CHECK (absolute_expires_at > idle_expires_at)
+  )`,
+  `CREATE INDEX IF NOT EXISTS admin_password_sessions_account_idx
+    ON admin_password_sessions(account_id, revoked_at, absolute_expires_at)`,
+  `CREATE TABLE IF NOT EXISTS admin_password_login_attempts (
+    id TEXT PRIMARY KEY,
+    username_hash TEXT NOT NULL,
+    request_fingerprint TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('ALLOWED','DENIED')),
+    occurred_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS admin_password_attempts_rate_idx
+    ON admin_password_login_attempts(username_hash, request_fingerprint, occurred_at DESC)`,
   `CREATE TABLE IF NOT EXISTS admin_oauth_transactions (
     id TEXT PRIMARY KEY,
     provider TEXT NOT NULL CHECK (provider='LARK'),

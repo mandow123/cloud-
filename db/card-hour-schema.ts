@@ -1,0 +1,128 @@
+export const CARD_HOUR_SCHEMA_VERSION = 1;
+
+export const cardHourSchemaStatements = [
+  `CREATE TABLE IF NOT EXISTS card_hour_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS card_hour_wallets (
+    organization_id TEXT PRIMARY KEY,
+    available_micros INTEGER NOT NULL DEFAULT 0 CHECK (available_micros >= 0),
+    held_micros INTEGER NOT NULL DEFAULT 0 CHECK (held_micros >= 0),
+    lifetime_topup_micros INTEGER NOT NULL DEFAULT 0 CHECK (lifetime_topup_micros >= 0),
+    lifetime_spent_micros INTEGER NOT NULL DEFAULT 0 CHECK (lifetime_spent_micros >= 0),
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS card_hour_ledger_batches (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL,
+    operation TEXT NOT NULL CHECK (operation IN ('TOPUP','ORDER_CAPTURE','ORDER_REFUND','BUYBACK_HOLD','BUYBACK_RELEASE','RENTAL_INCOME','COMMISSION_INCOME','COMMISSION_REVERSAL')),
+    business_key TEXT NOT NULL UNIQUE,
+    amount_micros INTEGER NOT NULL CHECK (amount_micros > 0),
+    status TEXT NOT NULL CHECK (status = 'POSTED'),
+    metadata_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS card_hour_ledger_entries (
+    id TEXT PRIMARY KEY,
+    batch_id TEXT NOT NULL,
+    organization_id TEXT,
+    account_code TEXT NOT NULL,
+    side TEXT NOT NULL CHECK (side IN ('DEBIT','CREDIT')),
+    amount_micros INTEGER NOT NULL CHECK (amount_micros > 0),
+    balance_after_micros INTEGER,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (batch_id) REFERENCES card_hour_ledger_batches(id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS card_hour_ledger_org_time_idx ON card_hour_ledger_entries(organization_id, created_at DESC)`,
+  `CREATE TRIGGER IF NOT EXISTS card_hour_batches_immutable_update BEFORE UPDATE ON card_hour_ledger_batches BEGIN SELECT RAISE(ABORT, 'card hour batch immutable'); END`,
+  `CREATE TRIGGER IF NOT EXISTS card_hour_batches_immutable_delete BEFORE DELETE ON card_hour_ledger_batches BEGIN SELECT RAISE(ABORT, 'card hour batch immutable'); END`,
+  `CREATE TRIGGER IF NOT EXISTS card_hour_entries_immutable_update BEFORE UPDATE ON card_hour_ledger_entries BEGIN SELECT RAISE(ABORT, 'card hour entry immutable'); END`,
+  `CREATE TRIGGER IF NOT EXISTS card_hour_entries_immutable_delete BEFORE DELETE ON card_hour_ledger_entries BEGIN SELECT RAISE(ABORT, 'card hour entry immutable'); END`,
+  `CREATE TABLE IF NOT EXISTS card_hour_topup_orders (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    card_hour_micros INTEGER NOT NULL CHECK (card_hour_micros >= 5000000 AND card_hour_micros % 5000000 = 0),
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+    currency TEXT NOT NULL CHECK (currency = 'CNY'),
+    provider TEXT NOT NULL CHECK (provider = 'ALIPAY'),
+    status TEXT NOT NULL CHECK (status IN ('PENDING','CAPTURED','CLOSED')),
+    idempotency_key TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    provider_transaction_id TEXT,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (organization_id, idempotency_key),
+    UNIQUE (provider, provider_transaction_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS card_hour_topups_org_time_idx ON card_hour_topup_orders(organization_id, created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS card_hour_topup_events (
+    id TEXT PRIMARY KEY,
+    topup_order_id TEXT NOT NULL,
+    provider_event_id TEXT NOT NULL UNIQUE,
+    provider_transaction_id TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK (event_type IN ('CAPTURED','CLOSED')),
+    amount_cents INTEGER NOT NULL,
+    payload_digest TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    received_at TEXT NOT NULL,
+    FOREIGN KEY (topup_order_id) REFERENCES card_hour_topup_orders(id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS card_hour_order_payments (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    source_system TEXT NOT NULL CHECK (source_system IN ('SUPPLY_PILOT','EXCHANGE')),
+    order_id TEXT NOT NULL,
+    amount_micros INTEGER NOT NULL CHECK (amount_micros > 0),
+    cny_reference_cents INTEGER NOT NULL CHECK (cny_reference_cents > 0),
+    rate_numerator INTEGER NOT NULL CHECK (rate_numerator = 501),
+    rate_denominator INTEGER NOT NULL CHECK (rate_denominator = 500),
+    status TEXT NOT NULL CHECK (status IN ('CAPTURED','PARTIAL_REFUND','REFUNDED')),
+    idempotency_key TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (source_system, order_id),
+    UNIQUE (organization_id, idempotency_key)
+  )`,
+  `CREATE INDEX IF NOT EXISTS card_hour_payments_org_time_idx ON card_hour_order_payments(organization_id, created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS card_hour_referral_codes (
+    organization_id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS card_hour_referral_attributions (
+    invitee_organization_id TEXT PRIMARY KEY,
+    referrer_organization_id TEXT NOT NULL,
+    referral_code TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    CHECK (invitee_organization_id <> referrer_organization_id),
+    FOREIGN KEY (referral_code) REFERENCES card_hour_referral_codes(code)
+  )`,
+  `CREATE TABLE IF NOT EXISTS card_hour_income_accruals (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL,
+    income_type TEXT NOT NULL CHECK (income_type IN ('RENTAL','COMMISSION')),
+    source_system TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    amount_micros INTEGER NOT NULL CHECK (amount_micros > 0),
+    status TEXT NOT NULL CHECK (status IN ('PENDING','VESTED','REVERSED')),
+    created_at TEXT NOT NULL,
+    vested_at TEXT,
+    UNIQUE (income_type, source_system, source_id, organization_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS card_hour_income_org_time_idx ON card_hour_income_accruals(organization_id, created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS card_hour_buyback_orders (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    amount_micros INTEGER NOT NULL CHECK (amount_micros >= 5000000 AND amount_micros % 5000000 = 0),
+    status TEXT NOT NULL CHECK (status IN ('REQUESTED','APPROVED','PROCESSING','PAID','REJECTED','CANCELLED','FAILED')),
+    payout_rate_numerator INTEGER,
+    payout_rate_denominator INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+] as const;

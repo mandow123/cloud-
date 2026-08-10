@@ -26,7 +26,7 @@ test("the personal menu reads only the member summary and local comparison contr
 
 test("signed-in and signed-out personal actions stay buyer-facing", async () => {
   const menu = await source("components/personal-menu.tsx");
-  for (const label of ["登录后查看个人业务", "购买申请", "待支付", "我的订单", "待验收", "我的对比", "基础信息"]) {
+  for (const label of ["登录后查看个人业务", "卡时账户", "购买记录", "我的对比", "我的回购", "租金与佣金", "邀请奖励"]) {
     assert.match(menu, new RegExp(label, "u"));
   }
   assert.doesNotMatch(menu, /href="\/admin|运营管理|管理员/u);

@@ -9,21 +9,33 @@ const BASELINE = "bb7fd3211fdff28a448af85f53e9f40839ffa843";
 const ROOT = join(import.meta.dirname, "..");
 const EXTRA_FROZEN_FILES = ["data/model-market.snapshot.json", "lib/catalog.mjs"];
 const APPROVED_PUBLIC_FILES = Object.freeze({
+  "app/kai-cloud.css": "8628368856b22f036f57cc5b9cc8cc80c91b39309b4be7115109562ac0ffddd0",
+  "app/layout.tsx": "1b6ea3757ed0b4da7d7838356b1aeb3c529244e2ec2c4e7aa1057bc4e921394c",
+  "app/page.tsx": "f45d9ccae1045825e60883945c3ab8b1090f2aae719866a24db51c3eb320851a",
   "app/checkout/[resourceId]/page.tsx": "3bebbc74d265d24dd67a2d1c54816fbae604188ed57d1eeabe27bc6669c3693c",
   "app/login/page.tsx": "703ea83d1d8c970ae50ae92c866a447392f9687bfb1a0856c205bef4f53aff46",
-  "app/member/page.tsx": "26a6e73ba5ab053d0aedd9e3c7f4d7ab5ffe6e24ae74448cbc5ce9434ce8a510",
+  "app/member/page.tsx": "c72c258a8266554e939f686f7f9e3b26539a37d174fbfb8ab6b5f7a7a6edb272",
   "components/account-login.tsx": "df5cb9c7800b6d2ba79a08b5c820bd002d8786fd2c9d3269797936795aa79dfa",
   "components/account-required.tsx": "20b2a1330e872904e8d6ba73442e24bd2c8bd53f47c8619448cd9cfacc77b755",
   "components/buyer-order-list.tsx": "fa15cbb70d18d19074633efc5d9fe60acd276ae4a45ab9df1e99dc3f6092d31a",
   "components/catalog-purchase.module.css": "d9e451203cbbfcb4b13a1c8f91267309cfe4be895e7ee225afb52cdfbc99d0a7",
-  "components/catalog-purchase.tsx": "af1fc2c0033003ca0dba671790e1950a1e62ff0d17873a9f1b9ff73ea07adaba",
+  "components/catalog-purchase.tsx": "8ac8b649b82789a0b7c12212c1e0a139f4c6c5f464c7897a974b5fc6730c7555",
+  "components/admin-login.tsx": "59e67e72dfec2275c3467f610ce6d9e270b14ec05a32d389be033ef83398f0ce",
+  "components/admin-resource-page.tsx": "026788b741fd20de28fe0095722822edcc5ae20305e2335d2217a66b70b70c4d",
+  "components/card-hour-account-panel.tsx": "7ebb1377ea7e6a546d0f7cb1d69ea4bfe3996345ffe99c4807433ebd0274e4fb",
+  "components/email-login.tsx": "43f6a8f1edc18b23ec099ba476c51d45b79e165bcd0f4a7778b5b78151874cb6",
+  "components/live-home-market-hero.tsx": "12b5174eb3b58c9bbcd37215876e47c08e37e782b216536cc344cdd8e2a5bc7a",
   "components/member-workspace.tsx": "0f6c0827d710e851ab9f7ca35760ce5b1df771b6741302d049d206a3c0bb8745",
   "components/personal-center-overview.tsx": "c11de061d8efb74e3e86a1a5a555bdd1e19c30730cb73b56b3a65638bfff52f8",
   "components/personal-menu.module.css": "0813b8a2fa3d164922add93de17daf66adc0dd9c1859427097c36975708f90f2",
-  "components/personal-menu.tsx": "257acf460a7a68a55c04d668787b4d86e291eaa9522b8f456ede8666e3c3c05f",
+  "components/personal-menu.tsx": "31a492a0fdfa2e9f972f4ca5fd9d52ea094d96fdb5c8b7e1b53f29352b128fbe",
   "components/resource-explorer.tsx": "aedd1b56606181b818b1a5c3b7bf123ba050c3333a56984d9c36778f524da7d0",
   "components/resource-purchase.module.css": "6569ca7f4f35c5cd6f731ee97dba34567d002d5bb370aa9b3058c33628bc6669",
   "components/site-header.tsx": "1fdf92590f59af37232c8c16b99fc163798fa135bfbed5663129b3908c16cad5",
+  "components/supply-api-client.tsx": "60292f9e3e4a141f3a69be788b3d627f3969f67aeecb6153dc5fbc1f02a97825",
+  "components/supply-listings-dashboard.tsx": "e5a24ab251eed94562f51f523590bba70a041b1551c11bdaa5234ae300a6f0d4",
+  "components/supply-order-workspace.tsx": "2a38d9534b85d17b4b493673aa3f0c327db22d1bed0c8a0a8afdd20b4e0fdffa",
+  "public/og-home-v2.png": "9ab58389125a32bbe84a29a6f73f7f7f75cdb04c717c58c82233f7ec09d63d5d",
 });
 
 function git(args, encoding = "utf8") {
@@ -124,7 +136,8 @@ test("the admin panel stays isolated and the backend transaction entry points re
 
   const purchase = readFileSync(join(ROOT, "components/catalog-purchase.tsx"), "utf8");
   assert.match(purchase, /确认资源与购买价格/u);
-  assert.match(purchase, /预计金额/u);
+  assert.match(purchase, /人民币参考价/u);
+  assert.match(purchase, /预计支付卡时/u);
   assert.match(purchase, /平台确认库存与正式价格/u);
   assert.match(purchase, /登录后提交购买/u);
   assert.match(purchase, /完善交易主体后提交/u);

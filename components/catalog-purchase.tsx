@@ -73,6 +73,7 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
       : 0,
     [durationNumber, quantityNumber, resource.quote.median],
   );
+  const estimatedCardHours = estimatedAmount > 0 ? estimatedAmount / 1.002 : 0;
 
   async function submit() {
     setBusy(true);
@@ -107,7 +108,7 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
           <p className={styles.eyebrow}>Purchase request accepted</p>
           <h2 id="purchase-success-title">购买申请已提交</h2>
           <p>申请编号：<strong>{intent.id}</strong></p>
-          <p>平台将先核验真实库存、供应商交付条件和正式价格；确认后才会进入付款。当前步骤不会扣款。</p>
+          <p>平台将先核验真实库存、供应商交付条件和正式价格；确认后只使用卡时完成支付。当前步骤不会扣减卡时。</p>
           <div className={styles.successActions}>
             <Link className="button button-primary" href="/member">查看交易工作台</Link>
             <Link className="button button-secondary" href="/resources">继续选购资源</Link>
@@ -123,7 +124,7 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
       <header className={styles.heading}>
         <p>Purchase capacity</p>
         <h1>确认资源与购买价格</h1>
-        <p>价格、资源数量和预计金额放在同一页确认。提交后平台先核验供应商真实库存与正式报价，再进入付款。</p>
+        <p>价格、资源数量和预计卡时放在同一页确认。提交后平台先核验真实库存与正式报价，再使用卡时支付。</p>
       </header>
 
       <div className={styles.layout}>
@@ -175,13 +176,14 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
             <div><dt>资源数量</dt><dd>{quantityNumber > 0 ? quantityNumber : "—"}</dd></div>
             {usesDuration ? <div><dt>服务时长</dt><dd>{durationNumber > 0 ? `${durationNumber} 小时` : "—"}</dd></div> : null}
             <div><dt>参考价格范围</dt><dd>¥{resource.quote.rangeMin.toLocaleString("zh-CN")}–¥{resource.quote.rangeMax.toLocaleString("zh-CN")}</dd></div>
-            <div><dt>预计金额</dt><dd className={styles.estimated}>{estimatedAmount > 0 ? money(estimatedAmount) : "—"}</dd></div>
+            <div><dt>人民币参考价</dt><dd>{estimatedAmount > 0 ? money(estimatedAmount) : "—"}</dd></div>
+            <div><dt>预计支付卡时</dt><dd className={styles.estimated}>{estimatedCardHours > 0 ? `${estimatedCardHours.toFixed(6).replace(/0+$/u, "").replace(/\.$/u, "")} 卡时` : "—"}</dd></div>
           </dl>
           <p className={styles.scope}>{resource.quote.scopeNote}</p>
           <ol className={styles.flow}>
-            <li>提交购买申请，不立即扣款</li>
+            <li>提交购买申请，不立即扣减卡时</li>
             <li>平台确认库存与正式价格</li>
-            <li>买方付款后启动服务</li>
+            <li>买方使用卡时支付后启动服务</li>
             <li>验收后平台结算供应商</li>
           </ol>
           {accountState === "signed-out" ? (

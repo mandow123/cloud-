@@ -81,9 +81,6 @@ function AdminSafeAction({ section, selectedRows, onCommitted }: { section: Admi
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [refundAmount, setRefundAmount] = useState("");
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteName, setInviteName] = useState("");
-  const [adminRoles, setAdminRoles] = useState("SUPPORT_READONLY");
   const selectedAction = config.actions.find((item) => item.value === action);
   const actionEndpoint = config.actionEndpoint;
   const selectedIds = selectedRows.map((row, index) => rowId(row, index));
@@ -94,8 +91,7 @@ function AdminSafeAction({ section, selectedRows, onCommitted }: { section: Admi
     setError("");
     setNotice("");
     if (!actionEndpoint) return;
-    const isAdminInvite = section === "admins" && action === "INVITE_ADMIN";
-    if (!isAdminInvite && selectedIds.length === 0) {
+    if (selectedIds.length === 0) {
       setError("请先选择至少一条服务端记录。");
       return;
     }
@@ -162,36 +158,6 @@ function AdminSafeAction({ section, selectedRows, onCommitted }: { section: Admi
             reason: reason.trim(),
           })];
         }
-      } else if (section === "admins") {
-        const roles = [...new Set(adminRoles.split(/[，,\s]+/).map((role) => role.trim()).filter(Boolean))];
-        if (roles.length === 0) throw new Error("请至少填写一个管理员角色代码。");
-        if (roles.includes("ROOT")) throw new Error("ROOT 是唯一的系统保留账号，不能通过邀请或角色调整授予。");
-        if (isAdminInvite) {
-          if (!inviteEmail.trim() || !inviteName.trim()) throw new Error("邀请管理员时必须填写姓名和邮箱。");
-          results = [await adminPostAction(actionEndpoint, {
-            email: inviteEmail.trim(),
-            displayName: inviteName.trim(),
-            roles,
-            expectedVersion: 0,
-            reason: reason.trim(),
-          })];
-        } else {
-          if (selectedRows.length !== 1) throw new Error("管理员权限操作一次只能选择一个管理员账号。");
-          const row = selectedRows[0];
-          if (row._sourceLabel === "角色目录") throw new Error("角色目录只读；请选中管理员账号。");
-          const expectedVersion = Number(row.version);
-          if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) throw new Error("管理员账号缺少有效版本号。");
-          const accountId = selectedIds[0];
-          if (action === "SET_ROLES") {
-            results = [await adminPostAction(`${actionEndpoint}/${encodeURIComponent(accountId)}/roles`, { roles, expectedVersion, reason: reason.trim() }, "PUT")];
-          } else {
-            results = [await adminPostAction(`${actionEndpoint}/${encodeURIComponent(accountId)}/status`, {
-              status: action === "ACTIVATE_ADMIN" ? "ACTIVE" : "SUSPENDED",
-              expectedVersion,
-              reason: reason.trim(),
-            }, "PATCH")];
-          }
-        }
       } else {
         throw new Error("该模块尚无已批准的写入接口。");
       }
@@ -217,8 +183,6 @@ function AdminSafeAction({ section, selectedRows, onCommitted }: { section: Admi
       <div className="admin-action-fields">
         <label><span>动作</span><select onChange={(event) => { setAction(event.target.value); setConfirmed(false); }} value={action}>{config.actions.map((item) => <option key={item.value} value={item.value}>{item.label}{item.highRisk ? "（高风险）" : ""}</option>)}</select></label>
         {section === "payments" && action === "REQUEST_REFUND" ? <label><span>退款金额（元）</span><input min="0.01" onChange={(event) => setRefundAmount(event.target.value)} step="0.01" type="number" value={refundAmount} /></label> : null}
-        {section === "admins" && action === "INVITE_ADMIN" ? <><label><span>管理员姓名</span><input onChange={(event) => setInviteName(event.target.value)} placeholder="用于后台显示" type="text" value={inviteName} /></label><label><span>管理员邮箱</span><input onChange={(event) => setInviteEmail(event.target.value)} placeholder="name@kai.com" type="email" value={inviteEmail} /></label></> : null}
-        {section === "admins" && ["INVITE_ADMIN", "SET_ROLES"].includes(action) ? <label><span>角色代码（ROOT 不可分配）</span><input onChange={(event) => setAdminRoles(event.target.value)} placeholder="多个角色用逗号分隔" type="text" value={adminRoles} /></label> : null}
         <label className="admin-reason"><span>操作理由</span><textarea maxLength={500} onChange={(event) => setReason(event.target.value)} placeholder="说明依据、影响范围和预期结果" rows={3} value={reason} /></label>
         {selectedAction?.highRisk ? <label className="admin-confirm"><input checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} type="checkbox" /><span>我已核对影响范围，确认提交高风险操作请求。</span></label> : null}
         <button className={`admin-button ${selectedAction?.highRisk ? "danger" : "primary"}`} disabled={busy} onClick={() => void submit()} type="button">{busy ? "正在提交…" : "提交操作请求"}</button>

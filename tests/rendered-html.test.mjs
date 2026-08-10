@@ -32,12 +32,14 @@ test("server-renders the finished KAI Cloud home page", async () => {
 
   const html = await response.text();
   assert.match(html, /KAI Cloud/);
-  assert.match(html, /中国 Token 学院算力市场/);
-  assert.match(html, /先看清价格/);
-  assert.match(html, /发布算力需求/);
+  assert.match(html, /KAI CLOUD · COMPUTE MARKETPLACE/);
+  assert.match(html, /让算力，抵达每一个需要它的时刻/);
+  assert.match(html, /Compute, ready for every moment that matters/);
+  assert.match(html, /探索算力市场/);
+  assert.match(html, /1 小时应付/);
   assert.match(html, /需求服务已接通|交易链路已接通|供应方报价会回流到需求方工作台/);
   assert.match(html, /每日北京时间 06:00/);
-  assert.match(html, /模型调用成本指数/);
+  assert.match(html, /全站资源仅支持 KAI 卡时结算/);
   assert.match(html, /供应方报价会回流到需求方工作台/);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
 });
@@ -185,7 +187,8 @@ test("resources expose the approved purchase action and a clearly priced purchas
   const checkoutHtml = await checkoutResponse.text();
   assert.match(checkoutHtml, /购买/);
   assert.match(checkoutHtml, /市场参考单价/);
-  assert.match(checkoutHtml, /预计金额/);
+  assert.match(checkoutHtml, /人民币参考价/);
+  assert.match(checkoutHtml, /预计支付卡时/);
   assert.match(checkoutHtml, new RegExp(String(listing.quote.median)));
   assert.match(checkoutHtml, /平台确认库存与正式价格/);
 });
@@ -201,10 +204,11 @@ test("starter artifacts are removed and brand assets are wired", async () => {
   await assert.rejects(access(new URL("../app/_sites-preview/SkeletonPreview.tsx", import.meta.url)));
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
-  assert.match(layout, /og\.png/);
+  assert.match(layout, /og-home-v2\.png/);
   assert.match(layout, /zh-CN/);
   assert.match(css, /--brand:\s*#177777/i);
   assert.match(css, /--canvas:\s*#fbfdfd/i);
   assert.match(css, /--accent:\s*#69d1cb/i);
   await access(new URL("../public/og.png", import.meta.url));
+  await access(new URL("../public/og-home-v2.png", import.meta.url));
 });

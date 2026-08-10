@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { marketplaceErrorMessage } from "@/lib/client/marketplace-client";
 import {
-  createAlipayPaymentIntent,
+  createCardHourPaymentIntent,
   getSupplyOrder,
   submitSshPublicKey,
 } from "@/components/supply-api-client";
@@ -57,12 +57,12 @@ export function SupplyOrderWorkspace({ orderId, role }: { orderId: string; role:
   const latestConnection = [...detail.connectionChecks].sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
   const exactPilotShape = order.gpuCount === 8 && order.unitPriceMicrosPerGpuHour === 1_000_000 && order.durationHours <= 8;
   const readiness = detail.paymentReadiness;
-  const alipayReady = Boolean(
+  const cardHourReady = Boolean(
     readiness?.ready
       && readiness.environment.toUpperCase() === "LIVE"
-      && readiness.provider.toUpperCase().includes("ALIPAY"),
+      && readiness.provider === "KAI_CARD_HOUR",
   );
-  const liveAlipay = alipayReady && Boolean(payment?.provider.toUpperCase().includes("ALIPAY"));
+  const cardHourPayment = Boolean(payment?.provider === "KAI_CARD_HOUR");
   const sshReady = Boolean(detail.sshReadiness?.ready);
 
   async function startPayment() {
@@ -70,11 +70,12 @@ export function SupplyOrderWorkspace({ orderId, role }: { orderId: string; role:
     setError("");
     setActionNotice("");
     try {
-      const intent = await createAlipayPaymentIntent(order.id);
-      setActionNotice("支付宝 LIVE 收银台已创建，正在跳转。支付结果只以服务端异步通知为准。");
-      window.location.assign(intent.checkoutUrl);
+      const intent = await createCardHourPaymentIntent(order.id);
+      setActionNotice(`已扣减 ${intent.amountCardHours} 卡时，订单支付状态已由服务端确认。`);
+      await load();
     } catch (actionError) {
-      setError(marketplaceErrorMessage(actionError, "无法创建支付宝收银台，请稍后重试。"));
+      setError(marketplaceErrorMessage(actionError, "无法完成卡时支付，请检查余额后重试。"));
+    } finally {
       setActionBusy(false);
     }
   }
@@ -116,23 +117,23 @@ export function SupplyOrderWorkspace({ orderId, role }: { orderId: string; role:
             <p className="mb-0">试运行固定为整机 8 卡、¥1 / 卡时，且单笔最长 8 小时；本页不会提供支付或交付动作。</p>
           </div>
         ) : null}
-        {!liveAlipay ? (
+        {!cardHourReady || (payment !== null && !cardHourPayment) ? (
           <div className="mt-6 border-l-4 border-[var(--warning)] bg-[var(--warning-bg)] p-5">
             <strong className="text-[var(--ink)]">真实支付阻断</strong>
-            <p className="mb-0">订单详情未同时证明支付宝 LIVE 已配置且本订单使用真实支付宝支付。本页不会调用测试支付，也不会把模拟状态展示为真实成交。</p>
+            <p className="mb-0">订单详情未证明卡时结算服务可用，或本订单已绑定其他支付方式。本页不会调用测试支付，也不会把模拟状态展示为真实成交。</p>
             {readiness?.blockers.length ? <p className="mb-0 mt-2 text-sm">阻断原因：{readiness.blockers.join("；")}</p> : null}
           </div>
         ) : null}
 
         {role === "buyer" && order.status === "PAYMENT_PENDING" ? (
-          <section className="mt-7 border border-[var(--border)] bg-[var(--surface)] p-5" aria-labelledby="alipay-checkout-title">
+          <section className="mt-7 border border-[var(--border)] bg-[var(--surface)] p-5" aria-labelledby="card-hour-checkout-title">
             <p className="kicker">Buyer action</p>
-            <h3 className="mb-0 mt-2 text-xl" id="alipay-checkout-title">支付宝支付</h3>
-            <p className="mb-0 mt-2 text-sm text-[var(--text)]">服务端固定金额 {money(order.amountCents)}；返回页不会直接把订单改成支付成功。</p>
-            <button className="button button-primary mt-5" disabled={!alipayReady || !exactPilotShape || actionBusy} onClick={() => void startPayment()} type="button">
-              {actionBusy ? "正在创建收银台…" : `支付 ${money(order.amountCents)}`}
+            <h3 className="mb-0 mt-2 text-xl" id="card-hour-checkout-title">卡时支付</h3>
+            <p className="mb-0 mt-2 text-sm text-[var(--text)]">人民币仅作参考价 {money(order.amountCents)}；服务端按 1 卡时 = ¥1.002 换算并从当前交易主体余额扣减。</p>
+            <button className="button button-primary mt-5 rounded-none" disabled={!cardHourReady || !exactPilotShape || actionBusy} onClick={() => void startPayment()} type="button">
+              {actionBusy ? "正在扣减卡时…" : "确认使用卡时支付"}
             </button>
-            {!alipayReady ? <p className="mb-0 mt-3 text-sm text-[var(--warning)]">支付宝 LIVE 未配置，支付按钮保持关闭。</p> : null}
+            {!cardHourReady ? <p className="mb-0 mt-3 text-sm text-[var(--warning)]">卡时结算服务未就绪，支付按钮保持关闭。</p> : null}
           </section>
         ) : null}
 

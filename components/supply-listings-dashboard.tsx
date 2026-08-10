@@ -26,7 +26,7 @@ export function SupplyListingsDashboard() {
   const [jobs, setJobs] = useState<SupplyVerificationJob[]>([]);
   const [plans, setPlans] = useState<SupplyPublicationPlan[]>([]);
   const [orders, setOrders] = useState<SupplyTrialOrder[]>([]);
-  const [paymentReadiness, setPaymentReadiness] = useState<SupplyDashboard["paymentReadiness"]>({ provider: "ALIPAY", environment: "LIVE", ready: false, blockers: ["尚未读取支付状态"] });
+  const [paymentReadiness, setPaymentReadiness] = useState<SupplyDashboard["paymentReadiness"]>({ provider: "KAI_CARD_HOUR", environment: "LIVE", ready: false, blockers: ["尚未读取支付状态"] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -93,8 +93,8 @@ export function SupplyListingsDashboard() {
         </div>
 
         <div className="mt-7 border-l-4 border-[var(--warning)] bg-[var(--warning-bg)] p-5">
-          <strong className="text-[var(--ink)]">{paymentReadiness.ready ? "支付宝 LIVE 安全门已由服务端确认" : "成交总闸仍关闭"}</strong>
-          <p className="mb-0 mt-1 text-sm">{paymentReadiness.ready ? "仍需资源验真、库存窗口和整机粒度全部通过，才能进入成交。" : `服务端阻断：${paymentReadiness.blockers.join("；") || "支付宝生产配置未就绪"}。Mac mini 的发布权限始终为关闭。`}</p>
+          <strong className="text-[var(--ink)]">{paymentReadiness.ready ? "卡时结算安全门已由服务端确认" : "成交总闸仍关闭"}</strong>
+          <p className="mb-0 mt-1 text-sm">{paymentReadiness.ready ? "仍需资源验真、库存窗口和整机粒度全部通过，才能进入成交。" : `服务端阻断：${paymentReadiness.blockers.join("；") || "卡时结算服务未就绪"}。Mac mini 的发布权限始终为关闭。`}</p>
         </div>
         {error ? <div className="mt-5 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-5 text-[var(--error)]" role="alert">{error}</div> : null}
 
@@ -151,7 +151,7 @@ export function SupplyListingsDashboard() {
             <table className="data-table min-w-[760px]">
               <caption className="sr-only">供应方订单</caption>
               <thead><tr><th scope="col">订单</th><th scope="col">状态</th><th className="num" scope="col">卡数</th><th className="num" scope="col">金额</th><th scope="col">支付环境</th><th scope="col">操作</th></tr></thead>
-              <tbody>{orders.map((order) => <tr key={order.id}><th scope="row" className="font-mono text-xs">{order.id}</th><td>{order.status}</td><td className="num">{order.gpuCount}</td><td className="num">{money(order.amountCents)}</td><td>{paymentReadiness.ready ? "ALIPAY / LIVE" : "生产支付阻断"}</td><td><Link className="font-semibold text-[var(--accent)] underline" href={`/supply/orders/${encodeURIComponent(order.id)}?role=supplier`}>查看订单</Link></td></tr>)}</tbody>
+              <tbody>{orders.map((order) => <tr key={order.id}><th scope="row" className="font-mono text-xs">{order.id}</th><td>{order.status}</td><td className="num">{order.gpuCount}</td><td className="num">{money(order.amountCents)}</td><td>{paymentReadiness.ready ? "CARD HOUR / LIVE" : "生产支付阻断"}</td><td><Link className="font-semibold text-[var(--accent)] underline" href={`/supply/orders/${encodeURIComponent(order.id)}?role=supplier`}>查看订单</Link></td></tr>)}</tbody>
             </table>
           </div>
         )}

@@ -22,6 +22,7 @@ export type AlipayOrderSnapshot = {
   amountCents: number;
   subject: string;
   expiresMinutes?: number;
+  returnPath?: string;
 };
 
 export type VerifiedAlipayNotification = {
@@ -157,10 +158,14 @@ export function createAlipayCheckoutUrl(
   if (!subject || subject.length > 128) {
     throw new AlipayLiveError("ALIPAY_INVALID_ORDER", "支付宝订单标题必须为 1–128 个字符。\n");
   }
+  const returnPath = order.returnPath ?? `/supply/orders/${encodeURIComponent(order.orderId)}?payment=return`;
+  if (!returnPath.startsWith("/") || returnPath.startsWith("//")) {
+    throw new AlipayLiveError("ALIPAY_INVALID_ORDER", "支付返回地址无效。\n");
+  }
 
   const checkoutUrl = client.pageExecute("alipay.trade.page.pay", "GET", {
     notifyUrl: `${origin}/api/v1/payments/alipay/notify`,
-    returnUrl: `${origin}/supply/orders/${encodeURIComponent(order.orderId)}?payment=return`,
+    returnUrl: `${origin}${returnPath}`,
     bizContent: {
       outTradeNo: order.orderId,
       productCode: "FAST_INSTANT_TRADE_PAY",

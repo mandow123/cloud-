@@ -23,7 +23,7 @@ export function AdminLoginRequired({ forbidden = false }: { forbidden?: boolean 
     <div className="admin-state admin-auth-required" role="alert">
       <span className="admin-state-code">{forbidden ? "403" : "401"}</span>
       <strong>{forbidden ? "当前账号没有管理员权限" : "管理员会话尚未建立"}</strong>
-      <p>{forbidden ? "请联系管理员分配正确角色；页面不会降级展示未授权数据。" : "请先通过飞书登录，服务端会再次校验管理员角色。"}</p>
+      <p>{forbidden ? "当前账户不是唯一 Root；页面不会降级展示未授权数据。" : "请使用独立管理员账号密码登录，服务端会再次校验唯一 Root 权限。"}</p>
       <Link className="admin-button primary" href="/admin/login">前往管理员登录</Link>
     </div>
   );

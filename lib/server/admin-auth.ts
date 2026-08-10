@@ -34,6 +34,9 @@ export function hasAdminPermission(context: AdminAuthContext, permission: AdminP
 
 export async function authenticateAdminRequest(request: Request): Promise<AdminAuthContext> {
   const accountContext = await requireAccountSession(request);
+  if (accountContext.authMethod !== "ADMIN_PASSWORD") {
+    throw new AccountAuthError("ADMIN_ACCESS_FORBIDDEN", 403, "管理员后台只接受独立账号密码登录。 ");
+  }
   if (accountContext.membership.status !== "ACTIVE") {
     throw new AccountAuthError("ADMIN_ACCESS_FORBIDDEN", 403, "组织成员关系尚未获批。 ");
   }

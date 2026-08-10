@@ -43,16 +43,15 @@ test("model rows render service and context tiers with unique accessible names",
   assert.ok(labels.some((label) => label.includes("256K-1M")));
 });
 
-test("insufficient model index history renders accumulation and unavailable states", async () => {
+test("insufficient model index history remains disclosed in the market while the homepage shows transaction facts", async () => {
   const [homeResponse, marketResponse] = await Promise.all([render("/"), render("/market")]);
   assert.equal(homeResponse.status, 200);
   assert.equal(marketResponse.status, 200);
 
   const home = await homeResponse.text();
   const market = await marketResponse.text();
-  assert.match(home, /样本积累中/);
-  assert.match(home, /1 日 暂无/);
-  assert.match(home, /7 日 暂无/);
-  assert.match(home, /30 日 暂无/);
+  assert.match(home, /可交易报价/);
+  assert.match(home, /条已核验资源/);
+  assert.doesNotMatch(home, /1 日 暂无|7 日 暂无|30 日 暂无/);
   assert.match(market, /历史样本积累中，暂无完整 30 日变化/);
 });

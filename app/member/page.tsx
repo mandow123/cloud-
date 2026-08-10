@@ -3,10 +3,11 @@ import { AccountRequired } from "@/components/account-required";
 import { BuyerOrderList } from "@/components/buyer-order-list";
 import { MemberWorkspace } from "@/components/member-workspace";
 import { PersonalCenterOverview } from "@/components/personal-center-overview";
+import { CardHourAccountPanel } from "@/components/card-hour-account-panel";
 
 export const metadata: Metadata = {
   title: "个人中心",
-  description: "管理 KAI Cloud 个人资料、购买申请、订单、待支付、待验收与资源对比。",
+  description: "管理 KAI Cloud 卡时、购买记录、资源对比、回购、租金收益与邀请佣金。",
 };
 
 export default function MemberPage() {
@@ -18,7 +19,7 @@ export default function MemberPage() {
           <div className="grid items-end gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
             <div>
               <h1 className="m-0 max-w-4xl text-4xl leading-tight sm:text-5xl">个人中心与交易工作台</h1>
-              <p className="section-lead">查看购买申请、正式订单、支付与验收进度，并继续管理需求和供应流程。</p>
+              <p className="section-lead">查看卡时余额、购买记录、资源对比、回购、租金收益和邀请佣金，并继续管理需求与供应流程。</p>
             </div>
             <div className="border-l-2 border-[var(--accent)] pl-5 text-sm text-[var(--text)]">
               <strong className="block text-[var(--ink)]">账户与交易主体严格分离</strong>
@@ -29,6 +30,7 @@ export default function MemberPage() {
       </header>
       <div className="shell py-12 sm:py-16">
         <PersonalCenterOverview />
+        <CardHourAccountPanel />
         <MemberWorkspace />
         <section className="mt-16 scroll-mt-28" id="orders">
           <AccountRequired purpose="查看个人订单">

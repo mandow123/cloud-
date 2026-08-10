@@ -12,6 +12,7 @@ import {
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
 import { authorizeMarketplaceRequest, persistMarketplaceSession } from "@/lib/server/marketplace-auth";
 import { bindNewEntityToOrganization, requireTradingAccountSession } from "@/lib/server/entity-ownership";
+import { cnyCentsToCardHourMicros, formatCardHourMicros } from "@/lib/card-hours";
 
 export const dynamic = "force-dynamic";
 
@@ -82,16 +83,23 @@ export async function POST(request: Request) {
       });
     }
     const multiplier = hourlyUnits.has(resource.pricingUnit) ? quantity * Number(durationHours) : quantity;
+    const estimatedAmount = Math.round(resource.quote.median * multiplier * 100) / 100;
+    const estimatedCardHourMicros = cnyCentsToCardHourMicros(Math.max(1, Math.round(estimatedAmount * 100)));
     const headers = new Headers(actor.responseHeaders);
     headers.set("idempotency-replayed", String(result.replayed));
     return jsonResponse({
       record: result.record,
       replayed: result.replayed,
       priceSnapshot: {
-        currency: "CNY",
+        assetCode: "KAI_CREDIT_HOUR",
+        settlementAsset: "CARD_HOUR",
         unitPrice: resource.quote.median,
+        referenceCurrency: "CNY",
         pricingUnit: resource.pricingUnit,
-        estimatedAmount: Math.round(resource.quote.median * multiplier * 100) / 100,
+        estimatedAmount,
+        estimatedCardHours: formatCardHourMicros(estimatedCardHourMicros),
+        estimatedCardHourMicros,
+        conversionRate: { cardHours: "1", cny: "1.002" },
         disclaimer: resource.quote.disclaimer,
       },
     }, result.replayed ? 200 : 201, headers, context);

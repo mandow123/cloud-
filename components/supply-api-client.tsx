@@ -201,14 +201,14 @@ export type SupplyOrderDetail = {
   };
 };
 
-export type AlipayPaymentIntent = {
+export type CardHourPaymentIntent = {
   record: NonNullable<SupplyOrderDetail["payment"]>;
-  provider: "ALIPAY";
-  environment: "LIVE";
-  checkoutUrl: string;
-  amountCents: number;
-  currency: "CNY";
-  expiresAt: string;
+  provider: "KAI_CARD_HOUR";
+  assetCode: "KAI_CREDIT_HOUR";
+  amountCardHours: string;
+  amountMicros: number;
+  cnyReferenceCents: number;
+  rate: { cardHours: "1"; cny: "1.002" };
   replayed: boolean;
 };
 
@@ -287,10 +287,10 @@ export async function getSupplyDashboard() {
     publicationPlans: result.publicationPlans ?? result.promotions ?? result.listings ?? [],
     orders: result.orders ?? [],
     paymentReadiness: result.paymentReadiness ?? {
-      provider: "ALIPAY",
+      provider: "KAI_CARD_HOUR",
       environment: "LIVE",
       ready: false,
-      blockers: ["支付宝 LIVE 配置和服务端支付凭据尚未确认"],
+      blockers: ["卡时结算服务尚未确认"],
     },
     updatedAt: result.updatedAt ?? null,
   } satisfies SupplyDashboard;
@@ -401,9 +401,9 @@ export async function getSupplyOrder(orderId: string, role: "buyer" | "supplier"
   return detail;
 }
 
-export function createAlipayPaymentIntent(
+export function createCardHourPaymentIntent(
   orderId: string,
-  idempotencyKey = createIdempotencyKey("h100-alipay"),
+  idempotencyKey = createIdempotencyKey("h100-card-hour"),
 ) {
   return exchangePost<unknown>(
     `/api/v1/orders/${encodeURIComponent(orderId)}/payment-intents`,
@@ -411,7 +411,7 @@ export function createAlipayPaymentIntent(
     {},
     idempotencyKey,
     30_000,
-  ) as unknown as Promise<AlipayPaymentIntent>;
+  ) as unknown as Promise<CardHourPaymentIntent>;
 }
 
 export function submitSshPublicKey(

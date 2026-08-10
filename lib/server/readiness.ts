@@ -41,16 +41,12 @@ function requiredCapability(keys:readonly string[],environment:Environment,extra
 }
 
 function capabilityReadiness(environment:Environment){
-  const production=environment.NODE_ENV==="production";
-  const larkExtra:string[]=[];
-  const redirect=environment.KAI_LARK_REDIRECT_URI?.trim();
-  if(redirect){try{const parsed=new URL(redirect);if(production&&parsed.protocol!=="https:")larkExtra.push("KAI_LARK_REDIRECT_URI(HTTPS)");}catch{larkExtra.push("KAI_LARK_REDIRECT_URI(valid URL)");}}
-  if(production&&!environment.KAI_LARK_ALLOWED_TENANT_KEYS?.trim())larkExtra.push("KAI_LARK_ALLOWED_TENANT_KEYS");
   const emailExtra:string[]=[];
   if((environment.KAI_EMAIL_OTP_HMAC_SECRET?.trim().length??0)>0&&(environment.KAI_EMAIL_OTP_HMAC_SECRET?.trim().length??0)<32)emailExtra.push("KAI_EMAIL_OTP_HMAC_SECRET(>=32 chars)");
   const alipay=alipayReadiness(environment),ssh=sshProvisionerReadiness(environment);
   return{
-    larkAdminLogin:requiredCapability(["KAI_LARK_APP_ID","KAI_LARK_APP_SECRET","KAI_LARK_REDIRECT_URI"],environment,larkExtra),
+    adminPasswordLogin:requiredCapability(["KAI_ADMIN_USERNAME","KAI_ADMIN_PASSWORD_HASH"],environment,
+      environment.KAI_ADMIN_PASSWORD_HASH?.startsWith("pbkdf2-sha256:")?[]:["KAI_ADMIN_PASSWORD_HASH(valid PBKDF2 hash)"]),
     emailOtpLogin:requiredCapability(["KAI_EMAIL_OTP_HMAC_SECRET","KAI_EMAIL_OTP_WEBHOOK_URL","KAI_EMAIL_OTP_WEBHOOK_TOKEN"],environment,emailExtra),
     alipayLive:{available:alipay.configured,failClosed:true,missing:alipay.missing},
     sshProvisioning:{available:ssh.configured,failClosed:true,missing:ssh.missing},

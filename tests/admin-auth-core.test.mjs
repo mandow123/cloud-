@@ -54,10 +54,10 @@ test("ordinary account sessions never expose an administrator principal", async 
 test("requireAdminPermission accepts ROOT and rejects every non-ROOT role", async () => {
   const store = await createSqliteAccountAuthStore(":memory:");
   const now = new Date();
-  const identity = await store.resolveOrCreateIdentity({ provider:"LOCAL",tenantKey:"LOCAL",subject:"permission-test",displayName:"Permission Tester",normalizedEmail:null,organizationExternalKey:"LOCAL:PERMISSION",organizationName:"Permission Org",verifiedAt:now.toISOString() });
+  const identity = await store.resolveOrCreatePasswordAdministrator({ username:"permission-test",displayName:"Permission Tester",createdAt:now.toISOString() });
   await store.activateMembership(identity.membership.id,["ROOT"],now.toISOString());
-  const active = await store.resolveOrCreateIdentity({ provider:"LOCAL",tenantKey:"LOCAL",subject:"permission-test",displayName:"Permission Tester",normalizedEmail:null,organizationExternalKey:"LOCAL:PERMISSION",organizationName:"Permission Org",verifiedAt:now.toISOString() });
-  const issued = await createAccountSession(new Request("http://localhost/api/auth/local"),active,"LOCAL_TEST",{store,now});
+  const active = await store.resolveOrCreatePasswordAdministrator({ username:"permission-test",displayName:"Permission Tester",createdAt:now.toISOString() });
+  const issued = await createAccountSession(new Request("http://localhost/api/auth/admin/password"),active,"ADMIN_PASSWORD",{store,now});
   const previous = globalThis.__kaiAccountAuthStorePromise;
   globalThis.__kaiAccountAuthStorePromise = Promise.resolve(store);
   try {
@@ -71,7 +71,7 @@ test("requireAdminPermission accepts ROOT and rejects every non-ROOT role", asyn
     const other = await store.resolveOrCreateIdentity({ provider:"LOCAL",tenantKey:"LOCAL",subject:"non-root-test",displayName:"Non Root",normalizedEmail:null,organizationExternalKey:"LOCAL:NON_ROOT",organizationName:"Non Root Org",verifiedAt:now.toISOString() });
     await store.activateMembership(other.membership.id,["INVENTORY_OPERATOR"],now.toISOString());
     const activeOther = await store.resolveOrCreateIdentity({ provider:"LOCAL",tenantKey:"LOCAL",subject:"non-root-test",displayName:"Non Root",normalizedEmail:null,organizationExternalKey:"LOCAL:NON_ROOT",organizationName:"Non Root Org",verifiedAt:now.toISOString() });
-    const otherIssued = await createAccountSession(new Request("http://localhost/api/auth/local"),activeOther,"LOCAL_TEST",{store,now});
+    const otherIssued = await createAccountSession(new Request("http://localhost/api/auth/email/verify"),activeOther,"EMAIL_OTP",{store,now});
     const otherRequest = new Request("http://localhost/api/admin/inventory",{headers:{cookie:otherIssued.cookie.split(";")[0]}});
     await assert.rejects(requireAdminPermission(otherRequest,["ADMIN_PANEL_READ"]),(error)=>error instanceof AccountAuthError&&error.status===403);
   } finally {

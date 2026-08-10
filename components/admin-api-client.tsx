@@ -131,31 +131,6 @@ export async function adminPostAction(path: string, payload: unknown, method: "P
   return result as Record<string, unknown>;
 }
 
-export async function localAdminLogin() {
-  const response = await fetch("/api/auth/local", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { accept: "application/json", "content-type": "application/json" },
-    body: JSON.stringify({ returnTo: "/admin" }),
-  });
-  const body = await responseBody(response);
-  if (!response.ok) throw apiError(body, response);
-  const result = body && typeof body === "object" ? body as Record<string, unknown> : {};
-  return typeof result.redirectUrl === "string" ? result.redirectUrl : "/admin";
-}
-
-export async function bootstrapRootAccount(code: string) {
-  const result = await adminFetch("/api/auth/bootstrap-admin", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ code }),
-  }, 30_000);
-  if (!result || typeof result !== "object") {
-    throw new AdminApiError("Root 初始化接口未返回可核验结果。", 200, "INVALID_RESPONSE");
-  }
-  return result as Record<string, unknown>;
-}
-
 export async function adminGetSession() {
   const payload = await adminFetch("/api/auth/session");
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;

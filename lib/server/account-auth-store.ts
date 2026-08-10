@@ -54,6 +54,7 @@ export interface AccountAuthStore {
     organizationName: string;
     verifiedAt: string;
   }): Promise<ResolvedIdentity>;
+  resolveOrCreatePasswordAdministrator(input: { username: string; displayName: string; createdAt: string }): Promise<ResolvedIdentity>;
   listMemberships(accountId: string): Promise<Array<Membership & { organization: Organization }>>;
   getMembership(accountId: string, organizationId: string): Promise<(Membership & { organization: Organization }) | null>;
   activateMembership(membershipId: string, roles: readonly AdminRole[], updatedAt: string): Promise<void>;
@@ -68,6 +69,8 @@ export interface AccountAuthStore {
   createOtpChallenge(input: { id: string; normalizedEmail: string; otpDigest: string; requestFingerprint: string; createdAt: string; expiresAt: string }): Promise<void>;
   recordOtpFailure(id: string): Promise<boolean>;
   consumeOtp(id: string, consumedAt: string): Promise<boolean>;
+  countRecentPasswordFailures(usernameHash: string, requestFingerprint: string, since: string): Promise<number>;
+  recordPasswordAttempt(input: { usernameHash: string; requestFingerprint: string; outcome: "ALLOWED" | "DENIED"; occurredAt: string }): Promise<void>;
   recordAudit(input: { accountId?: string; organizationId?: string; sessionId?: string; eventType: string; outcome: "ALLOWED" | "DENIED" | "ERROR"; target?: string; metadata?: Record<string, unknown>; occurredAt: string }): Promise<void>;
 }
 
@@ -168,6 +171,48 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
       if (!created) throw new Error("ADMIN_IDENTITY_CREATE_FAILED");
       return created;
     },
+    async resolveOrCreatePasswordAdministrator(input) {
+      const existing = await db.first<Row>(`SELECT p.account_id,p.organization_id,p.membership_id,
+          a.display_name,a.primary_email,a.status AS account_status,
+          o.name AS organization_name,o.external_key,o.status AS organization_status,
+          m.status AS membership_status
+        FROM admin_password_principals p
+        JOIN admin_user_accounts a ON a.id=p.account_id
+        JOIN admin_organizations o ON o.id=p.organization_id
+        JOIN admin_memberships m ON m.id=p.membership_id
+        WHERE p.username=?`, [input.username]);
+      if (existing) {
+        const membershipId = text(existing, "membership_id");
+        return {
+          account: account(existing), organization: organization(existing),
+          membership: { id: membershipId, accountId: text(existing, "account_id"), organizationId: text(existing, "organization_id"), status: text(existing, "membership_status") as Membership["status"], roles: await readMembershipRoles(db, membershipId) },
+        };
+      }
+      const accountId = await digestId("acct", `ADMIN_PASSWORD:${input.username}`);
+      const organizationId = await digestId("org", "KAI:CLOUD:ROOT");
+      const membershipId = await digestId("mbr", `${accountId}:${organizationId}`);
+      await db.batch([
+        { sql: "INSERT OR IGNORE INTO admin_organizations(id,name,external_key,status,created_at,updated_at) VALUES(?,?,'KAI:CLOUD:ROOT','ACTIVE',?,?)", values: [organizationId, "KAI Cloud", input.createdAt, input.createdAt] },
+        { sql: "INSERT OR IGNORE INTO admin_user_accounts(id,display_name,primary_email,status,created_at,updated_at) VALUES(?,?,NULL,'ACTIVE',?,?)", values: [accountId, input.displayName, input.createdAt, input.createdAt] },
+        { sql: "INSERT OR IGNORE INTO admin_memberships(id,account_id,organization_id,status,created_at,updated_at) VALUES(?,?,?,'PENDING',?,?)", values: [membershipId, accountId, organizationId, input.createdAt, input.createdAt] },
+        { sql: "INSERT OR IGNORE INTO admin_password_principals(username,account_id,organization_id,membership_id,created_at) VALUES(?,?,?,?,?)", values: [input.username, accountId, organizationId, membershipId, input.createdAt] },
+      ]);
+      const created = await db.first<Row>(`SELECT p.account_id,p.organization_id,p.membership_id,
+          a.display_name,a.primary_email,a.status AS account_status,
+          o.name AS organization_name,o.external_key,o.status AS organization_status,
+          m.status AS membership_status
+        FROM admin_password_principals p
+        JOIN admin_user_accounts a ON a.id=p.account_id
+        JOIN admin_organizations o ON o.id=p.organization_id
+        JOIN admin_memberships m ON m.id=p.membership_id
+        WHERE p.username=?`, [input.username]);
+      if (!created) throw new Error("ADMIN_PASSWORD_PRINCIPAL_CREATE_FAILED");
+      const createdMembershipId = text(created, "membership_id");
+      return {
+        account: account(created), organization: organization(created),
+        membership: { id: createdMembershipId, accountId: text(created, "account_id"), organizationId: text(created, "organization_id"), status: text(created, "membership_status") as Membership["status"], roles: await readMembershipRoles(db, createdMembershipId) },
+      };
+    },
     async listMemberships(accountId) {
       return readMemberships(accountId);
     },
@@ -219,12 +264,24 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
     },
     async createSession(input) {
       const id = `as_${crypto.randomUUID()}`;
-      await db.run(`INSERT INTO admin_account_sessions(id,account_id,organization_id,token_hash,auth_method,created_at,last_seen_at,idle_expires_at,absolute_expires_at,revoked_at)
-        VALUES(?,?,?,?,?,?,?,?,?,NULL)`, [id, input.accountId, input.organizationId, input.tokenHash, input.authMethod, input.now, input.now, input.idleExpiresAt, input.absoluteExpiresAt]);
+      if (input.authMethod === "ADMIN_PASSWORD") {
+        await db.run(`INSERT INTO admin_password_sessions(id,account_id,organization_id,token_hash,created_at,last_seen_at,idle_expires_at,absolute_expires_at,revoked_at)
+          VALUES(?,?,?,?,?,?,?,?,NULL)`, [id, input.accountId, input.organizationId, input.tokenHash, input.now, input.now, input.idleExpiresAt, input.absoluteExpiresAt]);
+      } else {
+        await db.run(`INSERT INTO admin_account_sessions(id,account_id,organization_id,token_hash,auth_method,created_at,last_seen_at,idle_expires_at,absolute_expires_at,revoked_at)
+          VALUES(?,?,?,?,?,?,?,?,?,NULL)`, [id, input.accountId, input.organizationId, input.tokenHash, input.authMethod, input.now, input.now, input.idleExpiresAt, input.absoluteExpiresAt]);
+      }
       return { id, accountId: input.accountId, organizationId: input.organizationId, authMethod: input.authMethod, createdAt: input.now, lastSeenAt: input.now, idleExpiresAt: input.idleExpiresAt, absoluteExpiresAt: input.absoluteExpiresAt };
     },
     async resolveSession(tokenHash) {
-      const row = await db.first<Row>(`SELECT s.id AS session_id,s.account_id,s.organization_id,s.auth_method,s.created_at AS session_created_at,s.last_seen_at,s.idle_expires_at,s.absolute_expires_at,s.revoked_at,
+      let row = await db.first<Row>(`SELECT s.id AS session_id,s.account_id,s.organization_id,'ADMIN_PASSWORD' AS auth_method,s.created_at AS session_created_at,s.last_seen_at,s.idle_expires_at,s.absolute_expires_at,s.revoked_at,
+          a.display_name,a.primary_email,a.status AS account_status,o.name AS organization_name,o.external_key,o.status AS organization_status,
+          m.id AS membership_id,m.status AS membership_status
+        FROM admin_password_sessions s JOIN admin_user_accounts a ON a.id=s.account_id
+        JOIN admin_organizations o ON o.id=s.organization_id
+        JOIN admin_memberships m ON m.account_id=s.account_id AND m.organization_id=s.organization_id
+        WHERE s.token_hash=?`, [tokenHash]);
+      row ??= await db.first<Row>(`SELECT s.id AS session_id,s.account_id,s.organization_id,s.auth_method,s.created_at AS session_created_at,s.last_seen_at,s.idle_expires_at,s.absolute_expires_at,s.revoked_at,
           a.display_name,a.primary_email,a.status AS account_status,o.name AS organization_name,o.external_key,o.status AS organization_status,
           m.id AS membership_id,m.status AS membership_status
         FROM admin_account_sessions s JOIN admin_user_accounts a ON a.id=s.account_id
@@ -240,9 +297,13 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
       };
     },
     async touchSession(sessionId, now, idleExpiresAt) {
+      const password = await db.run("UPDATE admin_password_sessions SET last_seen_at=?,idle_expires_at=? WHERE id=? AND revoked_at IS NULL AND idle_expires_at>? AND absolute_expires_at>?", [now, idleExpiresAt, sessionId, now, now]);
+      if (password.changes === 1) return true;
       return (await db.run("UPDATE admin_account_sessions SET last_seen_at=?,idle_expires_at=? WHERE id=? AND revoked_at IS NULL AND idle_expires_at>? AND absolute_expires_at>?", [now, idleExpiresAt, sessionId, now, now])).changes === 1;
     },
     async revokeSession(sessionId, revokedAt) {
+      const password = await db.run("UPDATE admin_password_sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL", [revokedAt, sessionId]);
+      if (password.changes === 1) return true;
       return (await db.run("UPDATE admin_account_sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL", [revokedAt, sessionId])).changes === 1;
     },
     async countRecentOtp(normalizedEmail, since) {
@@ -261,6 +322,13 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
     },
     async consumeOtp(id, consumedAt) {
       return (await db.run("UPDATE admin_email_otp_challenges SET consumed_at=? WHERE id=? AND consumed_at IS NULL AND attempts<5 AND expires_at>?", [consumedAt, id, consumedAt])).changes === 1;
+    },
+    async countRecentPasswordFailures(usernameHash, requestFingerprint, since) {
+      const row = await db.first<{ count: number }>("SELECT COUNT(*) AS count FROM admin_password_login_attempts WHERE username_hash=? AND request_fingerprint=? AND outcome='DENIED' AND occurred_at>=?", [usernameHash, requestFingerprint, since]);
+      return Number(row?.count ?? 0);
+    },
+    async recordPasswordAttempt(input) {
+      await db.run("INSERT INTO admin_password_login_attempts(id,username_hash,request_fingerprint,outcome,occurred_at) VALUES(?,?,?,?,?)", [`apa_${crypto.randomUUID()}`, input.usernameHash, input.requestFingerprint, input.outcome, input.occurredAt]);
     },
     async recordAudit(input) {
       await db.run(`INSERT INTO admin_auth_audit_events(id,account_id,organization_id,session_id,event_type,outcome,target,metadata_json,occurred_at)

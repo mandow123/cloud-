@@ -393,7 +393,7 @@ function PersonalMenuContent({
           <AvatarIcon />
           <div>
             <strong>登录后查看个人业务</strong>
-            <p>集中查看购买申请、订单、待验收和对比。</p>
+            <p>集中查看卡时、购买记录、回购、收益与邀请奖励。</p>
           </div>
         </div>
         <Link
@@ -410,12 +410,12 @@ function PersonalMenuContent({
 
   const profile = summary.profile;
   const entries: SummaryEntry[] = [
-    { href: "/member#purchase-requests", label: "购买申请", showCount: true, value: summary.counts?.purchaseRequests },
-    { href: "/member#pending-payment", label: "待支付", showCount: true, value: summary.counts?.pendingPayment },
-    { href: "/member#orders", label: "我的订单", showCount: true, value: summary.counts?.orders },
-    { href: "/member#pending-acceptance", label: "待验收", showCount: true, value: summary.counts?.pendingAcceptance },
+    { href: "/member#card-hours", label: "卡时账户" },
+    { href: "/member#purchases", label: "购买记录", showCount: true, value: (summary.counts?.purchaseRequests ?? 0) + (summary.counts?.orders ?? 0) },
     { href: "/member#compare", label: "我的对比", showCount: true, value: compareCount },
-    { href: "/member#profile", label: "基础信息" },
+    { href: "/member#buybacks", label: "我的回购" },
+    { href: "/member#income", label: "租金与佣金" },
+    { href: "/member#referrals", label: "邀请奖励" },
   ];
 
   return (

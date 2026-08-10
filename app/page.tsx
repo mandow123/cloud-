@@ -7,8 +7,8 @@ import { marketIndexChange, readMarketSnapshot } from "@/lib/server/market-snaps
 import type { ResourceCategory, ResourceListing } from "@/lib/types";
 
 export const metadata: Metadata = {
-  title: "算力行情与资源撮合",
-  description: "每天查看 GPU、模型 Token、整机柜与云厂商行情，并发布租赁、采购或置换需求。",
+  title: "让算力，抵达每一个需要它的时刻",
+  description: "连接可信算力供给与真实需求，以 KAI 卡时统一购买 GPU、模型、Token、云主机与企业容量。",
 };
 
 const quickActions = [
@@ -99,28 +99,6 @@ export default async function Home() {
         }}
       />
 
-      <section className="quick-decision" aria-labelledby="quick-decision-title">
-        <div className="shell">
-          <div className="section-top">
-            <div>
-              <p className="kicker">Choose a task</p>
-              <h2 className="section-heading" id="quick-decision-title">你今天要解决什么？</h2>
-            </div>
-            <p>四个入口直达价格或需求，不必先理解平台架构。</p>
-          </div>
-          <div className="quick-grid">
-            {quickActions.map((item) => (
-              <Link className="quick-card" href={item.href} key={item.code}>
-                <span className="quick-code">{item.code}</span>
-                <strong>{item.title}</strong>
-                <span>{item.copy}</span>
-                <em>进入 →</em>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-
       <section className="shell market-snapshot" aria-labelledby="market-snapshot-title">
         <div className="section-top">
           <div>
@@ -168,6 +146,28 @@ export default async function Home() {
           </table>
         </div>
         <p className="data-footnote">市场参考报价 · 具体以询价确认为准 · 每日北京时间 06:00 更新 · 平台初始化样本，供应商接入后核验更新</p>
+      </section>
+
+      <section className="quick-decision" aria-labelledby="quick-decision-title">
+        <div className="shell">
+          <div className="section-top">
+            <div>
+              <p className="kicker">START FROM THE WORKLOAD</p>
+              <h2 className="section-heading" id="quick-decision-title">从你的任务开始</h2>
+            </div>
+            <p>先看可交易资源，再按任务筛选；价格、交付和卡时结算使用同一份订单快照。</p>
+          </div>
+          <div className="quick-grid">
+            {quickActions.map((item) => (
+              <Link className="quick-card" href={item.href} key={item.code}>
+                <span className="quick-code">{item.code}</span>
+                <strong>{item.title}</strong>
+                <span>{item.copy}</span>
+                <em>进入 →</em>
+              </Link>
+            ))}
+          </div>
+        </div>
       </section>
 
       <section className="service-section" aria-labelledby="service-entry-title">
