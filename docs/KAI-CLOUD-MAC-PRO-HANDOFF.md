@@ -104,7 +104,7 @@ KAI Cloud 是一个算力交易与容量服务平台，覆盖 GPU 算力、Token
 
 ## 10. 工作区状态说明
 
-GitHub 仓库：`https://github.com/mandow123/-.git`
+GitHub 仓库：`https://github.com/mandow123/cloud-.git`
 
 当前开发分支：`codex/kai-cloud-frozen-ui-backend-admin-20260808`
 
