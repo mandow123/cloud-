@@ -191,6 +191,123 @@ textarea {
   gap: clamp(16px, 2vw, 30px);
 }
 
+.primary-nav-mega {
+  align-items: center;
+  gap: clamp(8px, 1.35vw, 20px);
+}
+
+.nav-group {
+  position: relative;
+}
+
+.nav-group > summary {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.nav-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.nav-group > summary:hover,
+.nav-group > summary[aria-current="page"],
+.nav-group[open] > summary {
+  color: var(--accent);
+}
+
+.nav-chevron {
+  display: inline-block;
+  color: var(--muted);
+  font-size: 0.8rem;
+  transition: rotate 140ms ease-out;
+}
+
+.nav-group[open] .nav-chevron {
+  rotate: 180deg;
+}
+
+.nav-popover {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 13px);
+  left: 50%;
+  width: min(430px, calc(100vw - 32px));
+  translate: -50% 0;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 24px 60px rgba(3, 17, 27, 0.18);
+  padding: 18px;
+}
+
+.nav-popover::before {
+  position: absolute;
+  top: -14px;
+  right: 0;
+  left: 0;
+  height: 14px;
+  content: "";
+}
+
+.nav-popover-label {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.nav-popover-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.nav-popover-links a {
+  display: grid;
+  gap: 4px;
+  border: 1px solid transparent;
+  padding: 12px;
+}
+
+.nav-popover-links a:hover,
+.nav-popover-links a:focus-visible {
+  border-color: var(--border);
+  background: var(--surface-muted);
+}
+
+.nav-popover-links a::after,
+.nav-company-link::after {
+  display: none;
+}
+
+.nav-popover-links strong {
+  color: var(--ink);
+  font-size: 0.84rem;
+}
+
+.nav-popover-links span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 450;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.nav-company-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .primary-nav a {
   position: relative;
   color: var(--text);

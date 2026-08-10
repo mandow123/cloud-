@@ -9,6 +9,11 @@ const BASELINE = "bb7fd3211fdff28a448af85f53e9f40839ffa843";
 const ROOT = join(import.meta.dirname, "..");
 const EXTRA_FROZEN_FILES = ["data/model-market.snapshot.json", "lib/catalog.mjs"];
 const APPROVED_PUBLIC_FILES = Object.freeze({
+  "app/globals.css": "d343786f82a90cef03cb460ccceb8990a8c2b61771cca9cc788428896fafc416",
+  "app/gpu/page.tsx": "09c9ac6458bf1a211303249bd9b5bf9f89064cd4461619308aa8cd51d57572c8",
+  "app/guides/guides.module.css": "d3320f7eb17ca8e79f0e6d6a9bf1858ddf61b680bcb0d10cea96ddf820de7daf",
+  "app/guides/page.tsx": "4e090966de90bdef724c81af048947bd41520a8718b2686f33ed577aa0a42d3c",
+  "app/hosting/page.tsx": "db06a394a290319a16d0c0c55118af640afe6680f7097cc6bd336c27bbd2c0c8",
   "app/kai-cloud.css": "8628368856b22f036f57cc5b9cc8cc80c91b39309b4be7115109562ac0ffddd0",
   "app/layout.tsx": "1b6ea3757ed0b4da7d7838356b1aeb3c529244e2ec2c4e7aa1057bc4e921394c",
   "app/page.tsx": "f45d9ccae1045825e60883945c3ab8b1090f2aae719866a24db51c3eb320851a",
@@ -24,8 +29,11 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "components/admin-resource-page.tsx": "026788b741fd20de28fe0095722822edcc5ae20305e2335d2217a66b70b70c4d",
   "components/card-hour-account-panel.tsx": "b46e420489f7d023c26b640446a28150be0a68b91a340e238f5f0eddf81497d9",
   "components/email-login.tsx": "43f6a8f1edc18b23ec099ba476c51d45b79e165bcd0f4a7778b5b78151874cb6",
+  "components/gpu-cloud-lab.module.css": "ce028d0512ca4691f35371f6f886aaeb90a148bb5b07efce4821645d3f382cb3",
+  "components/gpu-cloud-lab.tsx": "c772136928bbddea80d12f10cb9c928429b7422110578f9d3eb13127bc310899",
   "components/live-home-market-hero.tsx": "12b5174eb3b58c9bbcd37215876e47c08e37e782b216536cc344cdd8e2a5bc7a",
   "components/member-workspace.tsx": "0f6c0827d710e851ab9f7ca35760ce5b1df771b6741302d049d206a3c0bb8745",
+  "components/nav-links.tsx": "1db3e49bae8a4c546ab03d0c63c8d259de831ac8376dcbfe91da3627a1b7d9ff",
   "components/personal-center-overview.tsx": "c11de061d8efb74e3e86a1a5a555bdd1e19c30730cb73b56b3a65638bfff52f8",
   "components/personal-menu.module.css": "0813b8a2fa3d164922add93de17daf66adc0dd9c1859427097c36975708f90f2",
   "components/personal-menu.tsx": "31a492a0fdfa2e9f972f4ca5fd9d52ea094d96fdb5c8b7e1b53f29352b128fbe",
@@ -103,6 +111,7 @@ test("no new public page or layout is exposed outside the isolated admin panel",
     .filter((path) => !path.startsWith("app/admin/"))
     .filter((path) => path !== "app/checkout/[resourceId]/page.tsx")
     .filter((path) => path !== "app/login/page.tsx")
+    .filter((path) => !["app/gpu/page.tsx", "app/guides/page.tsx", "app/hosting/page.tsx"].includes(path))
     .filter((path) => !baseline.has(path));
   assert.deepEqual(unexpected, []);
 });

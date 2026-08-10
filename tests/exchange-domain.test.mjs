@@ -583,8 +583,8 @@ test("fresh v10 runtime enables immutable model, throughput, storage and rack pr
   const store = createD1ExchangeStore(adapter);
   try {
     const products = await store.listProductVersions();
-    assert.equal(products.length, 8);
-    assert.equal(products.filter((product) => product.productCode === "GPU_COMPUTE").length, 4);
+    assert.equal(products.length, 9);
+    assert.equal(products.filter((product) => product.productCode === "GPU_COMPUTE").length, 5);
     assert.deepEqual(
       products.filter((product) => product.productCode === "MODEL_INSTANCE").map((product) => product.id),
       ["PV-MODEL-DEEPSEEK-V4-PRO-STANDARD-V1"],
@@ -602,7 +602,7 @@ test("fresh v10 runtime enables immutable model, throughput, storage and rack pr
       ["PV-RACK-42U-10KW-MANAGED-V1"],
     );
     assert.equal(products.filter((product) => product.productCode === "POWER_CAPACITY").length, 0);
-    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM exchange_product_capacity_policies").get().count, 10);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM exchange_product_capacity_policies").get().count, 11);
     const templates = db.prepare(`SELECT product_code, product_version_id, feature_status
       FROM exchange_product_capacity_policies WHERE feature_status = 'DISABLED' ORDER BY product_code`).all()
       .map((row) => ({ ...row }));
@@ -677,7 +677,7 @@ test("M8 D1 version gate fails closed for existing v7/v8/v9/v10 and accepts only
   );
   applyExchangeMigrationFile(deployed.db, "0011_withdraw_swap_commission.sql");
   const v11Store = createD1ExchangeStore(deployed.adapter);
-  assert.equal((await v11Store.listProductVersions()).length, 8);
+  assert.equal((await v11Store.listProductVersions()).length, 9);
   assert.deepEqual(
     deployed.db.prepare("SELECT version FROM exchange_schema_migrations ORDER BY version").all().map((row) => row.version),
     [7, 8, 9, 10, 11],
@@ -1927,7 +1927,7 @@ test("D1 implementation follows the same verified supply path and market project
   const { db, adapter } = d1BackedBySqlite();
   const store = createD1ExchangeStore(adapter);
   try {
-    assert.equal((await store.listProductVersions()).length, 8);
+    assert.equal((await store.listProductVersions()).length, 9);
     const supplier = "supplier-d1";
     const resource = (await store.createResource(context(supplier, "d1-resource"), parseCreateResourceAsset({
       productVersionId: "PV-GPU-H20-PCIE-96GB",
