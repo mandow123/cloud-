@@ -54,6 +54,13 @@ export interface AccountAuthStore {
     organizationName: string;
     verifiedAt: string;
   }): Promise<ResolvedIdentity>;
+  resolveOrCreateKaiIdentity(input: {
+    issuer: string;
+    subject: string;
+    displayName: string;
+    verifiedEmail: string;
+    verifiedAt: string;
+  }): Promise<ResolvedIdentity>;
   resolveOrCreatePasswordAdministrator(input: { username: string; displayName: string; createdAt: string }): Promise<ResolvedIdentity>;
   listMemberships(accountId: string): Promise<Array<Membership & { organization: Organization }>>;
   getMembership(accountId: string, organizationId: string): Promise<(Membership & { organization: Organization }) | null>;
@@ -171,6 +178,40 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
       if (!created) throw new Error("ADMIN_IDENTITY_CREATE_FAILED");
       return created;
     },
+    async resolveOrCreateKaiIdentity(input) {
+      const readKaiIdentity = async () => {
+        const row = await db.first<Row>(`SELECT a.id AS account_id,a.display_name,a.primary_email,a.status AS account_status,
+            o.id AS organization_id,o.name AS organization_name,o.external_key,o.status AS organization_status,
+            m.id AS membership_id,m.status AS membership_status
+          FROM kai_identity_oidc_identities i
+          JOIN admin_user_accounts a ON a.id=i.account_id
+          JOIN admin_organizations o ON o.id=i.organization_id
+          JOIN admin_memberships m ON m.account_id=a.id AND m.organization_id=o.id
+          WHERE i.issuer=? AND i.subject=?`, [input.issuer, input.subject]);
+        if (!row) return null;
+        const membershipId = text(row, "membership_id");
+        return {
+          account: account(row), organization: organization(row),
+          membership: { id: membershipId, accountId: text(row, "account_id"), organizationId: text(row, "organization_id"), status: text(row, "membership_status") as Membership["status"], roles: await readMembershipRoles(db, membershipId) },
+        } satisfies ResolvedIdentity;
+      };
+      const existing = await readKaiIdentity();
+      if (existing) return existing;
+      const accountId = await digestId("acct", `${input.issuer}:${input.subject}`);
+      const organizationExternalKey = `KAI:IDENTITY:PERSONAL:${input.subject}`;
+      const organizationId = await digestId("org", organizationExternalKey);
+      const membershipId = await digestId("mbr", `${accountId}:${organizationId}`);
+      const identityId = await digestId("ident", `${input.issuer}:${input.subject}`);
+      await db.batch([
+        { sql: "INSERT OR IGNORE INTO admin_organizations(id,name,external_key,status,created_at,updated_at) VALUES(?,?,?,'ACTIVE',?,?)", values: [organizationId, "个人", organizationExternalKey, input.verifiedAt, input.verifiedAt] },
+        { sql: "INSERT OR IGNORE INTO admin_user_accounts(id,display_name,primary_email,status,created_at,updated_at) VALUES(?,?,?,'ACTIVE',?,?)", values: [accountId, input.displayName, input.verifiedEmail, input.verifiedAt, input.verifiedAt] },
+        { sql: "INSERT OR IGNORE INTO admin_memberships(id,account_id,organization_id,status,created_at,updated_at) VALUES(?,?,?,'ACTIVE',?,?)", values: [membershipId, accountId, organizationId, input.verifiedAt, input.verifiedAt] },
+        { sql: "INSERT OR IGNORE INTO kai_identity_oidc_identities(id,account_id,organization_id,issuer,subject,verified_email,verified_at,created_at) VALUES(?,?,?,?,?,?,?,?)", values: [identityId, accountId, organizationId, input.issuer, input.subject, input.verifiedEmail, input.verifiedAt, input.verifiedAt] },
+      ]);
+      const created = await readKaiIdentity();
+      if (!created) throw new Error("KAI_IDENTITY_CREATE_FAILED");
+      return created;
+    },
     async resolveOrCreatePasswordAdministrator(input) {
       const existing = await db.first<Row>(`SELECT p.account_id,p.organization_id,p.membership_id,
           a.display_name,a.primary_email,a.status AS account_status,
@@ -267,6 +308,9 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
       if (input.authMethod === "ADMIN_PASSWORD") {
         await db.run(`INSERT INTO admin_password_sessions(id,account_id,organization_id,token_hash,created_at,last_seen_at,idle_expires_at,absolute_expires_at,revoked_at)
           VALUES(?,?,?,?,?,?,?,?,NULL)`, [id, input.accountId, input.organizationId, input.tokenHash, input.now, input.now, input.idleExpiresAt, input.absoluteExpiresAt]);
+      } else if (input.authMethod === "KAI_IDENTITY_OIDC") {
+        await db.run(`INSERT INTO kai_identity_oidc_sessions(id,account_id,organization_id,token_hash,created_at,last_seen_at,idle_expires_at,absolute_expires_at,revoked_at)
+          VALUES(?,?,?,?,?,?,?,?,NULL)`, [id, input.accountId, input.organizationId, input.tokenHash, input.now, input.now, input.idleExpiresAt, input.absoluteExpiresAt]);
       } else {
         await db.run(`INSERT INTO admin_account_sessions(id,account_id,organization_id,token_hash,auth_method,created_at,last_seen_at,idle_expires_at,absolute_expires_at,revoked_at)
           VALUES(?,?,?,?,?,?,?,?,?,NULL)`, [id, input.accountId, input.organizationId, input.tokenHash, input.authMethod, input.now, input.now, input.idleExpiresAt, input.absoluteExpiresAt]);
@@ -288,6 +332,13 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
         JOIN admin_organizations o ON o.id=s.organization_id
         JOIN admin_memberships m ON m.account_id=s.account_id AND m.organization_id=s.organization_id
         WHERE s.token_hash=?`, [tokenHash]);
+      row ??= await db.first<Row>(`SELECT s.id AS session_id,s.account_id,s.organization_id,'KAI_IDENTITY_OIDC' AS auth_method,s.created_at AS session_created_at,s.last_seen_at,s.idle_expires_at,s.absolute_expires_at,s.revoked_at,
+          a.display_name,a.primary_email,a.status AS account_status,o.name AS organization_name,o.external_key,o.status AS organization_status,
+          m.id AS membership_id,m.status AS membership_status
+        FROM kai_identity_oidc_sessions s JOIN admin_user_accounts a ON a.id=s.account_id
+        JOIN admin_organizations o ON o.id=s.organization_id
+        JOIN admin_memberships m ON m.account_id=s.account_id AND m.organization_id=s.organization_id
+        WHERE s.token_hash=?`, [tokenHash]);
       if (!row || row.revoked_at != null) return null;
       const membershipId = text(row, "membership_id");
       return {
@@ -299,12 +350,16 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
     async touchSession(sessionId, now, idleExpiresAt) {
       const password = await db.run("UPDATE admin_password_sessions SET last_seen_at=?,idle_expires_at=? WHERE id=? AND revoked_at IS NULL AND idle_expires_at>? AND absolute_expires_at>?", [now, idleExpiresAt, sessionId, now, now]);
       if (password.changes === 1) return true;
-      return (await db.run("UPDATE admin_account_sessions SET last_seen_at=?,idle_expires_at=? WHERE id=? AND revoked_at IS NULL AND idle_expires_at>? AND absolute_expires_at>?", [now, idleExpiresAt, sessionId, now, now])).changes === 1;
+      const legacy = await db.run("UPDATE admin_account_sessions SET last_seen_at=?,idle_expires_at=? WHERE id=? AND revoked_at IS NULL AND idle_expires_at>? AND absolute_expires_at>?", [now, idleExpiresAt, sessionId, now, now]);
+      if (legacy.changes === 1) return true;
+      return (await db.run("UPDATE kai_identity_oidc_sessions SET last_seen_at=?,idle_expires_at=? WHERE id=? AND revoked_at IS NULL AND idle_expires_at>? AND absolute_expires_at>?", [now, idleExpiresAt, sessionId, now, now])).changes === 1;
     },
     async revokeSession(sessionId, revokedAt) {
       const password = await db.run("UPDATE admin_password_sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL", [revokedAt, sessionId]);
       if (password.changes === 1) return true;
-      return (await db.run("UPDATE admin_account_sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL", [revokedAt, sessionId])).changes === 1;
+      const legacy = await db.run("UPDATE admin_account_sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL", [revokedAt, sessionId]);
+      if (legacy.changes === 1) return true;
+      return (await db.run("UPDATE kai_identity_oidc_sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL", [revokedAt, sessionId])).changes === 1;
     },
     async countRecentOtp(normalizedEmail, since) {
       const row = await db.first<{ count: number }>("SELECT COUNT(*) AS count FROM admin_email_otp_challenges WHERE normalized_email=? AND created_at>=?", [normalizedEmail, since]);

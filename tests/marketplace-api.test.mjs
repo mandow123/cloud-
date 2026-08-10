@@ -980,7 +980,7 @@ test("readiness rejects an invalid exchange migration history and accepts an upg
     const readyResponse=await fetch(`${server.baseUrl}/api/ready`);assert.equal(readyResponse.status,200);
     const ready=await readyResponse.json();assert.equal(ready.status,"ok");
     for(const key of ["marketplace","exchange","supply","admin","auth"])assert.equal(ready.storage[key].ready,true,key);
-    for(const key of ["adminPasswordLogin","emailOtpLogin","alipayLive","sshProvisioning"]){assert.equal(ready.capabilities[key].available,false,key);assert.equal(ready.capabilities[key].failClosed,true,key);assert.ok(ready.capabilities[key].missing.length>0,key);}
+    for(const key of ["adminPasswordLogin","kaiIdentityLogin","alipayLive","sshProvisioning"]){assert.equal(ready.capabilities[key].available,false,key);assert.equal(ready.capabilities[key].failClosed,true,key);assert.ok(ready.capabilities[key].missing.length>0,key);}
     await stopServer(server);server=null;
     const inspected=new DatabaseSync(databasePath,{readOnly:true});
     try{

@@ -55,7 +55,10 @@ export function CardHourAccountPanel() {
     } catch { setFailed("error"); }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => { void load(); });
+    return () => window.cancelAnimationFrame(frame);
+  }, [load]);
 
   async function buyCardHours(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
