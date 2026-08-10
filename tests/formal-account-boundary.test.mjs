@@ -28,16 +28,16 @@ test("pending memberships cannot create trading records", async () => {
   const store = await createSqliteAccountAuthStore(":memory:");
   const now = new Date();
   const identity = await store.resolveOrCreateIdentity({
-    provider: "EMAIL",
-    tenantKey: "EXTERNAL",
+    provider: "LOCAL",
+    tenantKey: "LOCAL",
     subject: "pending-trader",
     displayName: "Pending Trader",
-    normalizedEmail: "pending@example.com",
-    organizationExternalKey: "EMAIL:pending-trader",
+    normalizedEmail: null,
+    organizationExternalKey: "LOCAL:pending-trader",
     organizationName: "Pending Organization",
     verifiedAt: now.toISOString(),
   });
-  const issued = await createAccountSession(new Request("http://localhost/api/auth/email/verify"), identity, "EMAIL_OTP", { store, now });
+  const issued = await createAccountSession(new Request("http://localhost/api/auth/local"), identity, "LOCAL_TEST", { store, now });
   const previous = globalThis.__kaiAccountAuthStorePromise;
   const previousLegacyGuard = process.env.KAI_ALLOW_LEGACY_ANON_WRITES;
   globalThis.__kaiAccountAuthStorePromise = Promise.resolve(store);

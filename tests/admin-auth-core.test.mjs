@@ -20,10 +20,10 @@ test("only ROOT receives administrator permissions", () => {
 test("account sessions enforce a thirty-minute idle and eight-hour absolute limit", async () => {
   const store = await createSqliteAccountAuthStore(":memory:");
   const now = new Date("2026-08-07T00:00:00.000Z");
-  const identity = await store.resolveOrCreateIdentity({ provider:"EMAIL",tenantKey:"EXTERNAL",subject:"subject",displayName:"External",normalizedEmail:"person@example.com",organizationExternalKey:"EMAIL:subject",organizationName:"External account",verifiedAt:now.toISOString() });
+  const identity = await store.resolveOrCreateIdentity({ provider:"LOCAL",tenantKey:"LOCAL",subject:"subject",displayName:"External",normalizedEmail:null,organizationExternalKey:"LOCAL:subject",organizationName:"External account",verifiedAt:now.toISOString() });
   await store.activateMembership(identity.membership.id,["SUPPORT_READONLY"],now.toISOString());
-  const active = await store.resolveOrCreateIdentity({ provider:"EMAIL",tenantKey:"EXTERNAL",subject:"subject",displayName:"External",normalizedEmail:"person@example.com",organizationExternalKey:"EMAIL:subject",organizationName:"External account",verifiedAt:now.toISOString() });
-  const issued = await createAccountSession(new Request("http://localhost/api/auth/local"),active,"EMAIL_OTP",{store,now});
+  const active = await store.resolveOrCreateIdentity({ provider:"LOCAL",tenantKey:"LOCAL",subject:"subject",displayName:"External",normalizedEmail:null,organizationExternalKey:"LOCAL:subject",organizationName:"External account",verifiedAt:now.toISOString() });
+  const issued = await createAccountSession(new Request("http://localhost/api/auth/local"),active,"LOCAL_TEST",{store,now});
   assert.equal(Date.parse(issued.absoluteExpiresAt)-now.getTime(),8*60*60*1_000);
   assert.equal(Date.parse(issued.idleExpiresAt)-now.getTime(),30*60*1_000);
   const cookie=issued.cookie.split(";")[0];
@@ -41,10 +41,10 @@ test("a client supplied ops header never creates an admin principal", async () =
 test("ordinary account sessions never expose an administrator principal", async () => {
   const store = await createSqliteAccountAuthStore(":memory:");
   const now = new Date();
-  const identity = await store.resolveOrCreateIdentity({ provider:"EMAIL",tenantKey:"EXTERNAL",subject:"ordinary",displayName:"Ordinary",normalizedEmail:"ordinary@example.com",organizationExternalKey:"EMAIL:ordinary",organizationName:"Ordinary Org",verifiedAt:now.toISOString() });
+  const identity = await store.resolveOrCreateIdentity({ provider:"LOCAL",tenantKey:"LOCAL",subject:"ordinary",displayName:"Ordinary",normalizedEmail:null,organizationExternalKey:"LOCAL:ordinary",organizationName:"Ordinary Org",verifiedAt:now.toISOString() });
   await store.activateMembership(identity.membership.id,["SUPPORT_READONLY"],now.toISOString());
-  const active = await store.resolveOrCreateIdentity({ provider:"EMAIL",tenantKey:"EXTERNAL",subject:"ordinary",displayName:"Ordinary",normalizedEmail:"ordinary@example.com",organizationExternalKey:"EMAIL:ordinary",organizationName:"Ordinary Org",verifiedAt:now.toISOString() });
-  const issued = await createAccountSession(new Request("http://localhost/api/auth/email/verify"),active,"EMAIL_OTP",{store,now});
+  const active = await store.resolveOrCreateIdentity({ provider:"LOCAL",tenantKey:"LOCAL",subject:"ordinary",displayName:"Ordinary",normalizedEmail:null,organizationExternalKey:"LOCAL:ordinary",organizationName:"Ordinary Org",verifiedAt:now.toISOString() });
+  const issued = await createAccountSession(new Request("http://localhost/api/auth/local"),active,"LOCAL_TEST",{store,now});
   const envelope = await accountSessionEnvelope(issued.context, store);
   assert.equal(envelope.authenticated, true);
   assert.equal("admin" in envelope, false);
@@ -71,7 +71,7 @@ test("requireAdminPermission accepts ROOT and rejects every non-ROOT role", asyn
     const other = await store.resolveOrCreateIdentity({ provider:"LOCAL",tenantKey:"LOCAL",subject:"non-root-test",displayName:"Non Root",normalizedEmail:null,organizationExternalKey:"LOCAL:NON_ROOT",organizationName:"Non Root Org",verifiedAt:now.toISOString() });
     await store.activateMembership(other.membership.id,["INVENTORY_OPERATOR"],now.toISOString());
     const activeOther = await store.resolveOrCreateIdentity({ provider:"LOCAL",tenantKey:"LOCAL",subject:"non-root-test",displayName:"Non Root",normalizedEmail:null,organizationExternalKey:"LOCAL:NON_ROOT",organizationName:"Non Root Org",verifiedAt:now.toISOString() });
-    const otherIssued = await createAccountSession(new Request("http://localhost/api/auth/email/verify"),activeOther,"EMAIL_OTP",{store,now});
+    const otherIssued = await createAccountSession(new Request("http://localhost/api/auth/local"),activeOther,"LOCAL_TEST",{store,now});
     const otherRequest = new Request("http://localhost/api/admin/inventory",{headers:{cookie:otherIssued.cookie.split(";")[0]}});
     await assert.rejects(requireAdminPermission(otherRequest,["ADMIN_PANEL_READ"]),(error)=>error instanceof AccountAuthError&&error.status===403);
   } finally {
@@ -80,8 +80,8 @@ test("requireAdminPermission accepts ROOT and rejects every non-ROOT role", asyn
 });
 
 test("authentication JSON rejects unsupported content and malformed payloads as client errors", async () => {
-  await assert.rejects(readAuthJson(new Request("http://localhost/api/auth/email/request",{method:"POST",body:"{}"})),(error)=>error instanceof AccountAuthError&&error.status===400&&error.code==="AUTH_JSON_REQUIRED");
-  await assert.rejects(readAuthJson(new Request("http://localhost/api/auth/email/request",{method:"POST",headers:{"content-type":"application/json"},body:"{"})),(error)=>error instanceof AccountAuthError&&error.status===400&&error.code==="AUTH_JSON_INVALID");
+  await assert.rejects(readAuthJson(new Request("http://localhost/api/auth/admin/password",{method:"POST",body:"{}"})),(error)=>error instanceof AccountAuthError&&error.status===400&&error.code==="AUTH_JSON_REQUIRED");
+  await assert.rejects(readAuthJson(new Request("http://localhost/api/auth/admin/password",{method:"POST",headers:{"content-type":"application/json"},body:"{"})),(error)=>error instanceof AccountAuthError&&error.status===400&&error.code==="AUTH_JSON_INVALID");
 });
 
 test("LOCAL login is limited to same-origin localhost and roles come only from server config", async () => {

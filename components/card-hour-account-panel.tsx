@@ -55,6 +55,8 @@ export function CardHourAccountPanel() {
     } catch { setFailed("error"); }
   }, []);
 
+  // The first state update happens only after the asynchronous request settles.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, [load]);
 
   async function buyCardHours(event: FormEvent<HTMLFormElement>) {

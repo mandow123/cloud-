@@ -31,7 +31,7 @@ const session = {
     roles: ["ROOT"],
   },
   sessionId: "session_private",
-  authMethod: "EMAIL_OTP",
+  authMethod: "ADMIN_PASSWORD",
 };
 
 function databaseFixture() {

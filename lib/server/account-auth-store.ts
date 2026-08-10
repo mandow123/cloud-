@@ -31,19 +31,7 @@ export type ResolvedIdentity = Readonly<{
 
 export type ResolvedSession = ResolvedIdentity & Readonly<{ session: StoredSession }>;
 
-export type OtpChallenge = Readonly<{
-  id: string;
-  normalizedEmail: string;
-  otpDigest: string;
-  attempts: number;
-  createdAt: string;
-  expiresAt: string;
-  consumedAt: string | null;
-}>;
-
 export interface AccountAuthStore {
-  createOAuthTransaction(input: { stateHash: string; returnPath: string; createdAt: string; expiresAt: string }): Promise<void>;
-  consumeOAuthTransaction(stateHash: string, consumedAt: string): Promise<{ returnPath: string } | null>;
   resolveOrCreateIdentity(input: {
     provider: "LARK" | "EMAIL" | "LOCAL";
     tenantKey: string;
@@ -64,11 +52,6 @@ export interface AccountAuthStore {
   resolveSession(tokenHash: string): Promise<ResolvedSession | null>;
   touchSession(sessionId: string, now: string, idleExpiresAt: string): Promise<boolean>;
   revokeSession(sessionId: string, revokedAt: string): Promise<boolean>;
-  countRecentOtp(normalizedEmail: string, since: string): Promise<number>;
-  latestOpenOtp(normalizedEmail: string): Promise<OtpChallenge | null>;
-  createOtpChallenge(input: { id: string; normalizedEmail: string; otpDigest: string; requestFingerprint: string; createdAt: string; expiresAt: string }): Promise<void>;
-  recordOtpFailure(id: string): Promise<boolean>;
-  consumeOtp(id: string, consumedAt: string): Promise<boolean>;
   countRecentPasswordFailures(usernameHash: string, requestFingerprint: string, since: string): Promise<number>;
   recordPasswordAttempt(input: { usernameHash: string; requestFingerprint: string; outcome: "ALLOWED" | "DENIED"; occurredAt: string }): Promise<void>;
   recordAudit(input: { accountId?: string; organizationId?: string; sessionId?: string; eventType: string; outcome: "ALLOWED" | "DENIED" | "ERROR"; target?: string; metadata?: Record<string, unknown>; occurredAt: string }): Promise<void>;
@@ -144,15 +127,6 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
     return results;
   };
   return {
-    async createOAuthTransaction(input) {
-      await db.run("INSERT INTO admin_oauth_transactions(id,provider,state_hash,return_path,created_at,expires_at,consumed_at) VALUES(?,'LARK',?,?,?,?,NULL)", [crypto.randomUUID(), input.stateHash, input.returnPath, input.createdAt, input.expiresAt]);
-    },
-    async consumeOAuthTransaction(stateHash, consumedAt) {
-      const row = await db.first<Row>("SELECT id,return_path FROM admin_oauth_transactions WHERE state_hash=? AND consumed_at IS NULL AND expires_at>?", [stateHash, consumedAt]);
-      if (!row) return null;
-      const result = await db.run("UPDATE admin_oauth_transactions SET consumed_at=? WHERE id=? AND consumed_at IS NULL AND expires_at>?", [consumedAt, text(row, "id"), consumedAt]);
-      return result.changes === 1 ? { returnPath: text(row, "return_path") } : null;
-    },
     async resolveOrCreateIdentity(input) {
       const existing = await readIdentity(db, input.provider, input.tenantKey, input.subject);
       if (existing) return existing;
@@ -305,23 +279,6 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
       const password = await db.run("UPDATE admin_password_sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL", [revokedAt, sessionId]);
       if (password.changes === 1) return true;
       return (await db.run("UPDATE admin_account_sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL", [revokedAt, sessionId])).changes === 1;
-    },
-    async countRecentOtp(normalizedEmail, since) {
-      const row = await db.first<{ count: number }>("SELECT COUNT(*) AS count FROM admin_email_otp_challenges WHERE normalized_email=? AND created_at>=?", [normalizedEmail, since]);
-      return Number(row?.count ?? 0);
-    },
-    async latestOpenOtp(normalizedEmail) {
-      const row = await db.first<Row>("SELECT * FROM admin_email_otp_challenges WHERE normalized_email=? AND consumed_at IS NULL ORDER BY created_at DESC LIMIT 1", [normalizedEmail]);
-      return row ? { id: text(row, "id"), normalizedEmail: text(row, "normalized_email"), otpDigest: text(row, "otp_digest"), attempts: Number(row.attempts), createdAt: text(row, "created_at"), expiresAt: text(row, "expires_at"), consumedAt: nullableText(row, "consumed_at") } : null;
-    },
-    async createOtpChallenge(input) {
-      await db.run("INSERT INTO admin_email_otp_challenges(id,normalized_email,otp_digest,request_fingerprint,attempts,created_at,expires_at,consumed_at) VALUES(?,?,?,?,0,?,?,NULL)", [input.id, input.normalizedEmail, input.otpDigest, input.requestFingerprint, input.createdAt, input.expiresAt]);
-    },
-    async recordOtpFailure(id) {
-      return (await db.run("UPDATE admin_email_otp_challenges SET attempts=attempts+1 WHERE id=? AND consumed_at IS NULL AND attempts<5", [id])).changes === 1;
-    },
-    async consumeOtp(id, consumedAt) {
-      return (await db.run("UPDATE admin_email_otp_challenges SET consumed_at=? WHERE id=? AND consumed_at IS NULL AND attempts<5 AND expires_at>?", [consumedAt, id, consumedAt])).changes === 1;
     },
     async countRecentPasswordFailures(usernameHash, requestFingerprint, since) {
       const row = await db.first<{ count: number }>("SELECT COUNT(*) AS count FROM admin_password_login_attempts WHERE username_hash=? AND request_fingerprint=? AND outcome='DENIED' AND occurred_at>=?", [usernameHash, requestFingerprint, since]);

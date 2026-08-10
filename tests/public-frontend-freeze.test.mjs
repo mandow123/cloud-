@@ -8,25 +8,24 @@ import test from "node:test";
 const BASELINE = "bb7fd3211fdff28a448af85f53e9f40839ffa843";
 const ROOT = join(import.meta.dirname, "..");
 const EXTRA_FROZEN_FILES = ["data/model-market.snapshot.json", "lib/catalog.mjs"];
+const REMOVED_PUBLIC_AUTH_FILES = new Set(["components/account-login.tsx", "components/email-login.tsx"]);
 const APPROVED_PUBLIC_FILES = Object.freeze({
   "app/kai-cloud.css": "8628368856b22f036f57cc5b9cc8cc80c91b39309b4be7115109562ac0ffddd0",
   "app/layout.tsx": "1b6ea3757ed0b4da7d7838356b1aeb3c529244e2ec2c4e7aa1057bc4e921394c",
   "app/page.tsx": "f45d9ccae1045825e60883945c3ab8b1090f2aae719866a24db51c3eb320851a",
   "app/checkout/[resourceId]/page.tsx": "3bebbc74d265d24dd67a2d1c54816fbae604188ed57d1eeabe27bc6669c3693c",
-  "app/login/page.tsx": "703ea83d1d8c970ae50ae92c866a447392f9687bfb1a0856c205bef4f53aff46",
+  "app/login/page.tsx": "24189ab3f79eaf571e869b9784adea83f6b3e722136273dc2420301574f6350d",
   "app/member/page.tsx": "c72c258a8266554e939f686f7f9e3b26539a37d174fbfb8ab6b5f7a7a6edb272",
-  "components/account-login.tsx": "df5cb9c7800b6d2ba79a08b5c820bd002d8786fd2c9d3269797936795aa79dfa",
-  "components/account-required.tsx": "20b2a1330e872904e8d6ba73442e24bd2c8bd53f47c8619448cd9cfacc77b755",
+  "components/account-required.tsx": "91b3447cd0a933689d50f986768523d94a29f386c7a1b112f829f6d102b20e4c",
   "components/buyer-order-list.tsx": "fa15cbb70d18d19074633efc5d9fe60acd276ae4a45ab9df1e99dc3f6092d31a",
   "components/catalog-purchase.module.css": "d9e451203cbbfcb4b13a1c8f91267309cfe4be895e7ee225afb52cdfbc99d0a7",
   "components/catalog-purchase.tsx": "8ac8b649b82789a0b7c12212c1e0a139f4c6c5f464c7897a974b5fc6730c7555",
   "components/admin-login.tsx": "59e67e72dfec2275c3467f610ce6d9e270b14ec05a32d389be033ef83398f0ce",
   "components/admin-resource-page.tsx": "026788b741fd20de28fe0095722822edcc5ae20305e2335d2217a66b70b70c4d",
-  "components/card-hour-account-panel.tsx": "7ebb1377ea7e6a546d0f7cb1d69ea4bfe3996345ffe99c4807433ebd0274e4fb",
-  "components/email-login.tsx": "43f6a8f1edc18b23ec099ba476c51d45b79e165bcd0f4a7778b5b78151874cb6",
+  "components/card-hour-account-panel.tsx": "4cd841e9aa59c6b8189b4374f89107b5dfef071e03e9de98c8b0069061dc7131",
   "components/live-home-market-hero.tsx": "12b5174eb3b58c9bbcd37215876e47c08e37e782b216536cc344cdd8e2a5bc7a",
   "components/member-workspace.tsx": "0f6c0827d710e851ab9f7ca35760ce5b1df771b6741302d049d206a3c0bb8745",
-  "components/personal-center-overview.tsx": "c11de061d8efb74e3e86a1a5a555bdd1e19c30730cb73b56b3a65638bfff52f8",
+  "components/personal-center-overview.tsx": "395c0d61c0e0ca22f9802c9a2317b933cc6940995bcf151b9a7b2591605adaa6",
   "components/personal-menu.module.css": "0813b8a2fa3d164922add93de17daf66adc0dd9c1859427097c36975708f90f2",
   "components/personal-menu.tsx": "31a492a0fdfa2e9f972f4ca5fd9d52ea094d96fdb5c8b7e1b53f29352b128fbe",
   "components/resource-explorer.tsx": "aedd1b56606181b818b1a5c3b7bf123ba050c3333a56984d9c36778f524da7d0",
@@ -70,7 +69,7 @@ function walk(directory) {
 
 test("the public frontend stays frozen outside the approved purchase and personal-account additions", () => {
   const changed = [];
-  for (const path of [...baselineFiles(), ...EXTRA_FROZEN_FILES].filter((item) => !(item in APPROVED_PUBLIC_FILES))) {
+  for (const path of [...baselineFiles(), ...EXTRA_FROZEN_FILES].filter((item) => !(item in APPROVED_PUBLIC_FILES) && !REMOVED_PUBLIC_AUTH_FILES.has(item))) {
     const currentPath = join(ROOT, path);
     if (!existsSync(currentPath)) {
       changed.push({ path, reason: "missing" });
@@ -79,6 +78,7 @@ test("the public frontend stays frozen outside the approved purchase and persona
     if (!sameContent(path, readFileSync(currentPath), baselineContent(path))) changed.push({ path, reason: "content differs" });
   }
   assert.deepEqual(changed, []);
+  for (const path of REMOVED_PUBLIC_AUTH_FILES) assert.equal(existsSync(join(ROOT, path)), false, `${path} must stay removed`);
 });
 
 test("the approved purchase and personal-account files are pinned", () => {

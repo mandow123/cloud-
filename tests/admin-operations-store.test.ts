@@ -91,7 +91,7 @@ test("administrator principals come from identity facts and support audited vers
   const f=fixture();const auth=await createSqliteAccountAuthStore(f.path);const at="2026-08-07T06:00:00.000Z";
   const bootstrap=await auth.resolveOrCreateIdentity({provider:"LOCAL",tenantKey:"LOCAL",subject:"test-bootstrap",displayName:"Local Bootstrap",normalizedEmail:null,organizationExternalKey:"LOCAL:KAI",organizationName:"KAI Local Development",verifiedAt:at});
   await auth.activateMembership(bootstrap.membership.id,["ROOT"],at);
-  await auth.resolveOrCreateIdentity({provider:"LARK",tenantKey:"allowed-tenant",subject:"unknown-open-id",displayName:"Unknown Lark User",normalizedEmail:null,organizationExternalKey:"LARK:allowed-tenant",organizationName:"KAI Lark",verifiedAt:at});
+  await auth.resolveOrCreateIdentity({provider:"LOCAL",tenantKey:"LOCAL",subject:"unknown-local-id",displayName:"Unknown Local User",normalizedEmail:null,organizationExternalKey:"LOCAL:unknown",organizationName:"KAI Local",verifiedAt:at});
   const store=await createSqliteAdminOperationsStore(f.path);const actor=(key:string)=>({...context(bootstrap.account.id,key),organizationId:bootstrap.organization.id});
   try{
     const before=await store.listPrincipals();assert.equal(before.length,1);assert.equal(before[0]?.displayName,"Local Bootstrap");assert.deepEqual(before[0]?.roles,["ROOT"]);assert.equal(before[0]?.version,0);
