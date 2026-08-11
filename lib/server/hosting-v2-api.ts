@@ -1,6 +1,7 @@
 import { AccountAuthError, assertAccountAuthSameOrigin } from "./account-auth.ts";
 import { mutationHash, requireIdempotencyKey } from "./api-guard.ts";
 import type { HostingMutationContext } from "./hosting-v2-store.ts";
+import type { HostingContract } from "../hosting-v2.ts";
 
 export { requireHostingV2Enabled } from "./hosting-v2-feature.ts";
 
@@ -24,6 +25,27 @@ export function hostingInteger(input: Record<string, unknown>, field: string, mi
 export function hostingBoolean(input: Record<string, unknown>, field: string) {
   if (typeof input[field] !== "boolean") throw new AccountAuthError("HOSTING_VALIDATION_ERROR", 400, `${field} 必须是布尔值。 `);
   return input[field];
+}
+
+export function hostingContractClientView(contract: HostingContract) {
+  return {
+    id: contract.id,
+    offerId: contract.offerId,
+    snapshot: contract.snapshot,
+    reservedSeconds: contract.reservedSeconds,
+    measuredSeconds: contract.measuredSeconds,
+    heldMicros: contract.heldMicros,
+    settledMicros: contract.settledMicros,
+    status: contract.status,
+    sshPublicKeyFingerprint: contract.sshPublicKeyFingerprint,
+    endpointDisplay: contract.endpointDisplay,
+    startedAt: contract.startedAt,
+    stoppedAt: contract.stoppedAt,
+    acceptedAt: contract.acceptedAt,
+    version: contract.version,
+    createdAt: contract.createdAt,
+    updatedAt: contract.updatedAt,
+  };
 }
 
 export async function hostingMutationContext(request: Request, actorId: string, body: unknown): Promise<HostingMutationContext> {
