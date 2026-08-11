@@ -1,5 +1,5 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { chmod, chown, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { chmod, chown, lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import { AgentError, digestJson } from "./protocol.mjs";
@@ -77,6 +77,15 @@ export function parseStopRequest(value) {
   if (input.protocolVersion !== 1 || input.operation !== "STOP") throw fail("STOP_REQUEST_INVALID", "Stop protocol is unsupported.");
   if (typeof input.commandId !== "string" || !ID_PATTERN.test(input.commandId) || typeof input.contractId !== "string" || !ID_PATTERN.test(input.contractId)) throw fail("STOP_ID_INVALID", "Stop identifiers are invalid.");
   return { protocolVersion: 1, operation: "STOP", commandId: input.commandId, contractId: input.contractId };
+}
+
+export function parseCleanupRequest(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw fail("CLEANUP_REQUEST_INVALID", "Cleanup request must be an object.");
+  const input = value;
+  assertExactKeys(input, ["protocolVersion", "operation", "commandId", "contractId"], "CLEANUP_REQUEST_INVALID");
+  if (input.protocolVersion !== 1 || input.operation !== "CLEANUP") throw fail("CLEANUP_REQUEST_INVALID", "Cleanup protocol is unsupported.");
+  if (typeof input.commandId !== "string" || !ID_PATTERN.test(input.commandId) || typeof input.contractId !== "string" || !ID_PATTERN.test(input.contractId)) throw fail("CLEANUP_ID_INVALID", "Cleanup identifiers are invalid.");
+  return { protocolVersion: 1, operation: "CLEANUP", commandId: input.commandId, contractId: input.contractId };
 }
 
 async function docker(args) {
@@ -323,5 +332,83 @@ export async function executeStop(value, {
     await writeJsonAtomic(manifestPath, { ...stopping, status: "STOPPING", lastStopErrorCode: code, updatedAt: now() }).catch(() => undefined);
     if (error instanceof AgentError) throw error;
     throw fail("STOP_FAILED", "The isolated workload could not be stopped.", error);
+  }
+}
+
+async function namedContainerId(workloadName, runDocker) {
+  const result = await runDocker(["container", "ls", "--all", "--quiet", "--filter", `name=^/${workloadName}$`]);
+  const ids = result.stdout.trim().split(/\r?\n/u).filter(Boolean);
+  if (ids.length > 1 || ids.some((value) => !/^[a-f0-9]{64}$/u.test(value))) throw fail("CONTAINER_LIST_INVALID", "Container runtime returned ambiguous cleanup inventory.");
+  return ids[0] ?? null;
+}
+
+async function assertPathAbsent(path) {
+  try {
+    await lstat(path);
+    throw fail("CLEANUP_RESIDUAL_FILES", "Workload credentials or workspace still exist after cleanup.");
+  } catch (error) {
+    if (error?.code === "ENOENT") return;
+    throw error;
+  }
+}
+
+export async function executeCleanup(value, {
+  environment = process.env,
+  runDocker = docker,
+  removePath = rm,
+  now = () => new Date().toISOString(),
+} = {}) {
+  const request = parseCleanupRequest(value);
+  const requestDigest = digestJson(request);
+  const { workloadName, workloadRoot, manifestPath } = workloadIdentity(request.contractId, environment);
+  let manifest = await readManifest(manifestPath, "CLEANUP_WORKLOAD_NOT_PROVISIONED");
+  if (manifest.result?.contractId !== request.contractId || manifest.result?.protocolVersion !== 1
+    || !manifest.stopResult || typeof manifest.result.containerDigest !== "string") {
+    throw fail("CLEANUP_MANIFEST_INVALID", "Stopped workload evidence does not match the cleanup contract.");
+  }
+  const workspace = join(workloadRoot, "workspace");
+  const authorizedKeys = join(workloadRoot, "authorized_keys");
+  if (manifest.status === "CLEANED") {
+    if (manifest.cleanupRequestDigest !== requestDigest || !manifest.cleanupResult) throw fail("CLEANUP_REPLAY_CONFLICT", "The workload was cleaned by a different command.");
+    if (await namedContainerId(workloadName, runDocker)) throw fail("CLEANUP_RESIDUAL_CONTAINER", "A container still exists after cleanup.");
+    await assertPathAbsent(authorizedKeys);
+    await assertPathAbsent(workspace);
+    return manifest.cleanupResult;
+  }
+  if (manifest.status !== "STOPPED" && manifest.status !== "CLEANING") throw fail("CLEANUP_STATE_INVALID", "Workload is not stopped and ready for cleanup.");
+  if (manifest.status === "CLEANING" && manifest.cleanupRequestDigest !== requestDigest) throw fail("CLEANUP_REPLAY_CONFLICT", "A different cleanup command is already in progress.");
+
+  const cleaning = { ...manifest, status: "CLEANING", cleanupCommandId: request.commandId, cleanupRequestDigest: requestDigest, updatedAt: now() };
+  await writeJsonAtomic(manifestPath, cleaning);
+  try {
+    const containerId = await namedContainerId(workloadName, runDocker);
+    if (containerId) {
+      const inspection = await inspectManagedContainer(workloadName, cleaning, runDocker);
+      if (inspection.running) throw fail("CLEANUP_REQUIRES_STOPPED", "Cleanup refuses to remove a running container.");
+      await runDocker(["container", "rm", workloadName]);
+    }
+    if (await namedContainerId(workloadName, runDocker)) throw fail("CLEANUP_RESIDUAL_CONTAINER", "Container still exists after cleanup.");
+    await removePath(authorizedKeys, { force: true });
+    await removePath(workspace, { recursive: true, force: true });
+    await assertPathAbsent(authorizedKeys);
+    await assertPathAbsent(workspace);
+    const cleanedAt = now();
+    const result = {
+      protocolVersion: 1,
+      contractId: request.contractId,
+      containerDigest: cleaning.result.containerDigest,
+      cleanupDigest: digestJson({ contractId: request.contractId, workloadName, containerDigest: cleaning.result.containerDigest, containerRemoved: true, authorizedKeyRemoved: true, workspaceRemoved: true }),
+      containerRemoved: true,
+      authorizedKeyRemoved: true,
+      workspaceRemoved: true,
+      cleanedAt,
+    };
+    await writeJsonAtomic(manifestPath, { ...cleaning, status: "CLEANED", cleanupResult: result, updatedAt: cleanedAt });
+    return result;
+  } catch (error) {
+    const code = error instanceof AgentError ? error.code : "CLEANUP_FAILED";
+    await writeJsonAtomic(manifestPath, { ...cleaning, status: "CLEANING", lastCleanupErrorCode: code, updatedAt: now() }).catch(() => undefined);
+    if (error instanceof AgentError) throw error;
+    throw fail("CLEANUP_FAILED", "The isolated workload could not be cleaned.", error);
   }
 }

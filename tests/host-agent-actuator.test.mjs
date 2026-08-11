@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { probeSshReadiness, provisionWorkload, startWorkload, stopWorkload } from "../host-agent/src/actuator-client.mjs";
-import { executeProvision, executeStart, executeStop, parseProvisionRequest, parseStartRequest, parseStopRequest } from "../host-agent/src/actuator.mjs";
+import { cleanupWorkload, probeSshReadiness, provisionWorkload, startWorkload, stopWorkload } from "../host-agent/src/actuator-client.mjs";
+import { executeCleanup, executeProvision, executeStart, executeStop, parseCleanupRequest, parseProvisionRequest, parseStartRequest, parseStopRequest } from "../host-agent/src/actuator.mjs";
 import { processOneCommand } from "../host-agent/src/client.mjs";
 import { AgentError, digestJson, generateDeviceIdentity } from "../host-agent/src/protocol.mjs";
 import { writeState } from "../host-agent/src/state.mjs";
@@ -168,6 +168,60 @@ test("STOP gracefully halts only the running contract container and records boun
   }
 });
 
+test("CLEANUP removes the stopped container, temporary key and workspace before reuse", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "kai-actuator-cleanup-"));
+  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_ACTUATOR_STATE_DIR: directory };
+  const containerId = "b".repeat(64);
+  let workloadName = "";
+  let containerExists = false;
+  let running = false;
+  const calls = [];
+  const runDocker = async (args) => {
+    calls.push(args);
+    if (args[0] === "image") return { stdout: JSON.stringify([image]) };
+    if (args[0] === "container" && args[1] === "create") {
+      workloadName = args[args.indexOf("--name") + 1];
+      containerExists = true;
+      return { stdout: `${containerId}\n` };
+    }
+    if (args[0] === "container" && args[1] === "inspect") return {
+      stdout: JSON.stringify({ id: containerId, image, labels: { "kai.cloud.managed": "true", "kai.cloud.contract-digest": digestJson({ contractId: request().contractId }) }, running }),
+    };
+    if (args[0] === "container" && args[1] === "start") { running = true; return { stdout: `${workloadName}\n` }; }
+    if (args[0] === "container" && args[1] === "stop") { running = false; return { stdout: `${workloadName}\n` }; }
+    if (args[0] === "container" && args[1] === "ls") return { stdout: containerExists ? `${containerId}\n` : "" };
+    if (args[0] === "container" && args[1] === "rm") {
+      assert.deepEqual(args, ["container", "rm", workloadName]);
+      containerExists = false;
+      return { stdout: `${containerId}\n` };
+    }
+    throw new Error(`unexpected docker operation: ${args.join(" ")}`);
+  };
+  try {
+    await executeProvision(request(), { environment, runDocker, changeOwner: async () => undefined, now: () => "2026-08-11T08:00:00.000Z" });
+    await executeStart({ protocolVersion: 1, operation: "START", commandId: "hcmd_start0001", contractId: request().contractId }, { environment, runDocker, now: () => "2026-08-11T08:01:00.000Z" });
+    await executeStop({ protocolVersion: 1, operation: "STOP", commandId: "hcmd_stop0001", contractId: request().contractId }, { environment, runDocker, now: () => "2026-08-11T08:11:00.000Z" });
+    const cleanupRequest = { protocolVersion: 1, operation: "CLEANUP", commandId: "hcmd_cleanup0001", contractId: request().contractId };
+    assert.equal(parseCleanupRequest(cleanupRequest).operation, "CLEANUP");
+    assert.throws(() => parseCleanupRequest({ ...cleanupRequest, removeContainer: true }), (error) => error.code === "CLEANUP_REQUEST_INVALID");
+    const cleaned = await executeCleanup(cleanupRequest, { environment, runDocker, now: () => "2026-08-11T08:12:00.000Z" });
+    assert.equal(cleaned.containerRemoved, true);
+    assert.equal(cleaned.authorizedKeyRemoved, true);
+    assert.equal(cleaned.workspaceRemoved, true);
+    assert.match(cleaned.cleanupDigest, /^sha256:[a-f0-9]{64}$/u);
+    const workloadRoot = join(directory, "workloads", workloadName);
+    await assert.rejects(readFile(join(workloadRoot, "authorized_keys"), "utf8"), (error) => error.code === "ENOENT");
+    await assert.rejects(readFile(join(workloadRoot, "workspace"), "utf8"), (error) => error.code === "ENOENT");
+    assert.match(await readFile(join(workloadRoot, "manifest.json"), "utf8"), /"status": "CLEANED"/u);
+    assert.equal(calls.filter((args) => args[0] === "container" && args[1] === "rm").length, 1);
+    assert.deepEqual(await executeCleanup(cleanupRequest, { environment, runDocker }), cleaned);
+    assert.equal(calls.filter((args) => args[0] === "container" && args[1] === "rm").length, 1, "cleanup replay must not remove twice");
+    await assert.rejects(executeCleanup({ ...cleanupRequest, commandId: "hcmd_cleanup0002" }, { environment, runDocker }), (error) => error.code === "CLEANUP_REPLAY_CONFLICT");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("non-root Host Agent passes PROVISION to the actuator without gaining container arguments", async () => {
   const command = {
     id: "hcmd_actuator0001",
@@ -269,6 +323,32 @@ test("non-root Host Agent submits stopped runtime evidence without choosing bill
   assert.equal("measuredSeconds" in result.details, false, "the Agent must not label its evidence as the server billing decision");
   assert.equal(result.evidenceDigest, digestJson(result.details));
   await assert.rejects(stopWorkload({ ...command, payload: { ...command.payload, maximumSeconds: 60 } }, {}, { call: async () => runtime }), (error) => error.code === "STOP_COMMAND_INVALID");
+});
+
+test("non-root Host Agent accepts cleanup only when every removal proof is true", async () => {
+  const command = {
+    id: "hcmd_cleanup0001",
+    contractId: "hctr_actuator0001",
+    type: "CLEANUP",
+    payload: { contractId: "hctr_actuator0001", removeAuthorizedKeys: true, removeContainer: true, removeWorkspace: true },
+  };
+  let sent = null;
+  const runtime = {
+    protocolVersion: 1,
+    contractId: command.contractId,
+    containerDigest: `sha256:${"b".repeat(64)}`,
+    cleanupDigest: `sha256:${"c".repeat(64)}`,
+    containerRemoved: true,
+    authorizedKeyRemoved: true,
+    workspaceRemoved: true,
+    cleanedAt: "2026-08-11T08:12:00.000Z",
+  };
+  const result = await cleanupWorkload(command, {}, { call: async (value) => { sent = value; return runtime; }, now: () => "2026-08-11T08:12:01.000Z" });
+  assert.deepEqual(sent, { protocolVersion: 1, operation: "CLEANUP", commandId: command.id, contractId: command.contractId });
+  assert.equal(result.details.cleanupStatus, "CLEANED");
+  assert.equal(result.evidenceDigest, digestJson(result.details));
+  await assert.rejects(cleanupWorkload({ ...command, payload: { ...command.payload, removeWorkspace: false } }, {}, { call: async () => runtime }), (error) => error.code === "CLEANUP_COMMAND_INVALID");
+  await assert.rejects(cleanupWorkload(command, {}, { call: async () => ({ ...runtime, authorizedKeyRemoved: false }) }), (error) => error.code === "ACTUATOR_RESULT_INVALID");
 });
 
 test("transient actuator failures retry by lease and the final attempt reports a signed failure", async () => {

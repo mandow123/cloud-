@@ -168,3 +168,25 @@ export async function stopWorkload(command, _state, { call = callActuator, now =
   const details = { ...runtime, runtimeStatus: "STOPPED", observedAt: now() };
   return { outcome: "SUCCEEDED", evidenceDigest: digestJson(details), errorCode: null, details };
 }
+
+export async function cleanupWorkload(command, _state, { call = callActuator, now = () => new Date().toISOString() } = {}) {
+  const payload = command?.payload;
+  if (!command || command.type !== "CLEANUP" || typeof command.id !== "string" || typeof command.contractId !== "string" || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new AgentError("CLEANUP_COMMAND_INVALID", "Cleanup command is invalid.");
+  }
+  const fields = Object.keys(payload).sort();
+  if (fields.join(",") !== "contractId,removeAuthorizedKeys,removeContainer,removeWorkspace" || payload.contractId !== command.contractId
+    || payload.removeAuthorizedKeys !== true || payload.removeContainer !== true || payload.removeWorkspace !== true) {
+    throw new AgentError("CLEANUP_COMMAND_INVALID", "Cleanup command fields are invalid.");
+  }
+  const runtime = await call({ protocolVersion: 1, operation: "CLEANUP", commandId: command.id, contractId: command.contractId });
+  if (runtime.protocolVersion !== 1 || runtime.contractId !== command.contractId
+    || !/^sha256:[a-f0-9]{64}$/u.test(runtime.containerDigest)
+    || !/^sha256:[a-f0-9]{64}$/u.test(runtime.cleanupDigest)
+    || runtime.containerRemoved !== true || runtime.authorizedKeyRemoved !== true || runtime.workspaceRemoved !== true
+    || typeof runtime.cleanedAt !== "string" || !Number.isFinite(Date.parse(runtime.cleanedAt))) {
+    throw new AgentError("ACTUATOR_RESULT_INVALID", "The workload cleanup result did not match the signed command.");
+  }
+  const details = { ...runtime, cleanupStatus: "CLEANED", observedAt: now() };
+  return { outcome: "SUCCEEDED", evidenceDigest: digestJson(details), errorCode: null, details };
+}

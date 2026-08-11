@@ -23,6 +23,21 @@ function mutation(actorId, key, hash, now) {
   return { actorId, idempotencyKey: key, payloadHash: hash, now };
 }
 
+function cleanupDetails(contractId, now) {
+  return {
+    protocolVersion: 1,
+    contractId,
+    containerDigest: `sha256:${"6".repeat(64)}`,
+    cleanupDigest: `sha256:${"7".repeat(64)}`,
+    containerRemoved: true,
+    authorizedKeyRemoved: true,
+    workspaceRemoved: true,
+    cleanedAt: now,
+    cleanupStatus: "CLEANED",
+    observedAt: now,
+  };
+}
+
 function seedStoppedContract(path, suffix, buyer, supplier, now) {
   const db = new DatabaseSync(path, { enableForeignKeyConstraints: true });
   const deviceId = `had_settlement_${suffix}`;
@@ -33,7 +48,7 @@ function seedStoppedContract(path, suffix, buyer, supplier, now) {
   db.prepare("INSERT OR IGNORE INTO hosting_v2_supplier_profiles(organization_id,account_id,supplier_type,legal_display_name,contact_email,agreement_version,status,version,created_at,updated_at) VALUES(?,?,'INDIVIDUAL','结算测试供应方',?,'KAI_HOSTING_2026_08','APPROVED',3,?,?)").run(supplier.activeOrganization.id, supplier.account.id, supplier.account.primaryEmail, now, now);
   db.prepare("INSERT OR IGNORE INTO hosting_v2_fee_schedules(id,platform_fee_bps,referral_reward_bps,status,effective_from,created_by,created_at) VALUES(?,1000,300,'ACTIVE',?,'admin-market',?)").run(feeId, now, now);
   db.prepare(`INSERT INTO hosting_v2_devices(id,organization_id,account_id,display_name,device_key_id,device_public_key,agent_version,inventory_json,inventory_digest,status,verification_status,verification_evidence_digest,verified_until,last_sequence,last_seen_at,version,created_at,updated_at)
-    VALUES(?,?,?,?,?,?,?,?,?,'VERIFIED','PASSED',?,?,1,?,1,?,?)`).run(deviceId, supplier.activeOrganization.id, supplier.account.id, `Settlement GPU ${suffix}`, `sha256:${suffix.padEnd(64, "3").slice(0, 64)}`, "A".repeat(43), "1.2.0", JSON.stringify(inventory), `sha256:${suffix.padEnd(64, "4").slice(0, 64)}`, `sha256:${suffix.padEnd(64, "5").slice(0, 64)}`, new Date(Date.parse(now) + 86_400_000).toISOString(), now, now, now);
+    VALUES(?,?,?,?,?,?,?,?,?,'VERIFIED','PASSED',?,?,1,?,1,?,?)`).run(deviceId, supplier.activeOrganization.id, supplier.account.id, `Settlement GPU ${suffix}`, `sha256:${suffix.padEnd(64, "3").slice(0, 64)}`, "A".repeat(43), "1.3.0", JSON.stringify(inventory), `sha256:${suffix.padEnd(64, "4").slice(0, 64)}`, `sha256:${suffix.padEnd(64, "5").slice(0, 64)}`, new Date(Date.parse(now) + 86_400_000).toISOString(), now, now, now);
   db.prepare(`INSERT INTO hosting_v2_offers(id,organization_id,device_id,fee_schedule_id,title,gpu_model,region,card_hour_micros_per_gpu_hour,min_rental_seconds,max_rental_seconds,available_from,available_until,approved_image,terms_version,status,version,created_at,updated_at)
     VALUES(?,?,?,?,?,'RTX_4090','中国·北京',3600000,180,3600,?,?,?,'KAI_HOSTING_TERMS_2026_08','RESERVED',2,?,?)`).run(offerId, supplier.activeOrganization.id, deviceId, feeId, `Settlement RTX 4090 ${suffix}`, new Date(Date.parse(now) - 60_000).toISOString(), new Date(Date.parse(now) + 86_400_000).toISOString(), process.env.KAI_HOSTING_APPROVED_IMAGES, now, now);
   const snapshot = { title: `Settlement RTX 4090 ${suffix}`, gpuModel: "RTX_4090", region: "中国·北京", cardHourMicrosPerGpuHour: 3_600_000, approvedImage: process.env.KAI_HOSTING_APPROVED_IMAGES, termsVersion: "KAI_HOSTING_TERMS_2026_08", platformFeeBps: 1_000, referralRewardBps: 300 };
@@ -74,7 +89,8 @@ test("buyer acceptance settles actual card-hours, vests income and relists only 
 
     const cleanup = await hosting.pollCommand(seeded.deviceId, now);
     assert.equal(cleanup.type, "CLEANUP");
-    const cleaned = await hosting.completeCommand(seeded.deviceId, cleanup.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"6".repeat(64)}`, details: { removedContainer: true, removedWorkspace: true, removedAuthorizedKey: true } }, mutation(`agent:${seeded.deviceId}`, "cleanup-success", "cleanup-success-hash", now));
+    await assert.rejects(hosting.completeCommand(seeded.deviceId, cleanup.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"6".repeat(64)}`, details: { ...cleanupDetails(seeded.contractId, now), workspaceRemoved: false } }, mutation(`agent:${seeded.deviceId}`, "cleanup-invalid", "cleanup-invalid-hash", now)), (error) => error.name === "ExchangeInputError");
+    const cleaned = await hosting.completeCommand(seeded.deviceId, cleanup.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"6".repeat(64)}`, details: cleanupDetails(seeded.contractId, now) }, mutation(`agent:${seeded.deviceId}`, "cleanup-success", "cleanup-success-hash", now));
     assert.equal(cleaned.contract.status, "CLEANED");
     assert.equal(cleaned.device.status, "VERIFIED");
     assert.equal((await hosting.listPublicOffers(now)).length, 1);
@@ -86,9 +102,21 @@ test("buyer acceptance settles actual card-hours, vests income and relists only 
     const failedCleanup = await hosting.pollCommand(failedSeed.deviceId, now);
     assert.equal(failedCleanup.id, cleanupQueued.command.id);
     const failed = await hosting.completeCommand(failedSeed.deviceId, failedCleanup.id, { outcome: "FAILED", evidenceDigest: `sha256:${"7".repeat(64)}`, errorCode: "WORKSPACE_DELETE_FAILED", details: {} }, mutation(`agent:${failedSeed.deviceId}`, "cleanup-failure", "cleanup-failure-hash", now));
-    assert.equal(failed.contract.status, "FAILED");
+    assert.equal(failed.contract.status, "CLEANING");
     assert.equal(failed.device.status, "DRAINING");
     assert.equal((await hosting.getOffer(failedSeed.offerId)).status, "SUSPENDED");
+
+    const expiredSeed = seedStoppedContract(path, "expired", buyer, supplier, now);
+    const raw = new DatabaseSync(path, { enableForeignKeyConstraints: true });
+    raw.prepare("UPDATE hosting_v2_devices SET verified_until=? WHERE id=?").run(new Date(Date.parse(now) - 1_000).toISOString(), expiredSeed.deviceId);
+    raw.close();
+    await hosting.markContractSettled(expiredSeed.contractId, { measuredSeconds: 600, settledMicros: 600_000, supplierIncomeMicros: 540_000, commissionMicros: 0 }, mutation("admin-expired-test", "cleanup-expired-queue", "cleanup-expired-queue-hash", now));
+    const expiredCleanup = await hosting.pollCommand(expiredSeed.deviceId, now);
+    const expired = await hosting.completeCommand(expiredSeed.deviceId, expiredCleanup.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"8".repeat(64)}`, details: cleanupDetails(expiredSeed.contractId, now) }, mutation(`agent:${expiredSeed.deviceId}`, "cleanup-expired", "cleanup-expired-hash", now));
+    assert.equal(expired.contract.status, "CLEANED");
+    assert.equal(expired.device.status, "ONLINE");
+    assert.equal(expired.device.verificationStatus, "EXPIRED");
+    assert.equal((await hosting.getOffer(expiredSeed.offerId)).status, "SUSPENDED", "expired verification must not auto-relist after cleanup");
   } finally {
     cardHours.close();
     hosting.close();

@@ -12,10 +12,10 @@ import {
   signedProof,
 } from "./protocol.mjs";
 import { readState, stateFilePath, writeState } from "./state.mjs";
-import { provisionWorkload, startWorkload, stopWorkload } from "./actuator-client.mjs";
+import { cleanupWorkload, provisionWorkload, startWorkload, stopWorkload } from "./actuator-client.mjs";
 import { runVerification } from "./verify.mjs";
 
-export const AGENT_VERSION = "1.2.0";
+export const AGENT_VERSION = "1.3.0";
 
 function validatePairingBundle(value, options = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new AgentError("PAIRING_INVALID", "Pairing bundle must be a JSON object.");
@@ -223,7 +223,7 @@ export async function completeCommand(command, result, { stateFile = stateFilePa
   return post(url, { outcome: result.outcome, evidenceDigest: result.evidenceDigest, errorCode: result.errorCode, details: result.details, ...proof }, { allowInsecureLocal, timeoutMs: 30_000 });
 }
 
-export async function processOneCommand({ stateFile = stateFilePath(), allowInsecureLocal = false, post = apiPost, verifier, provisioner, starter, stopper } = {}) {
+export async function processOneCommand({ stateFile = stateFilePath(), allowInsecureLocal = false, post = apiPost, verifier, provisioner, starter, stopper, cleaner } = {}) {
   const polled = await pollCommand({ stateFile, allowInsecureLocal, post });
   if (!polled.command) return null;
   let result;
@@ -236,6 +236,8 @@ export async function processOneCommand({ stateFile = stateFilePath(), allowInse
       result = await (starter ?? startWorkload)(polled.command, polled.state);
     } else if (polled.command.type === "STOP") {
       result = await (stopper ?? stopWorkload)(polled.command, polled.state);
+    } else if (polled.command.type === "CLEANUP") {
+      result = await (cleaner ?? cleanupWorkload)(polled.command, polled.state);
     } else {
       throw new AgentError("COMMAND_UNSUPPORTED", "This command is not supported by the installed Agent version.");
     }

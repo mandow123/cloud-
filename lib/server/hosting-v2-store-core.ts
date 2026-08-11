@@ -11,7 +11,7 @@ const number = (row: Row, key: string) => Number(row[key]);
 const json = <T>(row: Row, key: string) => JSON.parse(value(row, key)) as T;
 const id = (prefix: string) => `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
 const VERIFY_TEST_NAMES = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"] as const;
-const HOSTING_V2_MIN_AGENT_VERSION = "1.2.0";
+const HOSTING_V2_MIN_AGENT_VERSION = "1.3.0";
 
 function agentVersionAtLeast(valueToCheck: string, minimum: string) {
   const parse = (value: string) => {
@@ -104,6 +104,26 @@ function assertSuccessfulStopDetails(details: Record<string, unknown> | undefine
     || Math.abs(stoppedAt - serverNow) > 10 * 60_000 || Math.abs(startedAt - expectedStartedAt) > 10 * 60_000
     || !Number.isSafeInteger(details.runtimeSeconds) || details.runtimeSeconds !== calculatedSeconds) {
     throw new ExchangeInputError("实例停止计量时间无效。", "details.runtimeSeconds");
+  }
+}
+
+function assertSuccessfulCleanupDetails(details: Record<string, unknown> | undefined, payload: Record<string, unknown>, now: string) {
+  const expectedKeys = ["authorizedKeyRemoved", "cleanedAt", "cleanupDigest", "cleanupStatus", "containerDigest", "containerRemoved", "contractId", "observedAt", "protocolVersion", "workspaceRemoved"];
+  if (!details || Object.keys(details).sort().join(",") !== expectedKeys.sort().join(",")
+    || details.protocolVersion !== 1 || details.contractId !== payload.contractId || details.cleanupStatus !== "CLEANED"
+    || details.containerRemoved !== true || details.authorizedKeyRemoved !== true || details.workspaceRemoved !== true
+    || typeof details.cleanedAt !== "string" || typeof details.observedAt !== "string") {
+    throw new ExchangeInputError("实例清理结果结构无效。", "details");
+  }
+  for (const field of ["containerDigest", "cleanupDigest"] as const) {
+    if (typeof details[field] !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(details[field])) throw new ExchangeInputError("实例清理证据摘要无效。", `details.${field}`);
+  }
+  const cleanedAt = Date.parse(details.cleanedAt);
+  const observedAt = Date.parse(details.observedAt);
+  const serverNow = Date.parse(now);
+  if (!Number.isFinite(cleanedAt) || !Number.isFinite(observedAt) || cleanedAt > observedAt
+    || Math.abs(cleanedAt - serverNow) > 10 * 60_000 || Math.abs(observedAt - serverNow) > 10 * 60_000) {
+    throw new ExchangeInputError("实例清理观测时间无效。", "details.cleanedAt");
   }
 }
 
@@ -677,6 +697,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       const provisionEndpoint = type === "PROVISION" && success ? assertSuccessfulProvisionDetails(input.details, commandPayload, deviceInventory, context.now) : null;
       if (type === "START" && success) assertSuccessfulStartDetails(input.details, commandPayload, context.now);
       if (type === "STOP" && success) assertSuccessfulStopDetails(input.details, commandPayload, context.now);
+      if (type === "CLEANUP" && success) assertSuccessfulCleanupDetails(input.details, commandPayload, context.now);
       const statements: HostingV2Sql[] = [
         { sql: "UPDATE hosting_v2_agent_commands SET status=?,evidence_digest=?,error_code=?,completed_at=? WHERE id=? AND status IN ('PENDING','DELIVERED')", values: [input.outcome, input.evidenceDigest, input.errorCode ?? null, context.now, commandId] },
       ];
@@ -691,11 +712,11 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         if (!currentContract) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "任务关联合同不存在。");
         organizationId = value(currentContract, "supplier_organization_id");
         if (!success) {
+          statements.push({ sql: "UPDATE hosting_v2_contracts SET status=?,version=version+1,updated_at=? WHERE id=?", values: [type === "CLEANUP" ? "CLEANING" : "FAILED", context.now, contractId] });
           statements.push(
-            { sql: "UPDATE hosting_v2_contracts SET status='FAILED',version=version+1,updated_at=? WHERE id=?", values: [context.now, contractId] },
-            { sql: "UPDATE hosting_v2_devices SET status='DRAINING',version=version+1,updated_at=? WHERE id=?", values: [context.now, deviceId] },
-            { sql: "UPDATE hosting_v2_offers SET status='SUSPENDED',version=version+1,updated_at=? WHERE id=?", values: [context.now, value(currentContract, "offer_id")] },
-          );
+              { sql: "UPDATE hosting_v2_devices SET status='DRAINING',version=version+1,updated_at=? WHERE id=?", values: [context.now, deviceId] },
+              { sql: "UPDATE hosting_v2_offers SET status='SUSPENDED',version=version+1,updated_at=? WHERE id=?", values: [context.now, value(currentContract, "offer_id")] },
+            );
         } else if (type === "PROVISION") {
           statements.push(
             { sql: "UPDATE hosting_v2_contracts SET status='READY',endpoint_display=?,version=version+1,updated_at=? WHERE id=? AND status='PROVISIONING'", values: [provisionEndpoint, context.now, contractId] },
@@ -709,10 +730,13 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
           const measured = Math.max(180, Math.min(number(currentContract, "reserved_seconds"), wallClockSeconds, rawMeasured));
           statements.push({ sql: "UPDATE hosting_v2_contracts SET status='AWAITING_ACCEPTANCE',measured_seconds=?,stopped_at=?,version=version+1,updated_at=? WHERE id=? AND status='IN_SERVICE'", values: [measured, context.now, context.now, contractId] });
         } else if (type === "CLEANUP") {
+          const verificationFresh = value(deviceRow, "verification_status") === "PASSED"
+            && Date.parse(nullable(deviceRow, "verified_until") ?? "") > Date.parse(context.now)
+            && Date.parse(nullable(deviceRow, "last_seen_at") ?? "") >= Date.parse(context.now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000;
           statements.push(
             { sql: "UPDATE hosting_v2_contracts SET status='CLEANED',version=version+1,updated_at=? WHERE id=? AND status='CLEANING'", values: [context.now, contractId] },
-            { sql: "UPDATE hosting_v2_devices SET status='VERIFIED',version=version+1,updated_at=? WHERE id=? AND verification_status='PASSED'", values: [context.now, deviceId] },
-            { sql: "UPDATE hosting_v2_offers SET status='PUBLISHED',version=version+1,updated_at=? WHERE id=? AND status='RESERVED'", values: [context.now, value(currentContract, "offer_id")] },
+            { sql: "UPDATE hosting_v2_devices SET status=?,verification_status=?,version=version+1,updated_at=? WHERE id=?", values: [verificationFresh ? "VERIFIED" : "ONLINE", value(deviceRow, "verification_status") === "PASSED" && Date.parse(nullable(deviceRow, "verified_until") ?? "") <= Date.parse(context.now) ? "EXPIRED" : value(deviceRow, "verification_status"), context.now, deviceId] },
+            { sql: "UPDATE hosting_v2_offers SET status=?,version=version+1,updated_at=? WHERE id=? AND status='RESERVED'", values: [verificationFresh ? "PUBLISHED" : "SUSPENDED", context.now, value(currentContract, "offer_id")] },
           );
         }
       }
