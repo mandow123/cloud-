@@ -82,7 +82,7 @@ export function SupplyDashboard() {
       : profile.status === "SUBMITTED"
         ? { title: "资料正在审核", description: "审核期间不能修改资料。状态变化会直接显示在本控制台。", href: "/supply/onboarding", label: "查看审核状态" }
         : profile.status === "APPROVED"
-          ? { title: "可以登记第一台设备", description: "下一步将在资源登记页生成受限的一次性 Agent 安装凭证。", href: null, label: "等待资源登记页" }
+          ? { title: "可以登记第一台设备", description: "资源登记页会生成 5 分钟有效、受限的一次性 Agent 配对凭证。", href: "/supply/resources/new", label: "登记第一台设备" }
           : { title: "供应资格已暂停", description: profile.reviewNote ?? "请联系平台运营确认恢复条件。", href: "/supply/onboarding", label: "查看审核说明" };
 
   const readiness = [

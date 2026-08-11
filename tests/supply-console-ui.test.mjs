@@ -3,7 +3,14 @@ import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 test("supplier console exposes only implemented routes and keeps future areas disabled", () => {
-  for (const path of ["app/supply/layout.tsx", "app/supply/page.tsx", "app/supply/onboarding/page.tsx"]) {
+  for (const path of [
+    "app/supply/layout.tsx",
+    "app/supply/page.tsx",
+    "app/supply/onboarding/page.tsx",
+    "app/supply/resources/page.tsx",
+    "app/supply/resources/new/page.tsx",
+    "app/supply/resources/[deviceId]/page.tsx",
+  ]) {
     assert.equal(existsSync(path), true, `${path} must exist`);
   }
 
@@ -15,9 +22,31 @@ test("supplier console exposes only implemented routes and keeps future areas di
   const shell = readFileSync("components/supply-console-shell.tsx", "utf8");
   assert.match(shell, /href: "\/supply"/u);
   assert.match(shell, /href: "\/supply\/onboarding"/u);
-  assert.match(shell, /const upcomingRoutes = \["资源", "挂牌", "订单", "收益"\]/u);
+  assert.match(shell, /href: "\/supply\/resources"/u);
+  assert.match(shell, /const upcomingRoutes = \["挂牌", "订单", "收益"\]/u);
   assert.match(shell, /aria-disabled="true"/u);
-  assert.doesNotMatch(shell, /href: "\/supply\/(resources|listings|orders|earnings)/u);
+  assert.doesNotMatch(shell, /href: "\/supply\/(listings|orders|earnings)/u);
+});
+
+test("resource registration issues a short-lived server challenge without client identity fields", () => {
+  const source = readFileSync("components/supply-resource-registration.tsx", "utf8");
+  assert.match(source, /marketplacePost<HostingAgentChallenge>\("\/api\/v2\/supply\/agent-challenges", \{\}/u);
+  assert.match(source, /challengeId: challenge\.id/u);
+  assert.match(source, /nonce: challenge\.nonce/u);
+  assert.match(source, /minimumAgentVersion: challenge\.minimumAgentVersion/u);
+  assert.match(source, /expiresAt: challenge\.expiresAt/u);
+  assert.match(source, /navigator\.clipboard\.writeText\(pairingBundle\)/u);
+  assert.doesNotMatch(source, /organizationId|accountId|actorId|x-kai-workspace-role|localStorage|sessionStorage/u);
+});
+
+test("resource details are selected from the current organization dashboard and verification uses the constrained API", () => {
+  const list = readFileSync("components/supply-resources.tsx", "utf8");
+  const detail = readFileSync("components/supply-resource-detail.tsx", "utf8");
+  assert.match(list, /marketplaceGet<\{ dashboard: HostingDashboard \}>\("\/api\/v2\/supply\/dashboard"\)/u);
+  assert.match(detail, /result\.dashboard\.devices\.find\(\(item\) => item\.id === deviceId\)/u);
+  assert.match(detail, /`\/api\/v2\/supply\/devices\/\$\{encodeURIComponent\(device\.id\)\}\/verify`/u);
+  assert.match(detail, /marketplacePost<HostingAgentCommand>/u);
+  assert.doesNotMatch(`${list}\n${detail}`, /x-kai-workspace-role|localStorage|sessionStorage|\/bin\/sh|sudo/u);
 });
 
 test("supplier pages read and mutate through the authenticated hosting v2 APIs", () => {

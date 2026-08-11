@@ -8,9 +8,14 @@ import styles from "./supply-console.module.css";
 const availableRoutes = [
   { href: "/supply", label: "总览" },
   { href: "/supply/onboarding", label: "供应商审核" },
+  { href: "/supply/resources", label: "资源" },
 ] as const;
 
-const upcomingRoutes = ["资源", "挂牌", "订单", "收益"] as const;
+const upcomingRoutes = ["挂牌", "订单", "收益"] as const;
+
+function isCurrentRoute(pathname: string, href: string) {
+  return href === "/supply" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
+}
 
 export function SupplyConsoleShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -25,7 +30,7 @@ export function SupplyConsoleShell({ children }: { children: ReactNode }) {
           </div>
           <nav aria-label="供应商控制台" className={styles.consoleNav}>
             {availableRoutes.map((route) => (
-              <Link aria-current={pathname === route.href ? "page" : undefined} href={route.href} key={route.href}>
+              <Link aria-current={isCurrentRoute(pathname, route.href) ? "page" : undefined} href={route.href} key={route.href}>
                 {route.label}
               </Link>
             ))}
