@@ -75,3 +75,48 @@ export async function cancelHostingContract(input: {
   }
   return { contract, hold };
 }
+
+export async function acceptHostingContract(input: {
+  account: AccountSessionContext;
+  contractId: string;
+  mutation: HostingMutationContext;
+}, injected?: Dependencies) {
+  const stores = await dependencies(injected);
+  const current = await stores.hosting.contractForViewer(input.account.activeOrganization.id, input.contractId);
+  if (!current) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "租赁合同不存在。");
+  if (current.buyerOrganizationId !== input.account.activeOrganization.id) throw new ExchangeDomainError("EXCHANGE_OWNERSHIP_FORBIDDEN", 403, "只有采购方可以验收本次服务。");
+  const replayed = current.status === "CLEANING" || current.status === "CLEANED";
+  if (!replayed && current.status !== "AWAITING_ACCEPTANCE") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同当前不能验收结算。");
+  const measuredSeconds = current.measuredSeconds;
+  if (!measuredSeconds || measuredSeconds < 180) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同缺少有效的服务端计量结果。");
+  const settledMicros = hostingCardHourMicrosForSeconds(current.snapshot.cardHourMicrosPerGpuHour, measuredSeconds);
+  if (settledMicros > current.heldMicros) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "实际计量超过订单锁定额度。");
+  const platformFeeMicros = Math.floor(settledMicros * current.snapshot.platformFeeBps / 10_000);
+  const requestedCommissionMicros = Math.floor(settledMicros * current.snapshot.referralRewardBps / 10_000);
+  const supplierIncomeMicros = settledMicros - platformFeeMicros;
+  const settlementPayloadHash = await internalHash({ operation: "SETTLE_HOSTING_ORDER", contractId: current.id, measuredSeconds, settledMicros, supplierIncomeMicros, requestedCommissionMicros, feeScheduleId: current.feeScheduleId });
+  const cardSettlement = await stores.cardHours.settleHostingOrder({
+    account: input.account,
+    orderId: current.id,
+    settledMicros,
+    supplierOrganizationId: current.supplierOrganizationId,
+    supplierIncomeMicros,
+    commissionMicros: requestedCommissionMicros,
+    payloadHash: settlementPayloadHash,
+    now: input.mutation.now,
+  });
+  const commissionMicros = cardSettlement.referrerOrganizationId ? requestedCommissionMicros : 0;
+  const contract = replayed ? current : (await stores.hosting.markContractSettled(current.id, { measuredSeconds, settledMicros, supplierIncomeMicros, commissionMicros }, input.mutation)).contract;
+  return {
+    contract,
+    settlement: {
+      heldMicros: current.heldMicros,
+      settledMicros,
+      releasedMicros: current.heldMicros - settledMicros,
+      supplierIncomeMicros,
+      commissionMicros,
+      platformFeeMicros,
+    },
+    replayed: replayed || !cardSettlement.applied,
+  };
+}
