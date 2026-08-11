@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { probeSshReadiness, provisionWorkload, startWorkload } from "../host-agent/src/actuator-client.mjs";
-import { executeProvision, executeStart, parseProvisionRequest, parseStartRequest } from "../host-agent/src/actuator.mjs";
+import { probeSshReadiness, provisionWorkload, startWorkload, stopWorkload } from "../host-agent/src/actuator-client.mjs";
+import { executeProvision, executeStart, executeStop, parseProvisionRequest, parseStartRequest, parseStopRequest } from "../host-agent/src/actuator.mjs";
 import { processOneCommand } from "../host-agent/src/client.mjs";
 import { AgentError, digestJson, generateDeviceIdentity } from "../host-agent/src/protocol.mjs";
 import { writeState } from "../host-agent/src/state.mjs";
@@ -123,6 +123,51 @@ test("START opens only the provisioned container and replays one contract-bound 
   }
 });
 
+test("STOP gracefully halts only the running contract container and records bounded runtime evidence", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "kai-actuator-stop-"));
+  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_ACTUATOR_STATE_DIR: directory };
+  const containerId = "b".repeat(64);
+  let workloadName = "";
+  let running = false;
+  const calls = [];
+  const runDocker = async (args) => {
+    calls.push(args);
+    if (args[0] === "image") return { stdout: JSON.stringify([image]) };
+    if (args[0] === "container" && args[1] === "create") {
+      workloadName = args[args.indexOf("--name") + 1];
+      return { stdout: `${containerId}\n` };
+    }
+    if (args[0] === "container" && args[1] === "inspect") return {
+      stdout: JSON.stringify({ id: containerId, image, labels: { "kai.cloud.managed": "true", "kai.cloud.contract-digest": digestJson({ contractId: request().contractId }) }, running }),
+    };
+    if (args[0] === "container" && args[1] === "start") { running = true; return { stdout: `${workloadName}\n` }; }
+    if (args[0] === "container" && args[1] === "stop") {
+      assert.deepEqual(args, ["container", "stop", "--time", "30", workloadName]);
+      running = false;
+      return { stdout: `${workloadName}\n` };
+    }
+    throw new Error(`unexpected docker operation: ${args.join(" ")}`);
+  };
+  try {
+    await executeProvision(request(), { environment, runDocker, changeOwner: async () => undefined, now: () => "2026-08-11T08:00:00.000Z" });
+    await executeStart({ protocolVersion: 1, operation: "START", commandId: "hcmd_start0001", contractId: request().contractId }, { environment, runDocker, now: () => "2026-08-11T08:01:00.000Z" });
+    const stopRequest = { protocolVersion: 1, operation: "STOP", commandId: "hcmd_stop0001", contractId: request().contractId };
+    assert.equal(parseStopRequest(stopRequest).operation, "STOP");
+    assert.throws(() => parseStopRequest({ ...stopRequest, maximumSeconds: 3_600 }), (error) => error.code === "STOP_REQUEST_INVALID");
+    const stopped = await executeStop(stopRequest, { environment, runDocker, now: () => "2026-08-11T08:11:00.000Z" });
+    assert.equal(stopped.runtimeSeconds, 600);
+    assert.match(stopped.runtimeStateDigest, /^sha256:[a-f0-9]{64}$/u);
+    assert.equal(calls.filter((args) => args[0] === "container" && args[1] === "stop").length, 1);
+    const callCount = calls.length;
+    assert.deepEqual(await executeStop(stopRequest, { environment, runDocker }), stopped);
+    assert.equal(calls.length, callCount + 1, "a stop replay must re-inspect the container");
+    assert.equal(calls.filter((args) => args[0] === "container" && args[1] === "stop").length, 1);
+    await assert.rejects(executeStop({ ...stopRequest, commandId: "hcmd_stop0002" }, { environment, runDocker }), (error) => error.code === "STOP_REPLAY_CONFLICT");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("non-root Host Agent passes PROVISION to the actuator without gaining container arguments", async () => {
   const command = {
     id: "hcmd_actuator0001",
@@ -195,6 +240,35 @@ test("SSH readiness accepts an SSH 2.0 banner and stores only its digest", async
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test("non-root Host Agent submits stopped runtime evidence without choosing billable seconds", async () => {
+  const command = {
+    id: "hcmd_stop0001",
+    contractId: "hctr_actuator0001",
+    type: "STOP",
+    payload: { contractId: "hctr_actuator0001", startedAt: "2026-08-11T08:01:00.000Z", maximumSeconds: 3_600 },
+  };
+  let sent = null;
+  const runtime = {
+    protocolVersion: 1,
+    contractId: command.contractId,
+    containerDigest: `sha256:${"b".repeat(64)}`,
+    runtimeStateDigest: `sha256:${"c".repeat(64)}`,
+    startedAt: "2026-08-11T08:01:00.000Z",
+    stoppedAt: "2026-08-11T08:11:00.000Z",
+    runtimeSeconds: 600,
+  };
+  const result = await stopWorkload(command, {}, {
+    call: async (value) => { sent = value; return runtime; },
+    now: () => "2026-08-11T08:11:01.000Z",
+  });
+  assert.deepEqual(sent, { protocolVersion: 1, operation: "STOP", commandId: command.id, contractId: command.contractId });
+  assert.equal(result.details.runtimeStatus, "STOPPED");
+  assert.equal(result.details.runtimeSeconds, 600);
+  assert.equal("measuredSeconds" in result.details, false, "the Agent must not label its evidence as the server billing decision");
+  assert.equal(result.evidenceDigest, digestJson(result.details));
+  await assert.rejects(stopWorkload({ ...command, payload: { ...command.payload, maximumSeconds: 60 } }, {}, { call: async () => runtime }), (error) => error.code === "STOP_COMMAND_INVALID");
 });
 
 test("transient actuator failures retry by lease and the final attempt reports a signed failure", async () => {

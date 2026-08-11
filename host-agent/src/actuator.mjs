@@ -70,6 +70,15 @@ export function parseStartRequest(value) {
   return { protocolVersion: 1, operation: "START", commandId: input.commandId, contractId: input.contractId };
 }
 
+export function parseStopRequest(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw fail("STOP_REQUEST_INVALID", "Stop request must be an object.");
+  const input = value;
+  assertExactKeys(input, ["protocolVersion", "operation", "commandId", "contractId"], "STOP_REQUEST_INVALID");
+  if (input.protocolVersion !== 1 || input.operation !== "STOP") throw fail("STOP_REQUEST_INVALID", "Stop protocol is unsupported.");
+  if (typeof input.commandId !== "string" || !ID_PATTERN.test(input.commandId) || typeof input.contractId !== "string" || !ID_PATTERN.test(input.contractId)) throw fail("STOP_ID_INVALID", "Stop identifiers are invalid.");
+  return { protocolVersion: 1, operation: "STOP", commandId: input.commandId, contractId: input.contractId };
+}
+
 async function docker(args) {
   try {
     return await execFile("/usr/bin/docker", args, { encoding: "utf8", timeout: 30_000, maxBuffer: 256 * 1024 });
@@ -262,5 +271,57 @@ export async function executeStart(value, {
     await writeJsonAtomic(manifestPath, { ...starting, status: "STARTING", lastStartErrorCode: code, updatedAt: now() }).catch(() => undefined);
     if (error instanceof AgentError) throw error;
     throw fail("START_FAILED", "The isolated workload could not be started.", error);
+  }
+}
+
+export async function executeStop(value, {
+  environment = process.env,
+  runDocker = docker,
+  now = () => new Date().toISOString(),
+} = {}) {
+  const request = parseStopRequest(value);
+  const requestDigest = digestJson(request);
+  const { workloadName, manifestPath } = workloadIdentity(request.contractId, environment);
+  let manifest = await readManifest(manifestPath, "STOP_WORKLOAD_NOT_PROVISIONED");
+  if (manifest.result?.contractId !== request.contractId || manifest.result?.protocolVersion !== 1
+    || !manifest.startResult || typeof manifest.startResult.startedAt !== "string") {
+    throw fail("STOP_MANIFEST_INVALID", "Running workload evidence does not match the stop contract.");
+  }
+  if (manifest.status === "STOPPED") {
+    if (manifest.stopRequestDigest !== requestDigest || !manifest.stopResult) throw fail("STOP_REPLAY_CONFLICT", "The workload was stopped by a different command.");
+    const current = await inspectManagedContainer(workloadName, manifest, runDocker);
+    if (!current.running) return manifest.stopResult;
+    throw fail("STOP_STATE_CONFLICT", "A stopped workload unexpectedly returned to the running state.");
+  }
+  if (manifest.status !== "RUNNING" && manifest.status !== "STOPPING") throw fail("STOP_STATE_INVALID", "Workload is not running.");
+  if (manifest.status === "STOPPING" && manifest.stopRequestDigest !== requestDigest) throw fail("STOP_REPLAY_CONFLICT", "A different stop command is already in progress.");
+
+  const stopping = { ...manifest, status: "STOPPING", stopCommandId: request.commandId, stopRequestDigest: requestDigest, updatedAt: now() };
+  await writeJsonAtomic(manifestPath, stopping);
+  try {
+    let inspection = await inspectManagedContainer(workloadName, stopping, runDocker);
+    if (inspection.running) await runDocker(["container", "stop", "--time", "30", workloadName]);
+    inspection = await inspectManagedContainer(workloadName, stopping, runDocker);
+    if (inspection.running) throw fail("CONTAINER_STILL_RUNNING", "Container runtime did not enter the stopped state.");
+    const stoppedAt = now();
+    const startedAt = stopping.startResult.startedAt;
+    const runtimeSeconds = Math.max(0, Math.ceil((Date.parse(stoppedAt) - Date.parse(startedAt)) / 1_000));
+    if (!Number.isSafeInteger(runtimeSeconds)) throw fail("RUNTIME_EVIDENCE_INVALID", "Container runtime duration is invalid.");
+    const result = {
+      protocolVersion: 1,
+      contractId: request.contractId,
+      containerDigest: inspection.containerDigest,
+      runtimeStateDigest: digestJson({ workloadName, running: false, stoppedAt }),
+      startedAt,
+      stoppedAt,
+      runtimeSeconds,
+    };
+    await writeJsonAtomic(manifestPath, { ...stopping, status: "STOPPED", stopResult: result, updatedAt: stoppedAt });
+    return result;
+  } catch (error) {
+    const code = error instanceof AgentError ? error.code : "STOP_FAILED";
+    await writeJsonAtomic(manifestPath, { ...stopping, status: "STOPPING", lastStopErrorCode: code, updatedAt: now() }).catch(() => undefined);
+    if (error instanceof AgentError) throw error;
+    throw fail("STOP_FAILED", "The isolated workload could not be stopped.", error);
   }
 }

@@ -11,7 +11,7 @@ const number = (row: Row, key: string) => Number(row[key]);
 const json = <T>(row: Row, key: string) => JSON.parse(value(row, key)) as T;
 const id = (prefix: string) => `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
 const VERIFY_TEST_NAMES = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"] as const;
-const HOSTING_V2_MIN_AGENT_VERSION = "1.1.0";
+const HOSTING_V2_MIN_AGENT_VERSION = "1.2.0";
 
 function agentVersionAtLeast(valueToCheck: string, minimum: string) {
   const parse = (value: string) => {
@@ -80,6 +80,30 @@ function assertSuccessfulStartDetails(details: Record<string, unknown> | undefin
   const serverNow = Date.parse(now);
   if (!Number.isFinite(observedAt) || !Number.isFinite(startedAt) || startedAt > observedAt || Math.abs(observedAt - serverNow) > 10 * 60_000 || Math.abs(startedAt - serverNow) > 10 * 60_000) {
     throw new ExchangeInputError("实例启动观测时间无效。", "details.observedAt");
+  }
+}
+
+function assertSuccessfulStopDetails(details: Record<string, unknown> | undefined, payload: Record<string, unknown>, now: string) {
+  const expectedKeys = ["containerDigest", "contractId", "observedAt", "protocolVersion", "runtimeSeconds", "runtimeStateDigest", "runtimeStatus", "startedAt", "stoppedAt"];
+  if (!details || Object.keys(details).sort().join(",") !== expectedKeys.sort().join(",")
+    || details.protocolVersion !== 1 || details.contractId !== payload.contractId || details.runtimeStatus !== "STOPPED"
+    || typeof details.observedAt !== "string" || typeof details.startedAt !== "string" || typeof details.stoppedAt !== "string") {
+    throw new ExchangeInputError("实例停止结果结构无效。", "details");
+  }
+  for (const field of ["containerDigest", "runtimeStateDigest"] as const) {
+    if (typeof details[field] !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(details[field])) throw new ExchangeInputError("实例停止证据摘要无效。", `details.${field}`);
+  }
+  const observedAt = Date.parse(details.observedAt);
+  const startedAt = Date.parse(details.startedAt);
+  const stoppedAt = Date.parse(details.stoppedAt);
+  const expectedStartedAt = typeof payload.startedAt === "string" ? Date.parse(payload.startedAt) : Number.NaN;
+  const serverNow = Date.parse(now);
+  const calculatedSeconds = Math.max(0, Math.ceil((stoppedAt - startedAt) / 1_000));
+  if (!Number.isFinite(observedAt) || !Number.isFinite(startedAt) || !Number.isFinite(stoppedAt) || !Number.isFinite(expectedStartedAt)
+    || startedAt > stoppedAt || stoppedAt > observedAt || Math.abs(observedAt - serverNow) > 10 * 60_000
+    || Math.abs(stoppedAt - serverNow) > 10 * 60_000 || Math.abs(startedAt - expectedStartedAt) > 10 * 60_000
+    || !Number.isSafeInteger(details.runtimeSeconds) || details.runtimeSeconds !== calculatedSeconds) {
+    throw new ExchangeInputError("实例停止计量时间无效。", "details.runtimeSeconds");
   }
 }
 
@@ -652,6 +676,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       if (type === "VERIFY" && success) assertSuccessfulVerificationDetails(input.details, value(deviceRow, "inventory_digest"), context.now);
       const provisionEndpoint = type === "PROVISION" && success ? assertSuccessfulProvisionDetails(input.details, commandPayload, deviceInventory, context.now) : null;
       if (type === "START" && success) assertSuccessfulStartDetails(input.details, commandPayload, context.now);
+      if (type === "STOP" && success) assertSuccessfulStopDetails(input.details, commandPayload, context.now);
       const statements: HostingV2Sql[] = [
         { sql: "UPDATE hosting_v2_agent_commands SET status=?,evidence_digest=?,error_code=?,completed_at=? WHERE id=? AND status IN ('PENDING','DELIVERED')", values: [input.outcome, input.evidenceDigest, input.errorCode ?? null, context.now, commandId] },
       ];
@@ -679,10 +704,9 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         } else if (type === "START") {
           statements.push({ sql: "UPDATE hosting_v2_contracts SET status='IN_SERVICE',started_at=?,version=version+1,updated_at=? WHERE id=? AND status='READY'", values: [context.now, context.now, contractId] });
         } else if (type === "STOP") {
-          const rawMeasured = Number(input.details?.measuredSeconds ?? 0);
+          const rawMeasured = Number(input.details?.runtimeSeconds);
           const wallClockSeconds = Math.max(0, Math.ceil((Date.parse(context.now) - Date.parse(value(currentContract, "started_at"))) / 1_000));
-          const agentSeconds = Number.isSafeInteger(rawMeasured) && rawMeasured > 0 ? rawMeasured : wallClockSeconds;
-          const measured = Math.max(180, Math.min(number(currentContract, "reserved_seconds"), wallClockSeconds, agentSeconds));
+          const measured = Math.max(180, Math.min(number(currentContract, "reserved_seconds"), wallClockSeconds, rawMeasured));
           statements.push({ sql: "UPDATE hosting_v2_contracts SET status='AWAITING_ACCEPTANCE',measured_seconds=?,stopped_at=?,version=version+1,updated_at=? WHERE id=? AND status='IN_SERVICE'", values: [measured, context.now, context.now, contractId] });
         } else if (type === "CLEANUP") {
           statements.push(

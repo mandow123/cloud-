@@ -143,3 +143,28 @@ export async function startWorkload(command, state, { call = callActuator, probe
   const details = { ...runtime, endpointDisplay: endpoint.display, runtimeStatus: "RUNNING", sshBannerDigest, observedAt: now() };
   return { outcome: "SUCCEEDED", evidenceDigest: digestJson(details), errorCode: null, details };
 }
+
+export async function stopWorkload(command, _state, { call = callActuator, now = () => new Date().toISOString() } = {}) {
+  const payload = command?.payload;
+  if (!command || command.type !== "STOP" || typeof command.id !== "string" || typeof command.contractId !== "string" || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new AgentError("STOP_COMMAND_INVALID", "Stop command is invalid.");
+  }
+  const fields = Object.keys(payload).sort();
+  if (fields.join(",") !== "contractId,maximumSeconds,startedAt" || payload.contractId !== command.contractId
+    || typeof payload.startedAt !== "string" || !Number.isFinite(Date.parse(payload.startedAt))
+    || !Number.isSafeInteger(payload.maximumSeconds) || payload.maximumSeconds < 180) {
+    throw new AgentError("STOP_COMMAND_INVALID", "Stop command fields are invalid.");
+  }
+  const runtime = await call({ protocolVersion: 1, operation: "STOP", commandId: command.id, contractId: command.contractId });
+  if (runtime.protocolVersion !== 1 || runtime.contractId !== command.contractId
+    || !/^sha256:[a-f0-9]{64}$/u.test(runtime.containerDigest)
+    || !/^sha256:[a-f0-9]{64}$/u.test(runtime.runtimeStateDigest)
+    || typeof runtime.startedAt !== "string" || typeof runtime.stoppedAt !== "string"
+    || !Number.isFinite(Date.parse(runtime.startedAt)) || !Number.isFinite(Date.parse(runtime.stoppedAt))
+    || Date.parse(runtime.startedAt) > Date.parse(runtime.stoppedAt)
+    || !Number.isSafeInteger(runtime.runtimeSeconds) || runtime.runtimeSeconds < 0) {
+    throw new AgentError("ACTUATOR_RESULT_INVALID", "The workload stop result did not match the signed command.");
+  }
+  const details = { ...runtime, runtimeStatus: "STOPPED", observedAt: now() };
+  return { outcome: "SUCCEEDED", evidenceDigest: digestJson(details), errorCode: null, details };
+}

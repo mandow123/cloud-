@@ -114,7 +114,7 @@ test("pairing and heartbeat persist a private 0600 identity and send server-veri
         registerEndpoint: "http://127.0.0.1:3014/api/v2/agent/register",
         challengeId: "hac_runtime_challenge_000001",
         nonce: "runtimeNonceValue000001",
-        minimumAgentVersion: "1.1.0",
+        minimumAgentVersion: "1.2.0",
         expiresAt: new Date(Date.now() + 300_000).toISOString(),
       },
       displayName: "4090 工作站 01",
@@ -182,6 +182,7 @@ test("installer is offline, non-root at runtime and systemd-hardened", async () 
   assert.match(actuatorService, /^ReadWritePaths=\/var\/lib\/kai-host-actuator \/run\/kai-host-actuator \/run\/docker\.sock$/mu);
   assert.match(actuator, /execFile\("\/usr\/bin\/docker", args/u);
   assert.match(actuator, /export async function executeStart/u);
+  assert.match(actuator, /export async function executeStop/u);
   assert.match(actuatorClient, /SSH-2\\\.0-/u);
   assert.doesNotMatch(actuator, /shell\s*:\s*true|\bexec(?:Sync)?\s*\(|--privileged/u);
   assert.doesNotMatch(actuatorClient, /node:child_process|\/usr\/bin\/docker|\/run\/docker\.sock/u);
@@ -189,6 +190,6 @@ test("installer is offline, non-root at runtime and systemd-hardened", async () 
   assert.doesNotMatch(verifier, /shell\s*:\s*true|\bexec(?:Sync)?\s*\(/u);
   assert.match(installer, /src\/verify\.mjs/u);
   assert.match(installer, /kai-host-actuator\.service/u);
-  assert.equal(packageJson.version, "1.1.0");
+  assert.equal(packageJson.version, "1.2.0");
   assert.equal(packageJson.dependencies, undefined);
 });
