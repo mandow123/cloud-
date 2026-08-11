@@ -590,7 +590,10 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
           );
         } else if (type === "PROVISION") {
           const endpoint = typeof input.details?.endpointDisplay === "string" ? input.details.endpointDisplay.trim() : "";
-          if (!/^[A-Za-z0-9.-]+:[0-9]{2,5}$/u.test(endpoint)) throw new ExchangeInputError("Agent 返回的脱敏连接入口无效。", "endpointDisplay");
+          const endpointMatch = /^(\[[0-9a-f:]+\]|[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?):([0-9]{2,5})$/u.exec(endpoint);
+          const inventory = json<HostingDeviceInventory>(deviceRow, "inventory_json");
+          const endpointPort = Number(endpointMatch?.[2] ?? 0);
+          if (!endpointMatch || endpointMatch[1].toLowerCase() !== inventory.publicHost.toLowerCase() || endpointPort < inventory.sshPortStart || endpointPort > inventory.sshPortEnd) throw new ExchangeInputError("Agent 返回的连接入口不在设备验真的主机和端口范围内。", "endpointDisplay");
           statements.push(
             { sql: "UPDATE hosting_v2_contracts SET status='READY',endpoint_display=?,version=version+1,updated_at=? WHERE id=? AND status='PROVISIONING'", values: [endpoint, context.now, contractId] },
             { sql: "UPDATE hosting_v2_devices SET status='BUSY',version=version+1,updated_at=? WHERE id=?", values: [context.now, deviceId] },
@@ -599,7 +602,9 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
           statements.push({ sql: "UPDATE hosting_v2_contracts SET status='IN_SERVICE',started_at=?,version=version+1,updated_at=? WHERE id=? AND status='READY'", values: [context.now, context.now, contractId] });
         } else if (type === "STOP") {
           const rawMeasured = Number(input.details?.measuredSeconds ?? 0);
-          const measured = Math.max(180, Math.min(number(currentContract, "reserved_seconds"), Number.isSafeInteger(rawMeasured) ? rawMeasured : 180));
+          const wallClockSeconds = Math.max(0, Math.ceil((Date.parse(context.now) - Date.parse(value(currentContract, "started_at"))) / 1_000));
+          const agentSeconds = Number.isSafeInteger(rawMeasured) && rawMeasured > 0 ? rawMeasured : wallClockSeconds;
+          const measured = Math.max(180, Math.min(number(currentContract, "reserved_seconds"), wallClockSeconds, agentSeconds));
           statements.push({ sql: "UPDATE hosting_v2_contracts SET status='AWAITING_ACCEPTANCE',measured_seconds=?,stopped_at=?,version=version+1,updated_at=? WHERE id=? AND status='IN_SERVICE'", values: [measured, context.now, context.now, contractId] });
         } else if (type === "CLEANUP") {
           statements.push(
