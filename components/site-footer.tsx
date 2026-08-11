@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { marketSeries } from "@/lib/data";
+import { isHostingV2Enabled } from "@/lib/server/hosting-v2-feature";
 import { readMarketSnapshot } from "@/lib/server/market-snapshot";
 
 function dateLabel(value: string) {
@@ -11,6 +12,7 @@ function dateLabel(value: string) {
 
 export async function SiteFooter() {
   const { snapshot } = await readMarketSnapshot();
+  const hostingV2 = isHostingV2Enabled();
   const infrastructureUpdatedAt = marketSeries.reduce(
     (latest, series) => series.updatedAt > latest ? series.updatedAt : latest,
     "",
@@ -31,7 +33,7 @@ export async function SiteFooter() {
         <div>
           <p className="footer-label">平台说明</p>
           <Link href="/methodology">数据方法</Link>
-          <Link href="/partners">供应商合作</Link>
+          <Link href={hostingV2 ? "/hosting/partners" : "/partners"}>供应商合作</Link>
           <Link href="/member">会员工作台</Link>
         </div>
         <div className="footer-disclaimer">

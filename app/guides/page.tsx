@@ -92,7 +92,7 @@ export default function GuidesPage() {
               <Step number="5" title="发布价格">填写每 GPU / 小时的 KAI 标准卡时价格，系统生成不可变上架版本。</Step>
               <Step number="6" title="接单与交付">供应方确认订单，准备隔离实例和脱敏连接档案；连接测试通过后才能开始计量。</Step>
             </ol>
-            <Link className={styles.actionLink} href="/hosting#personal-gpu">打开个人 GPU 上架表单 →</Link>
+            <Link className={styles.actionLink} href="/hosting/personal-gpu">打开个人 GPU 上架说明 →</Link>
           </section>
 
           <section id="cloud-host">
@@ -102,7 +102,7 @@ export default function GuidesPage() {
             <div className={styles.flowDiagram} aria-label="云资源上架流程">
               <span>云账号 / 机房资源</span><i>→</i><span>API / Connector 验真</span><i>→</i><span>容量批次</span><i>→</i><span>GPU 市场</span>
             </div>
-            <Link className={styles.actionLink} href="/hosting#cloud-provider">查看三种资源接入方式 →</Link>
+            <Link className={styles.actionLink} href="/hosting/cloud">查看资源连接器与接入状态 →</Link>
           </section>
 
           <section id="delivery">

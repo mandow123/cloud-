@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { permanentRedirect } from "next/navigation";
 import { PartnerForm } from "@/components/partner-form";
+import { isHostingV2Enabled } from "@/lib/server/hosting-v2-feature";
 
 export const metadata: Metadata = {
   title: "供应商合作",
@@ -31,6 +33,8 @@ const steps = [
 ];
 
 export default function PartnersPage() {
+  if (isHostingV2Enabled()) permanentRedirect("/hosting/partners");
+
   return (
     <>
       <header className="border-b border-[var(--border)] bg-[var(--info-bg)]">

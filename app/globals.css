@@ -6,6 +6,7 @@
   --brand-hover: #0f6666;
   --brand-pressed: #0a5555;
   --brand-soft: #edf8f7;
+  --on-brand: #ffffff;
   --canvas: #fbfdfd;
   --surface: #ffffff;
   --surface-muted: #f3f7f7;
@@ -301,15 +302,21 @@ textarea {
 }
 
 .nav-popover-links a:hover,
-.nav-popover-links a:focus-visible {
+.nav-popover-links a:focus-visible,
+.nav-popover-links a[aria-current="page"] {
   border-color: var(--border-strong);
   background: var(--surface-muted);
 }
 
 .nav-popover-links a:hover::before,
-.nav-popover-links a:focus-visible::before {
+.nav-popover-links a:focus-visible::before,
+.nav-popover-links a[aria-current="page"]::before {
   opacity: 1;
   translate: 0 -50%;
+}
+
+.nav-popover-links a[aria-current="page"] {
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .nav-popover-links a::after,
@@ -641,6 +648,11 @@ textarea {
     justify-content: flex-start;
     overflow-x: auto;
     padding-bottom: 12px;
+  }
+
+  .nav-popover {
+    left: 0;
+    translate: 0 0;
   }
 
   .header-actions {

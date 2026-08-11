@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef } from "react";
 
 type NavItem = {
   href: string;
@@ -16,7 +17,7 @@ type NavGroup = {
   items: NavItem[];
 };
 
-const groups: NavGroup[] = [
+const commonGroups: NavGroup[] = [
   {
     label: "算力云",
     paths: ["/gpu", "/resources", "/market"],
@@ -24,17 +25,6 @@ const groups: NavGroup[] = [
       { href: "/gpu", label: "GPU 租赁", description: "筛选、比较并启动 GPU 实例" },
       { href: "/resources", label: "全部资源", description: "浏览 GPU、模型与基础设施资源" },
       { href: "/market", label: "市场行情", description: "查看 KAI 标准卡时与市场快照" },
-    ],
-  },
-  {
-    label: "Hosting",
-    paths: ["/hosting", "/partners"],
-    items: [
-      { href: "/hosting", label: "开始上架", description: "登记、验真并发布你的算力" },
-      { href: "/hosting#personal-gpu", label: "个人 GPU", description: "从一张 RTX 4090 开始出租" },
-      { href: "/hosting#cloud-provider", label: "云资源接入", description: "接入云主机或数据中心库存" },
-      { href: "/hosting#earnings", label: "收益与结算", description: "理解计量、验收与卡时收益" },
-      { href: "/partners", label: "供应商合作", description: "企业供应商和服务边界说明" },
     ],
   },
   {
@@ -50,15 +40,82 @@ const groups: NavGroup[] = [
   },
 ];
 
+const hostingV2Group: NavGroup = {
+  label: "Hosting",
+  paths: ["/hosting", "/partners"],
+  items: [
+    { href: "/hosting", label: "开始上架", description: "从资源登记到清理再售的完整路径" },
+    { href: "/hosting/personal-gpu", label: "个人 GPU", description: "上架一张 RTX 4090 或 H100" },
+    { href: "/hosting/cloud", label: "云资源接入", description: "云主机、IDC 与集群连接器" },
+    { href: "/hosting/earnings", label: "收益与结算", description: "计量、租金、佣金与卡时账本" },
+    { href: "/hosting/partners", label: "供应商合作", description: "企业协议、审核与接入进度" },
+  ],
+};
+
+const legacyHostingGroup: NavGroup = {
+  label: "Hosting",
+  paths: ["/hosting", "/partners"],
+  items: [
+    { href: "/hosting", label: "开始上架", description: "登记、验真并发布你的算力" },
+    { href: "/hosting#personal-gpu", label: "个人 GPU", description: "从一张 RTX 4090 开始出租" },
+    { href: "/hosting#cloud-provider", label: "云资源接入", description: "接入云主机或数据中心库存" },
+    { href: "/hosting#earnings", label: "收益与结算", description: "理解计量、验收与卡时收益" },
+    { href: "/partners", label: "供应商合作", description: "企业供应商和服务边界说明" },
+  ],
+};
+
+function groupsFor(hostingV2: boolean) {
+  return [commonGroups[0], hostingV2 ? hostingV2Group : legacyHostingGroup, commonGroups[1]];
+}
+
 function isGroupActive(pathname: string, group: NavGroup) {
   return group.paths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
-export function NavLinks() {
+function isItemActive(pathname: string, href: string) {
+  const path = href.split("#", 1)[0];
+  if (path === "/hosting") return pathname === path;
+  return pathname === path || pathname.startsWith(`${path}/`);
+}
+
+export function NavLinks({ hostingV2 }: { hostingV2: boolean }) {
   const pathname = usePathname();
+  const navRef = useRef<HTMLElement>(null);
+  const groups = groupsFor(hostingV2);
+
+  useEffect(() => {
+    function closeOpenGroup(returnFocus = false) {
+      const openGroups = navRef.current?.querySelectorAll<HTMLDetailsElement>("details[open]");
+      if (!openGroups?.length) return;
+      const focusTarget = openGroups[0].querySelector<HTMLElement>("summary");
+      openGroups.forEach((group) => group.removeAttribute("open"));
+      if (returnFocus) focusTarget?.focus();
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") closeOpenGroup(true);
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (navRef.current && !navRef.current.contains(event.target as Node)) closeOpenGroup();
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, []);
+
+  function closeGroups() {
+    navRef.current?.querySelectorAll<HTMLDetailsElement>("details[open]").forEach((group) => {
+      group.removeAttribute("open");
+    });
+  }
 
   return (
-    <nav aria-label="全局导航" className="primary-nav primary-nav-mega">
+    <nav aria-label="全局导航" className="primary-nav primary-nav-mega" ref={navRef}>
       {groups.map((group) => {
         const active = isGroupActive(pathname, group);
         return (
@@ -72,8 +129,10 @@ export function NavLinks() {
               <div className="nav-popover-links">
                 {group.items.map((item) => (
                   <Link
+                    aria-current={isItemActive(pathname, item.href) ? "page" : undefined}
                     href={item.href}
                     key={item.href}
+                    onClick={closeGroups}
                     target={item.external ? "_blank" : undefined}
                     rel={item.external ? "noreferrer" : undefined}
                   >

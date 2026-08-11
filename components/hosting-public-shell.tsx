@@ -1,0 +1,63 @@
+import Link from "next/link";
+import type { ReactNode } from "react";
+import styles from "./hosting-public.module.css";
+
+export const hostingPublicStyles = styles;
+
+const routes = [
+  { href: "/hosting", label: "总览" },
+  { href: "/hosting/personal-gpu", label: "个人 GPU" },
+  { href: "/hosting/cloud", label: "云资源接入" },
+  { href: "/hosting/earnings", label: "收益与结算" },
+  { href: "/hosting/partners", label: "供应商合作" },
+] as const;
+
+export function HostingPublicShell({
+  activePath,
+  eyebrow,
+  title,
+  summary,
+  children,
+}: {
+  activePath: string;
+  eyebrow: string;
+  title: string;
+  summary: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={styles.page}>
+      <header className={styles.masthead}>
+        <div className={styles.mastheadInner}>
+          <p className={styles.eyebrow}>{eyebrow}</p>
+          <h1 className={styles.title}>{title}</h1>
+          <p className={styles.summary}>{summary}</p>
+        </div>
+        <nav aria-label="Hosting 页面" className={styles.routeNav}>
+          <ul className={styles.routeNavList}>
+            {routes.map((route) => (
+              <li key={route.href}>
+                <Link aria-current={activePath === route.href ? "page" : undefined} href={route.href}>
+                  {route.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </header>
+      <div className={styles.content}>{children}</div>
+    </div>
+  );
+}
+
+export function SectionHeader({ index, title, lead }: { index: string; title: string; lead?: string }) {
+  return (
+    <div className={styles.sectionHeader}>
+      <div>
+        <p className={styles.sectionIndex}>{index}</p>
+        <h2 className={styles.sectionTitle}>{title}</h2>
+      </div>
+      {lead ? <p className={styles.sectionLead}>{lead}</p> : null}
+    </div>
+  );
+}
