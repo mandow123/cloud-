@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { assertHostingV2ApprovedImage } from "../lib/server/hosting-v2-image-policy.ts";
 import { createSqliteHostingV2Store } from "../lib/server/hosting-v2-store-sqlite.ts";
 
 const account = {
@@ -66,13 +67,16 @@ test("only approved, verified and fee-backed GPU offers enter the public market"
       maxRentalSeconds: 86_400,
       availableFrom: new Date(clock.getTime() - 60_000).toISOString(),
       availableUntil: new Date(clock.getTime() + 86_400_000).toISOString(),
-      approvedImage: "ghcr.io/kai-cloud/cuda-pytorch:2026.08",
+      approvedImage: process.env.KAI_HOSTING_APPROVED_IMAGES,
       termsVersion: "KAI_HOSTING_TERMS_2026_08",
     };
     await assert.rejects(store.createOffer(account.activeOrganization.id, offerInput, mutation(account.account.id, "offer-before-fee", "offer-before-fee-hash", now)), (error) => error.code === "EXCHANGE_STATE_CONFLICT" && error.status === 503);
     await assert.rejects(store.createFeeSchedule({ platformFeeBps: 500, referralRewardBps: 600, activate: true, effectiveFrom: now }, mutation("admin-market", "fee-invalid", "fee-invalid-hash", now)), (error) => error.name === "ExchangeInputError");
     const fee = await store.createFeeSchedule({ platformFeeBps: 1_000, referralRewardBps: 300, activate: true, effectiveFrom: now }, mutation("admin-market", "fee-active-0001", "fee-active-hash", now));
     assert.equal(fee.status, "ACTIVE");
+
+    await assert.rejects(store.createOffer(account.activeOrganization.id, { ...offerInput, approvedImage: "ghcr.io/kai-cloud/cuda-pytorch:latest" }, mutation(account.account.id, "offer-mutable-image", "offer-mutable-image-hash", now)), (error) => error.name === "ExchangeInputError");
+    await assert.rejects(store.createOffer(account.activeOrganization.id, { ...offerInput, approvedImage: `ghcr.io/kai-cloud/cuda-pytorch@sha256:${"b".repeat(64)}` }, mutation(account.account.id, "offer-unapproved-image", "offer-unapproved-image-hash", now)), (error) => error.name === "ExchangeInputError");
 
     const offer = await store.createOffer(account.activeOrganization.id, offerInput, mutation(account.account.id, "offer-create-0001", "offer-create-hash", now));
     assert.equal(offer.status, "DRAFT");
@@ -94,6 +98,11 @@ test("only approved, verified and fee-backed GPU offers enter the public market"
   } finally {
     store.close();
   }
+});
+
+test("hosting image policy fails closed when operations has not configured immutable images", () => {
+  assert.throws(() => assertHostingV2ApprovedImage(process.env.KAI_HOSTING_APPROVED_IMAGES, {}), (error) => error.code === "HOSTING_IMAGE_POLICY_UNAVAILABLE" && error.status === 503);
+  assert.throws(() => assertHostingV2ApprovedImage("ghcr.io/kai-cloud/cuda-pytorch:latest", { KAI_HOSTING_APPROVED_IMAGES: process.env.KAI_HOSTING_APPROVED_IMAGES }), (error) => error.name === "ExchangeInputError");
 });
 
 test("offer APIs enforce server-owned identities and public responses omit internal IDs", () => {

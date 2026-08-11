@@ -1,6 +1,7 @@
 import { HOSTING_V2_AGENT_STALE_SECONDS, type HostingAgentChallenge, type HostingAgentCommand, type HostingContract, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingFeeSchedule, type HostingOffer, type HostingSupplierProfile } from "../hosting-v2.ts";
 import { HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
+import { assertHostingV2ApprovedImage } from "./hosting-v2-image-policy.ts";
 import type { HostingMutationContext, HostingV2DatabaseAdapter, HostingV2Sql, HostingV2Store } from "./hosting-v2-store.ts";
 
 type Row = Record<string, unknown>;
@@ -28,6 +29,24 @@ function assertSuccessfulVerificationDetails(details: Record<string, unknown> | 
     names.add(String(result.name));
   }
   if (names.size !== VERIFY_TEST_NAMES.length) throw new ExchangeInputError("设备验真测试存在重复或缺失。", "details.tests");
+}
+
+function assertSuccessfulProvisionDetails(details: Record<string, unknown> | undefined, payload: Record<string, unknown>, inventory: HostingDeviceInventory, now: string) {
+  if (!details || details.protocolVersion !== 1 || details.contractId !== payload.contractId || details.image !== payload.image || typeof details.observedAt !== "string") {
+    throw new ExchangeInputError("实例开通结果结构无效。", "details");
+  }
+  const observedAt = Date.parse(details.observedAt);
+  if (!Number.isFinite(observedAt) || Math.abs(observedAt - Date.parse(now)) > 10 * 60_000) throw new ExchangeInputError("实例开通观测时间无效。", "details.observedAt");
+  if (typeof details.containerDigest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(details.containerDigest) || typeof details.workspaceDigest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(details.workspaceDigest)) {
+    throw new ExchangeInputError("实例开通证据摘要无效。", "details");
+  }
+  const endpoint = typeof details.endpointDisplay === "string" ? details.endpointDisplay.trim() : "";
+  const endpointMatch = /^(\[[0-9a-f:]+\]|[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?):([0-9]{2,5})$/u.exec(endpoint);
+  const endpointPort = Number(endpointMatch?.[2] ?? 0);
+  if (!endpointMatch || endpointMatch[1].toLowerCase() !== inventory.publicHost.toLowerCase() || endpointPort < inventory.sshPortStart || endpointPort > inventory.sshPortEnd) {
+    throw new ExchangeInputError("Agent 返回的连接入口不在设备验真的主机和端口范围内。", "endpointDisplay");
+  }
+  return endpoint;
 }
 
 function profile(row: Row): HostingSupplierProfile {
@@ -386,7 +405,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       const availableFrom = Date.parse(input.availableFrom);
       const availableUntil = Date.parse(input.availableUntil);
       if (!Number.isFinite(availableFrom) || !Number.isFinite(availableUntil) || availableUntil <= availableFrom || availableUntil <= Date.parse(context.now)) throw new ExchangeInputError("可用时间窗无效。", "availableUntil");
-      if (!/^ghcr\.io\/kai-cloud\/[a-z0-9._/-]+:[a-zA-Z0-9._-]+$/u.test(input.approvedImage)) throw new ExchangeInputError("只能选择 KAI 审核过的 OCI 镜像。", "approvedImage");
+      assertHostingV2ApprovedImage(input.approvedImage);
       if (!/^KAI_HOSTING_TERMS_\d{4}_\d{2}$/u.test(input.termsVersion)) throw new ExchangeInputError("挂牌协议版本无效。", "termsVersion");
       const recordId = id("hofr");
       await db.batch([
@@ -590,7 +609,10 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       }
       const type = value(commandRow, "command_type") as HostingAgentCommand["type"];
       const success = input.outcome === "SUCCEEDED";
+      const commandPayload = json<Record<string, unknown>>(commandRow, "payload_json");
+      const deviceInventory = json<HostingDeviceInventory>(deviceRow, "inventory_json");
       if (type === "VERIFY" && success) assertSuccessfulVerificationDetails(input.details, value(deviceRow, "inventory_digest"), context.now);
+      const provisionEndpoint = type === "PROVISION" && success ? assertSuccessfulProvisionDetails(input.details, commandPayload, deviceInventory, context.now) : null;
       const statements: HostingV2Sql[] = [
         { sql: "UPDATE hosting_v2_agent_commands SET status=?,evidence_digest=?,error_code=?,completed_at=? WHERE id=? AND status IN ('PENDING','DELIVERED')", values: [input.outcome, input.evidenceDigest, input.errorCode ?? null, context.now, commandId] },
       ];
@@ -611,13 +633,8 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
             { sql: "UPDATE hosting_v2_offers SET status='SUSPENDED',version=version+1,updated_at=? WHERE id=?", values: [context.now, value(currentContract, "offer_id")] },
           );
         } else if (type === "PROVISION") {
-          const endpoint = typeof input.details?.endpointDisplay === "string" ? input.details.endpointDisplay.trim() : "";
-          const endpointMatch = /^(\[[0-9a-f:]+\]|[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?):([0-9]{2,5})$/u.exec(endpoint);
-          const inventory = json<HostingDeviceInventory>(deviceRow, "inventory_json");
-          const endpointPort = Number(endpointMatch?.[2] ?? 0);
-          if (!endpointMatch || endpointMatch[1].toLowerCase() !== inventory.publicHost.toLowerCase() || endpointPort < inventory.sshPortStart || endpointPort > inventory.sshPortEnd) throw new ExchangeInputError("Agent 返回的连接入口不在设备验真的主机和端口范围内。", "endpointDisplay");
           statements.push(
-            { sql: "UPDATE hosting_v2_contracts SET status='READY',endpoint_display=?,version=version+1,updated_at=? WHERE id=? AND status='PROVISIONING'", values: [endpoint, context.now, contractId] },
+            { sql: "UPDATE hosting_v2_contracts SET status='READY',endpoint_display=?,version=version+1,updated_at=? WHERE id=? AND status='PROVISIONING'", values: [provisionEndpoint, context.now, contractId] },
             { sql: "UPDATE hosting_v2_devices SET status='BUSY',version=version+1,updated_at=? WHERE id=?", values: [context.now, deviceId] },
           );
         } else if (type === "START") {

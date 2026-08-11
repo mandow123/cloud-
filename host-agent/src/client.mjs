@@ -12,6 +12,7 @@ import {
   signedProof,
 } from "./protocol.mjs";
 import { readState, stateFilePath, writeState } from "./state.mjs";
+import { provisionWorkload } from "./actuator-client.mjs";
 import { runVerification } from "./verify.mjs";
 
 export const AGENT_VERSION = "1.0.0";
@@ -135,6 +136,7 @@ export async function pairDevice({
     publicKeyRaw: identity.publicKeyRaw,
     apiOrigin: new URL(pairing.registerEndpoint).origin,
     inventoryConfig,
+    inventory,
     inventoryDigest: record.inventoryDigest,
     lastSequence: Number.isSafeInteger(record.lastSequence) ? record.lastSequence : 0,
     pairedAt: new Date().toISOString(),
@@ -192,6 +194,7 @@ export async function resumePairing({ stateFile = stateFilePath(), allowInsecure
     publicKeyRaw: state.publicKeyRaw,
     apiOrigin: new URL(state.registerEndpoint).origin,
     inventoryConfig: state.inventoryConfig,
+    inventory: state.registrationBody.inventory,
     inventoryDigest: record.inventoryDigest,
     lastSequence: Number.isSafeInteger(record.lastSequence) ? record.lastSequence : 0,
     pairedAt: new Date().toISOString(),
@@ -220,15 +223,24 @@ export async function completeCommand(command, result, { stateFile = stateFilePa
   return post(url, { outcome: result.outcome, evidenceDigest: result.evidenceDigest, errorCode: result.errorCode, details: result.details, ...proof }, { allowInsecureLocal, timeoutMs: 30_000 });
 }
 
-export async function processOneCommand({ stateFile = stateFilePath(), allowInsecureLocal = false, post = apiPost, verifier } = {}) {
+export async function processOneCommand({ stateFile = stateFilePath(), allowInsecureLocal = false, post = apiPost, verifier, provisioner } = {}) {
   const polled = await pollCommand({ stateFile, allowInsecureLocal, post });
   if (!polled.command) return null;
   let result;
-  if (polled.command.type === "VERIFY") {
-    result = await (verifier ?? runVerification)(polled.command, polled.state);
-  } else {
-    const details = { protocolVersion: 1, commandType: polled.command.type ?? "UNKNOWN", observedAt: new Date().toISOString() };
-    result = { outcome: "FAILED", evidenceDigest: digestJson(details), errorCode: "COMMAND_UNSUPPORTED", details };
+  try {
+    if (polled.command.type === "VERIFY") {
+      result = await (verifier ?? runVerification)(polled.command, polled.state);
+    } else if (polled.command.type === "PROVISION") {
+      result = await (provisioner ?? provisionWorkload)(polled.command, polled.state);
+    } else {
+      throw new AgentError("COMMAND_UNSUPPORTED", "This command is not supported by the installed Agent version.");
+    }
+  } catch (error) {
+    const code = error instanceof AgentError && /^[A-Z0-9_:-]{3,80}$/u.test(error.code) ? error.code : "COMMAND_FAILED";
+    const retryable = new Set(["ACTUATOR_UNAVAILABLE", "ACTUATOR_TIMEOUT", "DOCKER_OPERATION_FAILED", "NETWORK_ERROR"]);
+    if (retryable.has(code) && Number(polled.command.attempt ?? 0) < 5) throw error;
+    const details = { protocolVersion: 1, commandType: polled.command.type ?? "UNKNOWN", observedAt: new Date().toISOString(), errorCode: code };
+    result = { outcome: "FAILED", evidenceDigest: digestJson(details), errorCode: code, details };
   }
   const response = await completeCommand(polled.command, result, { stateFile, allowInsecureLocal, post });
   return { command: polled.command, result, response };

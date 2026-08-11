@@ -161,6 +161,9 @@ test("pairing and heartbeat persist a private 0600 identity and send server-veri
 test("installer is offline, non-root at runtime and systemd-hardened", async () => {
   const installer = await readFile("host-agent/install.sh", "utf8");
   const service = await readFile("host-agent/kai-host-agent.service", "utf8");
+  const actuatorService = await readFile("host-agent/kai-host-actuator.service", "utf8");
+  const actuator = await readFile("host-agent/src/actuator.mjs", "utf8");
+  const actuatorClient = await readFile("host-agent/src/actuator-client.mjs", "utf8");
   const runtime = await readFile("host-agent/src/cli.mjs", "utf8");
   const verifier = await readFile("host-agent/src/verify.mjs", "utf8");
   const packageJson = JSON.parse(await readFile("host-agent/package.json", "utf8"));
@@ -173,8 +176,16 @@ test("installer is offline, non-root at runtime and systemd-hardened", async () 
   assert.match(service, /^ProtectSystem=strict$/mu);
   assert.match(service, /^ProtectHome=true$/mu);
   assert.match(service, /^ReadWritePaths=\/var\/lib\/kai-host-agent$/mu);
+  assert.match(actuatorService, /^User=root$/mu);
+  assert.match(actuatorService, /^Group=kai-host-agent$/mu);
+  assert.match(actuatorService, /^RestrictAddressFamilies=AF_UNIX$/mu);
+  assert.match(actuatorService, /^ReadWritePaths=\/var\/lib\/kai-host-actuator \/run\/kai-host-actuator \/run\/docker\.sock$/mu);
+  assert.match(actuator, /execFile\("\/usr\/bin\/docker", args/u);
+  assert.doesNotMatch(actuator, /shell\s*:\s*true|\bexec(?:Sync)?\s*\(|--privileged/u);
+  assert.doesNotMatch(actuatorClient, /node:child_process|\/usr\/bin\/docker|\/run\/docker\.sock/u);
   assert.doesNotMatch(runtime, /privateKeyPkcs8|registrationBody|nonce/u);
   assert.doesNotMatch(verifier, /shell\s*:\s*true|\bexec(?:Sync)?\s*\(/u);
   assert.match(installer, /src\/verify\.mjs/u);
+  assert.match(installer, /kai-host-actuator\.service/u);
   assert.equal(packageJson.dependencies, undefined);
 });

@@ -32,12 +32,24 @@ function testEd25519PublicKey() {
   return `ssh-ed25519 ${blob.toString("base64")} lifecycle-test`;
 }
 
+function provisionDetails(endpointDisplay, observedAt) {
+  return {
+    protocolVersion: 1,
+    contractId: "hctr_lifecycle",
+    image: process.env.KAI_HOSTING_APPROVED_IMAGES,
+    endpointDisplay,
+    containerDigest: `sha256:${"6".repeat(64)}`,
+    workspaceDigest: `sha256:${"7".repeat(64)}`,
+    observedAt,
+  };
+}
+
 function seedLifecycleContract(path, now) {
   const db = new DatabaseSync(path, { enableForeignKeyConstraints: true });
   const inventory = { hostnameDigest: `sha256:${"1".repeat(64)}`, gpuModel: "RTX_4090", gpuUuidDigest: `sha256:${"2".repeat(64)}`, gpuMemoryMiB: 24_576, driverVersion: "580.10", cudaVersion: "13.0", cpuModel: "AMD Ryzen 9 9950X", memoryMiB: 65_536, storageGiB: 2_048, publicHost: "lifecycle-gpu.example.com", sshPortStart: 25_000, sshPortEnd: 25_019 };
   db.prepare(`INSERT INTO hosting_v2_devices(id,organization_id,account_id,display_name,device_key_id,device_public_key,agent_version,inventory_json,inventory_digest,status,verification_status,verification_evidence_digest,verified_until,last_sequence,last_seen_at,version,created_at,updated_at)
     VALUES(?,?,?,?,?,?,?,?,?,'VERIFIED','PASSED',?,?,1,?,1,?,?)`).run("had_lifecycle", "org-lifecycle-supplier", "acct-lifecycle-supplier", "Lifecycle 4090", `sha256:${"3".repeat(64)}`, "A".repeat(43), "1.0.0", JSON.stringify(inventory), `sha256:${"4".repeat(64)}`, `sha256:${"5".repeat(64)}`, new Date(Date.parse(now) + 86_400_000).toISOString(), now, now, now);
-  const snapshot = { title: "Lifecycle RTX 4090", gpuModel: "RTX_4090", region: "中国·北京", cardHourMicrosPerGpuHour: 3_600_000, approvedImage: "ghcr.io/kai-cloud/cuda-pytorch:2026.08", termsVersion: "KAI_HOSTING_TERMS_2026_08", platformFeeBps: 1_000, referralRewardBps: 300 };
+  const snapshot = { title: "Lifecycle RTX 4090", gpuModel: "RTX_4090", region: "中国·北京", cardHourMicrosPerGpuHour: 3_600_000, approvedImage: process.env.KAI_HOSTING_APPROVED_IMAGES, termsVersion: "KAI_HOSTING_TERMS_2026_08", platformFeeBps: 1_000, referralRewardBps: 300 };
   db.prepare(`INSERT INTO hosting_v2_contracts(id,offer_id,device_id,buyer_organization_id,buyer_account_id,supplier_organization_id,fee_schedule_id,snapshot_json,reserved_seconds,held_micros,status,idempotency_key,payload_hash,version,created_at,updated_at)
     VALUES(?,?,?,?,?,?,?,?,?,?,'CARD_HOURS_HELD',?,?,1,?,?)`).run("hctr_lifecycle", "hofr_lifecycle", "had_lifecycle", buyer.activeOrganization.id, buyer.account.id, "org-lifecycle-supplier", "hfee_lifecycle", JSON.stringify(snapshot), 3_600, 3_600_000, "seed-lifecycle", "seed-lifecycle-hash", now, now);
   db.close();
@@ -61,8 +73,8 @@ test("SSH provisioning, start and stop remain inside verified device boundaries"
     assert.equal(provisioning.contract.sshPublicKeyFingerprint, key.fingerprint);
     const provisionCommand = await store.pollCommand("had_lifecycle", now);
     assert.equal(provisionCommand.type, "PROVISION");
-    await assert.rejects(store.completeCommand("had_lifecycle", provisionCommand.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"6".repeat(64)}`, details: { endpointDisplay: "attacker.example.com:25000" } }, mutation("lifecycle-provision-bad", "lifecycle-provision-bad-hash", now)), (error) => error.name === "ExchangeInputError");
-    const ready = await store.completeCommand("had_lifecycle", provisionCommand.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"6".repeat(64)}`, details: { endpointDisplay: "lifecycle-gpu.example.com:25000" } }, mutation("lifecycle-provision-good", "lifecycle-provision-good-hash", now));
+    await assert.rejects(store.completeCommand("had_lifecycle", provisionCommand.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"6".repeat(64)}`, details: provisionDetails("attacker.example.com:25000", now) }, mutation("lifecycle-provision-bad", "lifecycle-provision-bad-hash", now)), (error) => error.name === "ExchangeInputError");
+    const ready = await store.completeCommand("had_lifecycle", provisionCommand.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"6".repeat(64)}`, details: provisionDetails("lifecycle-gpu.example.com:25000", now) }, mutation("lifecycle-provision-good", "lifecycle-provision-good-hash", now));
     assert.equal(ready.contract.status, "READY");
     assert.equal(ready.contract.endpointDisplay, "lifecycle-gpu.example.com:25000");
 

@@ -1,0 +1,41 @@
+[Unit]
+Description=KAI Cloud isolated workload actuator
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+Group=kai-host-agent
+ExecStart=/usr/bin/node /opt/kai-host-agent/src/actuator-server.mjs
+Restart=on-failure
+RestartSec=5s
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=KAI_HOST_ACTUATOR_STATE_DIR=/var/lib/kai-host-actuator
+Environment=KAI_HOST_ACTUATOR_SOCKET=/run/kai-host-actuator/actuator.sock
+EnvironmentFile=-/etc/kai-host-actuator.env
+UMask=0007
+RuntimeDirectory=kai-host-actuator
+RuntimeDirectoryMode=0750
+StateDirectory=kai-host-actuator
+StateDirectoryMode=0700
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateMounts=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/kai-host-actuator /run/kai-host-actuator /run/docker.sock
+
+[Install]
+WantedBy=multi-user.target
