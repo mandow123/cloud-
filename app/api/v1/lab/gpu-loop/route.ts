@@ -1,6 +1,8 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { GpuLabEngine, type GpuLabCheckoutInput, type GpuLabPublishInput } from "@/lib/server/gpu-lab-engine";
+import { assertAccountAuthSameOrigin } from "@/lib/server/account-auth";
+import { requireAdminPermission } from "@/lib/server/admin-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -45,8 +47,10 @@ function errorResponse(error: unknown) {
   }, Number.isInteger(candidate.status) ? candidate.status : 500);
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    if (!enabled()) throw new Error("GPU_LAB_DISABLED");
+    await requireAdminPermission(request, ["ADMIN_PANEL_READ"]);
     return json({ snapshot: await lab().snapshot() });
   } catch (error) {
     return errorResponse(error);
@@ -55,6 +59,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    if (!enabled()) throw new Error("GPU_LAB_DISABLED");
+    assertAccountAuthSameOrigin(request);
+    await requireAdminPermission(request, ["FULFILLMENT_OPERATE"]);
     const body = await request.json() as Record<string, unknown>;
     const action = body.action;
     if (action === "seed") return json({ snapshot: await lab().seedDemoInventory() }, 201);

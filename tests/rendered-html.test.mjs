@@ -92,7 +92,7 @@ test("all primary public and member routes render", async () => {
     ["/resources", /资源市场/],
     ["/request", /发布.*需求|租赁.*置换/],
     ["/member", /会员中心|需求方|供应方/],
-    ["/partners", /供应商合作/],
+    ["/hosting/partners", /供应商合作/],
     ["/methodology", /数据方法|价格口径/],
   ];
 
@@ -111,7 +111,7 @@ test("primary routes never render demonstration wording", async () => {
     `/resources/${resourceListings[0].id}`,
     "/request",
     "/member",
-    "/partners",
+    "/hosting/partners",
     "/methodology",
   ];
 
@@ -126,6 +126,12 @@ test("primary routes never render demonstration wording", async () => {
       `${pathname} serializes retired initialization flags`,
     );
   }
+});
+
+test("the retired supplier entry permanently redirects to the governed Hosting page", async () => {
+  const response = await render("/partners");
+  assert.equal(response.status, 308);
+  assert.equal(response.headers.get("location"), "https://cloud.kai.com/hosting/partners");
 });
 
 test("market surfaces disclose reference pricing and inquiry confirmation", async () => {

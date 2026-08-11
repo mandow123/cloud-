@@ -1,13 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { GpuHostingLab } from "@/components/gpu-cloud-lab";
 import { HostingLegacyHashRedirect } from "@/components/hosting-legacy-hash-redirect";
 import {
   HostingPublicShell,
   SectionHeader,
   hostingPublicStyles as styles,
 } from "@/components/hosting-public-shell";
-import { isHostingV2Enabled } from "@/lib/server/hosting-v2-feature";
 
 export const metadata: Metadata = {
   title: "Hosting 算力上架",
@@ -15,8 +13,6 @@ export const metadata: Metadata = {
 };
 
 export default function HostingPage() {
-  if (!isHostingV2Enabled()) return <GpuHostingLab />;
-
   return (
     <HostingPublicShell
       activePath="/hosting"

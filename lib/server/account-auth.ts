@@ -8,10 +8,10 @@ const DEVELOPMENT_COOKIE = "kai_admin_session_dev";
 
 export class AccountAuthError extends Error {
   readonly code: string;
-  readonly status: 400 | 401 | 403 | 409 | 429 | 503;
+  readonly status: 400 | 401 | 403 | 404 | 409 | 429 | 503;
   constructor(
     code: string,
-    status: 400 | 401 | 403 | 409 | 429 | 503,
+    status: 400 | 401 | 403 | 404 | 409 | 429 | 503,
     message: string,
   ) { super(message); this.name = "AccountAuthError"; this.code = code; this.status = status; }
 }

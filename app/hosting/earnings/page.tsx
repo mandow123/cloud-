@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { HostingPublicShell, SectionHeader, hostingPublicStyles as styles } from "@/components/hosting-public-shell";
-import { isHostingV2Enabled } from "@/lib/server/hosting-v2-feature";
 
 export const metadata: Metadata = {
   title: "Hosting 收益与结算",
@@ -10,8 +8,6 @@ export const metadata: Metadata = {
 };
 
 export default function HostingEarningsPage() {
-  if (!isHostingV2Enabled()) redirect("/hosting");
-
   return (
     <HostingPublicShell
       activePath="/hosting/earnings"

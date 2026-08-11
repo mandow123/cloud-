@@ -10,28 +10,23 @@ const publicRoutes = [
   ["/hosting/partners", "app/hosting/partners/page.tsx"],
 ];
 
-test("hosting v2 exposes five independent public pages behind the rollback switch", () => {
+test("hosting exposes five independent public pages even while transactions remain feature-gated", () => {
   for (const [route, path] of publicRoutes) {
     assert.equal(existsSync(path), true, `${route} must have a route file`);
     const source = readFileSync(path, "utf8");
-    assert.match(source, /isHostingV2Enabled/u);
+    assert.doesNotMatch(source, /isHostingV2Enabled|redirect\("\/hosting"\)|GpuHostingLab|LOCAL_TEST/u);
     assert.match(source, new RegExp(`activePath=["']${route.replaceAll("/", "\\/")}["']`, "u"));
-  }
-
-  const overview = readFileSync("app/hosting/page.tsx", "utf8");
-  assert.match(overview, /if \(!isHostingV2Enabled\(\)\) return <GpuHostingLab \/>/u);
-  for (const [, path] of publicRoutes.slice(1)) {
-    assert.match(readFileSync(path, "utf8"), /if \(!isHostingV2Enabled\(\)\) redirect\("\/hosting"\)/u);
   }
 });
 
 test("hosting v2 menu is a vertical list of real routes without page anchors", () => {
   const source = readFileSync("components/nav-links.tsx", "utf8");
   const start = source.indexOf("const hostingV2Group");
-  const end = source.indexOf("const legacyHostingGroup");
+  const end = source.indexOf("function groupsFor");
   const v2Menu = source.slice(start, end);
 
   assert.ok(start >= 0 && end > start);
+  assert.doesNotMatch(source, /legacyHostingGroup|\/hosting#/u);
   assert.doesNotMatch(v2Menu, /href:\s*["'][^"']*#/u);
   for (const [route] of publicRoutes) assert.match(v2Menu, new RegExp(`href: ["']${route.replaceAll("/", "\\/")}["']`, "u"));
 
@@ -43,7 +38,7 @@ test("hosting v2 menu is a vertical list of real routes without page anchors", (
 test("legacy entry points route into the independent hosting pages", () => {
   const partnerSource = readFileSync("app/partners/page.tsx", "utf8");
   assert.match(partnerSource, /permanentRedirect\("\/hosting\/partners"\)/u);
-  assert.ok(partnerSource.indexOf("isHostingV2Enabled()") < partnerSource.indexOf("permanentRedirect("));
+  assert.doesNotMatch(partnerSource, /isHostingV2Enabled|PartnerForm/u);
 
   const guides = readFileSync("app/guides/page.tsx", "utf8");
   assert.doesNotMatch(guides, /\/hosting#/u);
@@ -54,6 +49,23 @@ test("legacy entry points route into the independent hosting pages", () => {
   assert.match(redirectSource, /"#personal-gpu": "\/hosting\/personal-gpu"/u);
   assert.match(redirectSource, /"#cloud-provider": "\/hosting\/cloud"/u);
   assert.match(redirectSource, /"#earnings": "\/hosting\/earnings"/u);
+});
+
+test("the obsolete LOCAL_TEST GPU loop exists only in a local Root administrator route", () => {
+  const page = readFileSync("app/admin/hosting/lab/page.tsx", "utf8");
+  assert.match(page, /KAI_ENVIRONMENT !== "LOCAL"/u);
+  assert.match(page, /KAI_GPU_LAB_ENABLED !== "1"/u);
+  assert.match(page, /notFound\(\)/u);
+
+  const adminLab = readFileSync("components/admin-gpu-lab.tsx", "utf8");
+  assert.match(adminLab, /adminGetSession/u);
+  assert.match(adminLab, /roles\.includes\("ROOT"\)/u);
+  assert.match(adminLab, /<GpuHostingLab/u);
+
+  const api = readFileSync("app/api/v1/lab/gpu-loop/route.ts", "utf8");
+  assert.match(api, /requireAdminPermission\(request, \["ADMIN_PANEL_READ"\]\)/u);
+  assert.match(api, /requireAdminPermission\(request, \["FULFILLMENT_OPERATE"\]\)/u);
+  assert.match(api, /assertAccountAuthSameOrigin\(request\)/u);
 });
 
 test("hosting public styles use the shared light and dark design tokens", () => {

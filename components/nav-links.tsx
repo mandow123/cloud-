@@ -52,20 +52,8 @@ const hostingV2Group: NavGroup = {
   ],
 };
 
-const legacyHostingGroup: NavGroup = {
-  label: "Hosting",
-  paths: ["/hosting", "/partners"],
-  items: [
-    { href: "/hosting", label: "开始上架", description: "登记、验真并发布你的算力" },
-    { href: "/hosting#personal-gpu", label: "个人 GPU", description: "从一张 RTX 4090 开始出租" },
-    { href: "/hosting#cloud-provider", label: "云资源接入", description: "接入云主机或数据中心库存" },
-    { href: "/hosting#earnings", label: "收益与结算", description: "理解计量、验收与卡时收益" },
-    { href: "/partners", label: "供应商合作", description: "企业供应商和服务边界说明" },
-  ],
-};
-
-function groupsFor(hostingV2: boolean) {
-  return [commonGroups[0], hostingV2 ? hostingV2Group : legacyHostingGroup, commonGroups[1]];
+function groupsFor() {
+  return [commonGroups[0], hostingV2Group, commonGroups[1]];
 }
 
 function isGroupActive(pathname: string, group: NavGroup) {
@@ -78,10 +66,10 @@ function isItemActive(pathname: string, href: string) {
   return pathname === path || pathname.startsWith(`${path}/`);
 }
 
-export function NavLinks({ hostingV2 }: { hostingV2: boolean }) {
+export function NavLinks() {
   const pathname = usePathname();
   const navRef = useRef<HTMLElement>(null);
-  const groups = groupsFor(hostingV2);
+  const groups = groupsFor();
 
   useEffect(() => {
     function closeOpenGroup(returnFocus = false) {
