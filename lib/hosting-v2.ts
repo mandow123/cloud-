@@ -167,6 +167,27 @@ export type HostingAgentCommand = Readonly<{
   completedAt: string | null;
 }>;
 
+export type HostingCleanupIncident = Readonly<{
+  contractId: string;
+  contractVersion: number;
+  contractStatus: "CLEANING";
+  supplierOrganizationId: string;
+  deviceId: string;
+  deviceDisplayName: string;
+  deviceStatus: "DRAINING";
+  deviceVersion: number;
+  deviceLastSeenAt: string | null;
+  offerId: string;
+  offerStatus: HostingOffer["status"];
+  cleanupCommandId: string;
+  cleanupCommandStatus: "PENDING" | "DELIVERED" | "FAILED";
+  cleanupAttempt: number;
+  evidenceDigest: string | null;
+  errorCode: string | null;
+  failedAt: string | null;
+  updatedAt: string;
+}>;
+
 export type HostingDashboard = Readonly<{
   profile: HostingSupplierProfile | null;
   devices: readonly HostingDevice[];
@@ -198,4 +219,3 @@ export function hostingCnyReferenceCents(cardHourMicros: number) {
   if (!Number.isSafeInteger(cardHourMicros) || cardHourMicros < 0) throw new Error("HOSTING_CARD_HOURS_INVALID");
   return Math.ceil(cardHourMicros * 1002 / 10_000_000);
 }
-

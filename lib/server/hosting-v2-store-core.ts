@@ -1,4 +1,4 @@
-import { HOSTING_V2_AGENT_STALE_SECONDS, type HostingAgentChallenge, type HostingAgentCommand, type HostingContract, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingFeeSchedule, type HostingOffer, type HostingSupplierProfile } from "../hosting-v2.ts";
+import { HOSTING_V2_AGENT_STALE_SECONDS, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingFeeSchedule, type HostingOffer, type HostingSupplierProfile } from "../hosting-v2.ts";
 import { HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { assertHostingV2ApprovedImage } from "./hosting-v2-image-policy.ts";
@@ -183,6 +183,18 @@ function command(row: Row): HostingAgentCommand {
   return { id: value(row, "id"), deviceId: value(row, "device_id"), contractId: nullable(row, "contract_id"), type: value(row, "command_type") as HostingAgentCommand["type"], payload: json(row, "payload_json"), status: value(row, "status") as HostingAgentCommand["status"], attempt: number(row, "attempt"), evidenceDigest: nullable(row, "evidence_digest"), errorCode: nullable(row, "error_code"), createdAt: value(row, "created_at"), deliveredAt: nullable(row, "delivered_at"), completedAt: nullable(row, "completed_at") };
 }
 
+function cleanupIncident(row: Row): HostingCleanupIncident {
+  return {
+    contractId: value(row, "contract_id"), contractVersion: number(row, "contract_version"), contractStatus: "CLEANING",
+    supplierOrganizationId: value(row, "supplier_organization_id"), deviceId: value(row, "device_id"), deviceDisplayName: value(row, "device_display_name"),
+    deviceStatus: "DRAINING", deviceVersion: number(row, "device_version"), deviceLastSeenAt: nullable(row, "device_last_seen_at"),
+    offerId: value(row, "offer_id"), offerStatus: value(row, "offer_status") as HostingOffer["status"],
+    cleanupCommandId: value(row, "cleanup_command_id"), cleanupCommandStatus: value(row, "cleanup_command_status") as HostingCleanupIncident["cleanupCommandStatus"],
+    cleanupAttempt: number(row, "cleanup_attempt"), evidenceDigest: nullable(row, "evidence_digest"), errorCode: nullable(row, "error_code"),
+    failedAt: nullable(row, "failed_at"), updatedAt: value(row, "updated_at"),
+  };
+}
+
 function event(context: HostingMutationContext, organizationId: string | null, entityType: string, entityId: string, eventType: string, metadata: Record<string, unknown> = {}): HostingV2Sql {
   return { sql: "INSERT INTO hosting_v2_events(id,organization_id,entity_type,entity_id,event_type,actor_id,payload_digest,metadata_json,occurred_at) VALUES(?,?,?,?,?,?,?,?,?)", values: [id("hve"), organizationId, entityType, entityId, eventType, context.actorId, context.payloadHash, JSON.stringify(metadata), context.now] };
 }
@@ -215,7 +227,10 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
         db.first<{ count: number }>("SELECT COUNT(*) AS count FROM hosting_v2_supplier_profiles WHERE status='APPROVED'"),
         db.first<{ count: number }>("SELECT COUNT(*) AS count FROM hosting_v2_devices WHERE status IN ('VERIFIED','BUSY') AND verification_status='PASSED' AND verified_until>? AND last_seen_at>=?", [now, staleCutoff]),
         db.first<{ count: number }>("SELECT COUNT(*) AS count FROM hosting_v2_devices WHERE status='DRAINING'"),
-        db.first<{ count: number }>("SELECT COUNT(*) AS count FROM hosting_v2_agent_commands WHERE command_type='CLEANUP' AND status='FAILED'"),
+        db.first<{ count: number }>(`SELECT COUNT(*) AS count FROM hosting_v2_contracts c
+          WHERE c.status='CLEANING'
+            AND EXISTS(SELECT 1 FROM hosting_v2_agent_commands f WHERE f.contract_id=c.id AND f.command_type='CLEANUP' AND f.status='FAILED')
+            AND NOT EXISTS(SELECT 1 FROM hosting_v2_agent_commands a WHERE a.contract_id=c.id AND a.command_type='CLEANUP' AND a.status IN ('PENDING','DELIVERED','SUCCEEDED'))`),
         db.first<{ count: number }>("SELECT COUNT(*) AS count FROM hosting_v2_contracts WHERE status='CLEANING'"),
       ]);
       if (Number(migration?.version ?? 0) !== HOSTING_V2_SCHEMA_VERSION) throw new Error("HOSTING_V2_SCHEMA_MISMATCH");
@@ -229,6 +244,26 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
         failedCleanupCount: Number(failedCleanups?.count ?? 0),
         cleaningContractCount: Number(cleaningContracts?.count ?? 0),
       };
+    },
+    async listCleanupIncidents() {
+      const rows = await db.all<Row>(`SELECT
+          c.id AS contract_id,c.version AS contract_version,c.supplier_organization_id,c.offer_id,c.updated_at,
+          d.id AS device_id,d.display_name AS device_display_name,d.version AS device_version,d.last_seen_at AS device_last_seen_at,
+          o.status AS offer_status,
+          cmd.id AS cleanup_command_id,cmd.status AS cleanup_command_status,cmd.attempt AS cleanup_attempt,
+          cmd.evidence_digest,cmd.error_code,cmd.completed_at AS failed_at
+        FROM hosting_v2_contracts c
+        JOIN hosting_v2_devices d ON d.id=c.device_id AND d.status='DRAINING'
+        JOIN hosting_v2_offers o ON o.id=c.offer_id
+        JOIN hosting_v2_agent_commands cmd ON cmd.id=(
+          SELECT latest.id FROM hosting_v2_agent_commands latest
+          WHERE latest.contract_id=c.id AND latest.command_type='CLEANUP'
+          ORDER BY CASE WHEN latest.status IN ('PENDING','DELIVERED') THEN 1 ELSE 0 END DESC,
+            COALESCE(latest.completed_at,latest.delivered_at,latest.created_at) DESC,latest.created_at DESC LIMIT 1
+        )
+        WHERE c.status='CLEANING' AND cmd.status IN ('PENDING','DELIVERED','FAILED')
+        ORDER BY c.updated_at DESC,c.id DESC LIMIT 200`);
+      return rows.map(cleanupIncident);
     },
   };
 }
@@ -774,7 +809,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
           statements.push(
             { sql: "UPDATE hosting_v2_contracts SET status='CLEANED',version=version+1,updated_at=? WHERE id=? AND status='CLEANING'", values: [context.now, contractId] },
             { sql: "UPDATE hosting_v2_devices SET status=?,verification_status=?,version=version+1,updated_at=? WHERE id=?", values: [verificationFresh ? "VERIFIED" : "ONLINE", value(deviceRow, "verification_status") === "PASSED" && Date.parse(nullable(deviceRow, "verified_until") ?? "") <= Date.parse(context.now) ? "EXPIRED" : value(deviceRow, "verification_status"), context.now, deviceId] },
-            { sql: "UPDATE hosting_v2_offers SET status=?,version=version+1,updated_at=? WHERE id=? AND status='RESERVED'", values: [verificationFresh ? "PUBLISHED" : "SUSPENDED", context.now, value(currentContract, "offer_id")] },
+            { sql: "UPDATE hosting_v2_offers SET status=?,version=version+1,updated_at=? WHERE id=? AND status IN ('RESERVED','SUSPENDED')", values: [verificationFresh ? "PUBLISHED" : "SUSPENDED", context.now, value(currentContract, "offer_id")] },
           );
         }
       }
@@ -810,6 +845,68 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       const [contractRow, commandRow] = await Promise.all([db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [contractId]), db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE id=?", [commandId])]);
       if (!contractRow || !commandRow) throw new Error("HOSTING_SETTLEMENT_CLEANUP_QUEUE_FAILED");
       return { contract: contract(contractRow), command: command(commandRow) };
+    },
+
+    async retryCleanup(contractId, input, context) {
+      const replayed = await replay(db, context, "RETRY_CLEANUP");
+      if (replayed) {
+        const commandRow = await db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE id=? AND contract_id=?", [replayed.entityId, contractId]);
+        if (!commandRow) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "清理恢复任务不存在。");
+        const [contractRow, deviceRow] = await Promise.all([
+          db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [contractId]),
+          db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=?", [value(commandRow, "device_id")]),
+        ]);
+        if (!contractRow || !deviceRow) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "清理恢复对象不存在。");
+        return { contract: contract(contractRow), device: device(deviceRow), command: command(commandRow) };
+      }
+      const reason = input.reason.trim();
+      if (reason.length < 8 || reason.length > 500) throw new ExchangeInputError("清理重试理由应为 8–500 个字符。", "reason");
+      if (!Number.isSafeInteger(input.expectedContractVersion) || input.expectedContractVersion < 1 || !Number.isSafeInteger(input.expectedDeviceVersion) || input.expectedDeviceVersion < 1) {
+        throw new ExchangeInputError("清理重试版本无效。", "expectedVersion");
+      }
+      const contractRow = await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [contractId]);
+      if (!contractRow) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "清理中的合同不存在。");
+      const deviceId = value(contractRow, "device_id");
+      const [deviceRow, offerRow, previousCleanup] = await Promise.all([
+        db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=?", [deviceId]),
+        db.first<Row>("SELECT * FROM hosting_v2_offers WHERE id=?", [value(contractRow, "offer_id")]),
+        db.first<Row>(`SELECT * FROM hosting_v2_agent_commands WHERE contract_id=? AND command_type='CLEANUP' AND status='FAILED'
+          ORDER BY COALESCE(completed_at,created_at) DESC,created_at DESC LIMIT 1`, [contractId]),
+      ]);
+      if (!deviceRow || !offerRow || value(contractRow, "status") !== "CLEANING" || value(deviceRow, "status") !== "DRAINING" || value(offerRow, "status") !== "SUSPENDED" || !previousCleanup) {
+        throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "只有保持隔离且已有失败证据的清理任务可以重试。");
+      }
+      if (number(contractRow, "version") !== input.expectedContractVersion || number(deviceRow, "version") !== input.expectedDeviceVersion) {
+        throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT", 409, "合同或设备状态已变化，请刷新后重试。");
+      }
+      const commandId = id("hcmd");
+      const payload = JSON.stringify({ contractId, removeAuthorizedKeys: true, removeContainer: true, removeWorkspace: true });
+      const eventId = id("hve");
+      const previousCommandId = value(previousCleanup, "id");
+      const results = await db.batch([
+        { sql: `INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at)
+            SELECT ?,d.id,c.id,'CLEANUP',?,'PENDING',0,?
+            FROM hosting_v2_contracts c JOIN hosting_v2_devices d ON d.id=c.device_id
+            WHERE c.id=? AND c.status='CLEANING' AND c.version=? AND d.status='DRAINING' AND d.version=?
+              AND EXISTS(SELECT 1 FROM hosting_v2_offers o WHERE o.id=c.offer_id AND o.status='SUSPENDED')
+              AND EXISTS(SELECT 1 FROM hosting_v2_agent_commands f WHERE f.id=? AND f.contract_id=c.id AND f.command_type='CLEANUP' AND f.status='FAILED')
+              AND NOT EXISTS(SELECT 1 FROM hosting_v2_agent_commands a WHERE a.contract_id=c.id AND a.command_type='CLEANUP' AND a.status IN ('PENDING','DELIVERED','SUCCEEDED'))`,
+          values: [commandId, payload, context.now, contractId, input.expectedContractVersion, input.expectedDeviceVersion, previousCommandId] },
+        { sql: `INSERT INTO hosting_v2_events(id,organization_id,entity_type,entity_id,event_type,actor_id,payload_digest,metadata_json,occurred_at)
+            SELECT ?,?,'CONTRACT',?,'CLEANUP_RETRY_QUEUED',?,?,?,? WHERE EXISTS(SELECT 1 FROM hosting_v2_agent_commands WHERE id=?)`,
+          values: [eventId, value(contractRow, "supplier_organization_id"), contractId, context.actorId, context.payloadHash, JSON.stringify({ commandId, previousCommandId, reason }), context.now, commandId] },
+        { sql: `INSERT INTO hosting_v2_command_receipts(actor_id,idempotency_key,command_type,payload_hash,entity_type,entity_id,created_at)
+            SELECT ?,?,'RETRY_CLEANUP',?,'AGENT_COMMAND',?,? WHERE EXISTS(SELECT 1 FROM hosting_v2_agent_commands WHERE id=?)`,
+          values: [context.actorId, context.idempotencyKey, context.payloadHash, commandId, context.now, commandId] },
+      ]);
+      if (results[0]?.changes !== 1) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "清理任务已被其他管理员恢复，请刷新状态。");
+      const [finalContract, finalDevice, finalCommand] = await Promise.all([
+        db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [contractId]),
+        db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=?", [deviceId]),
+        db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE id=?", [commandId]),
+      ]);
+      if (!finalContract || !finalDevice || !finalCommand) throw new Error("HOSTING_CLEANUP_RETRY_QUEUE_FAILED");
+      return { contract: contract(finalContract), device: device(finalDevice), command: command(finalCommand) };
     },
   };
 }

@@ -77,12 +77,13 @@ async function hostingOperationsBundle() {
   const root = roles.includes("ROOT");
   const approver = roles.includes("FINANCE_APPROVER");
   if (!root && !approver) throw new AdminApiError("当前账号没有 Hosting 试运营权限。", 403, "ADMIN_ACCESS_FORBIDDEN");
-  const [grants, profiles, fee] = await Promise.all([
+  const [grants, profiles, fee, cleanupIncidents] = await Promise.all([
     adminGetRows({ path: "/api/v2/admin/card-hours/trial-grants" }),
     root ? adminGetRows({ path: "/api/v2/admin/supply/profiles" }) : Promise.resolve([]),
     root ? adminGetJson("/api/v2/admin/hosting/fees").then(feeFromPayload) : Promise.resolve(null),
+    root ? adminGetRows({ path: "/api/v2/admin/hosting/cleanup-incidents" }) : Promise.resolve([]),
   ]);
-  return { session, grants, profiles, fee };
+  return { session, grants, profiles, fee, cleanupIncidents };
 }
 
 export function AdminHostingOperations() {
@@ -90,6 +91,7 @@ export function AdminHostingOperations() {
   const [profiles, setProfiles] = useState<AdminRow[]>([]);
   const [grants, setGrants] = useState<AdminRow[]>([]);
   const [fee, setFee] = useState<FeeSchedule | null>(null);
+  const [cleanupIncidents, setCleanupIncidents] = useState<AdminRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState("");
@@ -103,11 +105,14 @@ export function AdminHostingOperations() {
   const [grantOrganizationId, setGrantOrganizationId] = useState("");
   const [grantCardHours, setGrantCardHours] = useState("100");
   const [grantReason, setGrantReason] = useState("");
+  const [cleanupTarget, setCleanupTarget] = useState("");
+  const [cleanupReason, setCleanupReason] = useState("");
 
   const roles = useMemo(() => rolesFromSession(session), [session]);
   const isRoot = roles.includes("ROOT");
   const isApprover = roles.includes("FINANCE_APPROVER") && !isRoot;
   const selectedProfile = profiles.find((profile) => profile.organizationId === reviewTarget);
+  const selectedCleanup = cleanupIncidents.find((incident) => incident.contractId === cleanupTarget);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -118,7 +123,9 @@ export function AdminHostingOperations() {
       setGrants(result.grants);
       setProfiles(result.profiles);
       setFee(result.fee);
+      setCleanupIncidents(result.cleanupIncidents);
       setReviewTarget((current) => current || String(result.profiles.find((profile) => profile.status === "SUBMITTED")?.organizationId ?? result.profiles[0]?.organizationId ?? ""));
+      setCleanupTarget((current) => result.cleanupIncidents.some((incident) => incident.contractId === current) ? current : String(result.cleanupIncidents.find((incident) => incident.cleanupCommandStatus === "FAILED")?.contractId ?? ""));
     } catch (loadError) {
       setError(loadError);
     } finally {
@@ -135,7 +142,9 @@ export function AdminHostingOperations() {
         setGrants(result.grants);
         setProfiles(result.profiles);
         setFee(result.fee);
+        setCleanupIncidents(result.cleanupIncidents);
         setReviewTarget(String(result.profiles.find((profile) => profile.status === "SUBMITTED")?.organizationId ?? result.profiles[0]?.organizationId ?? ""));
+        setCleanupTarget(String(result.cleanupIncidents.find((incident) => incident.cleanupCommandStatus === "FAILED")?.contractId ?? ""));
       })
       .catch((loadError: unknown) => { if (!cancelled) setError(loadError); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -192,6 +201,17 @@ export function AdminHostingOperations() {
     void run(`grant-${id}`, () => adminPostAction(`/api/v2/admin/card-hours/trial-grants/${encodeURIComponent(id)}/decision`, { decision }), decision === "APPROVE" ? "审批已完成，卡时已通过不可变账本入账。" : "申请已拒绝，未产生卡时入账。 ");
   }
 
+  function submitCleanupRetry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedCleanup || selectedCleanup.cleanupCommandStatus !== "FAILED") return;
+    const contractId = text(selectedCleanup, "contractId");
+    void run("cleanup", () => adminPostAction(`/api/v2/admin/hosting/cleanup-incidents/${encodeURIComponent(contractId)}/retry`, {
+      expectedContractVersion: integer(selectedCleanup, "contractVersion"),
+      expectedDeviceVersion: integer(selectedCleanup, "deviceVersion"),
+      reason: cleanupReason.trim(),
+    }), "新的受限清理任务已排队；设备继续保持 DRAINING，只有 Agent 返回完整清理证据后才会恢复可售。 ");
+  }
+
   if (error instanceof AdminApiError && [401, 403].includes(error.status) && !session) return <AdminLoginRequired forbidden={error.status === 403} />;
 
   return (
@@ -246,6 +266,19 @@ export function AdminHostingOperations() {
             <button className="admin-button primary" disabled={busy === "grant"} type="submit">{busy === "grant" ? "正在登记…" : "提交卡时申请"}</button>
           </form>
           <p className="admin-hosting-warning">提交后请退出 Root 账号，由另一位操作人员使用独立财务审批账号登录本页复核。Root 无法批准自己发起的申请。</p>
+        </section>
+
+        <section className="admin-panel admin-hosting-panel admin-panel-wide-column" aria-labelledby="cleanup-recovery-title">
+          <div className="admin-panel-head"><div><p className="admin-kicker">Fail-closed recovery</p><h2 id="cleanup-recovery-title">清理失败恢复</h2></div><span className={`admin-status ${cleanupIncidents.length ? "danger" : "success"}`}>{cleanupIncidents.length ? `${cleanupIncidents.length} 个隔离事件` : "无阻塞"}</span></div>
+          {cleanupIncidents.length ? <>
+            <div className="admin-table-wrap"><table className="admin-table"><caption>清理失败与恢复任务</caption><thead><tr><th>合同</th><th>设备</th><th>Agent 最后在线</th><th>清理任务</th><th>状态</th><th>错误</th><th>证据摘要</th><th>失败/更新时间</th></tr></thead><tbody>{cleanupIncidents.map((incident) => <tr key={text(incident, "contractId")}><td className="admin-mono">{text(incident, "contractId")}</td><td><strong>{text(incident, "deviceDisplayName")}</strong><br/><span className="admin-mono">{text(incident, "deviceId")}</span></td><td>{datetime(incident.deviceLastSeenAt)}</td><td className="admin-mono">{text(incident, "cleanupCommandId")}<br/>投递 {integer(incident, "cleanupAttempt")} 次</td><td><span className={`admin-status ${text(incident, "cleanupCommandStatus") === "FAILED" ? "danger" : "warning"}`}>{text(incident, "cleanupCommandStatus")}</span></td><td className="admin-mono">{text(incident, "errorCode")}</td><td className="admin-mono">{text(incident, "evidenceDigest")}</td><td>{datetime(incident.failedAt ?? incident.updatedAt)}</td></tr>)}</tbody></table></div>
+            <form className="admin-hosting-form admin-hosting-recovery-form" onSubmit={submitCleanupRetry}>
+              <label><span>失败合同</span><select onChange={(event) => setCleanupTarget(event.target.value)} value={cleanupTarget}><option value="">选择可重试的失败合同</option>{cleanupIncidents.filter((incident) => incident.cleanupCommandStatus === "FAILED").map((incident) => <option key={text(incident, "contractId")} value={text(incident, "contractId")}>{text(incident, "contractId")} · {text(incident, "errorCode")}</option>)}</select></label>
+              <label><span>恢复理由</span><textarea maxLength={500} minLength={8} onChange={(event) => setCleanupReason(event.target.value)} placeholder="说明故障已排除的依据、Agent 状态和本次重试责任人" required rows={3} value={cleanupReason} /></label>
+              <button className="admin-button danger" disabled={busy === "cleanup" || !selectedCleanup || selectedCleanup.cleanupCommandStatus !== "FAILED"} type="submit">{busy === "cleanup" ? "正在排队…" : "重新下发受限清理"}</button>
+            </form>
+            <p className="admin-hosting-warning">此操作不会改写合同、设备或挂牌状态。设备保持隔离；严禁用管理员按钮跳过容器、临时密钥和工作目录清理证明。</p>
+          </> : <AdminEmpty description="没有处于 DRAINING 的设备或未完成的清理合同。" title="当前没有清理阻塞" />}
         </section>
       </div> : null}
 

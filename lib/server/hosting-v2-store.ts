@@ -1,6 +1,7 @@
 import type {
   HostingAgentChallenge,
   HostingAgentCommand,
+  HostingCleanupIncident,
   HostingContract,
   HostingDashboard,
   HostingDevice,
@@ -36,6 +37,7 @@ export type HostingV2OperationalSnapshot = Readonly<{
 
 export interface HostingV2Store {
   readiness(now: string): Promise<HostingV2OperationalSnapshot>;
+  listCleanupIncidents(): Promise<HostingCleanupIncident[]>;
   dashboard(organizationId: string, now: string): Promise<HostingDashboard>;
   saveProfile(account: AccountSessionContext, input: { supplierType: HostingSupplierType; legalDisplayName: string; contactEmail: string; expectedVersion: number }, context: HostingMutationContext): Promise<HostingSupplierProfile>;
   submitProfile(organizationId: string, expectedVersion: number, context: HostingMutationContext): Promise<HostingSupplierProfile>;
@@ -62,6 +64,7 @@ export interface HostingV2Store {
   pollCommand(deviceId: string, now: string): Promise<HostingAgentCommand | null>;
   completeCommand(deviceId: string, commandId: string, input: { outcome: "SUCCEEDED" | "FAILED"; evidenceDigest: string; errorCode?: string | null; details?: Record<string, unknown> }, context: HostingMutationContext): Promise<{ command: HostingAgentCommand; contract: HostingContract | null; device: HostingDevice }>;
   markContractSettled(contractId: string, input: { measuredSeconds: number; settledMicros: number; supplierIncomeMicros: number; commissionMicros: number }, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand }>;
+  retryCleanup(contractId: string, input: { expectedContractVersion: number; expectedDeviceVersion: number; reason: string }, context: HostingMutationContext): Promise<{ contract: HostingContract; device: HostingDevice; command: HostingAgentCommand }>;
   cancelContract(contractId: string, reason: string, context: HostingMutationContext): Promise<HostingContract>;
 }
 

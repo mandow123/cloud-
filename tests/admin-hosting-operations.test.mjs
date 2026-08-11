@@ -2,16 +2,20 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { createAccountSession } from "../lib/server/account-auth.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
 import { createSqliteCardHourStore } from "../lib/server/card-hour-store-sqlite.ts";
 import { createSqliteMarketplaceStore } from "../lib/server/marketplace-store-sqlite.ts";
+import { getHostingV2Store } from "../lib/server/hosting-v2-store.ts";
 
 import { GET as openMarketplaceSession } from "../app/api/session/route.ts";
 import { GET as listTrialGrants, POST as requestTrialGrant } from "../app/api/v2/admin/card-hours/trial-grants/route.ts";
 import { POST as decideTrialGrant } from "../app/api/v2/admin/card-hours/trial-grants/[grantId]/decision/route.ts";
+import { GET as listCleanupIncidents } from "../app/api/v2/admin/hosting/cleanup-incidents/route.ts";
+import { POST as retryCleanupIncident } from "../app/api/v2/admin/hosting/cleanup-incidents/[contractId]/retry/route.ts";
 
 const ORIGIN = "http://localhost:3014";
 
@@ -49,6 +53,27 @@ function write(browser, path, payload, key) {
   });
 }
 
+function seedCleanupIncident(databasePath, now) {
+  const db = new DatabaseSync(databasePath, { enableForeignKeyConstraints: true });
+  const deviceId = `had_${"a".repeat(32)}`;
+  const offerId = `hofr_${"b".repeat(32)}`;
+  const contractId = `hctr_${"c".repeat(32)}`;
+  const commandId = `hcmd_${"d".repeat(32)}`;
+  const feeId = `hfee_${"e".repeat(32)}`;
+  const inventory = { hostnameDigest: `sha256:${"1".repeat(64)}`, gpuModel: "RTX_4090", gpuUuidDigest: `sha256:${"2".repeat(64)}`, gpuMemoryMiB: 24_576, driverVersion: "580.10", cudaVersion: "13.0", cpuModel: "AMD Ryzen 9", memoryMiB: 65_536, storageGiB: 2_048, publicHost: "cleanup.example.com", sshPortStart: 27000, sshPortEnd: 27019 };
+  db.prepare("INSERT INTO hosting_v2_fee_schedules(id,platform_fee_bps,referral_reward_bps,status,effective_from,created_by,created_at) VALUES(?,1000,300,'ACTIVE',?,'seed',?)").run(feeId, now, now);
+  db.prepare(`INSERT INTO hosting_v2_devices(id,organization_id,account_id,display_name,device_key_id,device_public_key,agent_version,inventory_json,inventory_digest,status,verification_status,verification_evidence_digest,verified_until,last_sequence,last_seen_at,version,created_at,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,'DRAINING','PASSED',?,?,1,?,2,?,?)`).run(deviceId, "org-cleanup-supplier", "acct-cleanup-supplier", "隔离中的 RTX 4090", `sha256:${"3".repeat(64)}`, "A".repeat(43), "1.3.0", JSON.stringify(inventory), `sha256:${"4".repeat(64)}`, `sha256:${"5".repeat(64)}`, new Date(Date.parse(now) + 86_400_000).toISOString(), now, now, now);
+  db.prepare(`INSERT INTO hosting_v2_offers(id,organization_id,device_id,fee_schedule_id,title,gpu_model,region,card_hour_micros_per_gpu_hour,min_rental_seconds,max_rental_seconds,available_from,available_until,approved_image,terms_version,status,version,created_at,updated_at)
+    VALUES(?,?,?,?,?,'RTX_4090','中国·北京',3600000,180,3600,?,?,?,'KAI_HOSTING_TERMS_2026_08','SUSPENDED',3,?,?)`).run(offerId, "org-cleanup-supplier", deviceId, feeId, "隔离中的 RTX 4090", new Date(Date.parse(now) - 60_000).toISOString(), new Date(Date.parse(now) + 86_400_000).toISOString(), process.env.KAI_HOSTING_APPROVED_IMAGES, now, now);
+  const snapshot = { title: "隔离中的 RTX 4090", gpuModel: "RTX_4090", region: "中国·北京", cardHourMicrosPerGpuHour: 3_600_000, approvedImage: process.env.KAI_HOSTING_APPROVED_IMAGES, termsVersion: "KAI_HOSTING_TERMS_2026_08", platformFeeBps: 1_000, referralRewardBps: 300 };
+  db.prepare(`INSERT INTO hosting_v2_contracts(id,offer_id,device_id,buyer_organization_id,buyer_account_id,supplier_organization_id,fee_schedule_id,snapshot_json,reserved_seconds,measured_seconds,held_micros,settled_micros,supplier_income_micros,commission_micros,status,idempotency_key,payload_hash,version,created_at,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,3600,600,3600000,600000,540000,0,'CLEANING','seed-cleanup-contract','seed-cleanup-contract-hash',6,?,?)`).run(contractId, offerId, deviceId, "org-cleanup-buyer", "acct-cleanup-buyer", "org-cleanup-supplier", feeId, JSON.stringify(snapshot), now, now);
+  db.prepare("INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,evidence_digest,error_code,created_at,delivered_at,completed_at) VALUES(?,?,?,'CLEANUP',?,'FAILED',1,?,?,?, ?,?)").run(commandId, deviceId, contractId, JSON.stringify({ contractId, removeAuthorizedKeys: true, removeContainer: true, removeWorkspace: true }), `sha256:${"6".repeat(64)}`, "WORKSPACE_DELETE_FAILED", now, now, now);
+  db.close();
+  return { contractId, deviceId, commandId };
+}
+
 test("Root request and independent finance approval are both required before trial card-hours enter the ledger", async () => {
   const directory = mkdtempSync(join(tmpdir(), "kai-hosting-admin-"));
   const databasePath = join(directory, "kai-cloud.sqlite");
@@ -57,11 +82,14 @@ test("Root request and independent finance approval are both required before tri
   const previousAccount = globalThis.__kaiAccountAuthStorePromise;
   const previousCardHours = globalThis.__kaiCardHourStorePromise;
   const previousMarketplace = globalThis.__kaiMarketplaceStorePromise;
+  const previousHostingFlag = process.env.KAI_HOSTING_V2;
   process.env.KAI_DB_DIR = directory;
   process.env.KAI_PUBLIC_ORIGIN = ORIGIN;
+  process.env.KAI_HOSTING_V2 = "1";
   const auth = await createSqliteAccountAuthStore(databasePath);
   const cardHours = await createSqliteCardHourStore(databasePath);
   const marketplace = createSqliteMarketplaceStore();
+  const hosting = await getHostingV2Store();
   globalThis.__kaiAccountAuthStorePromise = Promise.resolve(auth);
   globalThis.__kaiCardHourStorePromise = Promise.resolve(cardHours);
   globalThis.__kaiMarketplaceStorePromise = Promise.resolve(marketplace);
@@ -115,15 +143,35 @@ test("Root request and independent finance approval are both required before tri
     const list = await json(await listTrialGrants(new Request(`${ORIGIN}/api/v2/admin/card-hours/trial-grants`, { headers: { cookie: approver.cookie } })), 200);
     assert.equal(list.records.length, 1);
     assert.equal(list.records[0].status, "POSTED");
+
+    const cleanupSeed = seedCleanupIncident(databasePath, now);
+    const cleanupList = await json(await listCleanupIncidents(new Request(`${ORIGIN}/api/v2/admin/hosting/cleanup-incidents`, { headers: { cookie: root.cookie } })), 200);
+    assert.equal(cleanupList.records.length, 1);
+    assert.equal(cleanupList.records[0].cleanupCommandStatus, "FAILED");
+    const financeCannotRecover = await json(await listCleanupIncidents(new Request(`${ORIGIN}/api/v2/admin/hosting/cleanup-incidents`, { headers: { cookie: approver.cookie } })), 403);
+    assert.equal(financeCannotRecover.error.code, "ADMIN_ACCESS_FORBIDDEN");
+    const retried = await json(await retryCleanupIncident(write(root, `/api/v2/admin/hosting/cleanup-incidents/${cleanupSeed.contractId}/retry`, {
+      expectedContractVersion: 6,
+      expectedDeviceVersion: 2,
+      reason: "Agent 已恢复在线并完成工作目录故障排查",
+    }, "admin-cleanup-retry-0001"), { params: Promise.resolve({ contractId: cleanupSeed.contractId }) }), 202);
+    assert.equal(retried.record.status, "PENDING");
+    assert.equal(retried.contract.status, "CLEANING");
+    assert.equal(retried.device.status, "DRAINING");
+    assert.notEqual(retried.record.id, cleanupSeed.commandId);
+    const recoveryList = await json(await listCleanupIncidents(new Request(`${ORIGIN}/api/v2/admin/hosting/cleanup-incidents`, { headers: { cookie: root.cookie } })), 200);
+    assert.equal(recoveryList.records[0].cleanupCommandStatus, "PENDING");
   } finally {
     auth.close();
     cardHours.close();
     marketplace.close?.();
+    hosting.close?.();
     globalThis.__kaiAccountAuthStorePromise = previousAccount;
     globalThis.__kaiCardHourStorePromise = previousCardHours;
     globalThis.__kaiMarketplaceStorePromise = previousMarketplace;
     if (previousDirectory === undefined) delete process.env.KAI_DB_DIR; else process.env.KAI_DB_DIR = previousDirectory;
     if (previousOrigin === undefined) delete process.env.KAI_PUBLIC_ORIGIN; else process.env.KAI_PUBLIC_ORIGIN = previousOrigin;
+    if (previousHostingFlag === undefined) delete process.env.KAI_HOSTING_V2; else process.env.KAI_HOSTING_V2 = previousHostingFlag;
     rmSync(directory, { recursive: true, force: true });
   }
 });
@@ -134,7 +182,14 @@ test("the Hosting admin page is wired to live approval APIs and has no fake clie
   assert.match(component, /\/api\/v2\/admin\/supply\/profiles/u);
   assert.match(component, /\/api\/v2\/admin\/hosting\/fees/u);
   assert.match(component, /\/api\/v2\/admin\/card-hours\/trial-grants/u);
+  assert.match(component, /\/api\/v2\/admin\/hosting\/cleanup-incidents/u);
   assert.match(component, /FINANCE_APPROVER/u);
   assert.doesNotMatch(component, /localStorage|sessionStorage/u);
+  assert.doesNotMatch(component, /status:\s*["'](?:CLEANED|VERIFIED|PUBLISHED)["']/u);
   assert.match(navigation, /href: "\/admin\/hosting"/u);
+
+  const retryRoute = readFileSync(new URL("../app/api/v2/admin/hosting/cleanup-incidents/[contractId]/retry/route.ts", import.meta.url), "utf8");
+  assert.match(retryRoute, /requireAdminPermission\(request, \["FULFILLMENT_OPERATE"\]\)/u);
+  assert.match(retryRoute, /retryCleanup/u);
+  assert.doesNotMatch(retryRoute, /updateOfferStatus|completeCommand/u);
 });

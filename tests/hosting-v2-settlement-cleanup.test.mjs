@@ -110,6 +110,55 @@ test("buyer acceptance settles actual card-hours, vests income and relists only 
     assert.equal(degraded.failedCleanupCount, 1);
     assert.equal(degraded.cleaningContractCount, 1);
 
+    const incidents = await hosting.listCleanupIncidents();
+    assert.equal(incidents.length, 1);
+    assert.deepEqual({
+      contractId: incidents[0].contractId,
+      deviceId: incidents[0].deviceId,
+      cleanupCommandId: incidents[0].cleanupCommandId,
+      cleanupCommandStatus: incidents[0].cleanupCommandStatus,
+      errorCode: incidents[0].errorCode,
+    }, {
+      contractId: failedSeed.contractId,
+      deviceId: failedSeed.deviceId,
+      cleanupCommandId: failedCleanup.id,
+      cleanupCommandStatus: "FAILED",
+      errorCode: "WORKSPACE_DELETE_FAILED",
+    });
+    const recoveryNow = new Date(Date.parse(now) + 1_000).toISOString();
+    const recoveryMutation = mutation("root-cleanup-operator", "cleanup-retry-0001", "cleanup-retry-hash", recoveryNow);
+    const retriedCleanup = await hosting.retryCleanup(failedSeed.contractId, {
+      expectedContractVersion: failed.contract.version,
+      expectedDeviceVersion: failed.device.version,
+      reason: "Agent 已恢复在线并完成清理故障排查",
+    }, recoveryMutation);
+    assert.equal(retriedCleanup.command.status, "PENDING");
+    assert.equal(retriedCleanup.contract.status, "CLEANING");
+    assert.equal(retriedCleanup.device.status, "DRAINING");
+    assert.equal((await hosting.getOffer(failedSeed.offerId)).status, "SUSPENDED");
+    assert.equal((await hosting.retryCleanup(failedSeed.contractId, {
+      expectedContractVersion: failed.contract.version,
+      expectedDeviceVersion: failed.device.version,
+      reason: "Agent 已恢复在线并完成清理故障排查",
+    }, recoveryMutation)).command.id, retriedCleanup.command.id, "same recovery request must replay one command");
+    await assert.rejects(hosting.retryCleanup(failedSeed.contractId, {
+      expectedContractVersion: failed.contract.version,
+      expectedDeviceVersion: failed.device.version,
+      reason: "重复管理员不能同时创建第二条清理任务",
+    }, mutation("other-root-operator", "cleanup-retry-concurrent", "cleanup-retry-concurrent-hash", recoveryNow)), (error) => error.code === "EXCHANGE_STATE_CONFLICT");
+    const recovering = await hosting.listCleanupIncidents();
+    assert.equal(recovering[0].cleanupCommandStatus, "PENDING");
+    assert.equal((await hosting.readiness(recoveryNow)).failedCleanupCount, 0, "a queued recovery supersedes historical failure without declaring the device clean");
+    const recoveryCommand = await hosting.pollCommand(failedSeed.deviceId, recoveryNow);
+    assert.equal(recoveryCommand.id, retriedCleanup.command.id);
+    const recovered = await hosting.completeCommand(failedSeed.deviceId, recoveryCommand.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"9".repeat(64)}`, details: cleanupDetails(failedSeed.contractId, recoveryNow) }, mutation(`agent:${failedSeed.deviceId}`, "cleanup-retry-success", "cleanup-retry-success-hash", recoveryNow));
+    assert.equal(recovered.contract.status, "CLEANED");
+    assert.equal(recovered.device.status, "VERIFIED");
+    assert.equal((await hosting.getOffer(failedSeed.offerId)).status, "PUBLISHED");
+    assert.equal((await hosting.listCleanupIncidents()).length, 0);
+    const recoveredReadiness = await hosting.readiness(recoveryNow);
+    assert.deepEqual({ draining: recoveredReadiness.drainingDeviceCount, failed: recoveredReadiness.failedCleanupCount, cleaning: recoveredReadiness.cleaningContractCount }, { draining: 0, failed: 0, cleaning: 0 });
+
     const expiredSeed = seedStoppedContract(path, "expired", buyer, supplier, now);
     const raw = new DatabaseSync(path, { enableForeignKeyConstraints: true });
     raw.prepare("UPDATE hosting_v2_devices SET verified_until=? WHERE id=?").run(new Date(Date.parse(now) - 1_000).toISOString(), expiredSeed.deviceId);
