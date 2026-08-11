@@ -214,6 +214,45 @@ export async function marketplacePost<TRecord>(
   }
 }
 
+export async function marketplacePut<TRecord>(
+  path: string,
+  payload: unknown,
+  idempotencyKey: string,
+  timeoutMs = 15_000,
+) {
+  const send = async (session: MarketplaceSession) => fetchJson<{ record: TRecord }>(
+    path,
+    {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        "x-kai-csrf": session.csrfToken,
+        "Idempotency-Key": idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    timeoutMs,
+  ).then((result) => {
+    if (!result || typeof result !== "object" || !("record" in result) || !result.record) {
+      throw new MarketplaceApiError({
+        code: "INVALID_RESPONSE",
+        message: "写入服务返回了无法识别的内容，请稍后重试。",
+        status: 200,
+      });
+    }
+    return result;
+  });
+
+  try {
+    return await send(await getMarketplaceSession());
+  } catch (error) {
+    if (error instanceof MarketplaceApiError && error.code === "CSRF_REJECTED") {
+      return send(await getMarketplaceSession(true));
+    }
+    throw error;
+  }
+}
+
 export async function exchangePost<TRecord>(
   path: string,
   role: "buyer" | "supplier" | "ops",
