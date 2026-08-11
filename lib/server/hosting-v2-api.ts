@@ -21,6 +21,11 @@ export function hostingInteger(input: Record<string, unknown>, field: string, mi
   return Number(value);
 }
 
+export function hostingBoolean(input: Record<string, unknown>, field: string) {
+  if (typeof input[field] !== "boolean") throw new AccountAuthError("HOSTING_VALIDATION_ERROR", 400, `${field} 必须是布尔值。 `);
+  return input[field];
+}
+
 export async function hostingMutationContext(request: Request, actorId: string, body: unknown): Promise<HostingMutationContext> {
   assertAccountAuthSameOrigin(request);
   return {

@@ -187,11 +187,12 @@ function createProfileMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2St
         if (!current) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "供应主体不存在。");
         if (!["SUBMITTED", "APPROVED"].includes(value(current, "status"))) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "供应主体当前不能执行该审核决定。");
         if (number(current, "version") !== input.expectedVersion) throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT", 409, "供应主体资料已变化，请刷新。");
-        await db.batch([
+        const statements: HostingV2Sql[] = [
           { sql: "UPDATE hosting_v2_supplier_profiles SET status=?,review_note=?,evidence_digest=?,version=version+1,updated_at=? WHERE organization_id=? AND version=? AND status IN ('SUBMITTED','APPROVED')", values: [status, input.reviewNote.trim(), input.evidenceDigest ?? null, context.now, organizationId, input.expectedVersion] },
-          event(context, organizationId, "SUPPLIER_PROFILE", organizationId, `PROFILE_${status}`),
-          receipt(context, "REVIEW_PROFILE", "SUPPLIER_PROFILE", organizationId),
-        ]);
+        ];
+        if (status !== "APPROVED") statements.push({ sql: "UPDATE hosting_v2_offers SET status='SUSPENDED',version=version+1,updated_at=? WHERE organization_id=? AND status IN ('DRAFT','PUBLISHED','PAUSED')", values: [context.now, organizationId] });
+        statements.push(event(context, organizationId, "SUPPLIER_PROFILE", organizationId, `PROFILE_${status}`), receipt(context, "REVIEW_PROFILE", "SUPPLIER_PROFILE", organizationId));
+        await db.batch(statements);
       }
       const row = await db.first<Row>("SELECT * FROM hosting_v2_supplier_profiles WHERE organization_id=?", [organizationId]);
       if (!row) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "供应主体不存在。");
@@ -355,15 +356,22 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         throw new ExchangeDomainError("EXCHANGE_VERIFICATION_REQUIRED", 409, "设备需保持在线且验真有效后才能挂牌。");
       }
       if (!feeRow) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 503, "平台尚未启用正式费率版本，挂牌保持关闭。");
-      if (input.gpuModel !== value(deviceRow, "inventory_json") && input.gpuModel !== (json<HostingDeviceInventory>(deviceRow, "inventory_json").gpuModel)) throw new ExchangeInputError("挂牌 GPU 型号与设备验真结果不一致。", "gpuModel");
+      if (input.gpuModel !== json<HostingDeviceInventory>(deviceRow, "inventory_json").gpuModel) throw new ExchangeInputError("挂牌 GPU 型号与设备验真结果不一致。", "gpuModel");
+      const title = input.title.normalize("NFKC").trim();
+      const region = input.region.normalize("NFKC").trim();
+      if (title.length < 3 || title.length > 120) throw new ExchangeInputError("挂牌标题应为 3–120 个字符。", "title");
+      if (region.length < 2 || region.length > 80) throw new ExchangeInputError("资源区域应为 2–80 个字符。", "region");
       if (!Number.isSafeInteger(input.cardHourMicrosPerGpuHour) || input.cardHourMicrosPerGpuHour < 1) throw new ExchangeInputError("卡时报价无效。", "cardHourMicrosPerGpuHour");
       if (!Number.isInteger(input.minRentalSeconds) || input.minRentalSeconds < 180 || !Number.isInteger(input.maxRentalSeconds) || input.maxRentalSeconds < input.minRentalSeconds || input.maxRentalSeconds > 31 * 24 * 3600) throw new ExchangeInputError("租用时长范围无效。", "minRentalSeconds");
-      if (Date.parse(input.availableUntil) <= Date.parse(input.availableFrom) || Date.parse(input.availableUntil) <= Date.parse(context.now)) throw new ExchangeInputError("可用时间窗无效。", "availableUntil");
+      const availableFrom = Date.parse(input.availableFrom);
+      const availableUntil = Date.parse(input.availableUntil);
+      if (!Number.isFinite(availableFrom) || !Number.isFinite(availableUntil) || availableUntil <= availableFrom || availableUntil <= Date.parse(context.now)) throw new ExchangeInputError("可用时间窗无效。", "availableUntil");
       if (!/^ghcr\.io\/kai-cloud\/[a-z0-9._/-]+:[a-zA-Z0-9._-]+$/u.test(input.approvedImage)) throw new ExchangeInputError("只能选择 KAI 审核过的 OCI 镜像。", "approvedImage");
+      if (!/^KAI_HOSTING_TERMS_\d{4}_\d{2}$/u.test(input.termsVersion)) throw new ExchangeInputError("挂牌协议版本无效。", "termsVersion");
       const recordId = id("hofr");
       await db.batch([
         { sql: `INSERT INTO hosting_v2_offers(id,organization_id,device_id,fee_schedule_id,title,gpu_model,region,card_hour_micros_per_gpu_hour,min_rental_seconds,max_rental_seconds,available_from,available_until,approved_image,terms_version,status,version,created_at,updated_at)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'DRAFT',1,?,?)`, values: [recordId, organizationId, input.deviceId, value(feeRow, "id"), input.title.trim(), input.gpuModel, input.region.trim(), input.cardHourMicrosPerGpuHour, input.minRentalSeconds, input.maxRentalSeconds, new Date(input.availableFrom).toISOString(), new Date(input.availableUntil).toISOString(), input.approvedImage, input.termsVersion, context.now, context.now] },
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'DRAFT',1,?,?)`, values: [recordId, organizationId, input.deviceId, value(feeRow, "id"), title, input.gpuModel, region, input.cardHourMicrosPerGpuHour, input.minRentalSeconds, input.maxRentalSeconds, new Date(availableFrom).toISOString(), new Date(availableUntil).toISOString(), input.approvedImage, input.termsVersion, context.now, context.now] },
         event(context, organizationId, "OFFER", recordId, "OFFER_CREATED"),
         receipt(context, "CREATE_OFFER", "OFFER", recordId),
       ]);
@@ -375,9 +383,10 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
     async updateOfferStatus(organizationId, offerId, input, context) {
       const replayed = await replay(db, context, "UPDATE_OFFER_STATUS");
       if (!replayed) {
-        const current = await db.first<Row>("SELECT o.*,d.status device_status,d.verification_status device_verification,d.verified_until,d.last_seen_at FROM hosting_v2_offers o JOIN hosting_v2_devices d ON d.id=o.device_id WHERE o.id=? AND o.organization_id=?", [offerId, organizationId]);
+        const current = await db.first<Row>("SELECT o.*,d.status device_status,d.verification_status device_verification,d.verified_until,d.last_seen_at,p.status supplier_status FROM hosting_v2_offers o JOIN hosting_v2_devices d ON d.id=o.device_id JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id WHERE o.id=? AND o.organization_id=?", [offerId, organizationId]);
         if (!current) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "挂牌不存在。");
         if (number(current, "version") !== input.expectedVersion) throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT", 409, "挂牌版本已变化。");
+        if (input.status === "PUBLISHED" && value(current, "supplier_status") !== "APPROVED") throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "供应主体当前未获准发布挂牌。");
         if (input.status === "PUBLISHED" && (value(current, "device_status") !== "VERIFIED" || value(current, "device_verification") !== "PASSED" || Date.parse(value(current, "verified_until")) <= Date.parse(context.now) || Date.parse(value(current, "last_seen_at")) < Date.parse(context.now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000)) throw new ExchangeDomainError("EXCHANGE_VERIFICATION_EXPIRED", 409, "设备不在线或验真已经过期。");
         const allowed = input.status === "PUBLISHED" ? ["DRAFT", "PAUSED"] : input.status === "PAUSED" ? ["PUBLISHED"] : ["DRAFT", "PUBLISHED", "PAUSED", "SUSPENDED"];
         if (!allowed.includes(value(current, "status"))) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "挂牌当前不能执行这个动作。");
@@ -394,8 +403,8 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
 
     async listPublicOffers(now) {
       const cutoff = new Date(Date.parse(now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000).toISOString();
-      return (await db.all<Row>(`SELECT o.* FROM hosting_v2_offers o JOIN hosting_v2_devices d ON d.id=o.device_id
-        WHERE o.status='PUBLISHED' AND o.available_from<=? AND o.available_until>? AND d.status='VERIFIED' AND d.verification_status='PASSED' AND d.verified_until>? AND d.last_seen_at>=?
+      return (await db.all<Row>(`SELECT o.* FROM hosting_v2_offers o JOIN hosting_v2_devices d ON d.id=o.device_id JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id
+        WHERE o.status='PUBLISHED' AND p.status='APPROVED' AND o.available_from<=? AND o.available_until>? AND d.status='VERIFIED' AND d.verification_status='PASSED' AND d.verified_until>? AND d.last_seen_at>=?
         ORDER BY o.card_hour_micros_per_gpu_hour,o.created_at`, [now, now, now, cutoff])).map(offer);
     },
 
@@ -414,7 +423,8 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       const row = await db.first<Row>(`SELECT o.*,f.platform_fee_bps,f.referral_reward_bps FROM hosting_v2_offers o
         JOIN hosting_v2_fee_schedules f ON f.id=o.fee_schedule_id
         JOIN hosting_v2_devices d ON d.id=o.device_id
-        WHERE o.id=? AND o.status='PUBLISHED' AND o.available_from<=? AND o.available_until>? AND d.status='VERIFIED' AND d.verification_status='PASSED' AND d.verified_until>?`, [offerId, context.now, context.now, context.now]);
+        JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id
+        WHERE o.id=? AND o.status='PUBLISHED' AND p.status='APPROVED' AND o.available_from<=? AND o.available_until>? AND d.status='VERIFIED' AND d.verification_status='PASSED' AND d.verified_until>?`, [offerId, context.now, context.now, context.now]);
       if (!row) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源已不可租用，请刷新市场。");
       if (value(row, "organization_id") === account.activeOrganization.id) throw new ExchangeDomainError("EXCHANGE_OWNERSHIP_FORBIDDEN", 403, "供应方不能购买自己的资源。");
       if (!Number.isInteger(reservedSeconds) || reservedSeconds < number(row, "min_rental_seconds") || reservedSeconds > number(row, "max_rental_seconds")) throw new ExchangeInputError("租用时长不在挂牌范围内。", "reservedSeconds");
