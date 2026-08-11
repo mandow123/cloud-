@@ -1,0 +1,37 @@
+[Unit]
+Description=KAI Cloud Host Agent
+Documentation=https://cloud.kai.com/guides#list-4090
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kai-host-agent
+Group=kai-host-agent
+ExecStart=/usr/local/bin/kai-host-agent run
+Restart=on-failure
+RestartSec=10s
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+UMask=0077
+StateDirectory=kai-host-agent
+StateDirectoryMode=0700
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateMounts=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/kai-host-agent
+
+[Install]
+WantedBy=multi-user.target
