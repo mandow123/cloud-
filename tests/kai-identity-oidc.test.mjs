@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { AccountAuthError, resolveAccountSession } from "../lib/server/account-auth.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
-import { beginKaiIdentityLogin, completeKaiIdentityLogin, KAI_IDENTITY_DISCOVERY, KAI_IDENTITY_ISSUER } from "../lib/server/kai-identity-oidc.ts";
+import { beginKaiIdentityLogin, clearKaiIdentityTransactionCookie, completeKaiIdentityLogin, KAI_IDENTITY_DISCOVERY, KAI_IDENTITY_ISSUER } from "../lib/server/kai-identity-oidc.ts";
 
 const encoder = new TextEncoder();
 const encode = (value) => Buffer.from(typeof value === "string" ? value : JSON.stringify(value)).toString("base64url");
@@ -108,5 +108,10 @@ test("production canonical HTTPS origin keeps the OIDC transaction cookie Secure
   });
   const started = await beginKaiIdentityLogin(new Request("http://cloud.kai.com/api/auth/kai/start"), { env, fetcher });
   assert.match(started.transactionCookie, /^__Host-kai_oidc_transaction=/u);
+  assert.match(started.transactionCookie, /; Path=\/;/u);
+  assert.doesNotMatch(started.transactionCookie, /; Path=\/api\/auth\/kai(?:;|$)/u);
   assert.match(started.transactionCookie, /; Secure$/u);
+  const cleared = clearKaiIdentityTransactionCookie(new Request("http://cloud.kai.com/api/auth/kai/callback"), env);
+  assert.match(cleared, /^__Host-kai_oidc_transaction=; Path=\/; Max-Age=0;/u);
+  assert.match(cleared, /; Secure$/u);
 });

@@ -73,7 +73,7 @@ function transactionCookie(request: Request, value: string, maxAgeSeconds: numbe
   const name = secure ? SECURE_TRANSACTION_COOKIE : DEVELOPMENT_TRANSACTION_COOKIE;
   return [
     `${name}=${encodeURIComponent(value)}`,
-    "Path=/api/auth/kai",
+    "Path=/",
     `Max-Age=${Math.max(0, maxAgeSeconds)}`,
     "HttpOnly",
     "SameSite=Lax",
