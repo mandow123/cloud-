@@ -1,0 +1,201 @@
+export const HOSTING_V2_MIN_RENTAL_SECONDS = 180;
+export const HOSTING_V2_AGENT_STALE_SECONDS = 90;
+export const HOSTING_V2_CARD_HOUR_MICROS = 1_000_000;
+
+export const HOSTING_SUPPLIER_TYPES = ["INDIVIDUAL", "COMPANY", "IDC", "CLOUD_VENDOR"] as const;
+export type HostingSupplierType = (typeof HOSTING_SUPPLIER_TYPES)[number];
+
+export const HOSTING_GPU_MODELS = ["RTX_4090", "H100_80GB"] as const;
+export type HostingGpuModel = (typeof HOSTING_GPU_MODELS)[number];
+
+export type HostingSupplierProfile = Readonly<{
+  organizationId: string;
+  accountId: string;
+  supplierType: HostingSupplierType;
+  legalDisplayName: string;
+  contactEmail: string;
+  agreementVersion: string | null;
+  evidenceDigest: string | null;
+  reviewNote: string | null;
+  status: "DRAFT" | "SUBMITTED" | "APPROVED" | "REJECTED" | "SUSPENDED";
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}>;
+
+export type HostingAgentChallenge = Readonly<{
+  id: string;
+  organizationId: string;
+  accountId: string;
+  nonce: string;
+  minimumAgentVersion: string;
+  expiresAt: string;
+  consumedAt: string | null;
+  createdAt: string;
+}>;
+
+export type HostingDeviceInventory = Readonly<{
+  hostnameDigest: string;
+  gpuModel: HostingGpuModel;
+  gpuUuidDigest: string;
+  gpuMemoryMiB: number;
+  driverVersion: string;
+  cudaVersion: string;
+  cpuModel: string;
+  memoryMiB: number;
+  storageGiB: number;
+  publicHost: string;
+  sshPortStart: number;
+  sshPortEnd: number;
+}>;
+
+export type HostingDevice = Readonly<{
+  id: string;
+  organizationId: string;
+  accountId: string;
+  displayName: string;
+  deviceKeyId: string;
+  devicePublicKey: string;
+  agentVersion: string;
+  inventory: HostingDeviceInventory;
+  inventoryDigest: string;
+  status: "ONLINE" | "VERIFYING" | "VERIFIED" | "BUSY" | "DRAINING" | "OFFLINE" | "REVOKED";
+  verificationStatus: "NOT_RUN" | "PENDING" | "PASSED" | "FAILED" | "EXPIRED";
+  verificationEvidenceDigest: string | null;
+  verifiedUntil: string | null;
+  lastSequence: number;
+  lastSeenAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}>;
+
+export type HostingFeeSchedule = Readonly<{
+  id: string;
+  platformFeeBps: number;
+  referralRewardBps: number;
+  status: "DRAFT" | "ACTIVE" | "RETIRED";
+  effectiveFrom: string;
+  createdBy: string;
+  createdAt: string;
+}>;
+
+export type HostingOffer = Readonly<{
+  id: string;
+  organizationId: string;
+  deviceId: string;
+  feeScheduleId: string;
+  title: string;
+  gpuModel: HostingGpuModel;
+  region: string;
+  cardHourMicrosPerGpuHour: number;
+  minRentalSeconds: number;
+  maxRentalSeconds: number;
+  availableFrom: string;
+  availableUntil: string;
+  approvedImage: string;
+  termsVersion: string;
+  status: "DRAFT" | "PUBLISHED" | "RESERVED" | "PAUSED" | "UNLISTED" | "SUSPENDED";
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}>;
+
+export type HostingContractStatus =
+  | "RESERVED"
+  | "CARD_HOURS_HELD"
+  | "PAID"
+  | "PROVISIONING"
+  | "READY"
+  | "IN_SERVICE"
+  | "AWAITING_ACCEPTANCE"
+  | "SETTLED"
+  | "CLEANING"
+  | "CLEANED"
+  | "CANCELLED"
+  | "FAILED"
+  | "DISPUTED"
+  | "REFUNDED";
+
+export type HostingContract = Readonly<{
+  id: string;
+  offerId: string;
+  deviceId: string;
+  buyerOrganizationId: string;
+  buyerAccountId: string;
+  supplierOrganizationId: string;
+  feeScheduleId: string;
+  snapshot: Readonly<{
+    title: string;
+    gpuModel: HostingGpuModel;
+    region: string;
+    cardHourMicrosPerGpuHour: number;
+    approvedImage: string;
+    termsVersion: string;
+    platformFeeBps: number;
+    referralRewardBps: number;
+  }>;
+  reservedSeconds: number;
+  measuredSeconds: number | null;
+  heldMicros: number;
+  settledMicros: number | null;
+  supplierIncomeMicros: number | null;
+  commissionMicros: number | null;
+  status: HostingContractStatus;
+  sshPublicKeyFingerprint: string | null;
+  endpointDisplay: string | null;
+  startedAt: string | null;
+  stoppedAt: string | null;
+  acceptedAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}>;
+
+export type HostingAgentCommand = Readonly<{
+  id: string;
+  deviceId: string;
+  contractId: string | null;
+  type: "VERIFY" | "PROVISION" | "START" | "STOP" | "CLEANUP";
+  payload: Readonly<Record<string, unknown>>;
+  status: "PENDING" | "DELIVERED" | "SUCCEEDED" | "FAILED";
+  attempt: number;
+  evidenceDigest: string | null;
+  errorCode: string | null;
+  createdAt: string;
+  deliveredAt: string | null;
+  completedAt: string | null;
+}>;
+
+export type HostingDashboard = Readonly<{
+  profile: HostingSupplierProfile | null;
+  devices: readonly HostingDevice[];
+  offers: readonly HostingOffer[];
+  contracts: readonly HostingContract[];
+  earnings: Readonly<{
+    pendingMicros: number;
+    vestedMicros: number;
+    commissionPendingMicros: number;
+    commissionVestedMicros: number;
+  }>;
+  readiness: Readonly<{
+    supplierApproved: boolean;
+    onlineVerifiedDevices: number;
+    activeFeeSchedule: boolean;
+    cardHourSettlement: boolean;
+    alipayPublicTopup: boolean;
+    buyback: boolean;
+  }>;
+}>;
+
+export function hostingCardHourMicrosForSeconds(rateMicrosPerGpuHour: number, seconds: number) {
+  if (!Number.isSafeInteger(rateMicrosPerGpuHour) || rateMicrosPerGpuHour < 1) throw new Error("HOSTING_RATE_INVALID");
+  if (!Number.isSafeInteger(seconds) || seconds < HOSTING_V2_MIN_RENTAL_SECONDS) throw new Error("HOSTING_DURATION_INVALID");
+  return Math.ceil(rateMicrosPerGpuHour * seconds / 3_600);
+}
+
+export function hostingCnyReferenceCents(cardHourMicros: number) {
+  if (!Number.isSafeInteger(cardHourMicros) || cardHourMicros < 0) throw new Error("HOSTING_CARD_HOURS_INVALID");
+  return Math.ceil(cardHourMicros * 1002 / 10_000_000);
+}
+

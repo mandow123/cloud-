@@ -34,6 +34,22 @@ function paymentRecord(row: Row) {
   };
 }
 
+function holdRecord(row: Row) {
+  return {
+    id: text(row, "id"), sourceSystem: "HOSTING_V2", orderId: text(row, "order_id"),
+    amountMicros: number(row, "amount_micros"), settledMicros: row.settled_micros == null ? null : number(row, "settled_micros"),
+    status: text(row, "status"), createdAt: text(row, "created_at"), updatedAt: text(row, "updated_at"),
+  };
+}
+
+function trialGrantRecord(row: Row) {
+  return {
+    id: text(row, "id"), organizationId: text(row, "organization_id"), amountMicros: number(row, "amount_micros"),
+    reason: text(row, "reason"), status: text(row, "status"), requestedBy: text(row, "requested_by"),
+    approvedBy: row.approved_by == null ? null : text(row, "approved_by"), createdAt: text(row, "created_at"), updatedAt: text(row, "updated_at"),
+  };
+}
+
 export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<CardHourStore> {
   await db.ensureSchema(cardHourSchemaStatements, CARD_HOUR_SCHEMA_VERSION);
   return {
@@ -141,6 +157,154 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       const created = await db.first<Row>("SELECT * FROM card_hour_order_payments WHERE id=?", [id]);
       if (!created) throw new AccountAuthError("CARD_HOUR_BALANCE_INSUFFICIENT", 409, "卡时余额不足，请先购买卡时。 ");
       return { record: paymentRecord(created), replayed: false };
+    },
+    async holdHostingOrder(input) {
+      const organizationId = input.account.activeOrganization.id;
+      const existing = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE source_system='HOSTING_V2' AND order_id=?", [input.orderId]);
+      if (existing) {
+        if (text(existing, "organization_id") !== organizationId || text(existing, "payload_hash") !== input.payloadHash || number(existing, "amount_micros") !== input.amountMicros) throw new AccountAuthError("IDEMPOTENCY_CONFLICT", 409, "订单卡时预留记录不一致。 ");
+        return { record: holdRecord(existing), replayed: true };
+      }
+      const byKey = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE organization_id=? AND idempotency_key=?", [organizationId, input.idempotencyKey]);
+      if (byKey) {
+        if (text(byKey, "payload_hash") !== input.payloadHash) throw new AccountAuthError("IDEMPOTENCY_CONFLICT", 409, "同一提交标识对应了不同的卡时预留。 ");
+        return { record: holdRecord(byKey), replayed: true };
+      }
+      if (!Number.isSafeInteger(input.amountMicros) || input.amountMicros < 1) throw new AccountAuthError("CARD_HOUR_HOLD_INVALID", 400, "预留卡时数量无效。 ");
+      const holdId = `chh_${crypto.randomUUID()}`;
+      await db.batch([
+        { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [organizationId, input.now, input.now] },
+        { sql: `INSERT INTO card_hour_order_holds(id,organization_id,account_id,source_system,order_id,amount_micros,settled_micros,status,idempotency_key,payload_hash,created_at,updated_at)
+          SELECT ?,?,?, 'HOSTING_V2',?,?,NULL,'HELD',?,?,?,? FROM card_hour_wallets WHERE organization_id=? AND available_micros>=?`, values: [holdId, organizationId, input.account.account.id, input.orderId, input.amountMicros, input.idempotencyKey, input.payloadHash, input.now, input.now, organizationId, input.amountMicros] },
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros-?,held_micros=held_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_order_holds WHERE id=? AND status='HELD')", values: [input.amountMicros, input.amountMicros, input.now, organizationId, holdId] },
+        { sql: "INSERT INTO card_hour_hold_events(id,hold_id,event_type,amount_micros,payload_hash,occurred_at) SELECT ?,?,'HELD',?,?,? WHERE EXISTS(SELECT 1 FROM card_hour_order_holds WHERE id=?)", values: [`chhe_${crypto.randomUUID()}`, holdId, input.amountMicros, input.payloadHash, input.now, holdId] },
+      ]);
+      const created = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE id=?", [holdId]);
+      if (!created) throw new AccountAuthError("CARD_HOUR_BALANCE_INSUFFICIENT", 409, "卡时余额不足，无法锁定本次租用额度。 ");
+      return { record: holdRecord(created), replayed: false };
+    },
+
+    async settleHostingOrder(input) {
+      const organizationId = input.account.activeOrganization.id;
+      const current = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE source_system='HOSTING_V2' AND order_id=? AND organization_id=?", [input.orderId, organizationId]);
+      if (!current) throw new AccountAuthError("CARD_HOUR_HOLD_NOT_FOUND", 409, "订单卡时预留不存在。 ");
+      if (text(current, "status") === "SETTLED") {
+        const settledEvent = await db.first<Row>("SELECT payload_hash FROM card_hour_hold_events WHERE hold_id=? AND event_type='SETTLED'", [text(current, "id")]);
+        if (number(current, "settled_micros") !== input.settledMicros || !settledEvent || text(settledEvent, "payload_hash") !== input.payloadHash) throw new AccountAuthError("IDEMPOTENCY_CONFLICT", 409, "订单结算结果与已经入账的记录不一致。 ");
+        const attribution = await db.first<Row>("SELECT referrer_organization_id FROM card_hour_referral_attributions WHERE invitee_organization_id=?", [organizationId]);
+        return { record: holdRecord(current), referrerOrganizationId: attribution ? text(attribution, "referrer_organization_id") : null, applied: false };
+      }
+      if (text(current, "status") !== "HELD") throw new AccountAuthError("CARD_HOUR_HOLD_STATE_CONFLICT", 409, "订单卡时已经释放，不能结算。 ");
+      const heldMicros = number(current, "amount_micros");
+      if (!Number.isSafeInteger(input.settledMicros) || input.settledMicros < 1 || input.settledMicros > heldMicros) throw new AccountAuthError("CARD_HOUR_SETTLEMENT_INVALID", 400, "实际结算卡时必须大于零且不能超过锁定额度。 ");
+      if (!Number.isSafeInteger(input.supplierIncomeMicros) || input.supplierIncomeMicros < 1 || input.supplierIncomeMicros > input.settledMicros) throw new AccountAuthError("CARD_HOUR_SETTLEMENT_INVALID", 400, "供应方租金收益金额无效。 ");
+      if (!Number.isSafeInteger(input.commissionMicros) || input.commissionMicros < 0 || input.supplierIncomeMicros + input.commissionMicros > input.settledMicros) throw new AccountAuthError("CARD_HOUR_SETTLEMENT_INVALID", 400, "佣金金额与本单结算金额不匹配。 ");
+      if (input.supplierOrganizationId === organizationId) throw new AccountAuthError("CARD_HOUR_SETTLEMENT_INVALID", 400, "买方不能向自己的供应主体结算。 ");
+
+      const attribution = await db.first<Row>("SELECT referrer_organization_id FROM card_hour_referral_attributions WHERE invitee_organization_id=?", [organizationId]);
+      const referrerOrganizationId = attribution ? text(attribution, "referrer_organization_id") : null;
+      const commissionMicros = referrerOrganizationId ? input.commissionMicros : 0;
+      const holdId = text(current, "id");
+      const eventId = `chhe_${crypto.randomUUID()}`;
+      const captureBatchId = `chb_${crypto.randomUUID()}`;
+      const rentalBatchId = `chb_${crypto.randomUUID()}`;
+      const commissionBatchId = `chb_${crypto.randomUUID()}`;
+      const releaseMicros = heldMicros - input.settledMicros;
+      const statements: CardHourSql[] = [
+        { sql: "INSERT OR IGNORE INTO card_hour_hold_events(id,hold_id,event_type,amount_micros,payload_hash,occurred_at) SELECT ?,?,'SETTLED',?,?,? WHERE EXISTS(SELECT 1 FROM card_hour_order_holds WHERE id=? AND status='HELD')", values: [eventId, holdId, input.settledMicros, input.payloadHash, input.now, holdId] },
+        { sql: "UPDATE card_hour_order_holds SET settled_micros=?,status='SETTLED',updated_at=? WHERE id=? AND status='HELD' AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [input.settledMicros, input.now, holdId, eventId] },
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,lifetime_spent_micros=lifetime_spent_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [releaseMicros, heldMicros, input.settledMicros, input.now, organizationId, eventId] },
+        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) SELECT ?,?,'ORDER_CAPTURE',?,?,'POSTED',?,? WHERE EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [captureBatchId, organizationId, `order:HOSTING_V2:${input.orderId}`, input.settledMicros, JSON.stringify({ sourceSystem: "HOSTING_V2", orderId: input.orderId, heldMicros, releasedMicros: releaseMicros }), input.now, eventId] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_HELD','DEBIT',?,held_micros,? FROM card_hour_wallets WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, captureBatchId, organizationId, input.settledMicros, input.now, organizationId, captureBatchId] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,NULL,'PLATFORM_ORDER_CLEARING','CREDIT',?,NULL,? WHERE EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, captureBatchId, input.settledMicros, input.now, captureBatchId] },
+        { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [input.supplierOrganizationId, input.now, input.now] },
+        { sql: "INSERT INTO card_hour_income_accruals(id,organization_id,income_type,source_system,source_id,amount_micros,status,created_at,vested_at) SELECT ?,?,'RENTAL','HOSTING_V2',?,?,'VESTED',?,? WHERE EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [`chi_${crypto.randomUUID()}`, input.supplierOrganizationId, input.orderId, input.supplierIncomeMicros, input.now, input.now, eventId] },
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [input.supplierIncomeMicros, input.now, input.supplierOrganizationId, eventId] },
+        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) SELECT ?,?,'RENTAL_INCOME',?,?,'POSTED',?,? WHERE EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [rentalBatchId, input.supplierOrganizationId, `rental:HOSTING_V2:${input.orderId}`, input.supplierIncomeMicros, JSON.stringify({ buyerOrganizationId: organizationId, orderId: input.orderId }), input.now, eventId] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, rentalBatchId, input.supplierOrganizationId, input.supplierIncomeMicros, input.now, input.supplierOrganizationId, rentalBatchId] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,NULL,'PLATFORM_ORDER_CLEARING','DEBIT',?,NULL,? WHERE EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, rentalBatchId, input.supplierIncomeMicros, input.now, rentalBatchId] },
+      ];
+      if (referrerOrganizationId && commissionMicros > 0) statements.push(
+        { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [referrerOrganizationId, input.now, input.now] },
+        { sql: "INSERT INTO card_hour_income_accruals(id,organization_id,income_type,source_system,source_id,amount_micros,status,created_at,vested_at) SELECT ?,?,'COMMISSION','HOSTING_V2',?,?,'VESTED',?,? WHERE EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [`chi_${crypto.randomUUID()}`, referrerOrganizationId, input.orderId, commissionMicros, input.now, input.now, eventId] },
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [commissionMicros, input.now, referrerOrganizationId, eventId] },
+        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) SELECT ?,?,'COMMISSION_INCOME',?,?,'POSTED',?,? WHERE EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [commissionBatchId, referrerOrganizationId, `commission:HOSTING_V2:${input.orderId}`, commissionMicros, JSON.stringify({ buyerOrganizationId: organizationId, orderId: input.orderId }), input.now, eventId] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, commissionBatchId, referrerOrganizationId, commissionMicros, input.now, referrerOrganizationId, commissionBatchId] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,NULL,'PLATFORM_COMMISSION_EXPENSE','DEBIT',?,NULL,? WHERE EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, commissionBatchId, commissionMicros, input.now, commissionBatchId] },
+      );
+      const results = await db.batch(statements);
+      const updated = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE id=?", [holdId]);
+      if (!updated) throw new Error("CARD_HOUR_HOLD_SETTLEMENT_FAILED");
+      return { record: holdRecord(updated), referrerOrganizationId, applied: results[0]?.changes === 1 };
+    },
+
+    async releaseHostingOrder(input) {
+      const organizationId = input.account.activeOrganization.id;
+      const current = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE source_system='HOSTING_V2' AND order_id=? AND organization_id=?", [input.orderId, organizationId]);
+      if (!current) throw new AccountAuthError("CARD_HOUR_HOLD_NOT_FOUND", 409, "订单卡时预留不存在。 ");
+      if (text(current, "status") === "RELEASED") return { record: holdRecord(current), applied: false };
+      if (text(current, "status") !== "HELD") throw new AccountAuthError("CARD_HOUR_HOLD_STATE_CONFLICT", 409, "订单卡时已经结算，不能释放。 ");
+      const amountMicros = number(current, "amount_micros");
+      const eventId = `chhe_${crypto.randomUUID()}`;
+      const results = await db.batch([
+        { sql: "INSERT OR IGNORE INTO card_hour_hold_events(id,hold_id,event_type,amount_micros,payload_hash,occurred_at) SELECT ?,?,'RELEASED',?,?,? WHERE EXISTS(SELECT 1 FROM card_hour_order_holds WHERE id=? AND status='HELD')", values: [eventId, text(current, "id"), amountMicros, input.payloadHash, input.now, text(current, "id")] },
+        { sql: "UPDATE card_hour_order_holds SET status='RELEASED',updated_at=? WHERE id=? AND status='HELD' AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [input.now, text(current, "id"), eventId] },
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [amountMicros, amountMicros, input.now, organizationId, eventId] },
+      ]);
+      const updated = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE id=?", [text(current, "id")]);
+      if (!updated) throw new Error("CARD_HOUR_HOLD_RELEASE_FAILED");
+      return { record: holdRecord(updated), applied: results[0]?.changes === 1 };
+    },
+    async requestTrialGrant(input) {
+      if (!input.organizationId.trim() || !input.requestedBy.trim()) throw new AccountAuthError("CARD_HOUR_TRIAL_GRANT_INVALID", 400, "试运营卡时申请主体无效。 ");
+      if (!Number.isSafeInteger(input.amountMicros) || input.amountMicros < 1_000_000) throw new AccountAuthError("CARD_HOUR_TRIAL_GRANT_INVALID", 400, "试运营卡时每次至少申请 1 KAI 标准卡时。 ");
+      const reason = input.reason.trim();
+      if (reason.length < 4 || reason.length > 500) throw new AccountAuthError("CARD_HOUR_TRIAL_GRANT_INVALID", 400, "请填写 4 至 500 字的试运营用途。 ");
+      const existing = await db.first<Row>("SELECT * FROM card_hour_trial_grants WHERE requested_by=? AND idempotency_key=?", [input.requestedBy, input.idempotencyKey]);
+      if (existing) {
+        if (text(existing, "payload_hash") !== input.payloadHash) throw new AccountAuthError("IDEMPOTENCY_CONFLICT", 409, "同一提交标识对应了不同的试运营卡时申请。 ");
+        return trialGrantRecord(existing);
+      }
+      const grantId = `chtg_${crypto.randomUUID()}`;
+      await db.batch([{ sql: `INSERT INTO card_hour_trial_grants(id,organization_id,amount_micros,reason,status,requested_by,approved_by,decision_payload_hash,idempotency_key,payload_hash,created_at,updated_at)
+        VALUES(?,?,?,?,'REQUESTED',?,NULL,NULL,?,?,?,?)`, values: [grantId, input.organizationId, input.amountMicros, reason, input.requestedBy, input.idempotencyKey, input.payloadHash, input.now, input.now] }]);
+      const created = await db.first<Row>("SELECT * FROM card_hour_trial_grants WHERE id=?", [grantId]);
+      if (!created) throw new Error("CARD_HOUR_TRIAL_GRANT_CREATE_FAILED");
+      return trialGrantRecord(created);
+    },
+    async decideTrialGrant(input) {
+      const current = await db.first<Row>("SELECT * FROM card_hour_trial_grants WHERE id=?", [input.grantId]);
+      if (!current) throw new AccountAuthError("CARD_HOUR_TRIAL_GRANT_NOT_FOUND", 409, "试运营卡时申请不存在。 ");
+      if (text(current, "requested_by") === input.approvedBy) throw new AccountAuthError("CARD_HOUR_TRIAL_GRANT_DUAL_CONTROL_REQUIRED", 409, "申请人与审批人必须是两位不同的管理员。 ");
+      const status = text(current, "status");
+      if (status !== "REQUESTED") {
+        const expected = input.decision === "APPROVE" ? "POSTED" : "REJECTED";
+        if (status !== expected || current.decision_payload_hash == null || text(current, "decision_payload_hash") !== input.payloadHash || text(current, "approved_by") !== input.approvedBy) throw new AccountAuthError("CARD_HOUR_TRIAL_GRANT_STATE_CONFLICT", 409, "该申请已经由其他审批结果处理。 ");
+        return trialGrantRecord(current);
+      }
+      if (input.decision === "REJECT") {
+        const results = await db.batch([{ sql: "UPDATE card_hour_trial_grants SET status='REJECTED',approved_by=?,decision_payload_hash=?,updated_at=? WHERE id=? AND status='REQUESTED'", values: [input.approvedBy, input.payloadHash, input.now, input.grantId] }]);
+        const updated = await db.first<Row>("SELECT * FROM card_hour_trial_grants WHERE id=?", [input.grantId]);
+        if (!updated) throw new Error("CARD_HOUR_TRIAL_GRANT_DECISION_FAILED");
+        if (results[0]?.changes !== 1 && (text(updated, "status") !== "REJECTED" || text(updated, "approved_by") !== input.approvedBy || text(updated, "decision_payload_hash") !== input.payloadHash)) throw new AccountAuthError("CARD_HOUR_TRIAL_GRANT_STATE_CONFLICT", 409, "该申请已经由其他管理员处理。 ");
+        return trialGrantRecord(updated);
+      }
+
+      const organizationId = text(current, "organization_id");
+      const amountMicros = number(current, "amount_micros");
+      const batchId = `chb_${crypto.randomUUID()}`;
+      const results = await db.batch([
+        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) SELECT ?,?,'TOPUP',?,?,'POSTED',?,? WHERE EXISTS(SELECT 1 FROM card_hour_trial_grants WHERE id=? AND status='REQUESTED')", values: [batchId, organizationId, `trial-grant:${input.grantId}`, amountMicros, JSON.stringify({ provider: "TRIAL_GRANT", grantId: input.grantId, requestedBy: text(current, "requested_by"), approvedBy: input.approvedBy }), input.now, input.grantId] },
+        { sql: "UPDATE card_hour_trial_grants SET status='POSTED',approved_by=?,decision_payload_hash=?,updated_at=? WHERE id=? AND status='REQUESTED' AND EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [input.approvedBy, input.payloadHash, input.now, input.grantId, batchId] },
+        { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [organizationId, input.now, input.now] },
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,lifetime_topup_micros=lifetime_topup_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [amountMicros, amountMicros, input.now, organizationId, batchId] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, batchId, organizationId, amountMicros, input.now, organizationId, batchId] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,NULL,'PLATFORM_TRIAL_ISSUANCE','DEBIT',?,NULL,? WHERE EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, batchId, amountMicros, input.now, batchId] },
+      ]);
+      const updated = await db.first<Row>("SELECT * FROM card_hour_trial_grants WHERE id=?", [input.grantId]);
+      if (!updated) throw new Error("CARD_HOUR_TRIAL_GRANT_DECISION_FAILED");
+      if (results[0]?.changes !== 1 && (text(updated, "status") !== "POSTED" || text(updated, "approved_by") !== input.approvedBy || text(updated, "decision_payload_hash") !== input.payloadHash)) throw new AccountAuthError("CARD_HOUR_TRIAL_GRANT_STATE_CONFLICT", 409, "该申请已经由其他管理员处理。 ");
+      return trialGrantRecord(updated);
     },
     async attachReferral(input) {
       const code = input.code.trim().toUpperCase();

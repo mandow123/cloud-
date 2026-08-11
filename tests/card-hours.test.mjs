@@ -12,6 +12,16 @@ const account = {
   authMethod: "EMAIL_OTP",
 };
 
+function organizationAccount(id) {
+  return {
+    account: { id: `acct-${id}`, displayName: id, primaryEmail: null, status: "ACTIVE" },
+    activeOrganization: { id: `org-${id}`, name: id, externalKey: id.toUpperCase(), status: "ACTIVE" },
+    membership: { id: `mbr-${id}`, accountId: `acct-${id}`, organizationId: `org-${id}`, status: "ACTIVE", roles: [] },
+    sessionId: `session-${id}`,
+    authMethod: "EMAIL_OTP",
+  };
+}
+
 test("card-hour conversion is exact at the 5-card-hour RMB boundary", () => {
   assert.equal(parseTopupCardHours("5"), 5_000_000);
   assert.equal(topupAmountCents(5_000_000), 501);
@@ -47,5 +57,36 @@ test("a closed topup cannot be credited by a later conflicting capture event", a
     const dashboard = await store.dashboard(account.activeOrganization.id, "2026-08-10T00:03:00Z");
     assert.equal(dashboard.balance.availableMicros, 0);
     assert.equal(dashboard.ledger.length, 0);
+  } finally { store.close(); }
+});
+
+test("hosting order hold settles actual usage once and vests rental and referral income", async () => {
+  const store = await createSqliteCardHourStore(":memory:");
+  const buyer = organizationAccount("hosting-buyer");
+  const supplier = organizationAccount("hosting-supplier");
+  const referrer = organizationAccount("hosting-referrer");
+  try {
+    const grant = await store.requestTrialGrant({ organizationId: buyer.activeOrganization.id, amountMicros: 10_000_000, reason: "内部真实机器闭环验收", requestedBy: "admin-requester", idempotencyKey: "trial-grant-000001", payloadHash: "trial-request-hash", now: "2026-08-11T01:00:00Z" });
+    await assert.rejects(store.decideTrialGrant({ grantId: grant.id, decision: "APPROVE", approvedBy: "admin-requester", payloadHash: "self-approval", now: "2026-08-11T01:00:01Z" }), (error) => error.code === "CARD_HOUR_TRIAL_GRANT_DUAL_CONTROL_REQUIRED");
+    await store.decideTrialGrant({ grantId: grant.id, decision: "APPROVE", approvedBy: "admin-approver", payloadHash: "trial-approval-hash", now: "2026-08-11T01:00:02Z" });
+
+    const referral = await store.dashboard(referrer.activeOrganization.id, "2026-08-11T01:00:03Z");
+    await store.attachReferral({ account: buyer, code: referral.referral.code, now: "2026-08-11T01:00:04Z" });
+    const held = await store.holdHostingOrder({ account: buyer, orderId: "hosting-contract-1", amountMicros: 8_000_000, idempotencyKey: "hosting-hold-000001", payloadHash: "hosting-hold-hash", now: "2026-08-11T01:01:00Z" });
+    assert.equal(held.replayed, false);
+    assert.deepEqual((await store.dashboard(buyer.activeOrganization.id, "2026-08-11T01:01:01Z")).balance, { availableMicros: 2_000_000, heldMicros: 8_000_000, lifetimeTopupMicros: 10_000_000, lifetimeSpentMicros: 0 });
+
+    const settlement = { account: buyer, orderId: "hosting-contract-1", settledMicros: 6_000_000, supplierOrganizationId: supplier.activeOrganization.id, supplierIncomeMicros: 5_000_000, commissionMicros: 300_000, payloadHash: "hosting-settlement-hash", now: "2026-08-11T01:04:00Z" };
+    assert.equal((await store.settleHostingOrder(settlement)).applied, true);
+    assert.equal((await store.settleHostingOrder(settlement)).applied, false);
+
+    const buyerDashboard = await store.dashboard(buyer.activeOrganization.id, "2026-08-11T01:04:01Z");
+    const supplierDashboard = await store.dashboard(supplier.activeOrganization.id, "2026-08-11T01:04:01Z");
+    const referrerDashboard = await store.dashboard(referrer.activeOrganization.id, "2026-08-11T01:04:01Z");
+    assert.deepEqual(buyerDashboard.balance, { availableMicros: 4_000_000, heldMicros: 0, lifetimeTopupMicros: 10_000_000, lifetimeSpentMicros: 6_000_000 });
+    assert.equal(supplierDashboard.balance.availableMicros, 5_000_000);
+    assert.equal(supplierDashboard.income.rentalVestedMicros, 5_000_000);
+    assert.equal(referrerDashboard.balance.availableMicros, 300_000);
+    assert.equal(referrerDashboard.income.commissionVestedMicros, 300_000);
   } finally { store.close(); }
 });

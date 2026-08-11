@@ -1,4 +1,4 @@
-export const CARD_HOUR_SCHEMA_VERSION = 1;
+export const CARD_HOUR_SCHEMA_VERSION = 2;
 
 export const cardHourSchemaStatements = [
   `CREATE TABLE IF NOT EXISTS card_hour_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`,
@@ -124,5 +124,46 @@ export const cardHourSchemaStatements = [
     payout_rate_denominator INTEGER,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS card_hour_order_holds (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    source_system TEXT NOT NULL CHECK (source_system = 'HOSTING_V2'),
+    order_id TEXT NOT NULL,
+    amount_micros INTEGER NOT NULL CHECK (amount_micros > 0),
+    settled_micros INTEGER CHECK (settled_micros IS NULL OR (settled_micros > 0 AND settled_micros <= amount_micros)),
+    status TEXT NOT NULL CHECK (status IN ('HELD','SETTLED','RELEASED')),
+    idempotency_key TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(source_system, order_id),
+    UNIQUE(organization_id, idempotency_key)
+  )`,
+  `CREATE TABLE IF NOT EXISTS card_hour_hold_events (
+    id TEXT PRIMARY KEY,
+    hold_id TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK (event_type IN ('HELD','SETTLED','RELEASED')),
+    amount_micros INTEGER NOT NULL CHECK (amount_micros > 0),
+    payload_hash TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    UNIQUE(hold_id,event_type),
+    FOREIGN KEY (hold_id) REFERENCES card_hour_order_holds(id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS card_hour_trial_grants (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL,
+    amount_micros INTEGER NOT NULL CHECK (amount_micros >= 1000000),
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('REQUESTED','APPROVED','REJECTED','POSTED')),
+    requested_by TEXT NOT NULL,
+    approved_by TEXT,
+    decision_payload_hash TEXT,
+    idempotency_key TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(requested_by,idempotency_key)
   )`,
 ] as const;

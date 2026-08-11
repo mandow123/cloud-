@@ -18,6 +18,11 @@ export interface CardHourStore {
   getTopup(orderId: string): Promise<Record<string, unknown> | null>;
   applyTopupEvent(input: { orderId: string; providerEventId: string; providerTransactionId: string; eventType: "CAPTURED" | "CLOSED"; amountCents: number; payloadDigest: string; occurredAt: string; receivedAt: string }): Promise<{ applied: boolean }>;
   captureOrder(input: { account: AccountSessionContext; sourceSystem: "SUPPLY_PILOT" | "EXCHANGE"; orderId: string; amountMicros: number; cnyReferenceCents: number; idempotencyKey: string; payloadHash: string; now: string }): Promise<{ record: Record<string, unknown>; replayed: boolean }>;
+  holdHostingOrder(input: { account: AccountSessionContext; orderId: string; amountMicros: number; idempotencyKey: string; payloadHash: string; now: string }): Promise<{ record: Record<string, unknown>; replayed: boolean }>;
+  settleHostingOrder(input: { account: AccountSessionContext; orderId: string; settledMicros: number; supplierOrganizationId: string; supplierIncomeMicros: number; commissionMicros: number; payloadHash: string; now: string }): Promise<{ record: Record<string, unknown>; referrerOrganizationId: string | null; applied: boolean }>;
+  releaseHostingOrder(input: { account: AccountSessionContext; orderId: string; payloadHash: string; now: string }): Promise<{ record: Record<string, unknown>; applied: boolean }>;
+  requestTrialGrant(input: { organizationId: string; amountMicros: number; reason: string; requestedBy: string; idempotencyKey: string; payloadHash: string; now: string }): Promise<Record<string, unknown>>;
+  decideTrialGrant(input: { grantId: string; decision: "APPROVE" | "REJECT"; approvedBy: string; payloadHash: string; now: string }): Promise<Record<string, unknown>>;
   attachReferral(input: { account: AccountSessionContext; code: string; now: string }): Promise<void>;
 }
 
