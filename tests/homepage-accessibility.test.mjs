@@ -94,6 +94,21 @@ test("market controls, comparison targets, and theme selector meet target sizes"
   assert.match(kaiCloud, /\.table-action\s*\{[^}]*min-height:\s*44px;/su);
 });
 
+test("navigation popovers and GPU lab surfaces share the active color mode", async () => {
+  const [globals, lab] = await Promise.all([
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../components/gpu-cloud-lab.module.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(globals, /\.nav-popover-links\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/su);
+  assert.match(globals, /\.theme-control select\s*\{[^}]*appearance:\s*none;[^}]*background:\s*var\(--surface\);/su);
+  assert.match(globals, /--surface-muted:\s*#f3f7f7;/u);
+  assert.match(lab, /--lab-bg:\s*var\(--canvas\);/u);
+  assert.match(lab, /--lab-panel:\s*var\(--surface\);/u);
+  assert.match(lab, /:global\(html\[data-color-mode="dark"\]\) \.hostingApp/u);
+  assert.doesNotMatch(lab, /--lab-bg:\s*#071113/u);
+});
+
 test("scoped market surfaces use release wording", async () => {
   const files = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),

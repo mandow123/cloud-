@@ -9,7 +9,7 @@ const BASELINE = "bb7fd3211fdff28a448af85f53e9f40839ffa843";
 const ROOT = join(import.meta.dirname, "..");
 const EXTRA_FROZEN_FILES = ["data/model-market.snapshot.json", "lib/catalog.mjs"];
 const APPROVED_PUBLIC_FILES = Object.freeze({
-  "app/globals.css": "d343786f82a90cef03cb460ccceb8990a8c2b61771cca9cc788428896fafc416",
+  "app/globals.css": "02878345583867e18ff54b9ab8981529a3596a9259f9d99cdc906b247d3d6ce7",
   "app/gpu/page.tsx": "09c9ac6458bf1a211303249bd9b5bf9f89064cd4461619308aa8cd51d57572c8",
   "app/guides/guides.module.css": "d3320f7eb17ca8e79f0e6d6a9bf1858ddf61b680bcb0d10cea96ddf820de7daf",
   "app/guides/page.tsx": "4e090966de90bdef724c81af048947bd41520a8718b2686f33ed577aa0a42d3c",
@@ -29,7 +29,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "components/admin-resource-page.tsx": "026788b741fd20de28fe0095722822edcc5ae20305e2335d2217a66b70b70c4d",
   "components/card-hour-account-panel.tsx": "b46e420489f7d023c26b640446a28150be0a68b91a340e238f5f0eddf81497d9",
   "components/email-login.tsx": "43f6a8f1edc18b23ec099ba476c51d45b79e165bcd0f4a7778b5b78151874cb6",
-  "components/gpu-cloud-lab.module.css": "ce028d0512ca4691f35371f6f886aaeb90a148bb5b07efce4821645d3f382cb3",
+  "components/gpu-cloud-lab.module.css": "379628eb1340717c0cefcc515cc281f7564b37870c5e8c89776fe9e3df9013c9",
   "components/gpu-cloud-lab.tsx": "c772136928bbddea80d12f10cb9c928429b7422110578f9d3eb13127bc310899",
   "components/live-home-market-hero.tsx": "12b5174eb3b58c9bbcd37215876e47c08e37e782b216536cc344cdd8e2a5bc7a",
   "components/member-workspace.tsx": "0f6c0827d710e851ab9f7ca35760ce5b1df771b6741302d049d206a3c0bb8745",
