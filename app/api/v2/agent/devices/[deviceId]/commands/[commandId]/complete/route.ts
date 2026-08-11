@@ -26,6 +26,7 @@ export async function POST(request: Request, contextValue: { params: Promise<{ d
     if (outcome === "FAILED" && !errorCode) throw new AccountAuthError("AGENT_FIELD_INVALID", 400, "失败结果必须包含 errorCode。 ");
     if (outcome === "SUCCEEDED" && errorCode) throw new AccountAuthError("AGENT_FIELD_INVALID", 400, "成功结果不能包含 errorCode。 ");
     const details = body.details == null ? {} : hostingObject(body.details);
+    if (await hostingAgentDigest(details) !== evidenceDigest) throw new AccountAuthError("AGENT_EVIDENCE_DIGEST_MISMATCH", 400, "任务证据摘要与结果内容不一致。 ");
     const fields = { commandId, outcome, evidenceDigest, errorCode, details };
     await verifyExistingDeviceProof(device, "COMPLETE_COMMAND", fields, proof);
     const result = await store.completeCommand(deviceId, commandId, { outcome, evidenceDigest, errorCode, details }, {

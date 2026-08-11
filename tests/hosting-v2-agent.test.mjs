@@ -22,6 +22,16 @@ function base64url(value) {
   return Buffer.from(value).toString("base64url");
 }
 
+function successfulVerificationDetails(inventoryDigest, observedAt) {
+  const tests = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"];
+  return {
+    protocolVersion: 1,
+    inventoryDigest,
+    observedAt,
+    tests: tests.map((name, index) => ({ name, status: "PASSED", evidenceDigest: `sha256:${String(index + 1).repeat(64)}` })),
+  };
+}
+
 async function sign(privateKey, payload) {
   return base64url(await crypto.subtle.sign("Ed25519", privateKey, new TextEncoder().encode(hostingAgentCanonicalJson(payload))));
 }
@@ -76,7 +86,15 @@ test("signed Host Agent registration, heartbeat and verification close without r
     const command = await store.pollCommand(device.id, now.toISOString());
     assert.equal(command.id, queued.id);
     assert.equal(command.type, "VERIFY");
-    const completed = await store.completeCommand(device.id, command.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"3".repeat(64)}`, details: { testsPassed: 6 } }, mutation(`agent:${device.id}`, `command:${command.id}:SUCCEEDED`, "verify-result-hash", now.toISOString()));
+    assert.equal(await store.pollCommand(device.id, new Date(now.getTime() + 30_000).toISOString()), null);
+    const redelivered = await store.pollCommand(device.id, new Date(now.getTime() + 61_000).toISOString());
+    assert.equal(redelivered.id, command.id);
+    assert.equal(redelivered.attempt, 2);
+    await assert.rejects(
+      store.completeCommand(device.id, command.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"3".repeat(64)}`, details: { tests: [] } }, mutation(`agent:${device.id}`, `command:${command.id}:invalid`, "verify-invalid-hash", new Date(now.getTime() + 61_000).toISOString())),
+      (error) => error.name === "ExchangeInputError",
+    );
+    const completed = await store.completeCommand(device.id, command.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"3".repeat(64)}`, details: successfulVerificationDetails(inventoryDigest, new Date(now.getTime() + 61_000).toISOString()) }, mutation(`agent:${device.id}`, `command:${command.id}:SUCCEEDED`, "verify-result-hash", new Date(now.getTime() + 61_000).toISOString()));
     assert.equal(completed.device.status, "VERIFIED");
     assert.equal(completed.device.verificationStatus, "PASSED");
     assert.equal((await store.dashboard(account.activeOrganization.id, now.toISOString())).readiness.onlineVerifiedDevices, 1);
@@ -100,6 +118,7 @@ test("agent routes require signed device proofs and never accept workspace roles
   }
   assert.match(readFileSync(agentRoutes[0], "utf8"), /verifyHostingAgentSignature\(/u);
   for (const path of agentRoutes.slice(1)) assert.match(readFileSync(path, "utf8"), /verifyExistingDeviceProof\(/u);
+  assert.match(readFileSync(agentRoutes[3], "utf8"), /AGENT_EVIDENCE_DIGEST_MISMATCH/u);
 
   for (const path of ["app/api/v2/supply/agent-challenges/route.ts", "app/api/v2/supply/devices/[deviceId]/verify/route.ts"]) {
     const source = readFileSync(path, "utf8");

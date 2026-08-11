@@ -22,6 +22,16 @@ function mutation(actorId, key, hash, now) {
   return { actorId, idempotencyKey: key, payloadHash: hash, now };
 }
 
+function successfulVerificationDetails(inventoryDigest, observedAt) {
+  const tests = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"];
+  return {
+    protocolVersion: 1,
+    inventoryDigest,
+    observedAt,
+    tests: tests.map((name, index) => ({ name, status: "PASSED", evidenceDigest: `sha256:${String(index + 1).repeat(64)}` })),
+  };
+}
+
 async function publishedOffer(store, supplier, clock) {
   const now = clock.toISOString();
   await store.saveProfile(supplier, { supplierType: "INDIVIDUAL", legalDisplayName: "预留测试 4090 供应方", contactEmail: supplier.account.primaryEmail, expectedVersion: 0 }, mutation(supplier.account.id, "reserve-profile-save", "reserve-profile-save-hash", now));
@@ -40,7 +50,7 @@ async function publishedOffer(store, supplier, clock) {
   await store.acceptHeartbeat(device.id, { sequence: 1, inventoryDigest, capacityState: "ONLINE", observedAt: now }, mutation(`agent:${device.id}`, "reserve-heartbeat", "reserve-heartbeat-hash", now));
   const verification = await store.queueVerification(supplier.activeOrganization.id, device.id, mutation(supplier.account.id, "reserve-verify", "reserve-verify-hash", now));
   await store.pollCommand(device.id, now);
-  await store.completeCommand(device.id, verification.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"5".repeat(64)}`, details: { testsPassed: 6 } }, mutation(`agent:${device.id}`, "reserve-verify-result", "reserve-verify-result-hash", now));
+  await store.completeCommand(device.id, verification.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"5".repeat(64)}`, details: successfulVerificationDetails(inventoryDigest, now) }, mutation(`agent:${device.id}`, "reserve-verify-result", "reserve-verify-result-hash", now));
   await store.createFeeSchedule({ platformFeeBps: 1_000, referralRewardBps: 300, activate: true, effectiveFrom: now }, mutation("admin-market", "reserve-fee", "reserve-fee-hash", now));
   const offer = await store.createOffer(supplier.activeOrganization.id, { deviceId: device.id, title: "北京 RTX 4090 三分钟起租", gpuModel: "RTX_4090", region: "中国·北京", cardHourMicrosPerGpuHour: 3_600_000, minRentalSeconds: 180, maxRentalSeconds: 3_600, availableFrom: new Date(clock.getTime() - 60_000).toISOString(), availableUntil: new Date(clock.getTime() + 86_400_000).toISOString(), approvedImage: "ghcr.io/kai-cloud/cuda-pytorch:2026.08", termsVersion: "KAI_HOSTING_TERMS_2026_08" }, mutation(supplier.account.id, "reserve-offer-create", "reserve-offer-create-hash", now));
   return store.updateOfferStatus(supplier.activeOrganization.id, offer.id, { status: "PUBLISHED", expectedVersion: 1 }, mutation(supplier.account.id, "reserve-offer-publish", "reserve-offer-publish-hash", now));

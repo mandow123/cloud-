@@ -8,9 +8,11 @@ KAI Host Agent is the supplier-side device identity and control service for KAI 
 - raw hostname and GPU UUID hashing before transmission;
 - signed, monotonically sequenced heartbeats;
 - automatic offline reporting when inventory collection fails;
+- signed command polling with a lease-based retry path;
+- six fixed verification checks for GPU identity, NVIDIA compute mode, memory, storage, network and the declared public port;
 - a hardened, non-root systemd service without Docker access or an arbitrary shell.
 
-This checkpoint does **not** execute verification or workload commands yet. Do not distribute or enable it on production hosts until the command worker and its verification tests land in the next checkpoint.
+This checkpoint executes only `VERIFY`. `PROVISION`, `START`, `STOP` and `CLEANUP` remain fail-closed until the isolated workload actuator lands. Do not distribute it as a complete rental agent yet.
 
 ## Host requirements
 

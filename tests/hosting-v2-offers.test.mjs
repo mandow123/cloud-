@@ -16,6 +16,16 @@ function mutation(actorId, key, hash, now) {
   return { actorId, idempotencyKey: key, payloadHash: hash, now };
 }
 
+function successfulVerificationDetails(inventoryDigest, observedAt) {
+  const tests = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"];
+  return {
+    protocolVersion: 1,
+    inventoryDigest,
+    observedAt,
+    tests: tests.map((name, index) => ({ name, status: "PASSED", evidenceDigest: `sha256:${String(index + 1).repeat(64)}` })),
+  };
+}
+
 test("only approved, verified and fee-backed GPU offers enter the public market", async () => {
   const store = await createSqliteHostingV2Store(":memory:");
   try {
@@ -44,7 +54,7 @@ test("only approved, verified and fee-backed GPU offers enter the public market"
     await store.acceptHeartbeat(device.id, { sequence: 1, inventoryDigest, capacityState: "ONLINE", observedAt: now }, mutation(`agent:${device.id}`, "offer-heartbeat-1", "offer-heartbeat-hash", now));
     const verification = await store.queueVerification(account.activeOrganization.id, device.id, mutation(account.account.id, "offer-verify", "offer-verify-hash", now));
     await store.pollCommand(device.id, now);
-    await store.completeCommand(device.id, verification.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"5".repeat(64)}`, details: { testsPassed: 6 } }, mutation(`agent:${device.id}`, "offer-verify-result", "offer-verify-result-hash", now));
+    await store.completeCommand(device.id, verification.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"5".repeat(64)}`, details: successfulVerificationDetails(inventoryDigest, now) }, mutation(`agent:${device.id}`, "offer-verify-result", "offer-verify-result-hash", now));
 
     const offerInput = {
       deviceId: device.id,

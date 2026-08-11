@@ -9,6 +9,26 @@ const nullable = (row: Row, key: string) => row[key] == null ? null : String(row
 const number = (row: Row, key: string) => Number(row[key]);
 const json = <T>(row: Row, key: string) => JSON.parse(value(row, key)) as T;
 const id = (prefix: string) => `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
+const VERIFY_TEST_NAMES = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"] as const;
+
+function assertSuccessfulVerificationDetails(details: Record<string, unknown> | undefined, expectedInventoryDigest: string, now: string) {
+  if (!details || details.protocolVersion !== 1 || details.inventoryDigest !== expectedInventoryDigest || typeof details.observedAt !== "string") {
+    throw new ExchangeInputError("设备验真结果结构无效。", "details");
+  }
+  const observedAt = Date.parse(details.observedAt);
+  if (!Number.isFinite(observedAt) || Math.abs(observedAt - Date.parse(now)) > 10 * 60_000) throw new ExchangeInputError("设备验真观测时间无效。", "details.observedAt");
+  if (!Array.isArray(details.tests) || details.tests.length !== VERIFY_TEST_NAMES.length) throw new ExchangeInputError("设备验真测试数量无效。", "details.tests");
+  const names = new Set<string>();
+  for (const item of details.tests) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new ExchangeInputError("设备验真测试结构无效。", "details.tests");
+    const result = item as Record<string, unknown>;
+    if (!VERIFY_TEST_NAMES.includes(result.name as typeof VERIFY_TEST_NAMES[number]) || result.status !== "PASSED" || typeof result.evidenceDigest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(result.evidenceDigest)) {
+      throw new ExchangeInputError("设备验真测试结果无效。", "details.tests");
+    }
+    names.add(String(result.name));
+  }
+  if (names.size !== VERIFY_TEST_NAMES.length) throw new ExchangeInputError("设备验真测试存在重复或缺失。", "details.tests");
+}
 
 function profile(row: Row): HostingSupplierProfile {
   return {
@@ -549,9 +569,10 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
     },
 
     async pollCommand(deviceId, now) {
-      const current = await db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE device_id=? AND status='PENDING' ORDER BY created_at LIMIT 1", [deviceId]);
+      const leaseCutoff = new Date(Date.parse(now) - 60_000).toISOString();
+      const current = await db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE device_id=? AND (status='PENDING' OR (status='DELIVERED' AND delivered_at<? AND attempt<5)) ORDER BY created_at LIMIT 1", [deviceId, leaseCutoff]);
       if (!current) return null;
-      await db.batch([{ sql: "UPDATE hosting_v2_agent_commands SET status='DELIVERED',attempt=attempt+1,delivered_at=? WHERE id=? AND status='PENDING'", values: [now, value(current, "id")] }]);
+      await db.batch([{ sql: "UPDATE hosting_v2_agent_commands SET status='DELIVERED',attempt=attempt+1,delivered_at=? WHERE id=? AND (status='PENDING' OR (status='DELIVERED' AND delivered_at<? AND attempt<5))", values: [now, value(current, "id"), leaseCutoff] }]);
       const row = await db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE id=?", [value(current, "id")]);
       return row ? command(row) : null;
     },
@@ -569,6 +590,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       }
       const type = value(commandRow, "command_type") as HostingAgentCommand["type"];
       const success = input.outcome === "SUCCEEDED";
+      if (type === "VERIFY" && success) assertSuccessfulVerificationDetails(input.details, value(deviceRow, "inventory_digest"), context.now);
       const statements: HostingV2Sql[] = [
         { sql: "UPDATE hosting_v2_agent_commands SET status=?,evidence_digest=?,error_code=?,completed_at=? WHERE id=? AND status IN ('PENDING','DELIVERED')", values: [input.outcome, input.evidenceDigest, input.errorCode ?? null, context.now, commandId] },
       ];

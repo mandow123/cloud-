@@ -2,7 +2,7 @@
 
 import { dirname } from "node:path";
 import { collectInventory } from "./inventory.mjs";
-import { AGENT_VERSION, heartbeat, pairDevice, resumePairing } from "./client.mjs";
+import { AGENT_VERSION, heartbeat, pairDevice, processOneCommand, resumePairing } from "./client.mjs";
 import { AgentError } from "./protocol.mjs";
 import { readState, stateFilePath } from "./state.mjs";
 
@@ -55,6 +55,13 @@ async function runService() {
     } catch (error) {
       const code = error instanceof AgentError ? error.code : "HEARTBEAT_FAILED";
       log("heartbeat.failed", { code });
+    }
+    try {
+      const processed = await processOneCommand();
+      if (processed) log("command.completed", { commandId: processed.command.id, type: processed.command.type, outcome: processed.result.outcome });
+    } catch (error) {
+      const code = error instanceof AgentError ? error.code : "COMMAND_FAILED";
+      log("command.failed", { code });
     }
     if (stopping) break;
     await new Promise((resolve) => setTimeout(resolve, 30_000));

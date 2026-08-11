@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { pairDevice, heartbeat } from "../host-agent/src/client.mjs";
+import { heartbeat, pairDevice, processOneCommand } from "../host-agent/src/client.mjs";
 import { parseNvidiaInventory } from "../host-agent/src/inventory.mjs";
-import { assertHttpsEndpoint, canonicalJson, digestJson, generateDeviceIdentity, signPayload } from "../host-agent/src/protocol.mjs";
+import { AgentError, assertHttpsEndpoint, canonicalJson, digestJson, generateDeviceIdentity, signPayload } from "../host-agent/src/protocol.mjs";
 import { readState } from "../host-agent/src/state.mjs";
+import { runVerification, VERIFY_TESTS } from "../host-agent/src/verify.mjs";
 import { hostingAgentCanonicalJson, hostingAgentDigest, verifyHostingAgentSignature } from "../lib/server/hosting-agent-crypto.ts";
 
 const inventory = {
@@ -51,11 +52,30 @@ test("NVIDIA inventory parser accepts one supported GPU and rejects ambiguous ho
   assert.throws(() => parseNvidiaInventory("GPU-a, RTX 3090, 24576, 580.10", "CUDA Version: 13.0"), (error) => error.code === "GPU_MODEL_UNSUPPORTED");
 });
 
+test("VERIFY runs only the fixed six probes and binds every result to signed evidence", async () => {
+  const state = { inventoryDigest: await hostingAgentDigest(inventory) };
+  const command = { id: "cmd_runtime_verify_000001", type: "VERIFY", payload: { expectedInventoryDigest: state.inventoryDigest, tests: [...VERIFY_TESTS] } };
+  const runners = Object.fromEntries(VERIFY_TESTS.map((name) => [name, async () => ({ probe: name, ok: true })]));
+  const result = await runVerification(command, state, { runners });
+  assert.equal(result.outcome, "SUCCEEDED");
+  assert.equal(result.errorCode, null);
+  assert.deepEqual(result.details.tests.map((item) => item.name), VERIFY_TESTS);
+  assert.ok(result.details.tests.every((item) => item.status === "PASSED" && /^sha256:[a-f0-9]{64}$/u.test(item.evidenceDigest)));
+  assert.equal(result.evidenceDigest, await hostingAgentDigest(result.details));
+
+  const failed = await runVerification(command, state, { runners: { ...runners, NETWORK: async () => { throw new AgentError("NETWORK_PROBE_FAILED", "offline"); } } });
+  assert.equal(failed.outcome, "FAILED");
+  assert.equal(failed.errorCode, "VERIFICATION_FAILED");
+  assert.equal(failed.details.tests.find((item) => item.name === "NETWORK").errorCode, "NETWORK_PROBE_FAILED");
+  await assert.rejects(runVerification({ ...command, payload: { ...command.payload, tests: [...VERIFY_TESTS, "SHELL"] } }, state, { runners }), (error) => error.code === "VERIFY_TEST_SET_INVALID");
+});
+
 test("pairing and heartbeat persist a private 0600 identity and send server-verifiable proofs", async () => {
   const directory = await mkdtemp(join(tmpdir(), "kai-host-agent-"));
   const stateFile = join(directory, "identity.json");
   let publicKey = "";
   let registeredDeviceId = "";
+  let completedCommand = null;
   try {
     const post = async (url, body, options) => {
       assert.equal(options.allowInsecureLocal, true);
@@ -68,10 +88,24 @@ test("pairing and heartbeat persist a private 0600 identity and send server-veri
         registeredDeviceId = "had_runtime_test_device_000001";
         return { record: { id: registeredDeviceId, inventoryDigest: body.inventoryDigest, lastSequence: 0 } };
       }
-      assert.match(url, new RegExp(`/devices/${registeredDeviceId}/heartbeat$`, "u"));
-      const { signature, issuedAt, expiresAt, sequence, inventoryDigest, capacityState, observedAt } = body;
-      await verifyHostingAgentSignature(publicKey, { operation: "HEARTBEAT", deviceId: registeredDeviceId, sequence, inventoryDigest, capacityState, observedAt, issuedAt, expiresAt }, signature);
-      return { record: { id: registeredDeviceId } };
+      if (url.endsWith(`/devices/${registeredDeviceId}/heartbeat`)) {
+        const { signature, issuedAt, expiresAt, sequence, inventoryDigest, capacityState, observedAt } = body;
+        await verifyHostingAgentSignature(publicKey, { operation: "HEARTBEAT", deviceId: registeredDeviceId, sequence, inventoryDigest, capacityState, observedAt, issuedAt, expiresAt }, signature);
+        return { record: { id: registeredDeviceId } };
+      }
+      if (url.endsWith(`/devices/${registeredDeviceId}/commands/poll`)) {
+        const { signature, issuedAt, expiresAt, requestNonce } = body;
+        await verifyHostingAgentSignature(publicKey, { operation: "POLL_COMMAND", deviceId: registeredDeviceId, requestNonce, issuedAt, expiresAt }, signature);
+        return { command: { id: "cmd_runtime_verify_000001", type: "VERIFY", payload: { expectedInventoryDigest: await hostingAgentDigest(inventory), tests: [...VERIFY_TESTS] } } };
+      }
+      if (url.endsWith(`/devices/${registeredDeviceId}/commands/cmd_runtime_verify_000001/complete`)) {
+        const { signature, issuedAt, expiresAt, outcome, evidenceDigest, errorCode, details } = body;
+        await verifyHostingAgentSignature(publicKey, { operation: "COMPLETE_COMMAND", deviceId: registeredDeviceId, commandId: "cmd_runtime_verify_000001", outcome, evidenceDigest, errorCode, details, issuedAt, expiresAt }, signature);
+        assert.equal(evidenceDigest, await hostingAgentDigest(details));
+        completedCommand = body;
+        return { command: { id: "cmd_runtime_verify_000001", status: outcome } };
+      }
+      throw new Error(`Unexpected Agent endpoint: ${url}`);
     };
 
     const paired = await pairDevice({
@@ -105,6 +139,18 @@ test("pairing and heartbeat persist a private 0600 identity and send server-veri
     assert.equal(beat.state.lastSequence, 1);
     assert.equal((await readState(stateFile)).lastSequence, 1);
 
+    const processed = await processOneCommand({
+      stateFile,
+      allowInsecureLocal: true,
+      post,
+      verifier: async (command, state) => {
+        const details = { protocolVersion: 1, inventoryDigest: state.inventoryDigest, observedAt: new Date().toISOString(), tests: VERIFY_TESTS.map((name, index) => ({ name, status: "PASSED", evidenceDigest: `sha256:${String(index + 1).repeat(64)}` })) };
+        return { outcome: "SUCCEEDED", evidenceDigest: await hostingAgentDigest(details), errorCode: null, details };
+      },
+    });
+    assert.equal(processed.command.type, "VERIFY");
+    assert.equal(completedCommand.outcome, "SUCCEEDED");
+
     await chmod(stateFile, 0o644);
     await assert.rejects(readState(stateFile), (error) => error.code === "STATE_PERMISSIONS_INVALID");
   } finally {
@@ -116,6 +162,7 @@ test("installer is offline, non-root at runtime and systemd-hardened", async () 
   const installer = await readFile("host-agent/install.sh", "utf8");
   const service = await readFile("host-agent/kai-host-agent.service", "utf8");
   const runtime = await readFile("host-agent/src/cli.mjs", "utf8");
+  const verifier = await readFile("host-agent/src/verify.mjs", "utf8");
   const packageJson = JSON.parse(await readFile("host-agent/package.json", "utf8"));
 
   assert.doesNotMatch(installer, /curl|wget|apt-get|npm install|docker group/u);
@@ -127,5 +174,7 @@ test("installer is offline, non-root at runtime and systemd-hardened", async () 
   assert.match(service, /^ProtectHome=true$/mu);
   assert.match(service, /^ReadWritePaths=\/var\/lib\/kai-host-agent$/mu);
   assert.doesNotMatch(runtime, /privateKeyPkcs8|registrationBody|nonce/u);
+  assert.doesNotMatch(verifier, /shell\s*:\s*true|\bexec(?:Sync)?\s*\(/u);
+  assert.match(installer, /src\/verify\.mjs/u);
   assert.equal(packageJson.dependencies, undefined);
 });

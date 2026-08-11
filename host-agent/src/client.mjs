@@ -7,10 +7,12 @@ import {
   generateDeviceIdentity,
   proofWindow,
   randomIdempotencyKey,
+  randomNonce,
   signPayload,
   signedProof,
 } from "./protocol.mjs";
 import { readState, stateFilePath, writeState } from "./state.mjs";
+import { runVerification } from "./verify.mjs";
 
 export const AGENT_VERSION = "1.0.0";
 
@@ -196,4 +198,38 @@ export async function resumePairing({ stateFile = stateFilePath(), allowInsecure
   };
   await writeState(activeState, stateFile);
   return { deviceId: activeState.deviceId, state: activeState };
+}
+
+export async function pollCommand({ stateFile = stateFilePath(), allowInsecureLocal = false, post = apiPost } = {}) {
+  const state = await readState(stateFile);
+  if (state.status !== "ACTIVE") throw new AgentError("STATE_NOT_ACTIVE", "Agent pairing has not completed.");
+  const fields = { requestNonce: randomNonce() };
+  const proof = await signedProof(state.privateKeyPkcs8, "POLL_COMMAND", state.deviceId, fields);
+  const url = `${state.apiOrigin}/api/v2/agent/devices/${encodeURIComponent(state.deviceId)}/commands/poll`;
+  const response = await post(url, { ...fields, ...proof }, { allowInsecureLocal, timeoutMs: 20_000 });
+  if (!("command" in response)) throw new AgentError("COMMAND_RESPONSE_INVALID", "Command poll response is invalid.");
+  return { state, command: response.command };
+}
+
+export async function completeCommand(command, result, { stateFile = stateFilePath(), allowInsecureLocal = false, post = apiPost } = {}) {
+  const state = await readState(stateFile);
+  if (state.status !== "ACTIVE" || !command || typeof command.id !== "string") throw new AgentError("COMMAND_INVALID", "Agent command is invalid.");
+  const fields = { commandId: command.id, outcome: result.outcome, evidenceDigest: result.evidenceDigest, errorCode: result.errorCode, details: result.details };
+  const proof = await signedProof(state.privateKeyPkcs8, "COMPLETE_COMMAND", state.deviceId, fields);
+  const url = `${state.apiOrigin}/api/v2/agent/devices/${encodeURIComponent(state.deviceId)}/commands/${encodeURIComponent(command.id)}/complete`;
+  return post(url, { outcome: result.outcome, evidenceDigest: result.evidenceDigest, errorCode: result.errorCode, details: result.details, ...proof }, { allowInsecureLocal, timeoutMs: 30_000 });
+}
+
+export async function processOneCommand({ stateFile = stateFilePath(), allowInsecureLocal = false, post = apiPost, verifier } = {}) {
+  const polled = await pollCommand({ stateFile, allowInsecureLocal, post });
+  if (!polled.command) return null;
+  let result;
+  if (polled.command.type === "VERIFY") {
+    result = await (verifier ?? runVerification)(polled.command, polled.state);
+  } else {
+    const details = { protocolVersion: 1, commandType: polled.command.type ?? "UNKNOWN", observedAt: new Date().toISOString() };
+    result = { outcome: "FAILED", evidenceDigest: digestJson(details), errorCode: "COMMAND_UNSUPPORTED", details };
+  }
+  const response = await completeCommand(polled.command, result, { stateFile, allowInsecureLocal, post });
+  return { command: polled.command, result, response };
 }
