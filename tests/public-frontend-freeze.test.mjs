@@ -26,7 +26,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "components/buyer-order-list.tsx": "fa15cbb70d18d19074633efc5d9fe60acd276ae4a45ab9df1e99dc3f6092d31a",
   "components/catalog-purchase.module.css": "d9e451203cbbfcb4b13a1c8f91267309cfe4be895e7ee225afb52cdfbc99d0a7",
   "components/catalog-purchase.tsx": "8ac8b649b82789a0b7c12212c1e0a139f4c6c5f464c7897a974b5fc6730c7555",
-  "components/admin-login.tsx": "59e67e72dfec2275c3467f610ce6d9e270b14ec05a32d389be033ef83398f0ce",
+  "components/admin-login.tsx": "0ec4b26ed6e04d40422f14d6c6b471265ff65f49d78df61c99c6c20bcb7f0567",
   "components/admin-resource-page.tsx": "026788b741fd20de28fe0095722822edcc5ae20305e2335d2217a66b70b70c4d",
   "components/card-hour-account-panel.tsx": "b46e420489f7d023c26b640446a28150be0a68b91a340e238f5f0eddf81497d9",
   "components/email-login.tsx": "43f6a8f1edc18b23ec099ba476c51d45b79e165bcd0f4a7778b5b78151874cb6",

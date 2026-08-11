@@ -61,6 +61,14 @@ async function adminFetch(path: string, init: RequestInit = {}, timeoutMs = 15_0
   }
 }
 
+export async function adminGetJson(path: string) {
+  const payload = await adminFetch(path);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new AdminApiError("管理员接口返回了无法识别的内容。", 200, "INVALID_RESPONSE");
+  }
+  return payload as Record<string, unknown>;
+}
+
 function recordArray(value: unknown): AdminRow[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is AdminRow => Boolean(item) && typeof item === "object" && !Array.isArray(item));

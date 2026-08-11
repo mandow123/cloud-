@@ -14,6 +14,8 @@ export type HostingV2CapabilityReadiness = Readonly<{
   checks: Readonly<{
     storage: CapabilityCheck;
     supplierIdentity: CapabilityCheck;
+    trialGrantRequest: CapabilityCheck;
+    trialGrantApproval: CapabilityCheck;
     agentDelivery: CapabilityCheck;
     feeSchedule: CapabilityCheck;
     cardHourLedger: CapabilityCheck;
@@ -47,6 +49,8 @@ export function evaluateHostingV2Capability(input: {
   cardHourStorage: StorageCheck;
   operations: HostingV2OperationalSnapshot | null;
   kaiIdentityAvailable: boolean;
+  adminPasswordAvailable: boolean;
+  financeApprovalAvailable: boolean;
   alipay: AlipayReadiness;
 }): HostingV2CapabilityReadiness {
   const enabled = ["1", "true"].includes((input.environment.KAI_HOSTING_V2 ?? "").trim().toLowerCase());
@@ -75,6 +79,8 @@ export function evaluateHostingV2Capability(input: {
   const checks = {
     storage: check(hostingStorageReady, input.hostingStorage.errorCode ?? "HOSTING_V2_STORAGE_NOT_READY"),
     supplierIdentity: check(supplierIdentityReady, input.kaiIdentityAvailable ? "HOSTING_APPROVED_SUPPLIER_MISSING" : "KAI_IDENTITY_NOT_READY"),
+    trialGrantRequest: check(input.adminPasswordAvailable, "HOSTING_ROOT_ADMIN_NOT_READY"),
+    trialGrantApproval: check(input.financeApprovalAvailable, "HOSTING_FINANCE_APPROVER_NOT_READY"),
     agentDelivery: check(agentReady, "HOSTING_ACTIVE_AGENT_MISSING"),
     feeSchedule: check(feeReady, "HOSTING_ACTIVE_FEE_MISSING"),
     cardHourLedger: check(cardHourStorageReady, input.cardHourStorage.errorCode ?? "CARD_HOUR_STORAGE_NOT_READY"),

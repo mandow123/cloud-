@@ -118,6 +118,10 @@ async function main() {
       KAI_HOSTING_TERMS_VERSION: process.env.KAI_HOSTING_TERMS_VERSION,
       KAI_ACCOUNT_OIDC_CLIENT_ID: process.env.KAI_ACCOUNT_OIDC_CLIENT_ID,
       KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: process.env.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET,
+      KAI_ADMIN_USERNAME: process.env.KAI_ADMIN_USERNAME,
+      KAI_ADMIN_PASSWORD_HASH: process.env.KAI_ADMIN_PASSWORD_HASH,
+      KAI_ADMIN_APPROVER_USERNAME: process.env.KAI_ADMIN_APPROVER_USERNAME,
+      KAI_ADMIN_APPROVER_PASSWORD_HASH: process.env.KAI_ADMIN_APPROVER_PASSWORD_HASH,
     })
     : productionEnvironment();
   validateProductionEnvironment(candidateEnvironment);
@@ -159,12 +163,22 @@ async function main() {
       KAI_HOSTING_TERMS_VERSION: candidateEnvironment.KAI_HOSTING_TERMS_VERSION,
       KAI_ACCOUNT_OIDC_CLIENT_ID: candidateEnvironment.KAI_ACCOUNT_OIDC_CLIENT_ID,
       KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: candidateEnvironment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET,
+      KAI_ADMIN_USERNAME: candidateEnvironment.KAI_ADMIN_USERNAME,
+      KAI_ADMIN_PASSWORD_HASH: candidateEnvironment.KAI_ADMIN_PASSWORD_HASH,
+      KAI_ADMIN_APPROVER_USERNAME: candidateEnvironment.KAI_ADMIN_APPROVER_USERNAME,
+      KAI_ADMIN_APPROVER_PASSWORD_HASH: candidateEnvironment.KAI_ADMIN_APPROVER_PASSWORD_HASH,
+      KAI_ADMIN_APPROVER_DISPLAY_NAME: process.env.KAI_ADMIN_APPROVER_DISPLAY_NAME,
       KAI_APP_PORT: validateCurrentEnvironment ? (process.env.KAI_APP_PORT ?? "3051") : "3051",
       KAI_STATE_ROOT: stateRoot,
     },
   });
   if (compose.status !== 0) {
-    throw new Error(`docker compose config failed: ${redact(compose.stderr || compose.stdout, [candidateEnvironment.KAI_CURSOR_SECRET])}`);
+    throw new Error(`docker compose config failed: ${redact(compose.stderr || compose.stdout, [
+      candidateEnvironment.KAI_CURSOR_SECRET,
+      candidateEnvironment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET,
+      candidateEnvironment.KAI_ADMIN_PASSWORD_HASH,
+      candidateEnvironment.KAI_ADMIN_APPROVER_PASSWORD_HASH,
+    ])}`);
   }
   const configuration = JSON.parse(compose.stdout);
   const { app, backup, "market-update": marketUpdate } = configuration.services;
@@ -193,6 +207,7 @@ async function main() {
   assert(app.environment.KAI_ALIPAY_ENABLED === "0", "production Compose must keep Alipay disabled during the trial rollout");
   for (const name of [
     "KAI_ADMIN_USERNAME", "KAI_ADMIN_PASSWORD_HASH", "KAI_ADMIN_DISPLAY_NAME",
+    "KAI_ADMIN_APPROVER_USERNAME", "KAI_ADMIN_APPROVER_PASSWORD_HASH", "KAI_ADMIN_APPROVER_DISPLAY_NAME",
     "KAI_ACCOUNT_OIDC_CLIENT_ID", "KAI_ACCOUNT_OIDC_TRANSACTION_SECRET",
     "KAI_HOSTING_V2", "KAI_HOSTING_APPROVED_IMAGES", "KAI_HOSTING_TERMS_VERSION", "KAI_ALIPAY_ENABLED",
     "KAI_ALIPAY_APP_ID", "KAI_ALIPAY_PRIVATE_KEY", "KAI_ALIPAY_PUBLIC_KEY", "KAI_ALIPAY_SELLER_ID",

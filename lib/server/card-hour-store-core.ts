@@ -263,6 +263,12 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       if (!updated) throw new Error("CARD_HOUR_HOLD_RELEASE_FAILED");
       return { record: holdRecord(updated), applied: results[0]?.changes === 1 };
     },
+    async listTrialGrants(status) {
+      const rows = status
+        ? await db.all<Row>("SELECT * FROM card_hour_trial_grants WHERE status=? ORDER BY created_at DESC LIMIT 200", [status])
+        : await db.all<Row>("SELECT * FROM card_hour_trial_grants ORDER BY created_at DESC LIMIT 200");
+      return rows.map(trialGrantRecord);
+    },
     async requestTrialGrant(input) {
       if (!input.organizationId.trim() || !input.requestedBy.trim()) throw new AccountAuthError("CARD_HOUR_TRIAL_GRANT_INVALID", 400, "试运营卡时申请主体无效。 ");
       if (!Number.isSafeInteger(input.amountMicros) || input.amountMicros < 1_000_000) throw new AccountAuthError("CARD_HOUR_TRIAL_GRANT_INVALID", 400, "试运营卡时每次至少申请 1 KAI 标准卡时。 ");

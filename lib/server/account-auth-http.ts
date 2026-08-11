@@ -6,14 +6,14 @@ export async function accountSessionEnvelope(context: AccountSessionContext, sto
   const finalStore = store ?? await getAccountAuthStore();
   const memberships = await finalStore.listMemberships(context.account.id);
   const roles = context.membership.status === "ACTIVE" ? context.membership.roles : [];
-  const rootRoles = roles.includes("ROOT") ? (["ROOT"] as const) : [];
-  const permissions = adminPermissionsForRoles(rootRoles);
+  const adminRoles = roles.filter((role) => role === "ROOT" || role === "FINANCE_APPROVER");
+  const permissions = adminPermissionsForRoles(adminRoles);
   return {
     authenticated: true as const,
     account: context.account,
     organization: context.activeOrganization,
     memberships,
-    ...(rootRoles.length ? { admin: { principal: { id: context.account.id, displayName: context.account.displayName, roles: rootRoles, permissions, status: "ACTIVE" as const }, sessionId: context.sessionId } } : {}),
+    ...(context.authMethod === "ADMIN_PASSWORD" && adminRoles.length ? { admin: { principal: { id: context.account.id, displayName: context.account.displayName, roles: adminRoles, permissions, status: "ACTIVE" as const }, sessionId: context.sessionId } } : {}),
   };
 }
 

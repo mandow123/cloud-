@@ -12,7 +12,7 @@ const ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly AdminPermission[]>> 
   MARKET_OPERATOR: [],
   FULFILLMENT_OPERATOR: [],
   FINANCE_OPERATOR: [],
-  FINANCE_APPROVER: [],
+  FINANCE_APPROVER: ["ADMIN_PANEL_READ", "PAYMENT_READ", "SETTLEMENT_OPERATE", "AUDIT_READ"],
   SUPPORT_READONLY: [],
   AUDITOR: [],
 };
@@ -41,10 +41,10 @@ export async function authenticateAdminRequest(request: Request): Promise<AdminA
     throw new AccountAuthError("ADMIN_ACCESS_FORBIDDEN", 403, "组织成员关系尚未获批。 ");
   }
   const roles = accountContext.membership.roles;
-  if (!roles.includes("ROOT")) {
-    throw new AccountAuthError("ADMIN_ACCESS_FORBIDDEN", 403, "只有 ROOT 账户可以进入管理员面板。 ");
-  }
   const permissions = adminPermissionsForRoles(roles);
+  if (!roles.some((role) => role === "ROOT" || role === "FINANCE_APPROVER") || permissions.length === 0) {
+    throw new AccountAuthError("ADMIN_ACCESS_FORBIDDEN", 403, "当前账号不是已授权的密码管理员。 ");
+  }
   return {
     principal: { id: accountContext.account.id, displayName: accountContext.account.displayName, roles, permissions, status: "ACTIVE" },
     account: accountContext.account, organization: accountContext.activeOrganization, sessionId: accountContext.sessionId,

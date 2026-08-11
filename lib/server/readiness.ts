@@ -53,6 +53,8 @@ function capabilityReadiness(environment:Environment){
   return{
     adminPasswordLogin:requiredCapability(["KAI_ADMIN_USERNAME","KAI_ADMIN_PASSWORD_HASH"],environment,
       environment.KAI_ADMIN_PASSWORD_HASH?.startsWith("pbkdf2-sha256:")?[]:["KAI_ADMIN_PASSWORD_HASH(valid PBKDF2 hash)"]),
+    financeApprovalLogin:requiredCapability(["KAI_ADMIN_APPROVER_USERNAME","KAI_ADMIN_APPROVER_PASSWORD_HASH"],environment,
+      environment.KAI_ADMIN_APPROVER_PASSWORD_HASH?.startsWith("pbkdf2-sha256:")?[]:["KAI_ADMIN_APPROVER_PASSWORD_HASH(valid PBKDF2 hash)"]),
     kaiIdentityLogin:requiredCapability(["KAI_ACCOUNT_OIDC_CLIENT_ID","KAI_ACCOUNT_OIDC_TRANSACTION_SECRET"],environment,identityExtra),
     alipayLive:{available:alipay.canCreatePayment,enabled:alipay.enabled,configured:alipay.configured,failClosed:true,missing:alipay.missing},
     sshProvisioning:{available:ssh.configured,failClosed:true,missing:ssh.missing},
@@ -101,6 +103,8 @@ export async function evaluateReadiness(){
     cardHourStorage:cardHours,
     operations:hostingOperations,
     kaiIdentityAvailable:capabilities.kaiIdentityLogin.available,
+    adminPasswordAvailable:capabilities.adminPasswordLogin.available,
+    financeApprovalAvailable:capabilities.financeApprovalLogin.available,
     alipay:alipayReadiness(environment),
   });
   const ready=market.ready&&Object.values(storage).every((item)=>item.ready)&&hostingV2.ready;

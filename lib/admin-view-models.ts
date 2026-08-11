@@ -507,7 +507,7 @@ export const adminSectionConfigs: Record<AdminSectionKey, AdminSectionConfig> = 
     key: "admins",
     title: "管理员与权限",
     kicker: "Access control",
-    description: "唯一 Root 通过独立账号密码登录并拥有全部权限；本页只读展示身份与角色事实，不开放邮箱邀请或角色分配。",
+    description: "Root 拥有完整权限，独立财务审批员只负责双人复核；两者均使用独立账号密码，本页不开放邮箱邀请或角色分配。",
     endpoints: [
       { path: "/api/v1/admin/principals", source: "管理员" },
       { path: "/api/v1/admin/roles", source: "角色目录" },
@@ -554,6 +554,7 @@ export const adminSectionConfigs: Record<AdminSectionKey, AdminSectionConfig> = 
 export const adminNavigation = [
   { label: "运营总览", items: [{ href: "/admin", label: "总览", exact: true }] },
   { label: "供给运营", items: [
+    { href: "/admin/hosting", label: "Hosting 试运营" },
     { href: "/admin/supply-offers", label: "上架资源" },
     { href: "/admin/pools", label: "算力池" },
     { href: "/admin/verifications", label: "验真任务" },

@@ -11,6 +11,10 @@ const PASSWORD = "correct-horse-battery-staple-2026";
 const SALT = Buffer.from("0123456789abcdef", "utf8");
 const HASH = `pbkdf2-sha256:310000:${SALT.toString("base64")}:${pbkdf2Sync(PASSWORD, SALT, 310000, 32, "sha256").toString("base64")}`;
 const ENV = { KAI_ADMIN_USERNAME: "kai-root", KAI_ADMIN_PASSWORD_HASH: HASH, KAI_ADMIN_DISPLAY_NAME: "KAI Root" };
+const APPROVER_PASSWORD = "separate-finance-approval-password-2026";
+const APPROVER_SALT = Buffer.from("fedcba9876543210", "utf8");
+const APPROVER_HASH = `pbkdf2-sha256:310000:${APPROVER_SALT.toString("base64")}:${pbkdf2Sync(APPROVER_PASSWORD, APPROVER_SALT, 310000, 32, "sha256").toString("base64")}`;
+const DUAL_CONTROL_ENV = { ...ENV, KAI_ADMIN_APPROVER_USERNAME: "kai-finance-approver", KAI_ADMIN_APPROVER_PASSWORD_HASH: APPROVER_HASH, KAI_ADMIN_APPROVER_DISPLAY_NAME: "KAI Finance Approver" };
 
 function request(cookie) {
   return new Request("https://cloud.kai.com/api/auth/admin/password", {
@@ -49,6 +53,26 @@ test("wrong password and unknown username return the same failure", async () => 
   try {
     for (const input of [{ username: "kai-root", password: `${PASSWORD}x` }, { username: "somebody", password: PASSWORD }]) {
       await assert.rejects(createAdminPasswordSession(request(), input, { store, env: ENV }), (error) => error.code === "ADMIN_PASSWORD_INVALID" && error.status === 401 && error.message === "账号或密码错误。 ");
+    }
+  } finally { store.close(); }
+});
+
+test("a separate password principal receives only the finance approval role", async () => {
+  const store = await createSqliteAccountAuthStore(":memory:");
+  try {
+    const root = await createAdminPasswordSession(request(), { username: "kai-root", password: PASSWORD }, { store, env: DUAL_CONTROL_ENV });
+    const approver = await createAdminPasswordSession(request(), { username: "kai-finance-approver", password: APPROVER_PASSWORD }, { store, env: DUAL_CONTROL_ENV });
+    assert.notEqual(root.context.account.id, approver.context.account.id);
+    assert.deepEqual(root.context.membership.roles, ["ROOT"]);
+    assert.deepEqual(approver.context.membership.roles, ["FINANCE_APPROVER"]);
+    const previous = globalThis.__kaiAccountAuthStorePromise;
+    globalThis.__kaiAccountAuthStorePromise = Promise.resolve(store);
+    try {
+      const finance = await requireAdminPermission(request(approver.cookie), ["PAYMENT_READ", "SETTLEMENT_OPERATE"]);
+      assert.deepEqual(finance.principal.roles, ["FINANCE_APPROVER"]);
+      await assert.rejects(requireAdminPermission(request(approver.cookie), ["MARKET_PUBLISH"]), (error) => error.code === "ADMIN_ACCESS_FORBIDDEN" && error.status === 403);
+    } finally {
+      globalThis.__kaiAccountAuthStorePromise = previous;
     }
   } finally { store.close(); }
 });

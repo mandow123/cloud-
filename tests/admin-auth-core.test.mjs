@@ -8,13 +8,14 @@ import { accountSessionEnvelope, readAuthJson } from "../lib/server/account-auth
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
 import { createLocalTestAccountSession } from "../lib/server/account-auth-local.ts";
 
-test("only ROOT receives administrator permissions", () => {
+test("Root owns full administration while the independent finance approver receives only dual-control permissions", () => {
   assert.deepEqual(ADMIN_ROLES, ["ROOT","ROLE_ADMIN","INTAKE_OPERATOR","INVENTORY_OPERATOR","VERIFICATION_REVIEWER","MARKET_OPERATOR","FULFILLMENT_OPERATOR","FINANCE_OPERATOR","FINANCE_APPROVER","SUPPORT_READONLY","AUDITOR"]);
   assert.deepEqual(adminPermissionsForRoles(["ROOT"]), ADMIN_PERMISSIONS);
-  for (const role of ADMIN_ROLES.filter((candidate) => candidate !== "ROOT")) {
+  assert.deepEqual(adminPermissionsForRoles(["FINANCE_APPROVER"]), ["ADMIN_PANEL_READ", "PAYMENT_READ", "SETTLEMENT_OPERATE", "AUDIT_READ"]);
+  for (const role of ADMIN_ROLES.filter((candidate) => !["ROOT", "FINANCE_APPROVER"].includes(candidate))) {
     assert.deepEqual(adminPermissionsForRoles([role]), [], `${role} must not receive admin permissions`);
   }
-  assert.deepEqual(adminPermissionsForRoles(ADMIN_ROLES.filter((role) => role !== "ROOT")), []);
+  assert.deepEqual(adminPermissionsForRoles(ADMIN_ROLES.filter((role) => role !== "ROOT")), ["ADMIN_PANEL_READ", "PAYMENT_READ", "SETTLEMENT_OPERATE", "AUDIT_READ"]);
 });
 
 test("account sessions enforce a thirty-minute idle and eight-hour absolute limit", async () => {
@@ -51,7 +52,7 @@ test("ordinary account sessions never expose an administrator principal", async 
   store.close();
 });
 
-test("requireAdminPermission accepts ROOT and rejects every non-ROOT role", async () => {
+test("requireAdminPermission accepts Root and limits the password finance approver to its explicit scope", async () => {
   const store = await createSqliteAccountAuthStore(":memory:");
   const now = new Date();
   const identity = await store.resolveOrCreatePasswordAdministrator({ username:"permission-test",displayName:"Permission Tester",createdAt:now.toISOString() });
@@ -74,6 +75,15 @@ test("requireAdminPermission accepts ROOT and rejects every non-ROOT role", asyn
     const otherIssued = await createAccountSession(new Request("http://localhost/api/auth/email/verify"),activeOther,"EMAIL_OTP",{store,now});
     const otherRequest = new Request("http://localhost/api/admin/inventory",{headers:{cookie:otherIssued.cookie.split(";")[0]}});
     await assert.rejects(requireAdminPermission(otherRequest,["ADMIN_PANEL_READ"]),(error)=>error instanceof AccountAuthError&&error.status===403);
+
+    const approver = await store.resolveOrCreatePasswordAdministrator({ username:"finance-approver-test",displayName:"Finance Approver",createdAt:now.toISOString() });
+    await store.activateMembership(approver.membership.id,["FINANCE_APPROVER"],now.toISOString());
+    const activeApprover = await store.resolveOrCreatePasswordAdministrator({ username:"finance-approver-test",displayName:"Finance Approver",createdAt:now.toISOString() });
+    const approverIssued = await createAccountSession(new Request("http://localhost/api/auth/admin/password"),activeApprover,"ADMIN_PASSWORD",{store,now});
+    const approverRequest = new Request("http://localhost/api/admin/card-hours",{headers:{cookie:approverIssued.cookie.split(";")[0]}});
+    const approverContext = await requireAdminPermission(approverRequest,["PAYMENT_READ", "SETTLEMENT_OPERATE"]);
+    assert.deepEqual(approverContext.principal.roles,["FINANCE_APPROVER"]);
+    await assert.rejects(requireAdminPermission(approverRequest,["SUPPLY_INTAKE_REVIEW"]),(error)=>error instanceof AccountAuthError&&error.status===403);
   } finally {
     globalThis.__kaiAccountAuthStorePromise = previous;
   }

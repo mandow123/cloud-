@@ -48,7 +48,13 @@ export function AdminShell({ children, environment }: { children: ReactNode; env
   const identityObject = identity && typeof identity === "object" && !Array.isArray(identity) ? identity as Record<string, unknown> : {};
   const name = String(identityObject.displayName ?? identityObject.name ?? session?.displayName ?? "会话未确认");
   const rolesValue = session?.roles ?? identityObject.roles ?? session?.role;
-  const roles = Array.isArray(rolesValue) ? rolesValue.join(" / ") : typeof rolesValue === "string" ? rolesValue : "服务端鉴权";
+  const roleList = Array.isArray(rolesValue) ? rolesValue.filter((role): role is string => typeof role === "string") : typeof rolesValue === "string" ? [rolesValue] : [];
+  const roles = roleList.length ? roleList.join(" / ") : "服务端鉴权";
+  const financeApproverOnly = roleList.includes("FINANCE_APPROVER") && !roleList.includes("ROOT");
+  const visibleNavigation = financeApproverOnly
+    ? adminNavigation.map((group) => ({ ...group, items: group.items.filter((item) => ["/admin/hosting", "/admin/audit"].includes(item.href)) })).filter((group) => group.items.length)
+    : adminNavigation;
+  const adminHome = financeApproverOnly ? "/admin/hosting" : "/admin";
   const authenticated = session?.authenticated === true;
 
   if (isLogin) {
@@ -68,11 +74,11 @@ export function AdminShell({ children, environment }: { children: ReactNode; env
     <div className="admin-app" data-environment={env}>
       <aside className="admin-sidebar">
         <div className="admin-sidebar-head">
-          <Link className="admin-brand" href="/admin"><span>KAI</span> ADMIN</Link>
+          <Link className="admin-brand" href={adminHome}><span>KAI</span> ADMIN</Link>
           <span className={`admin-env ${env === "LOCAL" ? "is-local" : ""}`}>{env}</span>
         </div>
         <nav aria-label="管理员主导航" className="admin-navigation">
-          {adminNavigation.map((group) => (
+          {visibleNavigation.map((group) => (
             <section className="admin-nav-group" key={group.label}>
               <h2>{group.label}</h2>
               <div>
@@ -98,8 +104,7 @@ export function AdminShell({ children, environment }: { children: ReactNode; env
           </div>
           <div className="admin-topbar-actions">
             {env === "LOCAL" ? <span className="admin-local-warning">LOCAL · 非生产数据</span> : null}
-            <Link href="/admin/work-items">我的待办</Link>
-            <Link href="/admin/exceptions">严重异常</Link>
+            {!financeApproverOnly ? <><Link href="/admin/work-items">我的待办</Link><Link href="/admin/exceptions">严重异常</Link></> : null}
             {!sessionChecked ? <span className="admin-session"><strong>正在校验会话</strong><small>服务端鉴权</small></span> : authenticated ? <><span className="admin-session"><strong>{name}</strong><small>{roles}</small></span><button disabled={loggingOut} onClick={() => void logout()} type="button">{loggingOut ? "退出中…" : "退出"}</button></> : <Link href="/admin/login">登录</Link>}
           </div>
         </header>

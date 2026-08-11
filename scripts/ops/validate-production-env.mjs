@@ -92,6 +92,11 @@ function validateImageReference(value, errors) {
   if (!immutable) errors.push("KAI_IMAGE_REFERENCE must be an immutable, non-placeholder repository@sha256:<64 lowercase hexadecimal characters> reference");
 }
 
+function validAdminPasswordHash(value) {
+  const match = /^pbkdf2-sha256:(\d{6,7}):([A-Za-z0-9+/]{22,}={0,2}):([A-Za-z0-9+/]{43}={0,2})$/.exec(value ?? "");
+  return Boolean(match && Number(match[1]) >= 310_000 && Number(match[1]) <= 1_000_000);
+}
+
 function validateContainerStatePath(name, value, expected, errors, checkFilesystem) {
   if (typeof value !== "string"
     || hasControlCharacters(value)
@@ -152,6 +157,13 @@ export function validateProductionEnvironment(environment = process.env, { check
   if (environment.KAI_ALIPAY_ENABLED !== "0") errors.push("KAI_ALIPAY_ENABLED must remain exactly 0 during the trial rollout");
   if (environment.KAI_HOSTING_V2 !== "0" && environment.KAI_HOSTING_V2 !== "1") errors.push("KAI_HOSTING_V2 must be exactly 0 or 1");
   if (environment.KAI_HOSTING_V2 === "1") {
+    const rootUsername = environment.KAI_ADMIN_USERNAME ?? "";
+    if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(rootUsername)) {
+      errors.push("KAI_ADMIN_USERNAME must be a valid password administrator when Hosting V2 is enabled");
+    }
+    if (!validAdminPasswordHash(environment.KAI_ADMIN_PASSWORD_HASH)) {
+      errors.push("KAI_ADMIN_PASSWORD_HASH must be a valid PBKDF2 hash when Hosting V2 is enabled");
+    }
     const images = (environment.KAI_HOSTING_APPROVED_IMAGES ?? "").split(/[\n,]/).map((value) => value.trim()).filter(Boolean);
     if (images.length < 1 || images.length > 20 || new Set(images).size !== images.length || images.some((image) => !HOSTING_IMAGE_PATTERN.test(image))) {
       errors.push("KAI_HOSTING_APPROVED_IMAGES must contain 1-20 unique immutable KAI image digests when Hosting V2 is enabled");
@@ -165,6 +177,15 @@ export function validateProductionEnvironment(environment = process.env, { check
     const transactionSecret = environment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET ?? "";
     if (Buffer.byteLength(transactionSecret, "utf8") < 32 || PLACEHOLDER_SECRET_PATTERN.test(transactionSecret)) {
       errors.push("KAI_ACCOUNT_OIDC_TRANSACTION_SECRET must be a non-placeholder secret of at least 32 bytes when Hosting V2 is enabled");
+    }
+    const approverUsername = environment.KAI_ADMIN_APPROVER_USERNAME ?? "";
+    if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(approverUsername) || approverUsername === rootUsername) {
+      errors.push("KAI_ADMIN_APPROVER_USERNAME must be a separate valid password administrator when Hosting V2 is enabled");
+    }
+    if (!validAdminPasswordHash(environment.KAI_ADMIN_APPROVER_PASSWORD_HASH)) {
+      errors.push("KAI_ADMIN_APPROVER_PASSWORD_HASH must be a valid PBKDF2 hash when Hosting V2 is enabled");
+    } else if (environment.KAI_ADMIN_APPROVER_PASSWORD_HASH === environment.KAI_ADMIN_PASSWORD_HASH) {
+      errors.push("KAI_ADMIN_APPROVER_PASSWORD_HASH must use a different password from the Root administrator when Hosting V2 is enabled");
     }
   }
   for (const [name, expected] of Object.entries(REQUIRED_CONTAINER_STATE_PATHS)) {

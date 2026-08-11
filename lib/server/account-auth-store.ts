@@ -63,6 +63,7 @@ export interface AccountAuthStore {
   }): Promise<ResolvedIdentity>;
   resolveOrCreatePasswordAdministrator(input: { username: string; displayName: string; createdAt: string }): Promise<ResolvedIdentity>;
   listMemberships(accountId: string): Promise<Array<Membership & { organization: Organization }>>;
+  getOrganization(organizationId: string): Promise<Organization | null>;
   getMembership(accountId: string, organizationId: string): Promise<(Membership & { organization: Organization }) | null>;
   activateMembership(membershipId: string, roles: readonly AdminRole[], updatedAt: string): Promise<void>;
   isAdminBootstrapClosed(): Promise<boolean>;
@@ -256,6 +257,10 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
     },
     async listMemberships(accountId) {
       return readMemberships(accountId);
+    },
+    async getOrganization(organizationId) {
+      const row = await db.first<Row>("SELECT id AS organization_id,name AS organization_name,external_key,status AS organization_status FROM admin_organizations WHERE id=?", [organizationId]);
+      return row ? organization(row) : null;
     },
     async getMembership(accountId, organizationId) {
       return (await readMemberships(accountId)).find((item) => item.organizationId === organizationId) ?? null;

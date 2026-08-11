@@ -22,6 +22,7 @@ export interface CardHourStore {
   holdHostingOrder(input: { account: AccountSessionContext; orderId: string; amountMicros: number; idempotencyKey: string; payloadHash: string; now: string }): Promise<{ record: Record<string, unknown>; replayed: boolean }>;
   settleHostingOrder(input: { account: AccountSessionContext; orderId: string; settledMicros: number; supplierOrganizationId: string; supplierIncomeMicros: number; commissionMicros: number; payloadHash: string; now: string }): Promise<{ record: Record<string, unknown>; referrerOrganizationId: string | null; applied: boolean }>;
   releaseHostingOrder(input: { account: AccountSessionContext; orderId: string; payloadHash: string; now: string }): Promise<{ record: Record<string, unknown>; applied: boolean }>;
+  listTrialGrants(status?: "REQUESTED" | "POSTED" | "REJECTED"): Promise<readonly Record<string, unknown>[]>;
   requestTrialGrant(input: { organizationId: string; amountMicros: number; reason: string; requestedBy: string; idempotencyKey: string; payloadHash: string; now: string }): Promise<Record<string, unknown>>;
   decideTrialGrant(input: { grantId: string; decision: "APPROVE" | "REJECT"; approvedBy: string; payloadHash: string; now: string }): Promise<Record<string, unknown>>;
   attachReferral(input: { account: AccountSessionContext; code: string; now: string }): Promise<void>;
