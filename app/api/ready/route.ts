@@ -17,6 +17,7 @@ export async function GET(request: Request) {
       market:readiness.market,
       storage:readiness.storage,
       capabilities:readiness.capabilities,
+      hostingV2:readiness.hostingV2,
       checkedAt: new Date().toISOString(),
       ...(ready?{}:{requestId:context.requestId}),
     }, ready ? 200 : 503, undefined, ready ? context : { ...context, errorCode: "NOT_READY" });

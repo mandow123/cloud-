@@ -19,6 +19,7 @@ function keyPair() {
 const merchant = keyPair();
 const alipay = keyPair();
 const environment = {
+  KAI_ALIPAY_ENABLED: "1",
   KAI_ALIPAY_APP_ID: "2026000000000001",
   KAI_ALIPAY_PRIVATE_KEY: merchant.privateKey,
   KAI_ALIPAY_PRIVATE_KEY_TYPE: "PKCS8",
@@ -35,6 +36,17 @@ test("Alipay LIVE readiness blocks missing merchant configuration", () => {
   assert.ok(readiness.missing.includes("KAI_PUBLIC_ORIGIN"));
   assert.throws(
     () => createAlipayCheckoutUrl({ orderId: "KAI-H100-ORDER-001", amountCents: 800, subject: "H100" }, {}),
+    (error) => error?.code === "ALIPAY_NOT_CONFIGURED",
+  );
+});
+
+test("Alipay remains fail-closed when credentials exist but the trial gate is disabled", () => {
+  const readiness = alipayReadiness({ ...environment, KAI_ALIPAY_ENABLED: "0" });
+  assert.equal(readiness.configured, true);
+  assert.equal(readiness.enabled, false);
+  assert.equal(readiness.canCreatePayment, false);
+  assert.throws(
+    () => createAlipayCheckoutUrl({ orderId: "KAI-H100-ORDER-002", amountCents: 800, subject: "H100" }, { ...environment, KAI_ALIPAY_ENABLED: "0" }),
     (error) => error?.code === "ALIPAY_NOT_CONFIGURED",
   );
 });

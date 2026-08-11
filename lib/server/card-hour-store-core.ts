@@ -53,6 +53,14 @@ function trialGrantRecord(row: Row) {
 export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<CardHourStore> {
   await db.ensureSchema(cardHourSchemaStatements, CARD_HOUR_SCHEMA_VERSION);
   return {
+    async health() {
+      const migration = await db.first<{ version: number | null }>("SELECT MAX(version) AS version FROM card_hour_schema_migrations");
+      if (Number(migration?.version ?? 0) !== CARD_HOUR_SCHEMA_VERSION) throw new Error("CARD_HOUR_SCHEMA_MISMATCH");
+      await db.first("SELECT id FROM card_hour_ledger_batches LIMIT 1");
+      await db.first("SELECT id FROM card_hour_ledger_entries LIMIT 1");
+      await db.first("SELECT id FROM card_hour_order_holds LIMIT 1");
+      return { schemaVersion: CARD_HOUR_SCHEMA_VERSION, integrity: "ok" as const };
+    },
     async dashboard(organizationId, now) {
       const code = await referralCode(organizationId);
       await db.batch([

@@ -40,6 +40,8 @@ function productionEnvironment(overrides = {}) {
     KAI_TRUST_PROXY: "1",
     KAI_REQUIRE_HTTPS_WRITES: "1",
     KAI_ENABLE_HSTS: "0",
+    KAI_ALIPAY_ENABLED: "0",
+    KAI_HOSTING_V2: "0",
     KAI_DB_DIR: "/app/db",
     KAI_MARKET_DATA_DIR: "/app/market",
     ...overrides,
@@ -81,6 +83,9 @@ function validateNegativeEnvironmentCases() {
   assertEnvironmentRejected({ KAI_TRUST_PROXY: "0" }, "KAI_TRUST_PROXY");
   assertEnvironmentRejected({ KAI_REQUIRE_HTTPS_WRITES: "0" }, "KAI_REQUIRE_HTTPS_WRITES");
   assertEnvironmentRejected({ KAI_ENABLE_HSTS: "2" }, "KAI_ENABLE_HSTS");
+  assertEnvironmentRejected({ KAI_ALIPAY_ENABLED: "1" }, "KAI_ALIPAY_ENABLED");
+  assertEnvironmentRejected({ KAI_HOSTING_V2: "2" }, "KAI_HOSTING_V2");
+  assertEnvironmentRejected({ KAI_HOSTING_V2: "1" }, "KAI_HOSTING_APPROVED_IMAGES");
   assertEnvironmentRejected({ KAI_DB_DIR: "/" }, "KAI_DB_DIR");
   assertStateRootRejected("/");
   assertStateRootRejected("relative/kai-cloud-3051");
@@ -107,6 +112,12 @@ async function main() {
       KAI_TRUST_PROXY: process.env.KAI_TRUST_PROXY,
       KAI_REQUIRE_HTTPS_WRITES: process.env.KAI_REQUIRE_HTTPS_WRITES,
       KAI_ENABLE_HSTS: process.env.KAI_ENABLE_HSTS ?? "0",
+      KAI_ALIPAY_ENABLED: process.env.KAI_ALIPAY_ENABLED ?? "0",
+      KAI_HOSTING_V2: process.env.KAI_HOSTING_V2 ?? "0",
+      KAI_HOSTING_APPROVED_IMAGES: process.env.KAI_HOSTING_APPROVED_IMAGES,
+      KAI_HOSTING_TERMS_VERSION: process.env.KAI_HOSTING_TERMS_VERSION,
+      KAI_ACCOUNT_OIDC_CLIENT_ID: process.env.KAI_ACCOUNT_OIDC_CLIENT_ID,
+      KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: process.env.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET,
     })
     : productionEnvironment();
   validateProductionEnvironment(candidateEnvironment);
@@ -142,6 +153,12 @@ async function main() {
       KAI_TRUST_PROXY: candidateEnvironment.KAI_TRUST_PROXY,
       KAI_REQUIRE_HTTPS_WRITES: candidateEnvironment.KAI_REQUIRE_HTTPS_WRITES,
       KAI_ENABLE_HSTS: candidateEnvironment.KAI_ENABLE_HSTS,
+      KAI_ALIPAY_ENABLED: candidateEnvironment.KAI_ALIPAY_ENABLED,
+      KAI_HOSTING_V2: candidateEnvironment.KAI_HOSTING_V2,
+      KAI_HOSTING_APPROVED_IMAGES: candidateEnvironment.KAI_HOSTING_APPROVED_IMAGES,
+      KAI_HOSTING_TERMS_VERSION: candidateEnvironment.KAI_HOSTING_TERMS_VERSION,
+      KAI_ACCOUNT_OIDC_CLIENT_ID: candidateEnvironment.KAI_ACCOUNT_OIDC_CLIENT_ID,
+      KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: candidateEnvironment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET,
       KAI_APP_PORT: validateCurrentEnvironment ? (process.env.KAI_APP_PORT ?? "3051") : "3051",
       KAI_STATE_ROOT: stateRoot,
     },
@@ -173,9 +190,11 @@ async function main() {
   assert(app.environment.KAI_PUBLIC_ORIGIN === candidateEnvironment.KAI_PUBLIC_ORIGIN, "app must receive the canonical HTTPS origin");
   assert(app.environment.KAI_CURSOR_SECRET === candidateEnvironment.KAI_CURSOR_SECRET, "app must receive the validated cursor secret");
   assert(app.environment.KAI_ADMIN_LOCAL_AUTH === "0", "production Compose must keep LOCAL administrator login disabled");
+  assert(app.environment.KAI_ALIPAY_ENABLED === "0", "production Compose must keep Alipay disabled during the trial rollout");
   for (const name of [
     "KAI_ADMIN_USERNAME", "KAI_ADMIN_PASSWORD_HASH", "KAI_ADMIN_DISPLAY_NAME",
     "KAI_ACCOUNT_OIDC_CLIENT_ID", "KAI_ACCOUNT_OIDC_TRANSACTION_SECRET",
+    "KAI_HOSTING_V2", "KAI_HOSTING_APPROVED_IMAGES", "KAI_HOSTING_TERMS_VERSION", "KAI_ALIPAY_ENABLED",
     "KAI_ALIPAY_APP_ID", "KAI_ALIPAY_PRIVATE_KEY", "KAI_ALIPAY_PUBLIC_KEY", "KAI_ALIPAY_SELLER_ID",
     "KAI_SSH_PROVISIONER_URL", "KAI_SSH_PROVISIONER_TOKEN",
   ]) {

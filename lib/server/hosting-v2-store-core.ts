@@ -201,8 +201,36 @@ function receipt(context: HostingMutationContext, commandType: string, entityTyp
 export async function createHostingV2Store(db: HostingV2DatabaseAdapter): Promise<HostingV2Store> {
   await db.ensureSchema(hostingV2SchemaStatements, HOSTING_V2_SCHEMA_VERSION);
   const store = {} as HostingV2Store;
-  Object.assign(store, createProfileMethods(db), createDeviceMethods(db), createMarketMethods(db));
+  Object.assign(store, createReadinessMethods(db), createProfileMethods(db), createDeviceMethods(db), createMarketMethods(db));
   return store;
+}
+
+function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Store> {
+  return {
+    async readiness(now) {
+      const staleCutoff = new Date(Date.parse(now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000).toISOString();
+      const [migration, feeRow, suppliers, activeAgents, drainingDevices, failedCleanups, cleaningContracts] = await Promise.all([
+        db.first<{ version: number | null }>("SELECT MAX(version) AS version FROM hosting_v2_schema_migrations"),
+        db.first<Row>("SELECT id FROM hosting_v2_fee_schedules WHERE status='ACTIVE' AND effective_from<=? ORDER BY effective_from DESC LIMIT 1", [now]),
+        db.first<{ count: number }>("SELECT COUNT(*) AS count FROM hosting_v2_supplier_profiles WHERE status='APPROVED'"),
+        db.first<{ count: number }>("SELECT COUNT(*) AS count FROM hosting_v2_devices WHERE status IN ('VERIFIED','BUSY') AND verification_status='PASSED' AND verified_until>? AND last_seen_at>=?", [now, staleCutoff]),
+        db.first<{ count: number }>("SELECT COUNT(*) AS count FROM hosting_v2_devices WHERE status='DRAINING'"),
+        db.first<{ count: number }>("SELECT COUNT(*) AS count FROM hosting_v2_agent_commands WHERE command_type='CLEANUP' AND status='FAILED'"),
+        db.first<{ count: number }>("SELECT COUNT(*) AS count FROM hosting_v2_contracts WHERE status='CLEANING'"),
+      ]);
+      if (Number(migration?.version ?? 0) !== HOSTING_V2_SCHEMA_VERSION) throw new Error("HOSTING_V2_SCHEMA_MISMATCH");
+      return {
+        schemaVersion: HOSTING_V2_SCHEMA_VERSION,
+        integrity: "ok" as const,
+        activeFeeScheduleId: feeRow ? value(feeRow, "id") : null,
+        approvedSupplierCount: Number(suppliers?.count ?? 0),
+        activeAgentCount: Number(activeAgents?.count ?? 0),
+        drainingDeviceCount: Number(drainingDevices?.count ?? 0),
+        failedCleanupCount: Number(failedCleanups?.count ?? 0),
+        cleaningContractCount: Number(cleaningContracts?.count ?? 0),
+      };
+    },
+  };
 }
 
 function createProfileMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Store> {

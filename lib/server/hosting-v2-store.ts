@@ -23,7 +23,19 @@ export interface HostingV2DatabaseAdapter {
 
 export type HostingMutationContext = Readonly<{ actorId: string; idempotencyKey: string; payloadHash: string; now: string }>;
 
+export type HostingV2OperationalSnapshot = Readonly<{
+  schemaVersion: number;
+  integrity: "ok";
+  activeFeeScheduleId: string | null;
+  approvedSupplierCount: number;
+  activeAgentCount: number;
+  drainingDeviceCount: number;
+  failedCleanupCount: number;
+  cleaningContractCount: number;
+}>;
+
 export interface HostingV2Store {
+  readiness(now: string): Promise<HostingV2OperationalSnapshot>;
   dashboard(organizationId: string, now: string): Promise<HostingDashboard>;
   saveProfile(account: AccountSessionContext, input: { supplierType: HostingSupplierType; legalDisplayName: string; contactEmail: string; expectedVersion: number }, context: HostingMutationContext): Promise<HostingSupplierProfile>;
   submitProfile(organizationId: string, expectedVersion: number, context: HostingMutationContext): Promise<HostingSupplierProfile>;

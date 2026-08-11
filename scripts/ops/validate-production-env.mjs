@@ -14,6 +14,7 @@ const PLACEHOLDER_SECRET_PATTERN = /(?:change[-_ ]?me|deployment[-_ ]?validation
 const IMAGE_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 const RELEASE_SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const REPOSITORY_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$/;
+const HOSTING_IMAGE_PATTERN = /^ghcr\.io\/kai-cloud\/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$/;
 
 export class ProductionEnvironmentError extends Error {
   constructor(errors) {
@@ -148,6 +149,24 @@ export function validateProductionEnvironment(environment = process.env, { check
   if (environment.KAI_ENABLE_HSTS !== "0" && environment.KAI_ENABLE_HSTS !== "1") {
     errors.push("KAI_ENABLE_HSTS must be exactly 0 or 1");
   }
+  if (environment.KAI_ALIPAY_ENABLED !== "0") errors.push("KAI_ALIPAY_ENABLED must remain exactly 0 during the trial rollout");
+  if (environment.KAI_HOSTING_V2 !== "0" && environment.KAI_HOSTING_V2 !== "1") errors.push("KAI_HOSTING_V2 must be exactly 0 or 1");
+  if (environment.KAI_HOSTING_V2 === "1") {
+    const images = (environment.KAI_HOSTING_APPROVED_IMAGES ?? "").split(/[\n,]/).map((value) => value.trim()).filter(Boolean);
+    if (images.length < 1 || images.length > 20 || new Set(images).size !== images.length || images.some((image) => !HOSTING_IMAGE_PATTERN.test(image))) {
+      errors.push("KAI_HOSTING_APPROVED_IMAGES must contain 1-20 unique immutable KAI image digests when Hosting V2 is enabled");
+    }
+    if (!/^KAI_HOSTING_TERMS_\d{4}_\d{2}$/.test(environment.KAI_HOSTING_TERMS_VERSION ?? "")) {
+      errors.push("KAI_HOSTING_TERMS_VERSION must be a dated immutable version when Hosting V2 is enabled");
+    }
+    if (!/^kaic_[A-Za-z0-9_-]{8,200}$/.test(environment.KAI_ACCOUNT_OIDC_CLIENT_ID ?? "")) {
+      errors.push("KAI_ACCOUNT_OIDC_CLIENT_ID must be a valid Public Client ID when Hosting V2 is enabled");
+    }
+    const transactionSecret = environment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET ?? "";
+    if (Buffer.byteLength(transactionSecret, "utf8") < 32 || PLACEHOLDER_SECRET_PATTERN.test(transactionSecret)) {
+      errors.push("KAI_ACCOUNT_OIDC_TRANSACTION_SECRET must be a non-placeholder secret of at least 32 bytes when Hosting V2 is enabled");
+    }
+  }
   for (const [name, expected] of Object.entries(REQUIRED_CONTAINER_STATE_PATHS)) {
     validateContainerStatePath(name, environment[name], expected, errors, checkFilesystem);
   }
@@ -160,6 +179,8 @@ export function validateProductionEnvironment(environment = process.env, { check
     publicOrigin: environment.KAI_PUBLIC_ORIGIN,
     releaseSha: environment.KAI_RELEASE_SHA,
     hstsEnabled: environment.KAI_ENABLE_HSTS === "1",
+    hostingV2Enabled: environment.KAI_HOSTING_V2 === "1",
+    alipayEnabled: false,
     dbDirectory: environment.KAI_DB_DIR,
     marketDirectory: environment.KAI_MARKET_DATA_DIR,
   });

@@ -33,6 +33,7 @@ test("card-hour conversion is exact at the 5-card-hour RMB boundary", () => {
 test("captured topup credits once and order capture cannot overdraw or replay twice", async () => {
   const store = await createSqliteCardHourStore(":memory:");
   try {
+    assert.deepEqual(await store.health(), { schemaVersion: 2, integrity: "ok" });
     const topup = await store.createTopup({ account, cardHourMicros: 5_000_000, amountCents: 501, idempotencyKey: "topup-000000000001", payloadHash: "hash-topup", now: "2026-08-10T00:00:00Z", expiresAt: "2026-08-10T00:15:00Z" });
     await store.applyTopupEvent({ orderId: topup.record.id, providerEventId: "event-1", providerTransactionId: "transaction-1", eventType: "CAPTURED", amountCents: 501, payloadDigest: "digest", occurredAt: "2026-08-10T00:01:00Z", receivedAt: "2026-08-10T00:01:01Z" });
     assert.equal((await store.applyTopupEvent({ orderId: topup.record.id, providerEventId: "event-2", providerTransactionId: "transaction-1", eventType: "CAPTURED", amountCents: 501, payloadDigest: "digest", occurredAt: "2026-08-10T00:02:00Z", receivedAt: "2026-08-10T00:02:01Z" })).applied, false);

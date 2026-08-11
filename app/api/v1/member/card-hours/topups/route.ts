@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     let cardHourMicros: number;
     try { cardHourMicros = parseTopupCardHours(body.cardHours); } catch { throw new AccountAuthError("CARD_HOUR_TOPUP_INVALID", 400, "购买数量必须是 5 卡时的整数倍。 "); }
     const readiness = alipayReadiness();
-    if (!readiness.configured) throw new AlipayLiveError("ALIPAY_NOT_CONFIGURED", `人民币购买通道尚未配置：${readiness.missing.join(", ")}`);
+    if (!readiness.canCreatePayment) throw new AlipayLiveError("ALIPAY_NOT_CONFIGURED", readiness.enabled ? `人民币购买通道尚未配置：${readiness.missing.join(", ")}` : "人民币购买通道当前按试运营边界保持关闭。");
     const amountCents = topupAmountCents(cardHourMicros);
     const idempotencyKey = requireIdempotencyKey(request);
     const now = new Date();

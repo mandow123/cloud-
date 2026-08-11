@@ -13,6 +13,7 @@ export type CardHourDashboard = Readonly<{
 }>;
 
 export interface CardHourStore {
+  health(): Promise<Readonly<{ schemaVersion: number; integrity: "ok" }>>;
   dashboard(organizationId: string, now: string): Promise<CardHourDashboard>;
   createTopup(input: { account: AccountSessionContext; cardHourMicros: number; amountCents: number; idempotencyKey: string; payloadHash: string; now: string; expiresAt: string }): Promise<{ record: Record<string, unknown>; replayed: boolean }>;
   getTopup(orderId: string): Promise<Record<string, unknown> | null>;

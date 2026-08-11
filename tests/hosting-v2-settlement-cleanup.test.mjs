@@ -105,6 +105,10 @@ test("buyer acceptance settles actual card-hours, vests income and relists only 
     assert.equal(failed.contract.status, "CLEANING");
     assert.equal(failed.device.status, "DRAINING");
     assert.equal((await hosting.getOffer(failedSeed.offerId)).status, "SUSPENDED");
+    const degraded = await hosting.readiness(now);
+    assert.equal(degraded.drainingDeviceCount, 1);
+    assert.equal(degraded.failedCleanupCount, 1);
+    assert.equal(degraded.cleaningContractCount, 1);
 
     const expiredSeed = seedStoppedContract(path, "expired", buyer, supplier, now);
     const raw = new DatabaseSync(path, { enableForeignKeyConstraints: true });
