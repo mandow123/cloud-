@@ -1,5 +1,6 @@
 import { AccountAuthError, assertAccountAuthSameOrigin } from "@/lib/server/account-auth";
 import { apiErrorResponse, beginApiRequest, jsonResponse, readJsonBody } from "@/lib/server/api-guard";
+import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
 import { reserveHostingContract } from "@/lib/server/hosting-contract-service";
 import { requireTradingAccountSession } from "@/lib/server/entity-ownership";
 import { hostingContractClientView, hostingInteger, hostingMutationContext, hostingObject, hostingString, requireHostingV2Enabled } from "@/lib/server/hosting-v2-api";
@@ -25,6 +26,22 @@ export async function POST(request: Request) {
       mutation,
     });
     return jsonResponse({ record: hostingContractClientView(result.contract), billing: { heldMicros: result.heldMicros, status: String(result.hold.status) }, replayed: result.replayed }, result.replayed ? 200 : 201, undefined, context);
+  } catch (error) {
+    return apiErrorResponse(error, undefined, context);
+  }
+}
+
+export async function GET(request: Request) {
+  const context = beginApiRequest(request);
+  try {
+    requireHostingV2Enabled();
+    const account = await requireTradingAccountSession(request);
+    if (!account) throw new AccountAuthError("ACCOUNT_AUTH_REQUIRED", 401, "请先登录账户。 ");
+    const dashboard = await (await getHostingV2Store()).dashboard(account.activeOrganization.id, new Date().toISOString());
+    const records = dashboard.contracts
+      .filter((contract) => contract.buyerOrganizationId === account.activeOrganization.id)
+      .map(hostingContractClientView);
+    return jsonResponse({ records, count: records.length, updatedAt: new Date().toISOString() }, 200, undefined, context);
   } catch (error) {
     return apiErrorResponse(error, undefined, context);
   }

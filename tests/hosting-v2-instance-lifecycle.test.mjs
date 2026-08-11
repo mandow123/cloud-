@@ -107,6 +107,8 @@ test("SSH provisioning, start and stop remain inside verified device boundaries"
     assert.equal(ready.contract.endpointDisplay, "lifecycle-gpu.example.com:25000");
 
     const start = await store.requestContractStart(buyer.activeOrganization.id, "hctr_lifecycle", mutation("lifecycle-start", "lifecycle-start-hash", now));
+    const duplicateStart = await store.requestContractStart(buyer.activeOrganization.id, "hctr_lifecycle", mutation("lifecycle-start-second-tab", "lifecycle-start-second-tab-hash", now));
+    assert.equal(duplicateStart.command.id, start.command.id, "a second tab must reuse the pending START command");
     const startCommand = await store.pollCommand("had_lifecycle", now);
     assert.equal(startCommand.id, start.command.id);
     assert.deepEqual(startCommand.payload, { contractId: "hctr_lifecycle", endpointDisplay: "lifecycle-gpu.example.com:25000" });
@@ -116,6 +118,8 @@ test("SSH provisioning, start and stop remain inside verified device boundaries"
 
     const stopRequestedAt = new Date(started.getTime() + 600_000).toISOString();
     const stop = await store.requestContractStop(buyer.activeOrganization.id, "hctr_lifecycle", mutation("lifecycle-stop", "lifecycle-stop-hash", stopRequestedAt));
+    const duplicateStop = await store.requestContractStop(buyer.activeOrganization.id, "hctr_lifecycle", mutation("lifecycle-stop-second-tab", "lifecycle-stop-second-tab-hash", stopRequestedAt));
+    assert.equal(duplicateStop.command.id, stop.command.id, "a second tab must reuse the pending STOP command");
     const stopCommand = await store.pollCommand("had_lifecycle", stopRequestedAt);
     assert.equal(stopCommand.id, stop.command.id);
     const agentStartedAt = new Date(started.getTime() - 200_000).toISOString();

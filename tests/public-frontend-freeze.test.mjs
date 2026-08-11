@@ -10,7 +10,7 @@ const ROOT = join(import.meta.dirname, "..");
 const EXTRA_FROZEN_FILES = ["data/model-market.snapshot.json", "lib/catalog.mjs"];
 const APPROVED_PUBLIC_FILES = Object.freeze({
   "app/globals.css": "ec7a571de1736342b040373ae9c612cf1d1bd31a2850b7de060868b5513daca1",
-  "app/gpu/page.tsx": "09c9ac6458bf1a211303249bd9b5bf9f89064cd4461619308aa8cd51d57572c8",
+  "app/gpu/page.tsx": "c9e67a55dee7a2b08458871420f2c6f7dabec6c8a837da22fd637eb0150e75f9",
   "app/guides/guides.module.css": "d3320f7eb17ca8e79f0e6d6a9bf1858ddf61b680bcb0d10cea96ddf820de7daf",
   "app/guides/page.tsx": "7953719256414cacfb75e38f12707a67e511fbcb94aa19ef8ae9c9e5e03391db",
   "app/hosting/page.tsx": "1a0fcc232d4baa99573b676fdea1273e747b9e4185747c711d508518afcf9c4d",
@@ -48,6 +48,9 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "public/og-home-v2.png": "9ab58389125a32bbe84a29a6f73f7f7f75cdb04c717c58c82233f7ec09d63d5d",
 });
 const APPROVED_HOSTING_V2_ROUTES = new Set([
+  "app/gpu/contracts/[contractId]/page.tsx",
+  "app/gpu/contracts/page.tsx",
+  "app/gpu/offers/[offerId]/page.tsx",
   "app/hosting/cloud/page.tsx",
   "app/hosting/earnings/page.tsx",
   "app/hosting/partners/page.tsx",

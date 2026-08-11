@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { GpuMarketplaceLab } from "@/components/gpu-cloud-lab";
+import { HostingGpuMarketplace } from "@/components/hosting-gpu-marketplace";
 
 export const metadata: Metadata = {
   title: "GPU 云市场",
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function GpuMarketplacePage() {
-  return <GpuMarketplaceLab />;
+  return <HostingGpuMarketplace />;
 }

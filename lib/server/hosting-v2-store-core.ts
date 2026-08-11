@@ -638,6 +638,11 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       if (!current || value(current, "status") !== "READY") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "实例尚未准备完成。");
       const endpointDisplay = nullable(current, "endpoint_display");
       if (!endpointDisplay) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "实例连接入口尚未准备完成。");
+      const queued = await db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE contract_id=? AND command_type='START' AND status IN ('PENDING','DELIVERED') ORDER BY created_at DESC LIMIT 1", [contractId]);
+      if (queued) {
+        await db.batch([receipt(context, "START_CONTRACT", "AGENT_COMMAND", value(queued, "id"))]);
+        return { contract: contract(current), command: command(queued) };
+      }
       const commandId = id("hcmd");
       await db.batch([
         { sql: "INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at) VALUES(?,?,?,'START',?,'PENDING',0,?)", values: [commandId, value(current, "device_id"), contractId, JSON.stringify({ contractId, endpointDisplay }), context.now] },
@@ -658,6 +663,11 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       }
       const current = await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=? AND (buyer_organization_id=? OR supplier_organization_id=?)", [contractId, organizationId, organizationId]);
       if (!current || value(current, "status") !== "IN_SERVICE") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "实例当前不在运行。");
+      const queued = await db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE contract_id=? AND command_type='STOP' AND status IN ('PENDING','DELIVERED') ORDER BY created_at DESC LIMIT 1", [contractId]);
+      if (queued) {
+        await db.batch([receipt(context, "STOP_CONTRACT", "AGENT_COMMAND", value(queued, "id"))]);
+        return { contract: contract(current), command: command(queued) };
+      }
       const commandId = id("hcmd");
       await db.batch([
         { sql: "INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at) VALUES(?,?,?,'STOP',?,'PENDING',0,?)", values: [commandId, value(current, "device_id"), contractId, JSON.stringify({ contractId, startedAt: nullable(current, "started_at"), maximumSeconds: number(current, "reserved_seconds") }), context.now] },
