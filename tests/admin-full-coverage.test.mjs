@@ -26,10 +26,11 @@ test("admin navigation and pages expose the complete backend lifecycle", () => {
   assert.doesNotMatch(viewModels, /path: "\/api\/v1\/admin\/(?:delivery|exceptions)"[^\n]*fallbackPath/u);
 });
 
-test("admin lifecycle pages stay isolated from the frozen public frontend", () => {
+test("admin lifecycle pages stay isolated from the protected public frontend", () => {
   const frozen = source("tests/public-frontend-freeze.test.mjs");
-  assert.match(frozen, /public frontend stays frozen outside the approved purchase and personal-account additions/u);
-  assert.match(frozen, /approved purchase and personal-account files are pinned/u);
+  assert.match(frozen, /established public frontend stays frozen outside explicitly approved additions/u);
+  assert.match(frozen, /approved shared public files are pinned/u);
+  assert.match(frozen, /APPROVED_HOSTING_V2_ROUTES/u);
   for (const path of [
     "app/page.tsx",
     "app/market/page.tsx",
