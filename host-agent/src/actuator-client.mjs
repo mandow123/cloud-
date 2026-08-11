@@ -1,4 +1,5 @@
 import { createConnection } from "node:net";
+import { setTimeout as delay } from "node:timers/promises";
 import { AgentError, digestJson } from "./protocol.mjs";
 
 const defaultSocketPath = "/run/kai-host-actuator/actuator.sock";
@@ -66,4 +67,79 @@ export async function provisionWorkload(command, state, { call = callActuator } 
     throw new AgentError("ACTUATOR_RESULT_INVALID", "The workload actuator result did not match the signed command.");
   }
   return { outcome: "SUCCEEDED", evidenceDigest: digestJson(result), errorCode: null, details: result };
+}
+
+function parseEndpoint(value, inventory) {
+  const match = /^(\[[0-9a-f:]+\]|[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?):([0-9]{2,5})$/u.exec(value ?? "");
+  const host = match?.[1] ?? "";
+  const port = Number(match?.[2] ?? 0);
+  if (!match || host.toLowerCase() !== inventory.publicHost.toLowerCase() || port < inventory.sshPortStart || port > inventory.sshPortEnd) {
+    throw new AgentError("START_ENDPOINT_INVALID", "Start endpoint is outside the paired inventory range.");
+  }
+  return { host: host.replace(/^\[|\]$/gu, ""), port, display: `${match[1]}:${port}` };
+}
+
+async function readSshBanner(host, port, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const socket = createConnection({ host, port });
+    const chunks = [];
+    let length = 0;
+    let settled = false;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      if (error) reject(error); else resolve(value);
+    };
+    socket.setTimeout(timeoutMs, () => finish(new AgentError("SSH_READINESS_TIMEOUT", "SSH service did not become ready.")));
+    socket.on("data", (chunk) => {
+      length += chunk.length;
+      if (length > 1_024) return finish(new AgentError("SSH_BANNER_INVALID", "SSH service returned an invalid banner."));
+      chunks.push(chunk);
+      const lines = Buffer.concat(chunks).toString("ascii").split(/\r?\n/u);
+      const banner = lines.find((line) => line.startsWith("SSH-"));
+      if (!banner) return;
+      if (!/^SSH-2\.0-[\x21-\x7e]{1,200}$/u.test(banner)) return finish(new AgentError("SSH_BANNER_INVALID", "SSH service returned an unsupported banner."));
+      return finish(null, digestJson({ banner }));
+    });
+    socket.on("error", (error) => finish(new AgentError("SSH_READINESS_UNAVAILABLE", "SSH service is not reachable.", { cause: error })));
+    socket.on("end", () => finish(new AgentError("SSH_BANNER_INVALID", "SSH service closed before sending its banner.")));
+  });
+}
+
+export async function probeSshReadiness(endpoint, { attempts = 10, timeoutMs = 2_500, waitMs = 1_000 } = {}) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try { return await readSshBanner(endpoint.host, endpoint.port, timeoutMs); }
+    catch (error) { lastError = error; }
+    if (attempt < attempts) await delay(waitMs);
+  }
+  throw new AgentError("SSH_READINESS_TIMEOUT", "SSH service did not present a valid protocol banner before the readiness deadline.", { cause: lastError });
+}
+
+export async function startWorkload(command, state, { call = callActuator, probe = probeSshReadiness, now = () => new Date().toISOString() } = {}) {
+  const payload = command?.payload;
+  const inventory = state?.inventory;
+  if (!command || command.type !== "START" || typeof command.id !== "string" || typeof command.contractId !== "string" || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new AgentError("START_COMMAND_INVALID", "Start command is invalid.");
+  }
+  const fields = Object.keys(payload).sort();
+  if (fields.join(",") !== "contractId,endpointDisplay" || payload.contractId !== command.contractId || typeof payload.endpointDisplay !== "string") {
+    throw new AgentError("START_COMMAND_INVALID", "Start command fields are invalid.");
+  }
+  if (!inventory || typeof inventory.publicHost !== "string" || !Number.isSafeInteger(inventory.sshPortStart) || !Number.isSafeInteger(inventory.sshPortEnd)) {
+    throw new AgentError("AGENT_UPGRADE_REQUIRED", "Paired inventory is missing; pair this Agent again before starting workloads.");
+  }
+  const endpoint = parseEndpoint(payload.endpointDisplay, inventory);
+  const runtime = await call({ protocolVersion: 1, operation: "START", commandId: command.id, contractId: command.contractId });
+  if (runtime.protocolVersion !== 1 || runtime.contractId !== command.contractId
+    || !/^sha256:[a-f0-9]{64}$/u.test(runtime.containerDigest)
+    || !/^sha256:[a-f0-9]{64}$/u.test(runtime.runtimeStateDigest)
+    || typeof runtime.startedAt !== "string" || !Number.isFinite(Date.parse(runtime.startedAt))) {
+    throw new AgentError("ACTUATOR_RESULT_INVALID", "The workload start result did not match the signed command.");
+  }
+  const sshBannerDigest = await probe(endpoint);
+  if (!/^sha256:[a-f0-9]{64}$/u.test(sshBannerDigest)) throw new AgentError("SSH_EVIDENCE_INVALID", "SSH readiness evidence is invalid.");
+  const details = { ...runtime, endpointDisplay: endpoint.display, runtimeStatus: "RUNNING", sshBannerDigest, observedAt: now() };
+  return { outcome: "SUCCEEDED", evidenceDigest: digestJson(details), errorCode: null, details };
 }

@@ -48,6 +48,7 @@ test("signed Host Agent registration, heartbeat and verification close without r
     const now = new Date();
     await approvedSupplier(store, now.toISOString());
     const challenge = await store.issueAgentChallenge(account, mutation(account.account.id, "agent-challenge-0001", "agent-challenge-hash", now.toISOString()));
+    assert.equal(challenge.minimumAgentVersion, "1.1.0");
     const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
     const devicePublicKey = base64url(await crypto.subtle.exportKey("raw", keys.publicKey));
     const inventory = parseHostingDeviceInventory({
@@ -67,7 +68,7 @@ test("signed Host Agent registration, heartbeat and verification close without r
     const inventoryDigest = await hostingAgentDigest(inventory);
     const issuedAt = now.toISOString();
     const expiresAt = new Date(now.getTime() + 60_000).toISOString();
-    const registration = { operation: "REGISTER_DEVICE", challengeId: challenge.id, nonce: challenge.nonce, displayName: "4090 工作站 01", devicePublicKey, agentVersion: "1.0.0", inventory, inventoryDigest, issuedAt, expiresAt };
+    const registration = { operation: "REGISTER_DEVICE", challengeId: challenge.id, nonce: challenge.nonce, displayName: "4090 工作站 01", devicePublicKey, agentVersion: "1.1.0", inventory, inventoryDigest, issuedAt, expiresAt };
     const registrationSignature = await sign(keys.privateKey, registration);
     await verifyHostingAgentSignature(devicePublicKey, registration, registrationSignature);
     await assert.rejects(verifyHostingAgentSignature(devicePublicKey, { ...registration, displayName: "tampered" }, registrationSignature), (error) => error.code === "AGENT_SIGNATURE_INVALID");

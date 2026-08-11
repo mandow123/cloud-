@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { provisionWorkload } from "../host-agent/src/actuator-client.mjs";
-import { executeProvision, parseProvisionRequest } from "../host-agent/src/actuator.mjs";
+import { probeSshReadiness, provisionWorkload, startWorkload } from "../host-agent/src/actuator-client.mjs";
+import { executeProvision, executeStart, parseProvisionRequest, parseStartRequest } from "../host-agent/src/actuator.mjs";
 import { processOneCommand } from "../host-agent/src/client.mjs";
 import { AgentError, digestJson, generateDeviceIdentity } from "../host-agent/src/protocol.mjs";
 import { writeState } from "../host-agent/src/state.mjs";
@@ -74,6 +75,54 @@ test("PROVISION creates one constrained stopped container and replays from a roo
   }
 });
 
+test("START opens only the provisioned container and replays one contract-bound command", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "kai-actuator-start-"));
+  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_ACTUATOR_STATE_DIR: directory };
+  const containerId = "b".repeat(64);
+  let workloadName = "";
+  let running = false;
+  const calls = [];
+  const runDocker = async (args) => {
+    calls.push(args);
+    if (args[0] === "image") return { stdout: JSON.stringify([image]) };
+    if (args[0] === "container" && args[1] === "create") {
+      workloadName = args[args.indexOf("--name") + 1];
+      return { stdout: `${containerId}\n` };
+    }
+    if (args[0] === "container" && args[1] === "inspect") return {
+      stdout: JSON.stringify({
+        id: containerId,
+        image,
+        labels: { "kai.cloud.managed": "true", "kai.cloud.contract-digest": digestJson({ contractId: request().contractId }) },
+        running,
+      }),
+    };
+    if (args[0] === "container" && args[1] === "start") {
+      assert.deepEqual(args, ["container", "start", workloadName]);
+      running = true;
+      return { stdout: `${workloadName}\n` };
+    }
+    throw new Error(`unexpected docker operation: ${args.join(" ")}`);
+  };
+  try {
+    await executeProvision(request(), { environment, runDocker, changeOwner: async () => undefined, now: () => "2026-08-11T08:00:00.000Z" });
+    const startRequest = { protocolVersion: 1, operation: "START", commandId: "hcmd_start0001", contractId: request().contractId };
+    assert.equal(parseStartRequest(startRequest).operation, "START");
+    assert.throws(() => parseStartRequest({ ...startRequest, image }), (error) => error.code === "START_REQUEST_INVALID");
+    const result = await executeStart(startRequest, { environment, runDocker, now: () => "2026-08-11T08:01:00.000Z" });
+    assert.equal(result.contractId, request().contractId);
+    assert.match(result.runtimeStateDigest, /^sha256:[a-f0-9]{64}$/u);
+    assert.equal(calls.filter((args) => args[0] === "container" && args[1] === "start").length, 1);
+    const callCount = calls.length;
+    assert.deepEqual(await executeStart(startRequest, { environment, runDocker }), result);
+    assert.equal(calls.length, callCount + 1, "an acknowledged start must re-inspect its runtime state");
+    assert.equal(calls.filter((args) => args[0] === "container" && args[1] === "start").length, 1, "a replay must not start an already-running container twice");
+    await assert.rejects(executeStart({ ...startRequest, commandId: "hcmd_start0002" }, { environment, runDocker }), (error) => error.code === "START_REPLAY_CONFLICT");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("non-root Host Agent passes PROVISION to the actuator without gaining container arguments", async () => {
   const command = {
     id: "hcmd_actuator0001",
@@ -99,6 +148,53 @@ test("non-root Host Agent passes PROVISION to the actuator without gaining conta
   assert.equal(result.evidenceDigest, digestJson(details));
   await assert.rejects(provisionWorkload({ ...command, type: "SHELL" }, state, { call: async () => details }), (error) => error.code === "PROVISION_COMMAND_INVALID");
   await assert.rejects(provisionWorkload(command, {}, { call: async () => details }), (error) => error.code === "AGENT_UPGRADE_REQUIRED");
+});
+
+test("non-root Host Agent starts by contract and requires a valid SSH protocol banner digest", async () => {
+  const command = {
+    id: "hcmd_start0001",
+    contractId: "hctr_actuator0001",
+    type: "START",
+    payload: { contractId: "hctr_actuator0001", endpointDisplay: "gpu.example.com:22000" },
+  };
+  const state = { inventory: { publicHost: "gpu.example.com", sshPortStart: 22_000, sshPortEnd: 22_019 } };
+  let sent = null;
+  let probed = null;
+  const runtime = {
+    protocolVersion: 1,
+    contractId: command.contractId,
+    containerDigest: `sha256:${"b".repeat(64)}`,
+    runtimeStateDigest: `sha256:${"c".repeat(64)}`,
+    startedAt: "2026-08-11T08:01:00.000Z",
+  };
+  const result = await startWorkload(command, state, {
+    call: async (value) => { sent = value; return runtime; },
+    probe: async (endpoint) => { probed = endpoint; return `sha256:${"d".repeat(64)}`; },
+    now: () => "2026-08-11T08:01:01.000Z",
+  });
+  assert.deepEqual(sent, { protocolVersion: 1, operation: "START", commandId: command.id, contractId: command.contractId });
+  assert.deepEqual(probed, { host: "gpu.example.com", port: 22_000, display: "gpu.example.com:22000" });
+  assert.equal(result.details.runtimeStatus, "RUNNING");
+  assert.equal(result.details.sshBannerDigest, `sha256:${"d".repeat(64)}`);
+  assert.equal(result.evidenceDigest, digestJson(result.details));
+  await assert.rejects(startWorkload({ ...command, payload: { ...command.payload, endpointDisplay: "attacker.example.com:22000" } }, state, { call: async () => runtime }), (error) => error.code === "START_ENDPOINT_INVALID");
+});
+
+test("SSH readiness accepts an SSH 2.0 banner and stores only its digest", async () => {
+  const server = createServer((socket) => socket.end("SSH-2.0-KAI_Test_1.0\r\n"));
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const evidence = await probeSshReadiness({ host: "127.0.0.1", port: address.port }, { attempts: 1, timeoutMs: 1_000, waitMs: 0 });
+    assert.match(evidence, /^sha256:[a-f0-9]{64}$/u);
+    assert.doesNotMatch(evidence, /KAI_Test/u);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test("transient actuator failures retry by lease and the final attempt reports a signed failure", async () => {

@@ -12,10 +12,10 @@ import {
   signedProof,
 } from "./protocol.mjs";
 import { readState, stateFilePath, writeState } from "./state.mjs";
-import { provisionWorkload } from "./actuator-client.mjs";
+import { provisionWorkload, startWorkload } from "./actuator-client.mjs";
 import { runVerification } from "./verify.mjs";
 
-export const AGENT_VERSION = "1.0.0";
+export const AGENT_VERSION = "1.1.0";
 
 function validatePairingBundle(value, options = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new AgentError("PAIRING_INVALID", "Pairing bundle must be a JSON object.");
@@ -223,7 +223,7 @@ export async function completeCommand(command, result, { stateFile = stateFilePa
   return post(url, { outcome: result.outcome, evidenceDigest: result.evidenceDigest, errorCode: result.errorCode, details: result.details, ...proof }, { allowInsecureLocal, timeoutMs: 30_000 });
 }
 
-export async function processOneCommand({ stateFile = stateFilePath(), allowInsecureLocal = false, post = apiPost, verifier, provisioner } = {}) {
+export async function processOneCommand({ stateFile = stateFilePath(), allowInsecureLocal = false, post = apiPost, verifier, provisioner, starter } = {}) {
   const polled = await pollCommand({ stateFile, allowInsecureLocal, post });
   if (!polled.command) return null;
   let result;
@@ -232,12 +232,14 @@ export async function processOneCommand({ stateFile = stateFilePath(), allowInse
       result = await (verifier ?? runVerification)(polled.command, polled.state);
     } else if (polled.command.type === "PROVISION") {
       result = await (provisioner ?? provisionWorkload)(polled.command, polled.state);
+    } else if (polled.command.type === "START") {
+      result = await (starter ?? startWorkload)(polled.command, polled.state);
     } else {
       throw new AgentError("COMMAND_UNSUPPORTED", "This command is not supported by the installed Agent version.");
     }
   } catch (error) {
     const code = error instanceof AgentError && /^[A-Z0-9_:-]{3,80}$/u.test(error.code) ? error.code : "COMMAND_FAILED";
-    const retryable = new Set(["ACTUATOR_UNAVAILABLE", "ACTUATOR_TIMEOUT", "DOCKER_OPERATION_FAILED", "NETWORK_ERROR"]);
+    const retryable = new Set(["ACTUATOR_UNAVAILABLE", "ACTUATOR_TIMEOUT", "DOCKER_OPERATION_FAILED", "SSH_READINESS_TIMEOUT", "SSH_READINESS_UNAVAILABLE", "NETWORK_ERROR"]);
     if (retryable.has(code) && Number(polled.command.attempt ?? 0) < 5) throw error;
     const details = { protocolVersion: 1, commandType: polled.command.type ?? "UNKNOWN", observedAt: new Date().toISOString(), errorCode: code };
     result = { outcome: "FAILED", evidenceDigest: digestJson(details), errorCode: code, details };

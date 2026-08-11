@@ -21,6 +21,14 @@ function approvedImages(environment) {
   return new Set(values);
 }
 
+function assertExactKeys(input, expected, code) {
+  const actual = Object.keys(input).sort();
+  const allowed = [...expected].sort();
+  if (actual.length !== allowed.length || actual.some((key, index) => key !== allowed[index])) {
+    throw fail(code, "Actuator request contains unsupported fields.");
+  }
+}
+
 function stateRoot(environment) {
   const root = environment.KAI_HOST_ACTUATOR_STATE_DIR?.trim() || "/var/lib/kai-host-actuator";
   if (!isAbsolute(root) || !/^\/[A-Za-z0-9._/-]{3,200}$/u.test(root) || root.includes("..")) throw fail("ACTUATOR_STATE_ROOT_INVALID", "Actuator state root is invalid.");
@@ -30,6 +38,7 @@ function stateRoot(environment) {
 export function parseProvisionRequest(value, environment = process.env) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail("PROVISION_REQUEST_INVALID", "Provision request must be an object.");
   const input = value;
+  assertExactKeys(input, ["protocolVersion", "operation", "commandId", "contractId", "image", "publicKey", "publicHost", "sshPort", "memoryMiB", "gpuCount"], "PROVISION_REQUEST_INVALID");
   if (input.protocolVersion !== 1 || input.operation !== "PROVISION") throw fail("PROVISION_REQUEST_INVALID", "Provision protocol is unsupported.");
   if (typeof input.commandId !== "string" || !ID_PATTERN.test(input.commandId) || typeof input.contractId !== "string" || !ID_PATTERN.test(input.contractId)) throw fail("PROVISION_ID_INVALID", "Provision identifiers are invalid.");
   if (typeof input.image !== "string" || !IMAGE_PATTERN.test(input.image) || !approvedImages(environment).has(input.image)) throw fail("IMAGE_NOT_APPROVED", "Provision image is not in the root-owned allowlist.");
@@ -52,6 +61,15 @@ export function parseProvisionRequest(value, environment = process.env) {
   };
 }
 
+export function parseStartRequest(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw fail("START_REQUEST_INVALID", "Start request must be an object.");
+  const input = value;
+  assertExactKeys(input, ["protocolVersion", "operation", "commandId", "contractId"], "START_REQUEST_INVALID");
+  if (input.protocolVersion !== 1 || input.operation !== "START") throw fail("START_REQUEST_INVALID", "Start protocol is unsupported.");
+  if (typeof input.commandId !== "string" || !ID_PATTERN.test(input.commandId) || typeof input.contractId !== "string" || !ID_PATTERN.test(input.contractId)) throw fail("START_ID_INVALID", "Start identifiers are invalid.");
+  return { protocolVersion: 1, operation: "START", commandId: input.commandId, contractId: input.contractId };
+}
+
 async function docker(args) {
   try {
     return await execFile("/usr/bin/docker", args, { encoding: "utf8", timeout: 30_000, maxBuffer: 256 * 1024 });
@@ -66,6 +84,23 @@ async function writeJsonAtomic(path, value) {
   await chmod(temporary, 0o600);
   await rename(temporary, path);
   await chmod(path, 0o600);
+}
+
+function workloadIdentity(contractId, environment) {
+  const workloadName = `kai-${digestJson({ contractId }).slice(7, 31)}`;
+  const workloadRoot = join(stateRoot(environment), "workloads", workloadName);
+  return { workloadName, workloadRoot, manifestPath: join(workloadRoot, "manifest.json") };
+}
+
+async function readManifest(manifestPath, missingCode = "PROVISION_MANIFEST_INVALID") {
+  try {
+    const value = JSON.parse(await readFile(manifestPath, "utf8"));
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("shape");
+    return value;
+  } catch (error) {
+    if (error?.code === "ENOENT") throw fail(missingCode, "Workload manifest does not exist.");
+    throw fail("PROVISION_MANIFEST_INVALID", "Existing workload manifest cannot be trusted.", error);
+  }
 }
 
 async function existingResult(manifestPath, requestDigest) {
@@ -89,9 +124,7 @@ export async function executeProvision(value, {
 } = {}) {
   const request = parseProvisionRequest(value, environment);
   const requestDigest = digestJson(request);
-  const workloadName = `kai-${digestJson({ contractId: request.contractId }).slice(7, 31)}`;
-  const workloadRoot = join(stateRoot(environment), "workloads", workloadName);
-  const manifestPath = join(workloadRoot, "manifest.json");
+  const { workloadName, workloadRoot, manifestPath } = workloadIdentity(request.contractId, environment);
   const replay = await existingResult(manifestPath, requestDigest);
   if (replay) return replay;
 
@@ -152,5 +185,82 @@ export async function executeProvision(value, {
     await writeJsonAtomic(manifestPath, { protocolVersion: 1, status: "FAILED", requestDigest, errorCode: code, updatedAt: now() }).catch(() => undefined);
     if (error instanceof AgentError) throw error;
     throw fail("PROVISION_FAILED", "The isolated workload could not be provisioned.", error);
+  }
+}
+
+function parseContainerInspection(stdout, expected) {
+  let inspection;
+  try { inspection = JSON.parse(stdout.trim()); }
+  catch (error) { throw fail("CONTAINER_INSPECTION_INVALID", "Container runtime returned invalid inspection evidence.", error); }
+  if (!inspection || typeof inspection !== "object" || Array.isArray(inspection)
+    || typeof inspection.id !== "string" || !/^[a-f0-9]{64}$/u.test(inspection.id)
+    || inspection.image !== expected.image
+    || inspection.labels?.["kai.cloud.managed"] !== "true"
+    || inspection.labels?.["kai.cloud.contract-digest"] !== expected.contractDigest
+    || typeof inspection.running !== "boolean") {
+    throw fail("CONTAINER_IDENTITY_MISMATCH", "Container identity does not match the provisioned workload.");
+  }
+  const containerDigest = digestJson({ containerId: inspection.id });
+  if (containerDigest !== expected.containerDigest) throw fail("CONTAINER_IDENTITY_MISMATCH", "Container identifier does not match the provision evidence.");
+  return { running: inspection.running, containerDigest };
+}
+
+async function inspectManagedContainer(workloadName, manifest, runDocker) {
+  const output = await runDocker([
+    "container", "inspect", "--format",
+    "{\"id\":{{json .Id}},\"image\":{{json .Config.Image}},\"labels\":{{json .Config.Labels}},\"running\":{{json .State.Running}}}",
+    workloadName,
+  ]);
+  return parseContainerInspection(output.stdout, {
+    image: manifest.result.image,
+    contractDigest: digestJson({ contractId: manifest.result.contractId }),
+    containerDigest: manifest.result.containerDigest,
+  });
+}
+
+export async function executeStart(value, {
+  environment = process.env,
+  runDocker = docker,
+  now = () => new Date().toISOString(),
+} = {}) {
+  const request = parseStartRequest(value);
+  const requestDigest = digestJson(request);
+  const { workloadName, manifestPath } = workloadIdentity(request.contractId, environment);
+  let manifest = await readManifest(manifestPath, "START_WORKLOAD_NOT_PROVISIONED");
+  if (manifest.result?.contractId !== request.contractId || manifest.result?.protocolVersion !== 1
+    || typeof manifest.result?.image !== "string" || typeof manifest.result?.containerDigest !== "string") {
+    throw fail("START_MANIFEST_INVALID", "Provision evidence does not match the start contract.");
+  }
+  if (manifest.status === "RUNNING") {
+    if (manifest.startRequestDigest !== requestDigest || !manifest.startResult) throw fail("START_REPLAY_CONFLICT", "The workload was started by a different command.");
+    const current = await inspectManagedContainer(workloadName, manifest, runDocker);
+    if (current.running) return manifest.startResult;
+    manifest = { ...manifest, status: "STARTING" };
+  }
+  if (manifest.status !== "READY" && manifest.status !== "STARTING") throw fail("START_STATE_INVALID", "Workload is not ready to start.");
+  if (manifest.status === "STARTING" && manifest.startRequestDigest !== requestDigest) throw fail("START_REPLAY_CONFLICT", "A different start command is already in progress.");
+
+  const starting = { ...manifest, status: "STARTING", startCommandId: request.commandId, startRequestDigest: requestDigest, updatedAt: now() };
+  await writeJsonAtomic(manifestPath, starting);
+  try {
+    let inspection = await inspectManagedContainer(workloadName, starting, runDocker);
+    if (!inspection.running) await runDocker(["container", "start", workloadName]);
+    inspection = await inspectManagedContainer(workloadName, starting, runDocker);
+    if (!inspection.running) throw fail("CONTAINER_NOT_RUNNING", "Container runtime did not enter the running state.");
+    const startedAt = now();
+    const result = {
+      protocolVersion: 1,
+      contractId: request.contractId,
+      containerDigest: inspection.containerDigest,
+      runtimeStateDigest: digestJson({ workloadName, running: true, startedAt }),
+      startedAt,
+    };
+    await writeJsonAtomic(manifestPath, { ...starting, status: "RUNNING", startResult: result, updatedAt: startedAt });
+    return result;
+  } catch (error) {
+    const code = error instanceof AgentError ? error.code : "START_FAILED";
+    await writeJsonAtomic(manifestPath, { ...starting, status: "STARTING", lastStartErrorCode: code, updatedAt: now() }).catch(() => undefined);
+    if (error instanceof AgentError) throw error;
+    throw fail("START_FAILED", "The isolated workload could not be started.", error);
   }
 }

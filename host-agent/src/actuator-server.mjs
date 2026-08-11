@@ -3,7 +3,7 @@
 import { chmod, mkdir, unlink } from "node:fs/promises";
 import { createServer } from "node:net";
 import { dirname, isAbsolute } from "node:path";
-import { executeProvision } from "./actuator.mjs";
+import { executeProvision, executeStart } from "./actuator.mjs";
 import { AgentError } from "./protocol.mjs";
 
 const socketPath = process.env.KAI_HOST_ACTUATOR_SOCKET?.trim() || "/run/kai-host-actuator/actuator.sock";
@@ -29,7 +29,11 @@ const server = createServer({ allowHalfOpen: true }, (socket) => {
     queue = queue.then(async () => {
       try {
         const request = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-        const result = await executeProvision(request);
+        const result = request?.operation === "PROVISION"
+          ? await executeProvision(request)
+          : request?.operation === "START"
+            ? await executeStart(request)
+            : (() => { throw new AgentError("ACTUATOR_OPERATION_UNSUPPORTED", "Actuator operation is unsupported."); })();
         socket.end(`${JSON.stringify({ ok: true, result })}\n`);
       } catch (error) {
         const code = error instanceof AgentError ? error.code : "ACTUATOR_FAILED";

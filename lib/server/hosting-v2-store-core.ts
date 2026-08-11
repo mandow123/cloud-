@@ -11,6 +11,22 @@ const number = (row: Row, key: string) => Number(row[key]);
 const json = <T>(row: Row, key: string) => JSON.parse(value(row, key)) as T;
 const id = (prefix: string) => `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
 const VERIFY_TEST_NAMES = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"] as const;
+const HOSTING_V2_MIN_AGENT_VERSION = "1.1.0";
+
+function agentVersionAtLeast(valueToCheck: string, minimum: string) {
+  const parse = (value: string) => {
+    const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$/u.exec(value);
+    return match ? match.slice(1, 4).map(Number) : null;
+  };
+  const current = parse(valueToCheck);
+  const required = parse(minimum);
+  if (!current || !required) return false;
+  for (let index = 0; index < 3; index += 1) {
+    if (current[index] > required[index]) return true;
+    if (current[index] < required[index]) return false;
+  }
+  return true;
+}
 
 function assertSuccessfulVerificationDetails(details: Record<string, unknown> | undefined, expectedInventoryDigest: string, now: string) {
   if (!details || details.protocolVersion !== 1 || details.inventoryDigest !== expectedInventoryDigest || typeof details.observedAt !== "string") {
@@ -47,6 +63,24 @@ function assertSuccessfulProvisionDetails(details: Record<string, unknown> | und
     throw new ExchangeInputError("Agent 返回的连接入口不在设备验真的主机和端口范围内。", "endpointDisplay");
   }
   return endpoint;
+}
+
+function assertSuccessfulStartDetails(details: Record<string, unknown> | undefined, payload: Record<string, unknown>, now: string) {
+  const expectedKeys = ["containerDigest", "contractId", "endpointDisplay", "observedAt", "protocolVersion", "runtimeStateDigest", "runtimeStatus", "sshBannerDigest", "startedAt"];
+  if (!details || Object.keys(details).sort().join(",") !== expectedKeys.sort().join(",")
+    || details.protocolVersion !== 1 || details.contractId !== payload.contractId || details.endpointDisplay !== payload.endpointDisplay
+    || details.runtimeStatus !== "RUNNING" || typeof details.observedAt !== "string" || typeof details.startedAt !== "string") {
+    throw new ExchangeInputError("实例启动结果结构无效。", "details");
+  }
+  for (const field of ["containerDigest", "runtimeStateDigest", "sshBannerDigest"] as const) {
+    if (typeof details[field] !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(details[field])) throw new ExchangeInputError("实例启动证据摘要无效。", `details.${field}`);
+  }
+  const observedAt = Date.parse(details.observedAt);
+  const startedAt = Date.parse(details.startedAt);
+  const serverNow = Date.parse(now);
+  if (!Number.isFinite(observedAt) || !Number.isFinite(startedAt) || startedAt > observedAt || Math.abs(observedAt - serverNow) > 10 * 60_000 || Math.abs(startedAt - serverNow) > 10 * 60_000) {
+    throw new ExchangeInputError("实例启动观测时间无效。", "details.observedAt");
+  }
 }
 
 function profile(row: Row): HostingSupplierProfile {
@@ -261,7 +295,7 @@ function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       const recordId = id("hac");
       const expiresAt = new Date(Date.parse(context.now) + 5 * 60_000).toISOString();
       await db.batch([
-        { sql: "INSERT INTO hosting_v2_agent_challenges(id,organization_id,account_id,nonce,minimum_agent_version,expires_at,created_at) VALUES(?,?,?,?,?,?,?)", values: [recordId, account.activeOrganization.id, account.account.id, randomBase64Url(), "1.0.0", expiresAt, context.now] },
+        { sql: "INSERT INTO hosting_v2_agent_challenges(id,organization_id,account_id,nonce,minimum_agent_version,expires_at,created_at) VALUES(?,?,?,?,?,?,?)", values: [recordId, account.activeOrganization.id, account.account.id, randomBase64Url(), HOSTING_V2_MIN_AGENT_VERSION, expiresAt, context.now] },
         event(context, account.activeOrganization.id, "AGENT_CHALLENGE", recordId, "AGENT_CHALLENGE_ISSUED"),
         receipt(context, "ISSUE_AGENT_CHALLENGE", "AGENT_CHALLENGE", recordId),
       ]);
@@ -531,6 +565,8 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       }
       const current = await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=? AND buyer_organization_id=?", [contractId, buyerOrganizationId]);
       if (!current || value(current, "status") !== "CARD_HOURS_HELD") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同未锁定卡时或已经提交公钥。");
+      const deviceRow = await db.first<Row>("SELECT agent_version FROM hosting_v2_devices WHERE id=?", [value(current, "device_id")]);
+      if (!deviceRow || !agentVersionAtLeast(value(deviceRow, "agent_version"), HOSTING_V2_MIN_AGENT_VERSION)) throw new ExchangeDomainError("HOSTING_AGENT_UPGRADE_REQUIRED", 409, `Host Agent 需要升级到 ${HOSTING_V2_MIN_AGENT_VERSION} 或更高版本。`);
       if (!/^ssh-(?:ed25519|rsa) [A-Za-z0-9+/=]{40,8192}(?: [^\r\n]{1,120})?$/u.test(input.publicKey.trim())) throw new ExchangeInputError("请提交有效的 OpenSSH 公钥。", "publicKey");
       if (!/^SHA256:[A-Za-z0-9+/]{20,64}$/u.test(input.fingerprint)) throw new ExchangeInputError("SSH 公钥指纹无效。", "fingerprint");
       const commandId = id("hcmd");
@@ -556,9 +592,11 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       }
       const current = await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=? AND buyer_organization_id=?", [contractId, buyerOrganizationId]);
       if (!current || value(current, "status") !== "READY") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "实例尚未准备完成。");
+      const endpointDisplay = nullable(current, "endpoint_display");
+      if (!endpointDisplay) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "实例连接入口尚未准备完成。");
       const commandId = id("hcmd");
       await db.batch([
-        { sql: "INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at) VALUES(?,?,?,'START',?,'PENDING',0,?)", values: [commandId, value(current, "device_id"), contractId, JSON.stringify({ contractId }), context.now] },
+        { sql: "INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at) VALUES(?,?,?,'START',?,'PENDING',0,?)", values: [commandId, value(current, "device_id"), contractId, JSON.stringify({ contractId, endpointDisplay }), context.now] },
         event(context, buyerOrganizationId, "CONTRACT", contractId, "START_QUEUED", { commandId }),
         receipt(context, "START_CONTRACT", "AGENT_COMMAND", commandId),
       ]);
@@ -613,6 +651,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       const deviceInventory = json<HostingDeviceInventory>(deviceRow, "inventory_json");
       if (type === "VERIFY" && success) assertSuccessfulVerificationDetails(input.details, value(deviceRow, "inventory_digest"), context.now);
       const provisionEndpoint = type === "PROVISION" && success ? assertSuccessfulProvisionDetails(input.details, commandPayload, deviceInventory, context.now) : null;
+      if (type === "START" && success) assertSuccessfulStartDetails(input.details, commandPayload, context.now);
       const statements: HostingV2Sql[] = [
         { sql: "UPDATE hosting_v2_agent_commands SET status=?,evidence_digest=?,error_code=?,completed_at=? WHERE id=? AND status IN ('PENDING','DELIVERED')", values: [input.outcome, input.evidenceDigest, input.errorCode ?? null, context.now, commandId] },
       ];
