@@ -117,7 +117,7 @@ test("buyer contract APIs use formal ownership and hide supplier infrastructure 
     assert.ok(source.indexOf("assertAccountAuthSameOrigin(request)") < source.indexOf("requireTradingAccountSession(request)"));
   }
   const apiHelpers = readFileSync("lib/server/hosting-v2-api.ts", "utf8");
-  const view = apiHelpers.slice(apiHelpers.indexOf("export function hostingContractClientView"), apiHelpers.indexOf("export async function hostingMutationContext"));
+  const view = apiHelpers.slice(apiHelpers.indexOf("export function hostingContractClientView"), apiHelpers.indexOf("export function hostingSupplierContractClientView"));
   assert.doesNotMatch(view, /deviceId|supplierOrganizationId|buyerAccountId|feeScheduleId/u);
   assert.match(view, /heldMicros/u);
 });

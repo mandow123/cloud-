@@ -332,6 +332,54 @@
   border-bottom: 0;
 }
 
+.wideTable {
+  min-width: 1120px;
+}
+
+.table strong,
+.table a {
+  color: var(--ink);
+}
+
+.table small {
+  color: var(--muted);
+}
+
+.tableLink {
+  color: var(--accent) !important;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.tableActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tableActions button,
+.tableActions a {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  padding: 6px 9px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 750;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.tableActions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tableActions .tableDanger {
+  border-color: var(--error);
+  color: var(--error);
+}
+
 .emptyRow {
   padding: 26px !important;
   color: var(--muted);
@@ -671,6 +719,141 @@
   overflow-wrap: anywhere;
 }
 
+.contractSteps {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin: 0 0 22px;
+  border: 1px solid var(--border);
+  padding: 0;
+  background: var(--surface);
+  list-style: none;
+}
+
+.contractSteps li {
+  display: grid;
+  gap: 5px;
+  border-right: 1px solid var(--border);
+  padding: 13px 14px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.contractSteps li:last-child {
+  border-right: 0;
+}
+
+.contractSteps span {
+  color: var(--border-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.contractStepDone {
+  box-shadow: inset 0 3px 0 var(--accent);
+  color: var(--ink) !important;
+}
+
+.contractStepDone span {
+  color: var(--accent);
+}
+
+.deliveryState {
+  min-height: 220px;
+  padding: 24px;
+  background: var(--surface-muted);
+}
+
+.deliveryState h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.4rem;
+}
+
+.deliveryState p {
+  max-width: 720px;
+  margin: 10px 0 20px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.7;
+}
+
+.deliveryState code {
+  display: block;
+  overflow-x: auto;
+  border: 1px solid var(--border-strong);
+  padding: 13px;
+  background: var(--canvas);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.earningsMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--border);
+  background: var(--border);
+}
+
+.earningsMetrics > div {
+  min-width: 0;
+  padding: 20px;
+  background: var(--surface);
+}
+
+.earningsMetrics span,
+.earningsMetrics small {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+}
+
+.earningsMetrics strong {
+  display: block;
+  margin: 14px 0 4px;
+  overflow: hidden;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.45rem;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+}
+
+.earningsGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 22px;
+  margin-top: 22px;
+}
+
+.earningsGrid .dataSection {
+  margin-top: 0;
+}
+
+.credit {
+  color: var(--success);
+  font-weight: 750;
+}
+
+.debit {
+  color: var(--error);
+  font-weight: 750;
+}
+
+.disabledAction {
+  width: 100%;
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  padding: 9px 12px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: not-allowed;
+}
+
 @media (max-width: 980px) {
   .headerInner,
   .pageHeading {
@@ -684,8 +867,21 @@
 
   .dashboardGrid,
   .formLayout,
-  .detailGrid {
+  .detailGrid,
+  .earningsGrid {
     grid-template-columns: 1fr;
+  }
+
+  .contractSteps {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .contractSteps li:nth-child(4) {
+    border-right: 0;
+  }
+
+  .contractSteps li:nth-child(n + 5) {
+    border-top: 1px solid var(--border);
   }
 
   .resourceCards,
@@ -706,11 +902,29 @@
   }
 
   .metrics,
+  .earningsMetrics,
   .fieldGrid,
   .resourceCards,
   .pairingFacts,
   .inventoryGrid {
     grid-template-columns: 1fr;
+  }
+
+  .contractSteps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .contractSteps li,
+  .contractSteps li:nth-child(4) {
+    border-right: 1px solid var(--border);
+  }
+
+  .contractSteps li:nth-child(even) {
+    border-right: 0;
+  }
+
+  .contractSteps li:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
   }
 
   .fieldFull {

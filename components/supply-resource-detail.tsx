@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { HostingAgentCommand, HostingDashboard, HostingDevice } from "@/lib/hosting-v2";
+import type { HostingAgentCommand, HostingDevice } from "@/lib/hosting-v2";
+import type { SupplierHostingDashboard } from "@/lib/hosting-v2-client";
 import { createIdempotencyKey, marketplaceErrorMessage, marketplaceGet, marketplacePost } from "@/lib/client/marketplace-client";
 import styles from "./supply-console.module.css";
 
@@ -25,7 +26,7 @@ export function SupplyResourceDetail({ deviceId }: { deviceId: string }) {
 
   const load = useCallback(async () => {
     try {
-      const result = await marketplaceGet<{ dashboard: HostingDashboard }>("/api/v2/supply/dashboard");
+      const result = await marketplaceGet<{ dashboard: SupplierHostingDashboard }>("/api/v2/supply/dashboard");
       const current = result.dashboard.devices.find((item) => item.id === deviceId) ?? null;
       setDevice(current); setFound(Boolean(current));
     } catch (cause) {

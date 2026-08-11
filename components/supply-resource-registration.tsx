@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { HostingAgentChallenge, HostingDashboard } from "@/lib/hosting-v2";
+import type { HostingAgentChallenge } from "@/lib/hosting-v2";
+import type { SupplierHostingDashboard } from "@/lib/hosting-v2-client";
 import { createIdempotencyKey, marketplaceErrorMessage, marketplaceGet, marketplacePost } from "@/lib/client/marketplace-client";
 import styles from "./supply-console.module.css";
 
@@ -13,7 +14,7 @@ const templates = [
 ] as const;
 
 export function SupplyResourceRegistration() {
-  const [dashboard, setDashboard] = useState<HostingDashboard | null>(null);
+  const [dashboard, setDashboard] = useState<SupplierHostingDashboard | null>(null);
   const [selected, setSelected] = useState<(typeof templates)[number]["id"]>("personal-gpu");
   const [challenge, setChallenge] = useState<HostingAgentChallenge | null>(null);
   const [busy, setBusy] = useState(false);
@@ -23,7 +24,7 @@ export function SupplyResourceRegistration() {
 
   const load = useCallback(async () => {
     try {
-      const result = await marketplaceGet<{ dashboard: HostingDashboard }>("/api/v2/supply/dashboard");
+      const result = await marketplaceGet<{ dashboard: SupplierHostingDashboard }>("/api/v2/supply/dashboard");
       setDashboard(result.dashboard);
     } catch (cause) {
       setError(marketplaceErrorMessage(cause, "供应主体状态暂时无法读取。"));

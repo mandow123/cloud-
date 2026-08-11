@@ -9,9 +9,10 @@ const availableRoutes = [
   { href: "/supply", label: "总览" },
   { href: "/supply/onboarding", label: "供应商审核" },
   { href: "/supply/resources", label: "资源" },
+  { href: "/supply/listings", label: "挂牌" },
+  { href: "/supply/orders", label: "订单" },
+  { href: "/supply/earnings", label: "收益" },
 ] as const;
-
-const upcomingRoutes = ["挂牌", "订单", "收益"] as const;
 
 function isCurrentRoute(pathname: string, href: string) {
   return href === "/supply" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
@@ -34,7 +35,6 @@ export function SupplyConsoleShell({ children }: { children: ReactNode }) {
                 {route.label}
               </Link>
             ))}
-            {upcomingRoutes.map((label) => <span aria-disabled="true" key={label}>{label}</span>)}
           </nav>
         </div>
       </header>

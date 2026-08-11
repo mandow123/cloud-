@@ -48,6 +48,51 @@ export function hostingContractClientView(contract: HostingContract) {
   };
 }
 
+export function hostingSupplierContractClientView(contract: HostingContract) {
+  return {
+    id: contract.id,
+    offerId: contract.offerId,
+    deviceId: contract.deviceId,
+    snapshot: contract.snapshot,
+    reservedSeconds: contract.reservedSeconds,
+    measuredSeconds: contract.measuredSeconds,
+    heldMicros: contract.heldMicros,
+    settledMicros: contract.settledMicros,
+    supplierIncomeMicros: contract.supplierIncomeMicros,
+    commissionMicros: contract.commissionMicros,
+    status: contract.status,
+    sshPublicKeyFingerprint: contract.sshPublicKeyFingerprint,
+    endpointDisplay: contract.endpointDisplay,
+    startedAt: contract.startedAt,
+    stoppedAt: contract.stoppedAt,
+    acceptedAt: contract.acceptedAt,
+    version: contract.version,
+    createdAt: contract.createdAt,
+    updatedAt: contract.updatedAt,
+  };
+}
+
+export function hostingSupplierOfferClientView(offer: import("../hosting-v2.ts").HostingOffer) {
+  return {
+    id: offer.id,
+    deviceId: offer.deviceId,
+    title: offer.title,
+    gpuModel: offer.gpuModel,
+    region: offer.region,
+    cardHourMicrosPerGpuHour: offer.cardHourMicrosPerGpuHour,
+    minRentalSeconds: offer.minRentalSeconds,
+    maxRentalSeconds: offer.maxRentalSeconds,
+    availableFrom: offer.availableFrom,
+    availableUntil: offer.availableUntil,
+    approvedImage: offer.approvedImage,
+    termsVersion: offer.termsVersion,
+    status: offer.status,
+    version: offer.version,
+    createdAt: offer.createdAt,
+    updatedAt: offer.updatedAt,
+  };
+}
+
 export async function hostingMutationContext(request: Request, actorId: string, body: unknown): Promise<HostingMutationContext> {
   assertAccountAuthSameOrigin(request);
   return {

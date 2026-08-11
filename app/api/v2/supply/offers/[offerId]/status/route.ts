@@ -1,7 +1,7 @@
 import { AccountAuthError, assertAccountAuthSameOrigin } from "@/lib/server/account-auth";
 import { apiErrorResponse, beginApiRequest, jsonResponse, readJsonBody } from "@/lib/server/api-guard";
 import { requireTradingAccountSession } from "@/lib/server/entity-ownership";
-import { hostingInteger, hostingMutationContext, hostingObject, hostingString, requireHostingV2Enabled } from "@/lib/server/hosting-v2-api";
+import { hostingInteger, hostingMutationContext, hostingObject, hostingString, hostingSupplierOfferClientView, requireHostingV2Enabled } from "@/lib/server/hosting-v2-api";
 import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export async function POST(request: Request, contextValue: { params: Promise<{ o
     const { offerId } = await contextValue.params;
     const mutation = await hostingMutationContext(request, account.account.id, body);
     const record = await (await getHostingV2Store()).updateOfferStatus(account.activeOrganization.id, offerId, { status, expectedVersion: hostingInteger(body, "expectedVersion", 1) }, mutation);
-    return jsonResponse({ record }, 200, undefined, context);
+    return jsonResponse({ record: hostingSupplierOfferClientView(record) }, 200, undefined, context);
   } catch (error) {
     return apiErrorResponse(error, undefined, context);
   }

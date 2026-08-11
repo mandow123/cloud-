@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import type { HostingDashboard, HostingSupplierProfile } from "@/lib/hosting-v2";
+import type { HostingSupplierProfile } from "@/lib/hosting-v2";
+import type { SupplierHostingDashboard } from "@/lib/hosting-v2-client";
 import { marketplaceErrorMessage, marketplaceGet } from "@/lib/client/marketplace-client";
 import styles from "./supply-console.module.css";
 
@@ -41,13 +42,13 @@ function shortId(value: string) {
 }
 
 export function SupplyDashboard() {
-  const [dashboard, setDashboard] = useState<HostingDashboard | null>(null);
+  const [dashboard, setDashboard] = useState<SupplierHostingDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const result = await marketplaceGet<{ dashboard: HostingDashboard }>("/api/v2/supply/dashboard");
+      const result = await marketplaceGet<{ dashboard: SupplierHostingDashboard }>("/api/v2/supply/dashboard");
       setDashboard(result.dashboard);
     } catch (cause) {
       setError(marketplaceErrorMessage(cause, "供应商控制台暂时无法读取。"));
@@ -72,17 +73,21 @@ export function SupplyDashboard() {
   if (!dashboard) return <div className={styles.loading} role="status">正在读取供应主体、设备和订单状态…</div>;
 
   const profile = dashboard.profile;
-  const supplierContracts = profile
-    ? dashboard.contracts.filter((contract) => contract.supplierOrganizationId === profile.organizationId)
-    : [];
+  const supplierContracts = dashboard.contracts;
   const nextStep = !profile
     ? { title: "先建立供应主体", description: "填写最少必要资料并保存草稿，确认后再提交人工审核。", href: "/supply/onboarding", label: "开始供应商审核" }
     : profile.status === "DRAFT" || profile.status === "REJECTED"
       ? { title: "完成并提交审核资料", description: profile.status === "REJECTED" ? profile.reviewNote ?? "审核人员要求修改资料。" : "资料仍是草稿，尚未进入人工审核。", href: "/supply/onboarding", label: "继续填写资料" }
       : profile.status === "SUBMITTED"
         ? { title: "资料正在审核", description: "审核期间不能修改资料。状态变化会直接显示在本控制台。", href: "/supply/onboarding", label: "查看审核状态" }
-        : profile.status === "APPROVED"
+        : profile.status === "APPROVED" && dashboard.devices.length === 0
           ? { title: "可以登记第一台设备", description: "资源登记页会生成 5 分钟有效、受限的一次性 Agent 配对凭证。", href: "/supply/resources/new", label: "登记第一台设备" }
+          : profile.status === "APPROVED" && dashboard.readiness.onlineVerifiedDevices === 0
+            ? { title: "让设备在线并完成验真", description: "Host Agent 心跳和硬件验真都有效后，设备才具备挂牌资格。", href: "/supply/resources", label: "查看设备状态" }
+            : profile.status === "APPROVED" && dashboard.offers.length === 0
+              ? { title: "创建第一条真实报价", description: "选择已验真的设备、可用窗口和 KAI 标准卡时价格。", href: "/supply/listings/new", label: "创建挂牌" }
+              : profile.status === "APPROVED"
+                ? { title: "管理挂牌与订单", description: "查看公开状态、资源预留和 Host Agent 履约进度。", href: "/supply/listings", label: "进入挂牌管理" }
           : { title: "供应资格已暂停", description: profile.reviewNote ?? "请联系平台运营确认恢复条件。", href: "/supply/onboarding", label: "查看审核说明" };
 
   const readiness = [
@@ -156,7 +161,7 @@ export function SupplyDashboard() {
             <thead><tr><th>合同</th><th>资源快照</th><th>预留时长</th><th>卡时锁定</th><th>状态</th></tr></thead>
             <tbody>
               {supplierContracts.length ? supplierContracts.slice(0, 5).map((contract) => (
-                <tr key={contract.id}><td>{shortId(contract.id)}</td><td>{contract.snapshot.title}</td><td>{contract.reservedSeconds} 秒</td><td>{cardHours(contract.heldMicros)}</td><td>{contract.status}</td></tr>
+                <tr key={contract.id}><td><Link href={`/supply/orders/${encodeURIComponent(contract.id)}`}>{shortId(contract.id)}</Link></td><td>{contract.snapshot.title}</td><td>{contract.reservedSeconds} 秒</td><td>{cardHours(contract.heldMicros)}</td><td>{contract.status}</td></tr>
               )) : <tr><td className={styles.emptyRow} colSpan={5}>还没有相关订单。发布通过验真的报价后，订单会在这里按状态推进。</td></tr>}
             </tbody>
           </table>

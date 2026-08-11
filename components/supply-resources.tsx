@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import type { HostingDashboard } from "@/lib/hosting-v2";
+import type { SupplierHostingDashboard } from "@/lib/hosting-v2-client";
 import { marketplaceErrorMessage, marketplaceGet } from "@/lib/client/marketplace-client";
 import styles from "./supply-console.module.css";
 
@@ -13,13 +13,13 @@ function dateTime(value: string | null) {
 }
 
 export function SupplyResources() {
-  const [dashboard, setDashboard] = useState<HostingDashboard | null>(null);
+  const [dashboard, setDashboard] = useState<SupplierHostingDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const result = await marketplaceGet<{ dashboard: HostingDashboard }>("/api/v2/supply/dashboard");
+      const result = await marketplaceGet<{ dashboard: SupplierHostingDashboard }>("/api/v2/supply/dashboard");
       setDashboard(result.dashboard);
     } catch (cause) {
       setError(marketplaceErrorMessage(cause, "资源列表暂时无法读取。"));

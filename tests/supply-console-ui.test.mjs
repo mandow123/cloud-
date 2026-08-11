@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
-test("supplier console exposes only implemented routes and keeps future areas disabled", () => {
+test("supplier console exposes the implemented resource, listing, order and earnings routes", () => {
   for (const path of [
     "app/supply/layout.tsx",
     "app/supply/page.tsx",
@@ -10,6 +10,11 @@ test("supplier console exposes only implemented routes and keeps future areas di
     "app/supply/resources/page.tsx",
     "app/supply/resources/new/page.tsx",
     "app/supply/resources/[deviceId]/page.tsx",
+    "app/supply/listings/page.tsx",
+    "app/supply/listings/new/page.tsx",
+    "app/supply/orders/page.tsx",
+    "app/supply/orders/[contractId]/page.tsx",
+    "app/supply/earnings/page.tsx",
   ]) {
     assert.equal(existsSync(path), true, `${path} must exist`);
   }
@@ -23,9 +28,10 @@ test("supplier console exposes only implemented routes and keeps future areas di
   assert.match(shell, /href: "\/supply"/u);
   assert.match(shell, /href: "\/supply\/onboarding"/u);
   assert.match(shell, /href: "\/supply\/resources"/u);
-  assert.match(shell, /const upcomingRoutes = \["挂牌", "订单", "收益"\]/u);
-  assert.match(shell, /aria-disabled="true"/u);
-  assert.doesNotMatch(shell, /href: "\/supply\/(listings|orders|earnings)/u);
+  assert.match(shell, /href: "\/supply\/listings"/u);
+  assert.match(shell, /href: "\/supply\/orders"/u);
+  assert.match(shell, /href: "\/supply\/earnings"/u);
+  assert.doesNotMatch(shell, /upcomingRoutes|aria-disabled="true"/u);
 });
 
 test("resource registration issues a short-lived server challenge without client identity fields", () => {
@@ -42,7 +48,7 @@ test("resource registration issues a short-lived server challenge without client
 test("resource details are selected from the current organization dashboard and verification uses the constrained API", () => {
   const list = readFileSync("components/supply-resources.tsx", "utf8");
   const detail = readFileSync("components/supply-resource-detail.tsx", "utf8");
-  assert.match(list, /marketplaceGet<\{ dashboard: HostingDashboard \}>\("\/api\/v2\/supply\/dashboard"\)/u);
+  assert.match(list, /marketplaceGet<\{ dashboard: SupplierHostingDashboard \}>\("\/api\/v2\/supply\/dashboard"\)/u);
   assert.match(detail, /result\.dashboard\.devices\.find\(\(item\) => item\.id === deviceId\)/u);
   assert.match(detail, /`\/api\/v2\/supply\/devices\/\$\{encodeURIComponent\(device\.id\)\}\/verify`/u);
   assert.match(detail, /marketplacePost<HostingAgentCommand>/u);
@@ -51,7 +57,7 @@ test("resource details are selected from the current organization dashboard and 
 
 test("supplier pages read and mutate through the authenticated hosting v2 APIs", () => {
   const dashboard = readFileSync("components/supply-dashboard.tsx", "utf8");
-  assert.match(dashboard, /marketplaceGet<\{ dashboard: HostingDashboard \}>\("\/api\/v2\/supply\/dashboard"\)/u);
+  assert.match(dashboard, /marketplaceGet<\{ dashboard: SupplierHostingDashboard \}>\("\/api\/v2\/supply\/dashboard"\)/u);
 
   const onboarding = readFileSync("components/supplier-onboarding-form.tsx", "utf8");
   assert.match(onboarding, /marketplaceGet<\{ record: HostingSupplierProfile \| null \}>\("\/api\/v2\/supply\/profile"\)/u);
@@ -60,6 +66,48 @@ test("supplier pages read and mutate through the authenticated hosting v2 APIs",
   assert.match(onboarding, /agreementAccepted: true/u);
   assert.match(onboarding, /expectedVersion: profile\.version/u);
   assert.doesNotMatch(`${dashboard}\n${onboarding}`, /x-kai-workspace-role|localStorage|sessionStorage/u);
+});
+
+test("listing UI uses only authenticated Hosting V2 offer APIs and server-owned terms", () => {
+  const list = readFileSync("components/supply-listings-v2.tsx", "utf8");
+  const create = readFileSync("components/supply-offer-create.tsx", "utf8");
+  assert.match(list, /marketplaceGet<\{ records: SupplierHostingOffer\[\] \}>\("\/api\/v2\/supply\/offers"\)/u);
+  assert.match(list, /`\/api\/v2\/supply\/offers\/\$\{encodeURIComponent\(offer\.id\)\}\/status`/u);
+  assert.match(list, /\{ status, expectedVersion: offer\.version \}/u);
+  assert.match(create, /marketplaceGet<\{ policy: SupplierHostingPolicy \}>\("\/api\/v2\/supply\/policy"\)/u);
+  assert.match(create, /marketplacePost<SupplierHostingOffer>\("\/api\/v2\/supply\/offers", payload/u);
+  const payload = create.slice(create.indexOf("const payload = {"), create.indexOf("const serialized"));
+  assert.doesNotMatch(payload, /gpuModel|termsVersion|organizationId|accountId|feeScheduleId/u);
+  assert.match(create, /approvedImage/u);
+  assert.doesNotMatch(`${list}\n${create}`, /x-kai-workspace-role|localStorage|sessionStorage|\/api\/v1\/supply/u);
+});
+
+test("supplier order and earnings pages read scoped V2 projections without buyer identities", () => {
+  const contracts = readFileSync("components/supply-contracts.tsx", "utf8");
+  const detail = readFileSync("components/supply-contract-detail.tsx", "utf8");
+  const earnings = readFileSync("components/supply-earnings.tsx", "utf8");
+  assert.match(contracts, /marketplaceGet<\{ records: SupplierHostingContract\[\] \}>\("\/api\/v2\/supply\/contracts"\)/u);
+  assert.match(detail, /marketplaceGet<\{ record: SupplierHostingContract \}>\(`\/api\/v2\/supply\/contracts\/\$\{encodeURIComponent\(contractId\)\}`\)/u);
+  assert.match(detail, /window\.setInterval\(\(\) => \{ void load\(true\); \}, 5_000\)/u);
+  assert.match(earnings, /marketplaceGet<\{ earnings: SupplierEarningsDashboard \}>\("\/api\/v2\/supply\/earnings"\)/u);
+  assert.match(earnings, /变现申请暂未开放/u);
+  assert.doesNotMatch(`${contracts}\n${detail}\n${earnings}`, /buyerOrganizationId|buyerAccountId|marketplacePost|x-kai-workspace-role/u);
+});
+
+test("supplier APIs scope contracts, sanitize projections and expose immutable ledger facts", () => {
+  const collection = readFileSync("app/api/v2/supply/contracts/route.ts", "utf8");
+  const detail = readFileSync("app/api/v2/supply/contracts/[contractId]/route.ts", "utf8");
+  const helper = readFileSync("lib/server/hosting-v2-api.ts", "utf8");
+  const view = helper.slice(helper.indexOf("export function hostingSupplierContractClientView"), helper.indexOf("export function hostingSupplierOfferClientView"));
+  assert.match(collection, /contract\.supplierOrganizationId === account\.activeOrganization\.id/u);
+  assert.match(detail, /contract\.supplierOrganizationId !== account\.activeOrganization\.id/u);
+  assert.doesNotMatch(view, /buyerOrganizationId|buyerAccountId|feeScheduleId/u);
+  assert.match(view, /supplierIncomeMicros/u);
+
+  const earnings = readFileSync("app/api/v2/supply/earnings/route.ts", "utf8");
+  assert.match(earnings, /getCardHourStore\(\)/u);
+  assert.match(earnings, /dashboard\.ledger\.map\(safeLedgerEntry\)/u);
+  assert.match(earnings, /requireTradingAccountSession\(request\)/u);
 });
 
 test("authenticated PUT helper sends CSRF and idempotency protection", () => {

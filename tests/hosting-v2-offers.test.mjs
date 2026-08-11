@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { assertHostingV2ApprovedImage } from "../lib/server/hosting-v2-image-policy.ts";
+import { assertHostingV2ApprovedImage, hostingV2CurrentTermsVersion } from "../lib/server/hosting-v2-image-policy.ts";
 import { createSqliteHostingV2Store } from "../lib/server/hosting-v2-store-sqlite.ts";
 
 const account = {
@@ -105,6 +105,12 @@ test("hosting image policy fails closed when operations has not configured immut
   assert.throws(() => assertHostingV2ApprovedImage("ghcr.io/kai-cloud/cuda-pytorch:latest", { KAI_HOSTING_APPROVED_IMAGES: process.env.KAI_HOSTING_APPROVED_IMAGES }), (error) => error.name === "ExchangeInputError");
 });
 
+test("hosting terms policy is server-configured and fails closed", () => {
+  assert.equal(hostingV2CurrentTermsVersion({ KAI_HOSTING_TERMS_VERSION: "KAI_HOSTING_TERMS_2026_08" }), "KAI_HOSTING_TERMS_2026_08");
+  assert.throws(() => hostingV2CurrentTermsVersion({}), (error) => error.code === "HOSTING_TERMS_POLICY_UNAVAILABLE" && error.status === 503);
+  assert.throws(() => hostingV2CurrentTermsVersion({ KAI_HOSTING_TERMS_VERSION: "terms-latest" }), (error) => error.code === "HOSTING_TERMS_POLICY_UNAVAILABLE");
+});
+
 test("offer APIs enforce server-owned identities and public responses omit internal IDs", () => {
   const supplyRoutes = [
     "app/api/v2/supply/offers/route.ts",
@@ -116,6 +122,10 @@ test("offer APIs enforce server-owned identities and public responses omit inter
     assert.match(source, /assertAccountAuthSameOrigin\(request\)/u);
     assert.doesNotMatch(source, /x-kai-workspace-role/u);
   }
+  const offerCreate = readFileSync(supplyRoutes[0], "utf8").slice(readFileSync(supplyRoutes[0], "utf8").indexOf("export async function POST"));
+  assert.match(offerCreate, /"gpuModel", "termsVersion"/u);
+  assert.match(offerCreate, /gpuModel: device\.inventory\.gpuModel/u);
+  assert.match(offerCreate, /termsVersion: hostingV2CurrentTermsVersion\(\)/u);
   const adminFees = readFileSync("app/api/v2/admin/hosting/fees/route.ts", "utf8");
   assert.match(adminFees, /requireAdminPermission\(request, \["MARKET_PUBLISH", "SETTLEMENT_OPERATE"\]\)/u);
   const adminWrite = adminFees.slice(adminFees.indexOf("export async function POST"));

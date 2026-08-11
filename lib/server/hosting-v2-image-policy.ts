@@ -12,6 +12,14 @@ export function hostingV2ApprovedImages(environment: Record<string, string | und
   return new Set(images);
 }
 
+export function hostingV2CurrentTermsVersion(environment: Record<string, string | undefined> = process.env) {
+  const value = environment.KAI_HOSTING_TERMS_VERSION?.trim() ?? "";
+  if (!/^KAI_HOSTING_TERMS_\d{4}_\d{2}$/u.test(value)) {
+    throw new ExchangeDomainError("HOSTING_TERMS_POLICY_UNAVAILABLE", 503, "平台尚未配置有效的供应协议版本，挂牌保持关闭。");
+  }
+  return value;
+}
+
 export function assertHostingV2ApprovedImage(image: string, environment: Record<string, string | undefined> = process.env) {
   if (!HOSTING_V2_OCI_IMAGE_PATTERN.test(image)) throw new ExchangeInputError("OCI 镜像必须使用 KAI 仓库的不可变 sha256 引用。", "approvedImage");
   if (!hostingV2ApprovedImages(environment).has(image)) throw new ExchangeInputError("只能选择平台当前批准的 OCI 镜像。", "approvedImage");

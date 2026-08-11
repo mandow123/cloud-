@@ -1,4 +1,4 @@
-import type { HostingContractStatus, HostingGpuModel } from "./hosting-v2.ts";
+import type { HostingContractStatus, HostingDashboard, HostingDevice, HostingGpuModel, HostingSupplierProfile } from "./hosting-v2.ts";
 
 export type PublicHostingOffer = Readonly<{
   id: string;
@@ -43,6 +43,85 @@ export type BuyerHostingContract = Readonly<{
   acceptedAt: string | null;
   version: number;
   createdAt: string;
+  updatedAt: string;
+}>;
+
+export type SupplierHostingOffer = Readonly<{
+  id: string;
+  deviceId: string;
+  title: string;
+  gpuModel: HostingGpuModel;
+  region: string;
+  cardHourMicrosPerGpuHour: number;
+  minRentalSeconds: number;
+  maxRentalSeconds: number;
+  availableFrom: string;
+  availableUntil: string;
+  approvedImage: string;
+  termsVersion: string;
+  status: "DRAFT" | "PUBLISHED" | "RESERVED" | "PAUSED" | "UNLISTED" | "SUSPENDED";
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}>;
+
+export type SupplierHostingContract = Readonly<{
+  id: string;
+  offerId: string;
+  deviceId: string;
+  snapshot: BuyerHostingContract["snapshot"];
+  reservedSeconds: number;
+  measuredSeconds: number | null;
+  heldMicros: number;
+  settledMicros: number | null;
+  supplierIncomeMicros: number | null;
+  commissionMicros: number | null;
+  status: HostingContractStatus;
+  sshPublicKeyFingerprint: string | null;
+  endpointDisplay: string | null;
+  startedAt: string | null;
+  stoppedAt: string | null;
+  acceptedAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}>;
+
+export type SupplierHostingDashboard = Readonly<{
+  profile: HostingSupplierProfile | null;
+  devices: readonly HostingDevice[];
+  offers: readonly SupplierHostingOffer[];
+  contracts: readonly SupplierHostingContract[];
+  earnings: HostingDashboard["earnings"];
+  readiness: HostingDashboard["readiness"];
+}>;
+
+export type SupplierHostingPolicy = Readonly<{
+  approvedImages: readonly string[];
+  termsVersion: string;
+}>;
+
+export type SupplierEarningsLedgerEntry = Readonly<{
+  operation: string;
+  businessKey: string;
+  side: "DEBIT" | "CREDIT";
+  amountMicros: number;
+  balanceAfterMicros: number | null;
+  createdAt: string;
+}>;
+
+export type SupplierEarningsDashboard = Readonly<{
+  assetCode: "KAI_CREDIT_HOUR";
+  rate: Readonly<{ cardHours: "1"; cny: "1.002" }>;
+  balance: Readonly<{ availableMicros: number; heldMicros: number }>;
+  income: Readonly<{
+    rentalPendingMicros: number;
+    rentalVestedMicros: number;
+    commissionPendingMicros: number;
+    commissionVestedMicros: number;
+  }>;
+  referral: Readonly<{ code: string; invitedOrganizations: number }>;
+  ledger: readonly SupplierEarningsLedgerEntry[];
   updatedAt: string;
 }>;
 
