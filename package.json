@@ -9,7 +9,7 @@
     "dev": "vinext dev",
     "build": "vinext build && node scripts/ops/finalize-standalone.mjs",
     "start": "node dist/standalone/server.js",
-    "test": "npm run build && node --import ./tests/setup.mjs --test tests/*.test.mjs",
+    "test": "npm run build && node --experimental-transform-types --import ./tests/setup.mjs --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "market:stage": "node scripts/model-market/cli.mjs stage",
     "market:promote": "node scripts/model-market/cli.mjs promote",

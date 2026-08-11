@@ -1,5 +1,6 @@
 import { AccountAuthError, assertAccountAuthSameOrigin } from "./account-auth.ts";
-import { mutationHash, requireIdempotencyKey } from "./api-guard.ts";
+import { mutationHash, prepareWrite, requireIdempotencyKey } from "./api-guard.ts";
+import { authorizeMarketplaceRequest, persistMarketplaceSession } from "./marketplace-auth.ts";
 import type { HostingMutationContext } from "./hosting-v2-store.ts";
 import type { HostingContract } from "../hosting-v2.ts";
 
@@ -95,6 +96,9 @@ export function hostingSupplierOfferClientView(offer: import("../hosting-v2.ts")
 
 export async function hostingMutationContext(request: Request, actorId: string, body: unknown): Promise<HostingMutationContext> {
   assertAccountAuthSameOrigin(request);
+  const authorization = await authorizeMarketplaceRequest(request);
+  prepareWrite(request, authorization.actor);
+  await persistMarketplaceSession(authorization);
   return {
     actorId,
     idempotencyKey: requireIdempotencyKey(request),
