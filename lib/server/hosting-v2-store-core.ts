@@ -157,11 +157,17 @@ function createProfileMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2St
 
     async submitProfile(organizationId, expectedVersion, context) {
       const replayed = await replay(db, context, "SUBMIT_PROFILE");
-      if (!replayed) await db.batch([
-        { sql: "UPDATE hosting_v2_supplier_profiles SET status='SUBMITTED',agreement_version='KAI_HOSTING_2026_08',version=version+1,updated_at=? WHERE organization_id=? AND version=? AND status='DRAFT'", values: [context.now, organizationId, expectedVersion] },
-        event(context, organizationId, "SUPPLIER_PROFILE", organizationId, "PROFILE_SUBMITTED"),
-        receipt(context, "SUBMIT_PROFILE", "SUPPLIER_PROFILE", organizationId),
-      ]);
+      if (!replayed) {
+        const current = await db.first<Row>("SELECT status,version FROM hosting_v2_supplier_profiles WHERE organization_id=?", [organizationId]);
+        if (!current) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "供应主体不存在。");
+        if (value(current, "status") !== "DRAFT") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "供应主体当前不能提交审核。");
+        if (number(current, "version") !== expectedVersion) throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT", 409, "供应主体资料已变化，请刷新。");
+        await db.batch([
+          { sql: "UPDATE hosting_v2_supplier_profiles SET status='SUBMITTED',agreement_version='KAI_HOSTING_2026_08',version=version+1,updated_at=? WHERE organization_id=? AND version=? AND status='DRAFT'", values: [context.now, organizationId, expectedVersion] },
+          event(context, organizationId, "SUPPLIER_PROFILE", organizationId, "PROFILE_SUBMITTED"),
+          receipt(context, "SUBMIT_PROFILE", "SUPPLIER_PROFILE", organizationId),
+        ]);
+      }
       const row = await db.first<Row>("SELECT * FROM hosting_v2_supplier_profiles WHERE organization_id=?", [organizationId]);
       if (!row) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "供应主体不存在。");
       if (value(row, "status") !== "SUBMITTED" && !replayed) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "供应主体当前不能提交审核。");
@@ -177,6 +183,10 @@ function createProfileMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2St
       if (!replayed) {
         const status = input.decision === "APPROVE" ? "APPROVED" : input.decision === "REJECT" ? "REJECTED" : "SUSPENDED";
         if (input.reviewNote.trim().length < 4) throw new ExchangeInputError("审核说明至少 4 个字符。", "reviewNote");
+        const current = await db.first<Row>("SELECT status,version FROM hosting_v2_supplier_profiles WHERE organization_id=?", [organizationId]);
+        if (!current) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "供应主体不存在。");
+        if (!["SUBMITTED", "APPROVED"].includes(value(current, "status"))) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "供应主体当前不能执行该审核决定。");
+        if (number(current, "version") !== input.expectedVersion) throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT", 409, "供应主体资料已变化，请刷新。");
         await db.batch([
           { sql: "UPDATE hosting_v2_supplier_profiles SET status=?,review_note=?,evidence_digest=?,version=version+1,updated_at=? WHERE organization_id=? AND version=? AND status IN ('SUBMITTED','APPROVED')", values: [status, input.reviewNote.trim(), input.evidenceDigest ?? null, context.now, organizationId, input.expectedVersion] },
           event(context, organizationId, "SUPPLIER_PROFILE", organizationId, `PROFILE_${status}`),
