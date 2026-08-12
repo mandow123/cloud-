@@ -7,7 +7,7 @@ import type { BuyerHostingContract } from "@/lib/hosting-v2-client";
 import { formatCardHours, formatEvidenceDigest, formatHostingTime, hostingContractStatusLabel } from "@/lib/hosting-v2-client";
 import styles from "./hosting-marketplace.module.css";
 
-const POLLED_STATUSES = new Set(["PROVISIONING", "READY", "IN_SERVICE", "AWAITING_ACCEPTANCE", "SETTLED", "CLEANING"]);
+const POLLED_STATUSES = new Set(["PROVISIONING", "READY", "IN_SERVICE", "AWAITING_ACCEPTANCE", "SETTLED", "CLEANING", "DISPUTED"]);
 const CANCELLABLE_STATUSES = new Set(["RESERVED", "CARD_HOURS_HELD", "PAID"]);
 const WORKFLOW = ["CARD_HOURS_HELD", "PROVISIONING", "READY", "IN_SERVICE", "AWAITING_ACCEPTANCE", "CLEANING", "CLEANED"] as const;
 
@@ -101,7 +101,9 @@ export function HostingContractWorkspace({ contractId }: { contractId: string })
           {contract.status === "AWAITING_ACCEPTANCE" ? <div className={styles.actionBlock}><h3>服务已停止，等待验收</h3><p>请在 {formatHostingTime(acceptanceDeadlineAt)} 前核对计量。确认后按实际计量扣减并释放剩余卡时；逾期且未发起争议，平台将按冻结合同和计量凭证自动验收、结算并清理。</p><button className={styles.primary} disabled={Boolean(busyAction)} onClick={() => void mutate("accept", `/api/v2/contracts/${encodeURIComponent(contract.id)}/accept`, {})} type="button">{busyAction === "accept" ? "正在结算并安排清理…" : "确认验收并结算"}</button><label><span>发现交付或计量问题</span><textarea rows={3} value={disputeReason} onChange={(event) => { setDisputeReason(event.target.value); delete requestKeys.current.dispute; }} placeholder="请具体描述连接、运行或计量问题（至少 8 个字符）" /></label><button className={styles.dangerButton} disabled={Boolean(busyAction) || disputeReason.trim().length < 8} onClick={() => void mutate("dispute", `/api/v2/contracts/${encodeURIComponent(contract.id)}/dispute`, { reason: disputeReason.trim() })} type="button">{busyAction === "dispute" ? "正在冻结订单…" : "发起争议并冻结结算"}</button></div> : null}
           {contract.status === "SETTLED" || contract.status === "CLEANING" ? <div className={styles.actionBlock}><h3>正在撤权和清理</h3><p>Agent 正在删除本次容器、公钥和工作目录。清理凭证通过后资源才会重新挂牌。</p><span className={styles.progressLine} /></div> : null}
           {contract.status === "CLEANED" ? <div className={styles.successBlock}><h3>租赁闭环已完成</h3><p>计量、结算、撤权和清理均已完成，临时访问权限已经失效。</p><Link className={styles.primary} href="/gpu">继续选择 GPU</Link></div> : null}
-          {["CANCELLED", "FAILED", "DISPUTED", "REFUNDED"].includes(contract.status) ? <div className={styles.error} role="status"><strong>{hostingContractStatusLabel(contract.status)}</strong><span>该合同已退出正常交付流程，平台保留状态和审计记录。</span></div> : null}
+          {contract.status === "DISPUTED" ? <div className={styles.error} role="status"><strong>争议处理中，卡时继续冻结</strong><span>平台管理员将依据连接、计量与合同证据提出方案，并由独立财务复核。裁决完成前不会向供应方结算，也不会重新挂牌机器。</span></div> : null}
+          {contract.status === "REFUNDED" ? <div className={styles.successBlock} role="status"><h3>争议已裁决并全额退回</h3><p>本单锁定卡时已返还可用余额；Host Agent 已完成撤权清理，原连接权限失效。</p><Link className={styles.primary} href="/gpu">继续选择 GPU</Link></div> : null}
+          {["CANCELLED", "FAILED"].includes(contract.status) ? <div className={styles.error} role="status"><strong>{hostingContractStatusLabel(contract.status)}</strong><span>该合同已退出正常交付流程，平台保留状态和审计记录。</span></div> : null}
 
           {CANCELLABLE_STATUSES.has(contract.status) ? <div className={styles.cancelBar}><span>尚未下发开通任务，可安全释放本次预留。</span><button disabled={Boolean(busyAction)} onClick={() => void mutate("cancel", `/api/v2/contracts/${encodeURIComponent(contract.id)}/cancel`, { reason: "采购方在开通任务下发前主动取消预留" })} type="button">取消并释放卡时</button></div> : null}
           {error ? <p className={styles.inlineError} role="alert">{error}</p> : null}
@@ -116,6 +118,7 @@ export function HostingContractWorkspace({ contractId }: { contractId: string })
             <div><dt>SSH 指纹</dt><dd>{contract.sshPublicKeyFingerprint ?? "尚未提交"}</dd></div><div><dt>条款</dt><dd>{contract.snapshot.termsVersion}</dd></div>
             <div><dt>开始</dt><dd>{formatHostingTime(contract.startedAt)}</dd></div><div><dt>停止</dt><dd>{formatHostingTime(contract.stoppedAt)}</dd></div>
             <div><dt>验收截止</dt><dd>{formatHostingTime(acceptanceDeadlineAt)}</dd></div><div><dt>验收方式</dt><dd>{contract.evidence?.acceptance?.mode === "TIMEOUT" ? "到期自动验收" : contract.evidence?.acceptance?.mode === "BUYER" ? "买家确认" : "等待决定"}</dd></div>
+            {contract.evidence?.dispute ? <><div><dt>争议原因</dt><dd>{contract.evidence.dispute.reason}</dd></div><div><dt>裁决进度</dt><dd>{contract.evidence.dispute.proposalStatus ?? "等待平台提案"}</dd></div></> : null}
           </dl>
           {contract.evidence?.instance ? <><p className={styles.eyebrow}>DELIVERY EVIDENCE</p><h2>交付凭证</h2><dl className={styles.detailList}>
             <div><dt>实例状态</dt><dd>{contract.evidence.instance.status}</dd></div><div><dt>容器身份</dt><dd title={contract.evidence.instance.containerDigest}>{formatEvidenceDigest(contract.evidence.instance.containerDigest)}</dd></div>

@@ -1,4 +1,4 @@
-export const HOSTING_V2_SCHEMA_VERSION = 6;
+export const HOSTING_V2_SCHEMA_VERSION = 7;
 
 export const hostingV2SchemaStatements = [
   `CREATE TABLE IF NOT EXISTS hosting_v2_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`,
@@ -225,6 +225,46 @@ export const hostingV2SchemaStatements = [
   )`,
   `CREATE TRIGGER IF NOT EXISTS hosting_v2_acceptance_proofs_immutable_update BEFORE UPDATE ON hosting_v2_acceptance_proofs BEGIN SELECT RAISE(ABORT, 'hosting acceptance proof immutable'); END`,
   `CREATE TRIGGER IF NOT EXISTS hosting_v2_acceptance_proofs_immutable_delete BEFORE DELETE ON hosting_v2_acceptance_proofs BEGIN SELECT RAISE(ABORT, 'hosting acceptance proof immutable'); END`,
+  `CREATE TABLE IF NOT EXISTS hosting_v2_disputes (
+    contract_id TEXT PRIMARY KEY,
+    buyer_organization_id TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    opened_by TEXT NOT NULL,
+    opened_at TEXT NOT NULL
+  )`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_disputes_immutable_update BEFORE UPDATE ON hosting_v2_disputes BEGIN SELECT RAISE(ABORT, 'hosting dispute immutable'); END`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_disputes_immutable_delete BEFORE DELETE ON hosting_v2_disputes BEGIN SELECT RAISE(ABORT, 'hosting dispute immutable'); END`,
+  `CREATE TABLE IF NOT EXISTS hosting_v2_dispute_resolution_proposals (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    proposal_version INTEGER NOT NULL CHECK (proposal_version >= 1),
+    resolution TEXT NOT NULL CHECK (resolution IN ('REFUND','SETTLE')),
+    request_reason TEXT NOT NULL,
+    evidence_digest TEXT,
+    requested_by TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('REQUESTED','APPROVED','REJECTED','APPLIED')),
+    decided_by TEXT,
+    decision_reason TEXT,
+    decision_payload_hash TEXT,
+    execution_payload_hash TEXT,
+    requested_at TEXT NOT NULL,
+    decided_at TEXT,
+    UNIQUE(contract_id,proposal_version)
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS hosting_v2_one_pending_dispute_proposal ON hosting_v2_dispute_resolution_proposals(contract_id) WHERE status='REQUESTED'`,
+  `CREATE INDEX IF NOT EXISTS hosting_v2_dispute_proposals_contract_idx ON hosting_v2_dispute_resolution_proposals(contract_id,proposal_version DESC)`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_dispute_proposal_identity_immutable BEFORE UPDATE ON hosting_v2_dispute_resolution_proposals
+    WHEN OLD.id<>NEW.id OR OLD.contract_id<>NEW.contract_id OR OLD.proposal_version<>NEW.proposal_version OR OLD.resolution<>NEW.resolution
+      OR OLD.request_reason<>NEW.request_reason OR COALESCE(OLD.evidence_digest,'')<>COALESCE(NEW.evidence_digest,'')
+      OR OLD.requested_by<>NEW.requested_by OR OLD.requested_at<>NEW.requested_at
+    BEGIN SELECT RAISE(ABORT, 'hosting dispute proposal identity immutable'); END`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_dispute_proposal_status_guard BEFORE UPDATE ON hosting_v2_dispute_resolution_proposals
+    WHEN NOT (
+      OLD.status='REQUESTED' AND NEW.status IN ('APPROVED','REJECTED') AND NEW.decided_by IS NOT NULL AND NEW.decision_reason IS NOT NULL AND NEW.decision_payload_hash IS NOT NULL AND NEW.decided_at IS NOT NULL
+      OR OLD.status='APPROVED' AND NEW.status='APPLIED' AND NEW.execution_payload_hash IS NOT NULL
+    )
+    BEGIN SELECT RAISE(ABORT, 'hosting dispute proposal status transition invalid'); END`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_dispute_proposals_immutable_delete BEFORE DELETE ON hosting_v2_dispute_resolution_proposals BEGIN SELECT RAISE(ABORT, 'hosting dispute proposal immutable'); END`,
   `CREATE TABLE IF NOT EXISTS hosting_v2_command_receipts (
     actor_id TEXT NOT NULL,
     idempotency_key TEXT NOT NULL,

@@ -1,4 +1,4 @@
-import { HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingFeeSchedule, type HostingOffer, type HostingSupplierProfile } from "../hosting-v2.ts";
+import { HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDisputeCase, type HostingFeeSchedule, type HostingOffer, type HostingSupplierProfile } from "../hosting-v2.ts";
 import { HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { hostingAgentDigest } from "./hosting-agent-crypto.ts";
@@ -199,7 +199,7 @@ function contract(row: Row): HostingContract {
   };
 }
 
-function contractEvidence(instanceRow: Row | null, meteringRow: Row | null, cleanupRow: Row | null, acceptanceRow: Row | null): HostingContractEvidence {
+function contractEvidence(instanceRow: Row | null, meteringRow: Row | null, cleanupRow: Row | null, acceptanceRow: Row | null, disputeRow: Row | null): HostingContractEvidence {
   return {
     instance: instanceRow ? {
       status: value(instanceRow, "status") as NonNullable<HostingContractEvidence["instance"]>["status"],
@@ -219,7 +219,41 @@ function contractEvidence(instanceRow: Row | null, meteringRow: Row | null, clea
       mode: value(acceptanceRow, "decision_mode") as "BUYER" | "TIMEOUT",
       acceptanceWindowSeconds: number(acceptanceRow, "acceptance_window_seconds"), deadlineAt: value(acceptanceRow, "deadline_at"), decidedAt: value(acceptanceRow, "decided_at"),
     } : null,
+    dispute: disputeRow ? {
+      reason: value(disputeRow, "reason"), openedAt: value(disputeRow, "opened_at"),
+      proposalId: nullable(disputeRow, "proposal_id"), proposalVersion: disputeRow.proposal_version == null ? null : number(disputeRow, "proposal_version"),
+      proposedResolution: nullable(disputeRow, "resolution") as "REFUND" | "SETTLE" | null,
+      proposalStatus: nullable(disputeRow, "proposal_status") as "REQUESTED" | "APPROVED" | "REJECTED" | "APPLIED" | null,
+      requestedAt: nullable(disputeRow, "requested_at"), decidedAt: nullable(disputeRow, "decided_at"),
+    } : null,
   };
+}
+
+function disputeCase(row: Row): HostingDisputeCase {
+  return {
+    contractId: value(row, "contract_id"), contractVersion: number(row, "contract_version"), contractStatus: value(row, "contract_status") as HostingDisputeCase["contractStatus"],
+    buyerOrganizationId: value(row, "buyer_organization_id"), supplierOrganizationId: value(row, "supplier_organization_id"),
+    deviceId: value(row, "device_id"), deviceDisplayName: value(row, "device_display_name"), offerId: value(row, "offer_id"), offerTitle: value(row, "offer_title"),
+    measuredSeconds: number(row, "measured_seconds"), heldMicros: number(row, "held_micros"), reason: value(row, "reason"), openedAt: value(row, "opened_at"),
+    proposalId: nullable(row, "proposal_id"), proposalVersion: row.proposal_version == null ? null : number(row, "proposal_version"),
+    proposedResolution: nullable(row, "resolution") as HostingDisputeCase["proposedResolution"], proposalStatus: nullable(row, "proposal_status") as HostingDisputeCase["proposalStatus"],
+    requestReason: nullable(row, "request_reason"), evidenceDigest: nullable(row, "evidence_digest"), requestedBy: nullable(row, "requested_by"), requestedAt: nullable(row, "requested_at"),
+    decidedBy: nullable(row, "decided_by"), decisionReason: nullable(row, "decision_reason"), decidedAt: nullable(row, "decided_at"),
+  };
+}
+
+function disputeCaseByProposal(db: HostingV2DatabaseAdapter, proposalId: string) {
+  return db.first<Row>(`SELECT
+      c.id contract_id,c.version contract_version,c.status contract_status,c.buyer_organization_id,c.supplier_organization_id,
+      c.device_id,c.offer_id,c.measured_seconds,c.held_micros,d.display_name device_display_name,o.title offer_title,
+      x.reason,x.opened_at,p.id proposal_id,p.proposal_version,p.resolution,p.status proposal_status,p.request_reason,p.evidence_digest,
+      p.requested_by,p.requested_at,p.decided_by,p.decision_reason,p.decided_at
+    FROM hosting_v2_dispute_resolution_proposals p
+    JOIN hosting_v2_contracts c ON c.id=p.contract_id
+    JOIN hosting_v2_disputes x ON x.contract_id=c.id
+    JOIN hosting_v2_devices d ON d.id=c.device_id
+    JOIN hosting_v2_offers o ON o.id=c.offer_id
+    WHERE p.id=?`, [proposalId]);
 }
 
 function command(row: Row): HostingAgentCommand {
@@ -307,6 +341,22 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
         WHERE c.status='CLEANING' AND cmd.status IN ('PENDING','DELIVERED','FAILED')
         ORDER BY c.updated_at DESC,c.id DESC LIMIT 200`);
       return rows.map(cleanupIncident);
+    },
+    async listDisputeCases() {
+      const rows = await db.all<Row>(`SELECT
+          c.id contract_id,c.version contract_version,c.status contract_status,c.buyer_organization_id,c.supplier_organization_id,
+          c.device_id,c.offer_id,c.measured_seconds,c.held_micros,d.display_name device_display_name,o.title offer_title,
+          x.reason,x.opened_at,p.id proposal_id,p.proposal_version,p.resolution,p.status proposal_status,p.request_reason,p.evidence_digest,
+          p.requested_by,p.requested_at,p.decided_by,p.decision_reason,p.decided_at
+        FROM hosting_v2_contracts c
+        JOIN hosting_v2_disputes x ON x.contract_id=c.id
+        JOIN hosting_v2_devices d ON d.id=c.device_id
+        JOIN hosting_v2_offers o ON o.id=c.offer_id
+        LEFT JOIN hosting_v2_dispute_resolution_proposals p ON p.id=(
+          SELECT p2.id FROM hosting_v2_dispute_resolution_proposals p2 WHERE p2.contract_id=c.id ORDER BY p2.proposal_version DESC LIMIT 1)
+        WHERE c.status IN ('DISPUTED','SETTLED','CLEANING','REFUNDED','CLEANED')
+        ORDER BY CASE WHEN p.status='REQUESTED' THEN 0 WHEN c.status='DISPUTED' THEN 1 ELSE 2 END,x.opened_at DESC LIMIT 200`);
+      return rows.map(disputeCase);
     },
   };
 }
@@ -691,13 +741,17 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
     async contractEvidenceForViewer(organizationId, contractId) {
       const visible = await db.first<Row>("SELECT id FROM hosting_v2_contracts WHERE id=? AND (buyer_organization_id=? OR supplier_organization_id=?)", [contractId, organizationId, organizationId]);
       if (!visible) return null;
-      const [instanceRow, meteringRow, cleanupRow, acceptanceRow] = await Promise.all([
+      const [instanceRow, meteringRow, cleanupRow, acceptanceRow, disputeRow] = await Promise.all([
         db.first<Row>("SELECT * FROM hosting_v2_instances WHERE contract_id=?", [contractId]),
         db.first<Row>("SELECT * FROM hosting_v2_metering_proofs WHERE contract_id=?", [contractId]),
         db.first<Row>("SELECT * FROM hosting_v2_cleanup_proofs WHERE contract_id=?", [contractId]),
         db.first<Row>("SELECT * FROM hosting_v2_acceptance_proofs WHERE contract_id=?", [contractId]),
+        db.first<Row>(`SELECT d.*,p.id proposal_id,p.proposal_version,p.resolution,p.status proposal_status,p.request_reason,p.decision_reason,p.requested_at,p.decided_at
+          FROM hosting_v2_disputes d LEFT JOIN hosting_v2_dispute_resolution_proposals p ON p.id=(
+            SELECT p2.id FROM hosting_v2_dispute_resolution_proposals p2 WHERE p2.contract_id=d.contract_id ORDER BY p2.proposal_version DESC LIMIT 1)
+          WHERE d.contract_id=?`, [contractId]),
       ]);
-      return contractEvidence(instanceRow, meteringRow, cleanupRow, acceptanceRow);
+      return contractEvidence(instanceRow, meteringRow, cleanupRow, acceptanceRow, disputeRow);
     },
 
     async expiredAcceptanceForDevice(deviceId, now) {
@@ -935,7 +989,9 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
             { sql: "UPDATE hosting_v2_instances SET status='CLEANED',cleaned_at=?,updated_at=? WHERE contract_id=? AND status='STOPPED'", values: [String(input.details?.cleanedAt), context.now, contractId] },
             { sql: `INSERT INTO hosting_v2_cleanup_proofs(id,contract_id,command_id,container_digest,cleanup_digest,container_removed,authorized_key_removed,workspace_removed,evidence_digest,cleaned_at,recorded_at)
               VALUES(?,?,?,?,?,1,1,1,?,?,?)`, values: [id("hcp"), contractId, commandId, String(input.details?.containerDigest), String(input.details?.cleanupDigest), input.evidenceDigest, String(input.details?.cleanedAt), context.now] },
-            { sql: "UPDATE hosting_v2_contracts SET status='CLEANED',version=version+1,updated_at=? WHERE id=? AND status='CLEANING'", values: [context.now, contractId] },
+            { sql: `UPDATE hosting_v2_contracts SET status=CASE WHEN EXISTS(
+                SELECT 1 FROM hosting_v2_dispute_resolution_proposals p WHERE p.contract_id=hosting_v2_contracts.id AND p.status='APPLIED' AND p.resolution='REFUND'
+              ) THEN 'REFUNDED' ELSE 'CLEANED' END,version=version+1,updated_at=? WHERE id=? AND status='CLEANING'`, values: [context.now, contractId] },
             { sql: "UPDATE hosting_v2_devices SET status=?,verification_status=?,version=version+1,updated_at=? WHERE id=?", values: [verificationFresh ? "VERIFIED" : "ONLINE", value(deviceRow, "verification_status") === "PASSED" && Date.parse(nullable(deviceRow, "verified_until") ?? "") <= Date.parse(context.now) ? "EXPIRED" : value(deviceRow, "verification_status"), context.now, deviceId] },
             { sql: "UPDATE hosting_v2_offers SET status=?,version=version+1,updated_at=? WHERE id=? AND status IN ('RESERVED','SUSPENDED')", values: [verificationFresh ? "PUBLISHED" : "SUSPENDED", context.now, value(currentContract, "offer_id")] },
           );
@@ -995,6 +1051,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         await db.batch([
           { sql: "UPDATE hosting_v2_contracts SET status='DISPUTED',version=version+1,updated_at=? WHERE id=? AND buyer_organization_id=? AND status='AWAITING_ACCEPTANCE'", values: [context.now, contractId, buyerOrganizationId] },
           { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+          { sql: "INSERT INTO hosting_v2_disputes(contract_id,buyer_organization_id,reason,opened_by,opened_at) VALUES(?,?,?,?,?)", values: [contractId, buyerOrganizationId, normalizedReason, context.actorId, context.now] },
           { sql: "UPDATE hosting_v2_devices SET status='DRAINING',version=version+1,updated_at=? WHERE id=?", values: [context.now, value(current, "device_id")] },
           { sql: "UPDATE hosting_v2_offers SET status='SUSPENDED',version=version+1,updated_at=? WHERE id=? AND status='RESERVED'", values: [context.now, value(current, "offer_id")] },
           event(context, buyerOrganizationId, "CONTRACT", contractId, "CONTRACT_DISPUTED", { reason: normalizedReason, deadlineAt }),
@@ -1005,6 +1062,93 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       if (!row) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "租赁合同不存在。");
       if (value(row, "status") !== "DISPUTED") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "争议状态未能确认。");
       return contract(row);
+    },
+
+    async requestDisputeResolution(contractId, input, context) {
+      const replayed = await replay(db, context, "REQUEST_DISPUTE_RESOLUTION");
+      let requestedProposalId = replayed?.entityId ?? null;
+      if (!replayed) {
+        if (input.resolution !== "REFUND" && input.resolution !== "SETTLE") throw new ExchangeInputError("争议方案无效。", "resolution");
+        if (!Number.isSafeInteger(input.expectedContractVersion) || input.expectedContractVersion < 1) throw new ExchangeInputError("合同版本无效。", "expectedContractVersion");
+        const requestReason = input.requestReason.trim();
+        if (requestReason.length < 8 || requestReason.length > 500) throw new ExchangeInputError("裁决申请说明应为 8–500 个字符。", "requestReason");
+        if (input.evidenceDigest && !/^[a-f0-9]{64}$/u.test(input.evidenceDigest)) throw new ExchangeInputError("证据仅接受 SHA-256 摘要。", "evidenceDigest");
+        const current = await db.first<Row>(`SELECT c.*,x.contract_id dispute_id FROM hosting_v2_contracts c JOIN hosting_v2_disputes x ON x.contract_id=c.id WHERE c.id=?`, [contractId]);
+        if (!current) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "争议合同不存在。");
+        if (value(current, "status") !== "DISPUTED") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同当前不在争议处理中。");
+        if (number(current, "version") !== input.expectedContractVersion) throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT", 409, "合同状态已变化，请刷新后重试。");
+        const pending = await db.first<Row>("SELECT id FROM hosting_v2_dispute_resolution_proposals WHERE contract_id=? AND status IN ('REQUESTED','APPROVED')", [contractId]);
+        if (pending) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "该争议已有待复核或待执行方案。");
+        const previous = await db.first<Row>("SELECT COALESCE(MAX(proposal_version),0) version FROM hosting_v2_dispute_resolution_proposals WHERE contract_id=?", [contractId]);
+        const proposalId = id("hdsp");
+        requestedProposalId = proposalId;
+        const proposalVersion = Number(previous?.version ?? 0) + 1;
+        await db.batch([
+          { sql: `INSERT INTO hosting_v2_dispute_resolution_proposals(id,contract_id,proposal_version,resolution,request_reason,evidence_digest,requested_by,status,requested_at)
+              SELECT ?,id,?,?,?,?,?,'REQUESTED',? FROM hosting_v2_contracts WHERE id=? AND status='DISPUTED' AND version=?`,
+            values: [proposalId, proposalVersion, input.resolution, requestReason, input.evidenceDigest ?? null, context.actorId, context.now, contractId, input.expectedContractVersion] },
+          { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+          event(context, value(current, "buyer_organization_id"), "CONTRACT", contractId, "DISPUTE_RESOLUTION_REQUESTED", { proposalId, proposalVersion, resolution: input.resolution, requestReason, evidenceDigest: input.evidenceDigest ?? null }),
+          receipt(context, "REQUEST_DISPUTE_RESOLUTION", "DISPUTE_PROPOSAL", proposalId),
+        ]);
+      }
+      const row = await disputeCaseByProposal(db, requestedProposalId ?? "");
+      if (!row) throw new Error("HOSTING_DISPUTE_PROPOSAL_CREATE_FAILED");
+      return disputeCase(row);
+    },
+
+    async decideDisputeResolution(proposalId, input, context) {
+      const replayed = await replay(db, context, "DECIDE_DISPUTE_RESOLUTION");
+      if (!replayed) {
+        if (input.decision !== "APPROVE" && input.decision !== "REJECT") throw new ExchangeInputError("裁决复核决定无效。", "decision");
+        const decisionReason = input.decisionReason.trim();
+        if (decisionReason.length < 8 || decisionReason.length > 500) throw new ExchangeInputError("复核说明应为 8–500 个字符。", "decisionReason");
+        const current = await db.first<Row>("SELECT * FROM hosting_v2_dispute_resolution_proposals WHERE id=?", [proposalId]);
+        if (!current) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "争议裁决申请不存在。");
+        if (value(current, "status") !== "REQUESTED") {
+          const expectedStatuses = input.decision === "APPROVE" ? ["APPROVED", "APPLIED"] : ["REJECTED"];
+          if (expectedStatuses.includes(value(current, "status")) && nullable(current, "decided_by") === context.actorId
+            && nullable(current, "decision_reason") === decisionReason && nullable(current, "decision_payload_hash") === context.payloadHash) {
+            const existing = await disputeCaseByProposal(db, proposalId);
+            if (!existing) throw new Error("HOSTING_DISPUTE_PROPOSAL_DECISION_MISSING");
+            return disputeCase(existing);
+          }
+          throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "该裁决申请已经处理。");
+        }
+        if (value(current, "requested_by") === context.actorId) throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "裁决申请人与复核人必须是两位不同管理员。");
+        const nextStatus = input.decision === "APPROVE" ? "APPROVED" : "REJECTED";
+        await db.batch([
+          { sql: "UPDATE hosting_v2_dispute_resolution_proposals SET status=?,decided_by=?,decision_reason=?,decision_payload_hash=?,decided_at=? WHERE id=? AND status='REQUESTED' AND requested_by<>?", values: [nextStatus, context.actorId, decisionReason, context.payloadHash, context.now, proposalId, context.actorId] },
+          { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+          event(context, null, "DISPUTE_PROPOSAL", proposalId, `DISPUTE_RESOLUTION_${nextStatus}`, { decisionReason }),
+          receipt(context, "DECIDE_DISPUTE_RESOLUTION", "DISPUTE_PROPOSAL", proposalId),
+        ]);
+      }
+      const row = await disputeCaseByProposal(db, replayed?.entityId ?? proposalId);
+      if (!row) throw new Error("HOSTING_DISPUTE_PROPOSAL_DECISION_FAILED");
+      return disputeCase(row);
+    },
+
+    async queueDisputeCleanup(proposalId, context) {
+      const replayed = await replay(db, context, "QUEUE_DISPUTE_CLEANUP");
+      if (replayed) {
+        const [contractRow, commandRow] = await Promise.all([db.first<Row>("SELECT c.* FROM hosting_v2_contracts c JOIN hosting_v2_dispute_resolution_proposals p ON p.contract_id=c.id WHERE p.id=?", [proposalId]), db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE id=?", [replayed.entityId])]);
+        if (!contractRow || !commandRow) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "争议清理任务不存在。");
+        return { contract: contract(contractRow), command: command(commandRow) };
+      }
+      const current = await db.first<Row>(`SELECT c.*,p.resolution,p.status proposal_status FROM hosting_v2_contracts c JOIN hosting_v2_dispute_resolution_proposals p ON p.contract_id=c.id WHERE p.id=?`, [proposalId]);
+      if (!current || value(current, "proposal_status") !== "APPLIED" || !["SETTLED", "REFUNDED"].includes(value(current, "status"))) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "争议资金裁决尚未执行完成。");
+      const commandId = id("hcmd");
+      await db.batch([
+        { sql: `UPDATE hosting_v2_contracts SET status='CLEANING',version=version+1,updated_at=? WHERE id=? AND status IN ('SETTLED','REFUNDED') AND EXISTS(SELECT 1 FROM hosting_v2_dispute_resolution_proposals WHERE id=? AND status='APPLIED')`, values: [context.now, value(current, "id"), proposalId] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        { sql: "INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at) VALUES(?,?,?,'CLEANUP',?,'PENDING',0,?)", values: [commandId, value(current, "device_id"), value(current, "id"), JSON.stringify({ contractId: value(current, "id"), removeAuthorizedKeys: true, removeContainer: true, removeWorkspace: true }), context.now] },
+        event(context, value(current, "supplier_organization_id"), "CONTRACT", value(current, "id"), "DISPUTE_CLEANUP_QUEUED", { proposalId, resolution: value(current, "resolution") }),
+        receipt(context, "QUEUE_DISPUTE_CLEANUP", "AGENT_COMMAND", commandId),
+      ]);
+      const [contractRow, commandRow] = await Promise.all([db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [value(current, "id")]), db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE id=?", [commandId])]);
+      if (!contractRow || !commandRow) throw new Error("HOSTING_DISPUTE_CLEANUP_QUEUE_FAILED");
+      return { contract: contract(contractRow), command: command(commandRow) };
     },
 
     async retryCleanup(contractId, input, context) {

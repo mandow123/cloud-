@@ -771,6 +771,31 @@ body:has(.admin-app) #main-content {
   margin-top: 16px;
 }
 
+.admin-hosting-decision-note {
+  display: grid;
+  gap: 7px;
+  margin-top: 16px;
+}
+
+.admin-hosting-decision-note > span {
+  color: var(--muted);
+  font-size: .6875rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.admin-hosting-decision-note textarea {
+  width: 100%;
+  min-height: 82px;
+  border: 1px solid var(--border-strong);
+  border-radius: 0;
+  background: var(--surface);
+  padding: 9px 11px;
+  color: var(--ink);
+  resize: vertical;
+}
+
 .admin-row-actions {
   display: flex;
   gap: 6px;

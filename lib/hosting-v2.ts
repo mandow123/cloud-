@@ -191,6 +191,43 @@ export type HostingContractEvidence = Readonly<{
     deadlineAt: string;
     decidedAt: string;
   }> | null;
+  dispute: Readonly<{
+    reason: string;
+    openedAt: string;
+    proposalId: string | null;
+    proposalVersion: number | null;
+    proposedResolution: "REFUND" | "SETTLE" | null;
+    proposalStatus: "REQUESTED" | "APPROVED" | "REJECTED" | "APPLIED" | null;
+    requestedAt: string | null;
+    decidedAt: string | null;
+  }> | null;
+}>;
+
+export type HostingDisputeCase = Readonly<{
+  contractId: string;
+  contractVersion: number;
+  contractStatus: HostingContractStatus;
+  buyerOrganizationId: string;
+  supplierOrganizationId: string;
+  deviceId: string;
+  deviceDisplayName: string;
+  offerId: string;
+  offerTitle: string;
+  measuredSeconds: number;
+  heldMicros: number;
+  reason: string;
+  openedAt: string;
+  proposalId: string | null;
+  proposalVersion: number | null;
+  proposedResolution: "REFUND" | "SETTLE" | null;
+  proposalStatus: "REQUESTED" | "APPROVED" | "REJECTED" | "APPLIED" | null;
+  requestReason: string | null;
+  evidenceDigest: string | null;
+  requestedBy: string | null;
+  requestedAt: string | null;
+  decidedBy: string | null;
+  decisionReason: string | null;
+  decidedAt: string | null;
 }>;
 
 export type HostingAgentCommand = Readonly<{

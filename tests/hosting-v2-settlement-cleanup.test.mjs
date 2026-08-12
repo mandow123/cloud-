@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { acceptHostingContract, advanceExpiredHostingAcceptance } from "../lib/server/hosting-contract-service.ts";
+import { decideAndExecuteHostingDispute } from "../lib/server/hosting-dispute-service.ts";
 import { createSqliteCardHourStore } from "../lib/server/card-hour-store-sqlite.ts";
 import { createSqliteHostingV2Store } from "../lib/server/hosting-v2-store-sqlite.ts";
 
@@ -69,6 +70,12 @@ function seedAcceptanceDecision(path, contractId, now, mode = "BUYER") {
   const deadlineAt = new Date(Date.parse(row.stopped_at) + snapshot.acceptanceWindowSeconds * 1_000).toISOString();
   db.prepare("UPDATE hosting_v2_contracts SET status='SETTLED',accepted_at=?,version=version+1,updated_at=? WHERE id=? AND status='AWAITING_ACCEPTANCE'").run(now, now, contractId);
   db.prepare("INSERT INTO hosting_v2_acceptance_proofs(contract_id,decision_mode,acceptance_window_seconds,deadline_at,decided_at,actor_id,payload_digest) VALUES(?,?,?,?,?,?,?)").run(contractId, mode, snapshot.acceptanceWindowSeconds, deadlineAt, now, "buyer-cleanup-test", `sha256:${"e".repeat(64)}`);
+  db.close();
+}
+
+function refreshDevicePresence(path, deviceId, now) {
+  const db = new DatabaseSync(path, { enableForeignKeyConstraints: true });
+  db.prepare("UPDATE hosting_v2_devices SET last_seen_at=?,updated_at=? WHERE id=?").run(now, now, deviceId);
   db.close();
 }
 
@@ -242,6 +249,74 @@ test("acceptance timeout settles once while a timely dispute freezes money and r
     assert.equal(await advanceExpiredHostingAcceptance(disputed.deviceId, deadline, stores), null);
     assert.deepEqual((await cardHours.dashboard(buyer.activeOrganization.id, deadline)).balance, beforeDispute.balance);
     assert.equal(await hosting.pollCommand(disputed.deviceId, deadline), null, "a disputed machine must not receive cleanup or relist automatically");
+  } finally {
+    cardHours.close();
+    hosting.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("independent dispute resolution refunds or settles card-hours before evidence-backed cleanup", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kai-hosting-dispute-resolution-"));
+  const path = join(directory, "dispute-resolution.sqlite");
+  const hosting = await createSqliteHostingV2Store(path);
+  const cardHours = await createSqliteCardHourStore(path);
+  const buyer = account("resolution-buyer");
+  const supplier = account("resolution-supplier");
+  const stores = { hosting, cardHours };
+  const stoppedAt = "2026-08-11T10:00:00.000Z";
+  const openedAt = "2026-08-11T10:10:00.000Z";
+  try {
+    const refundSeed = seedStoppedContract(path, "resolution-refund", buyer, supplier, stoppedAt);
+    const refundGrant = await cardHours.requestTrialGrant({ organizationId: buyer.activeOrganization.id, amountMicros: 3_600_000, reason: "争议全额退回账本测试", requestedBy: "refund-grant-requester", idempotencyKey: "refund-resolution-grant", payloadHash: "refund-resolution-grant-hash", now: stoppedAt });
+    await cardHours.decideTrialGrant({ grantId: refundGrant.id, decision: "APPROVE", approvedBy: "refund-grant-approver", payloadHash: "refund-resolution-grant-approval", now: stoppedAt });
+    await cardHours.holdHostingOrder({ account: buyer, orderId: refundSeed.contractId, amountMicros: 3_600_000, idempotencyKey: `hosting-hold:${refundSeed.contractId}`, payloadHash: "refund-resolution-hold", now: stoppedAt });
+    const disputedRefund = await hosting.disputeContract(buyer.activeOrganization.id, refundSeed.contractId, "实例入口持续无法连接，申请全额退回锁定卡时", mutation(buyer.account.id, "open-refund-dispute", "open-refund-dispute-hash", openedAt));
+    const refundProposal = await hosting.requestDisputeResolution(refundSeed.contractId, { resolution: "REFUND", expectedContractVersion: disputedRefund.version, requestReason: "连接证据显示整个服务窗口均不可用，应全额退回", evidenceDigest: "1".repeat(64) }, mutation("root-resolution", "request-refund-resolution", "request-refund-resolution-hash", openedAt));
+    assert.equal(refundProposal.proposalStatus, "REQUESTED");
+    await assert.rejects(
+      hosting.decideDisputeResolution(refundProposal.proposalId, { decision: "APPROVE", decisionReason: "申请人不能复核自己的争议裁决方案" }, mutation("root-resolution", "self-approve-refund", "self-approve-refund-hash", openedAt)),
+      (error) => error.code === "EXCHANGE_ROLE_FORBIDDEN",
+    );
+    const refunded = await decideAndExecuteHostingDispute({ proposalId: refundProposal.proposalId, decision: "APPROVE", decisionReason: "独立复核连接和计量证据，同意全额退回并清理", mutation: mutation("finance-resolution", "approve-refund-resolution", "approve-refund-resolution-hash", openedAt) }, stores);
+    assert.equal(refunded.record.proposalStatus, "APPLIED");
+    assert.equal(refunded.ledger.resolution, "REFUND");
+    assert.equal(refunded.ledger.settledMicros, 0);
+    assert.equal(refunded.cleanup.contract.status, "CLEANING");
+    assert.deepEqual((await cardHours.dashboard(buyer.activeOrganization.id, openedAt)).balance, { availableMicros: 3_600_000, heldMicros: 0, lifetimeTopupMicros: 3_600_000, lifetimeSpentMicros: 0 });
+    assert.equal((await cardHours.dashboard(supplier.activeOrganization.id, openedAt)).balance.availableMicros, 0);
+    const refundReplay = await decideAndExecuteHostingDispute({ proposalId: refundProposal.proposalId, decision: "APPROVE", decisionReason: "独立复核连接和计量证据，同意全额退回并清理", mutation: mutation("finance-resolution", "approve-refund-resolution-retry", "approve-refund-resolution-hash", openedAt) }, stores);
+    assert.equal(refundReplay.ledger.applied, false);
+    assert.equal(refundReplay.cleanup.command.id, refunded.cleanup.command.id);
+    assert.deepEqual((await cardHours.dashboard(buyer.activeOrganization.id, openedAt)).balance, { availableMicros: 3_600_000, heldMicros: 0, lifetimeTopupMicros: 3_600_000, lifetimeSpentMicros: 0 });
+    refreshDevicePresence(path, refundSeed.deviceId, openedAt);
+    const refundCleanup = await hosting.pollCommand(refundSeed.deviceId, openedAt);
+    assert.equal(refundCleanup.type, "CLEANUP");
+    const refundClosed = await hosting.completeCommand(refundSeed.deviceId, refundCleanup.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"2".repeat(64)}`, details: cleanupDetails(refundSeed.contractId, openedAt) }, mutation(`agent:${refundSeed.deviceId}`, "complete-refund-cleanup", "complete-refund-cleanup-hash", openedAt));
+    assert.equal(refundClosed.contract.status, "REFUNDED", "cleanup must preserve the refund terminal state");
+    assert.equal(refundClosed.device.status, "VERIFIED");
+    assert.equal((await hosting.getOffer(refundSeed.offerId)).status, "PUBLISHED");
+
+    const settleSeed = seedStoppedContract(path, "resolution-settle", buyer, supplier, stoppedAt);
+    const settleGrant = await cardHours.requestTrialGrant({ organizationId: buyer.activeOrganization.id, amountMicros: 3_600_000, reason: "争议按计量结算账本测试", requestedBy: "settle-grant-requester", idempotencyKey: "settle-resolution-grant", payloadHash: "settle-resolution-grant-hash", now: stoppedAt });
+    await cardHours.decideTrialGrant({ grantId: settleGrant.id, decision: "APPROVE", approvedBy: "settle-grant-approver", payloadHash: "settle-resolution-grant-approval", now: stoppedAt });
+    await cardHours.holdHostingOrder({ account: buyer, orderId: settleSeed.contractId, amountMicros: 3_600_000, idempotencyKey: `hosting-hold:${settleSeed.contractId}`, payloadHash: "settle-resolution-hold", now: stoppedAt });
+    const disputedSettle = await hosting.disputeContract(buyer.activeOrganization.id, settleSeed.contractId, "连接中断后恢复，申请平台复核实际有效运行时长", mutation(buyer.account.id, "open-settle-dispute", "open-settle-dispute-hash", openedAt));
+    const settleProposal = await hosting.requestDisputeResolution(settleSeed.contractId, { resolution: "SETTLE", expectedContractVersion: disputedSettle.version, requestReason: "Agent 与控制面均证明有六百秒有效服务，应按冻结费率结算", evidenceDigest: "3".repeat(64) }, mutation("root-resolution", "request-settle-resolution", "request-settle-resolution-hash", openedAt));
+    const rejected = await hosting.decideDisputeResolution(settleProposal.proposalId, { decision: "REJECT", decisionReason: "证据摘要与控制面记录不完整，请补充后重新提案" }, mutation("finance-resolution", "reject-settle-resolution", "reject-settle-resolution-hash", openedAt));
+    assert.equal(rejected.proposalStatus, "REJECTED");
+    const revisedProposal = await hosting.requestDisputeResolution(settleSeed.contractId, { resolution: "SETTLE", expectedContractVersion: disputedSettle.version, requestReason: "已补齐 Agent 与控制面双端证据，六百秒有效服务一致", evidenceDigest: "5".repeat(64) }, mutation("root-resolution", "request-settle-resolution-v2", "request-settle-resolution-v2-hash", openedAt));
+    assert.equal(revisedProposal.proposalVersion, 2);
+    const settled = await decideAndExecuteHostingDispute({ proposalId: revisedProposal.proposalId, decision: "APPROVE", decisionReason: "独立复核双端计量一致，同意按六百秒实际服务结算", mutation: mutation("finance-resolution", "approve-settle-resolution", "approve-settle-resolution-hash", openedAt) }, stores);
+    assert.equal(settled.ledger.resolution, "SETTLE");
+    assert.equal(settled.ledger.settledMicros, 600_000);
+    assert.equal(settled.ledger.supplierIncomeMicros, 540_000);
+    assert.deepEqual((await cardHours.dashboard(buyer.activeOrganization.id, openedAt)).balance, { availableMicros: 6_600_000, heldMicros: 0, lifetimeTopupMicros: 7_200_000, lifetimeSpentMicros: 600_000 });
+    assert.equal((await cardHours.dashboard(supplier.activeOrganization.id, openedAt)).balance.availableMicros, 540_000);
+    refreshDevicePresence(path, settleSeed.deviceId, openedAt);
+    const settleCleanup = await hosting.pollCommand(settleSeed.deviceId, openedAt);
+    const settleClosed = await hosting.completeCommand(settleSeed.deviceId, settleCleanup.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"4".repeat(64)}`, details: cleanupDetails(settleSeed.contractId, openedAt) }, mutation(`agent:${settleSeed.deviceId}`, "complete-settle-cleanup", "complete-settle-cleanup-hash", openedAt));
+    assert.equal(settleClosed.contract.status, "CLEANED");
   } finally {
     cardHours.close();
     hosting.close();

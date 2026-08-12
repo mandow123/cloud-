@@ -7,7 +7,7 @@ import type { SupplierHostingContract } from "@/lib/hosting-v2-client";
 import { formatCardHours, formatEvidenceDigest, formatHostingTime, hostingContractStatusLabel } from "@/lib/hosting-v2-client";
 import styles from "./supply-console.module.css";
 
-const POLLED = new Set(["CARD_HOURS_HELD", "PROVISIONING", "READY", "IN_SERVICE", "AWAITING_ACCEPTANCE", "SETTLED", "CLEANING"]);
+const POLLED = new Set(["CARD_HOURS_HELD", "PROVISIONING", "READY", "IN_SERVICE", "AWAITING_ACCEPTANCE", "SETTLED", "CLEANING", "DISPUTED"]);
 const STEPS = ["CARD_HOURS_HELD", "PROVISIONING", "READY", "IN_SERVICE", "AWAITING_ACCEPTANCE", "CLEANING", "CLEANED"] as const;
 
 function stepIndex(status: SupplierHostingContract["status"]) {
@@ -22,10 +22,14 @@ function deliveryMessage(contract: SupplierHostingContract) {
     case "READY": return "实例入口已验证，等待买家启动服务；尚未进入服务计量。";
     case "IN_SERVICE": return "实例正在运行，服务端以 Agent 证据计算实际运行秒数。";
     case "AWAITING_ACCEPTANCE": return "实例已停止并生成计量结果，等待买家在冻结时限内验收或发起争议；无争议到期后平台自动结算。";
-    case "SETTLED":
-    case "CLEANING": return "租金已归属或正在归属，Host Agent 正在撤权并清理工作区。";
+    case "SETTLED": return "租金已按冻结计量与合同费率归属，等待受限清理任务排队。";
+    case "CLEANING": return contract.evidence?.dispute?.proposedResolution === "REFUND" && contract.evidence.dispute.proposalStatus === "APPLIED"
+      ? "卡时已全额退回，Host Agent 正在撤权并清理工作区；供应方不会获得本单租金。"
+      : "租金已归属，Host Agent 正在撤权并清理工作区。";
     case "CLEANED": return "容器、公钥和工作目录已清理，设备通过复用检查后可重新挂牌。";
     case "FAILED": return "交付失败，设备已进入排空或风控处理，不能自动重新挂牌。";
+    case "DISPUTED": return "买家已发起争议，卡时和机器均保持冻结；平台提案须经独立财务复核后才能退款或结算。";
+    case "REFUNDED": return "争议已裁决为全额退回；临时权限已清理，供应方未获得本单租金。";
     default: return `订单当前为“${hostingContractStatusLabel(contract.status)}”。`;
   }
 }

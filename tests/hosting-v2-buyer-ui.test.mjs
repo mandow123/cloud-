@@ -36,6 +36,9 @@ test("buyer workspace drives every lifecycle action through its server endpoint"
   for (const action of ["ssh-key", "start", "stop", "accept", "dispute", "cancel"]) {
     assert.match(workspace, new RegExp(`/api/v2/contracts/\\$\\{encodeURIComponent\\(contract\\.id\\)\\}/${action}`, "u"));
   }
+  assert.match(workspace, /争议处理中，卡时继续冻结/u);
+  assert.match(workspace, /争议已裁决并全额退回/u);
+  assert.match(workspace, /POLLED_STATUSES[^;]+DISPUTED/u);
   assert.match(workspace, /marketplaceGet<\{ record: BuyerHostingContract \}>\(`\/api\/v2\/contracts\/\$\{encodeURIComponent\(contractId\)\}`\)/u);
   assert.match(workspace, /浏览器不能提交运行时长或金额/u);
   assert.match(workspace, /DELIVERY EVIDENCE/u);

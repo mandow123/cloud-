@@ -257,6 +257,95 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       return { record: holdRecord(updated), referrerOrganizationId, applied: results[3]?.changes === 1 };
     },
 
+    async resolveHostingDispute(input) {
+      const current = await db.first<Row>(`SELECT p.id proposal_id,p.resolution,p.status proposal_status,p.execution_payload_hash,
+          c.id contract_id,c.status contract_status,c.buyer_organization_id,c.supplier_organization_id,
+          c.measured_seconds,c.held_micros,c.settled_micros,c.supplier_income_micros,c.commission_micros,c.snapshot_json,
+          h.id hold_id,h.status hold_status,h.amount_micros
+        FROM hosting_v2_dispute_resolution_proposals p
+        JOIN hosting_v2_contracts c ON c.id=p.contract_id
+        JOIN card_hour_order_holds h ON h.source_system='HOSTING_V2' AND h.order_id=c.id AND h.organization_id=c.buyer_organization_id
+        WHERE p.id=?`, [input.proposalId]);
+      if (!current) throw new AccountAuthError("HOSTING_DISPUTE_NOT_FOUND", 409, "争议裁决或卡时预留不存在。 ");
+      const resolution = text(current, "resolution") as "REFUND" | "SETTLE";
+      if (text(current, "proposal_status") === "APPLIED") {
+        if (current.execution_payload_hash == null || text(current, "execution_payload_hash") !== input.payloadHash) throw new AccountAuthError("IDEMPOTENCY_CONFLICT", 409, "争议裁决执行摘要不一致。 ");
+        const expectedHold = resolution === "REFUND" ? "RELEASED" : "SETTLED";
+        if (text(current, "hold_status") !== expectedHold) throw new AccountAuthError("HOSTING_DISPUTE_STATE_CONFLICT", 409, "争议裁决与卡时账本状态不一致。 ");
+        const settledMicros = resolution === "SETTLE" ? number(current, "settled_micros") : 0;
+        const supplierIncomeMicros = resolution === "SETTLE" ? number(current, "supplier_income_micros") : 0;
+        const commissionMicros = resolution === "SETTLE" ? number(current, "commission_micros") : 0;
+        const replayHold = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE id=?", [text(current, "hold_id")]);
+        if (!replayHold) throw new Error("HOSTING_DISPUTE_HOLD_MISSING");
+        return { record: holdRecord(replayHold), resolution, settledMicros, supplierIncomeMicros, commissionMicros, applied: false };
+      }
+      if (text(current, "proposal_status") !== "APPROVED" || text(current, "contract_status") !== "DISPUTED" || text(current, "hold_status") !== "HELD") throw new AccountAuthError("HOSTING_DISPUTE_STATE_CONFLICT", 409, "争议裁决尚未批准或资金状态已经变化。 ");
+      const buyerOrganizationId = text(current, "buyer_organization_id");
+      const supplierOrganizationId = text(current, "supplier_organization_id");
+      const holdId = text(current, "hold_id");
+      const heldMicros = number(current, "amount_micros");
+      const measuredSeconds = number(current, "measured_seconds");
+      const snapshot = JSON.parse(text(current, "snapshot_json")) as { cardHourMicrosPerGpuHour?: number; platformFeeBps?: number; referralRewardBps?: number };
+      const rateMicros = Number(snapshot.cardHourMicrosPerGpuHour);
+      const platformFeeBps = Number(snapshot.platformFeeBps);
+      const referralRewardBps = Number(snapshot.referralRewardBps);
+      if (resolution === "SETTLE" && (!Number.isSafeInteger(rateMicros) || rateMicros < 1 || !Number.isSafeInteger(measuredSeconds) || measuredSeconds < 1 || !Number.isSafeInteger(platformFeeBps) || platformFeeBps < 0 || platformFeeBps > 5_000 || !Number.isSafeInteger(referralRewardBps) || referralRewardBps < 0 || referralRewardBps > platformFeeBps)) throw new AccountAuthError("HOSTING_DISPUTE_SNAPSHOT_INVALID", 409, "冻结合同费率或计量快照无效。 ");
+      const settledBig = resolution === "SETTLE" ? (BigInt(rateMicros) * BigInt(measuredSeconds) + 3_599n) / 3_600n : 0n;
+      if (settledBig > BigInt(Number.MAX_SAFE_INTEGER)) throw new AccountAuthError("HOSTING_DISPUTE_SETTLEMENT_INVALID", 409, "争议计量金额超出安全范围。 ");
+      const settledMicros = Number(settledBig);
+      if (resolution === "SETTLE" && (!Number.isSafeInteger(settledMicros) || settledMicros < 1 || settledMicros > heldMicros)) throw new AccountAuthError("HOSTING_DISPUTE_SETTLEMENT_INVALID", 409, "争议计量金额不在已锁定额度内。 ");
+      const platformFeeMicros = resolution === "SETTLE" ? Number(BigInt(settledMicros) * BigInt(platformFeeBps) / 10_000n) : 0;
+      const requestedCommissionMicros = resolution === "SETTLE" ? Number(BigInt(settledMicros) * BigInt(referralRewardBps) / 10_000n) : 0;
+      const supplierIncomeMicros = resolution === "SETTLE" ? settledMicros - platformFeeMicros : 0;
+      const attribution = resolution === "SETTLE" ? await db.first<Row>("SELECT referrer_organization_id FROM card_hour_referral_attributions WHERE invitee_organization_id=?", [buyerOrganizationId]) : null;
+      const referrerOrganizationId = attribution ? text(attribution, "referrer_organization_id") : null;
+      const commissionMicros = referrerOrganizationId ? requestedCommissionMicros : 0;
+      const eventId = `chhe_${crypto.randomUUID()}`;
+      const buyerBatchId = `chb_${crypto.randomUUID()}`;
+      const rentalBatchId = `chb_${crypto.randomUUID()}`;
+      const commissionBatchId = `chb_${crypto.randomUUID()}`;
+      const statements: CardHourSql[] = [
+        { sql: "UPDATE hosting_v2_dispute_resolution_proposals SET status='APPLIED',execution_payload_hash=? WHERE id=? AND status='APPROVED'", values: [input.payloadHash, input.proposalId] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+      ];
+      if (resolution === "REFUND") statements.push(
+        { sql: "INSERT INTO card_hour_hold_events(id,hold_id,event_type,amount_micros,payload_hash,occurred_at) VALUES(?,?,'RELEASED',?,?,?)", values: [eventId, holdId, heldMicros, input.payloadHash, input.now] },
+        { sql: "UPDATE card_hour_order_holds SET status='RELEASED',updated_at=? WHERE id=? AND status='HELD'", values: [input.now, holdId] },
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,version=version+1,updated_at=? WHERE organization_id=?", values: [heldMicros, heldMicros, input.now, buyerOrganizationId] },
+        { sql: "UPDATE hosting_v2_contracts SET status='REFUNDED',settled_micros=0,supplier_income_micros=0,commission_micros=0,version=version+1,updated_at=? WHERE id=? AND status='DISPUTED'", values: [input.now, text(current, "contract_id")] },
+        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) VALUES(?,?,'ORDER_REFUND',?,?,'POSTED',?,?)", values: [buyerBatchId, buyerOrganizationId, `dispute-refund:HOSTING_V2:${text(current, "contract_id")}`, heldMicros, JSON.stringify({ proposalId: input.proposalId, orderId: text(current, "contract_id"), source: "HELD_BALANCE_RELEASE" }), input.now] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, buyerBatchId, buyerOrganizationId, heldMicros, input.now, buyerOrganizationId] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_HELD','DEBIT',?,held_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, buyerBatchId, buyerOrganizationId, heldMicros, input.now, buyerOrganizationId] },
+      );
+      else statements.push(
+        { sql: "INSERT INTO card_hour_hold_events(id,hold_id,event_type,amount_micros,payload_hash,occurred_at) VALUES(?,?,'SETTLED',?,?,?)", values: [eventId, holdId, settledMicros, input.payloadHash, input.now] },
+        { sql: "UPDATE card_hour_order_holds SET settled_micros=?,status='SETTLED',updated_at=? WHERE id=? AND status='HELD'", values: [settledMicros, input.now, holdId] },
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,lifetime_spent_micros=lifetime_spent_micros+?,version=version+1,updated_at=? WHERE organization_id=?", values: [heldMicros - settledMicros, heldMicros, settledMicros, input.now, buyerOrganizationId] },
+        { sql: "UPDATE hosting_v2_contracts SET status='SETTLED',settled_micros=?,supplier_income_micros=?,commission_micros=?,accepted_at=?,version=version+1,updated_at=? WHERE id=? AND status='DISPUTED'", values: [settledMicros, supplierIncomeMicros, commissionMicros, input.now, input.now, text(current, "contract_id")] },
+        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) VALUES(?,?,'ORDER_CAPTURE',?,?,'POSTED',?,?)", values: [buyerBatchId, buyerOrganizationId, `dispute-settlement:HOSTING_V2:${text(current, "contract_id")}`, settledMicros, JSON.stringify({ proposalId: input.proposalId, heldMicros, releasedMicros: heldMicros - settledMicros }), input.now] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_HELD','DEBIT',?,held_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, buyerBatchId, buyerOrganizationId, settledMicros, input.now, buyerOrganizationId] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) VALUES(?,?,NULL,'PLATFORM_ORDER_CLEARING','CREDIT',?,NULL,?)", values: [`che_${crypto.randomUUID()}`, buyerBatchId, settledMicros, input.now] },
+        { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [supplierOrganizationId, input.now, input.now] },
+        { sql: "INSERT INTO card_hour_income_accruals(id,organization_id,income_type,source_system,source_id,amount_micros,status,created_at,vested_at) VALUES(?,?,'RENTAL','HOSTING_V2',? ,?,'VESTED',?,?)", values: [`chi_${crypto.randomUUID()}`, supplierOrganizationId, text(current, "contract_id"), supplierIncomeMicros, input.now, input.now] },
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,version=version+1,updated_at=? WHERE organization_id=?", values: [supplierIncomeMicros, input.now, supplierOrganizationId] },
+        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) VALUES(?,?,'RENTAL_INCOME',?,?,'POSTED',?,?)", values: [rentalBatchId, supplierOrganizationId, `dispute-rental:HOSTING_V2:${text(current, "contract_id")}`, supplierIncomeMicros, JSON.stringify({ proposalId: input.proposalId, buyerOrganizationId }), input.now] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, rentalBatchId, supplierOrganizationId, supplierIncomeMicros, input.now, supplierOrganizationId] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) VALUES(?,?,NULL,'PLATFORM_ORDER_CLEARING','DEBIT',?,NULL,?)", values: [`che_${crypto.randomUUID()}`, rentalBatchId, supplierIncomeMicros, input.now] },
+      );
+      if (resolution === "SETTLE" && referrerOrganizationId && commissionMicros > 0) statements.push(
+        { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [referrerOrganizationId, input.now, input.now] },
+        { sql: "INSERT INTO card_hour_income_accruals(id,organization_id,income_type,source_system,source_id,amount_micros,status,created_at,vested_at) VALUES(?,?,'COMMISSION','HOSTING_V2',? ,?,'VESTED',?,?)", values: [`chi_${crypto.randomUUID()}`, referrerOrganizationId, text(current, "contract_id"), commissionMicros, input.now, input.now] },
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,version=version+1,updated_at=? WHERE organization_id=?", values: [commissionMicros, input.now, referrerOrganizationId] },
+        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) VALUES(?,?,'COMMISSION_INCOME',?,?,'POSTED',?,?)", values: [commissionBatchId, referrerOrganizationId, `dispute-commission:HOSTING_V2:${text(current, "contract_id")}`, commissionMicros, JSON.stringify({ proposalId: input.proposalId, buyerOrganizationId }), input.now] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, commissionBatchId, referrerOrganizationId, commissionMicros, input.now, referrerOrganizationId] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) VALUES(?,?,NULL,'PLATFORM_COMMISSION_EXPENSE','DEBIT',?,NULL,?)", values: [`che_${crypto.randomUUID()}`, commissionBatchId, commissionMicros, input.now] },
+      );
+      await db.batch(statements);
+      const updated = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE id=?", [holdId]);
+      if (!updated) throw new Error("HOSTING_DISPUTE_LEDGER_FAILED");
+      return { record: holdRecord(updated), resolution, settledMicros, supplierIncomeMicros, commissionMicros, applied: true };
+    },
+
     async releaseHostingOrder(input) {
       const organizationId = input.account.activeOrganization.id;
       const current = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE source_system='HOSTING_V2' AND order_id=? AND organization_id=?", [input.orderId, organizationId]);

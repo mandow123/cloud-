@@ -5,6 +5,7 @@ import type {
   HostingContract,
   HostingContractEvidence,
   HostingDashboard,
+  HostingDisputeCase,
   HostingDevice,
   HostingDeviceInventory,
   HostingFeeSchedule,
@@ -39,6 +40,7 @@ export type HostingV2OperationalSnapshot = Readonly<{
 export interface HostingV2Store {
   readiness(now: string): Promise<HostingV2OperationalSnapshot>;
   listCleanupIncidents(): Promise<HostingCleanupIncident[]>;
+  listDisputeCases(): Promise<HostingDisputeCase[]>;
   dashboard(organizationId: string, now: string): Promise<HostingDashboard>;
   saveProfile(account: AccountSessionContext, input: { supplierType: HostingSupplierType; legalDisplayName: string; contactEmail: string; expectedVersion: number }, context: HostingMutationContext): Promise<HostingSupplierProfile>;
   submitProfile(organizationId: string, expectedVersion: number, agreementVersion: string, context: HostingMutationContext): Promise<HostingSupplierProfile>;
@@ -62,6 +64,9 @@ export interface HostingV2Store {
   requestContractStart(buyerOrganizationId: string, contractId: string, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand }>;
   requestContractStop(organizationId: string, contractId: string, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand }>;
   disputeContract(buyerOrganizationId: string, contractId: string, reason: string, context: HostingMutationContext): Promise<HostingContract>;
+  requestDisputeResolution(contractId: string, input: { resolution: "REFUND" | "SETTLE"; expectedContractVersion: number; requestReason: string; evidenceDigest?: string | null }, context: HostingMutationContext): Promise<HostingDisputeCase>;
+  decideDisputeResolution(proposalId: string, input: { decision: "APPROVE" | "REJECT"; decisionReason: string }, context: HostingMutationContext): Promise<HostingDisputeCase>;
+  queueDisputeCleanup(proposalId: string, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand }>;
   contractForViewer(organizationId: string, contractId: string): Promise<HostingContract | null>;
   contractEvidenceForViewer(organizationId: string, contractId: string): Promise<HostingContractEvidence | null>;
   expiredAcceptanceForDevice(deviceId: string, now: string): Promise<HostingContract | null>;

@@ -65,7 +65,7 @@ function cardHours(micros: unknown) {
 }
 
 function tone(status: string) {
-  if (["APPROVED", "ACTIVE", "POSTED"].includes(status)) return "success";
+  if (["APPROVED", "ACTIVE", "POSTED", "APPLIED", "CLEANED", "REFUNDED"].includes(status)) return "success";
   if (["REJECTED", "SUSPENDED"].includes(status)) return "danger";
   if (["SUBMITTED", "REQUESTED", "DRAFT"].includes(status)) return "warning";
   return "";
@@ -77,13 +77,14 @@ async function hostingOperationsBundle() {
   const root = roles.includes("ROOT");
   const approver = roles.includes("FINANCE_APPROVER");
   if (!root && !approver) throw new AdminApiError("当前账号没有 Hosting 试运营权限。", 403, "ADMIN_ACCESS_FORBIDDEN");
-  const [grants, profiles, fee, cleanupIncidents] = await Promise.all([
+  const [grants, profiles, fee, cleanupIncidents, disputes] = await Promise.all([
     adminGetRows({ path: "/api/v2/admin/card-hours/trial-grants" }),
     root ? adminGetRows({ path: "/api/v2/admin/supply/profiles" }) : Promise.resolve([]),
     root ? adminGetJson("/api/v2/admin/hosting/fees").then(feeFromPayload) : Promise.resolve(null),
     root ? adminGetRows({ path: "/api/v2/admin/hosting/cleanup-incidents" }) : Promise.resolve([]),
+    adminGetRows({ path: "/api/v2/admin/hosting/disputes" }),
   ]);
-  return { session, grants, profiles, fee, cleanupIncidents };
+  return { session, grants, profiles, fee, cleanupIncidents, disputes };
 }
 
 export function AdminHostingOperations() {
@@ -92,6 +93,7 @@ export function AdminHostingOperations() {
   const [grants, setGrants] = useState<AdminRow[]>([]);
   const [fee, setFee] = useState<FeeSchedule | null>(null);
   const [cleanupIncidents, setCleanupIncidents] = useState<AdminRow[]>([]);
+  const [disputes, setDisputes] = useState<AdminRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState("");
@@ -107,12 +109,18 @@ export function AdminHostingOperations() {
   const [grantReason, setGrantReason] = useState("");
   const [cleanupTarget, setCleanupTarget] = useState("");
   const [cleanupReason, setCleanupReason] = useState("");
+  const [disputeTarget, setDisputeTarget] = useState("");
+  const [disputeResolution, setDisputeResolution] = useState<"REFUND" | "SETTLE">("REFUND");
+  const [disputeRequestReason, setDisputeRequestReason] = useState("");
+  const [disputeEvidenceDigest, setDisputeEvidenceDigest] = useState("");
+  const [disputeDecisionReason, setDisputeDecisionReason] = useState("");
 
   const roles = useMemo(() => rolesFromSession(session), [session]);
   const isRoot = roles.includes("ROOT");
   const isApprover = roles.includes("FINANCE_APPROVER") && !isRoot;
   const selectedProfile = profiles.find((profile) => profile.organizationId === reviewTarget);
   const selectedCleanup = cleanupIncidents.find((incident) => incident.contractId === cleanupTarget);
+  const selectedDispute = disputes.find((dispute) => dispute.contractId === disputeTarget);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -124,8 +132,10 @@ export function AdminHostingOperations() {
       setProfiles(result.profiles);
       setFee(result.fee);
       setCleanupIncidents(result.cleanupIncidents);
+      setDisputes(result.disputes);
       setReviewTarget((current) => current || String(result.profiles.find((profile) => profile.status === "SUBMITTED")?.organizationId ?? result.profiles[0]?.organizationId ?? ""));
       setCleanupTarget((current) => result.cleanupIncidents.some((incident) => incident.contractId === current) ? current : String(result.cleanupIncidents.find((incident) => incident.cleanupCommandStatus === "FAILED")?.contractId ?? ""));
+      setDisputeTarget((current) => result.disputes.some((dispute) => dispute.contractId === current) ? current : String(result.disputes.find((dispute) => dispute.contractStatus === "DISPUTED" && !["REQUESTED", "APPROVED"].includes(String(dispute.proposalStatus ?? "")))?.contractId ?? ""));
     } catch (loadError) {
       setError(loadError);
     } finally {
@@ -143,8 +153,10 @@ export function AdminHostingOperations() {
         setProfiles(result.profiles);
         setFee(result.fee);
         setCleanupIncidents(result.cleanupIncidents);
+        setDisputes(result.disputes);
         setReviewTarget(String(result.profiles.find((profile) => profile.status === "SUBMITTED")?.organizationId ?? result.profiles[0]?.organizationId ?? ""));
         setCleanupTarget(String(result.cleanupIncidents.find((incident) => incident.cleanupCommandStatus === "FAILED")?.contractId ?? ""));
+        setDisputeTarget(String(result.disputes.find((dispute) => dispute.contractStatus === "DISPUTED" && !["REQUESTED", "APPROVED"].includes(String(dispute.proposalStatus ?? "")))?.contractId ?? ""));
       })
       .catch((loadError: unknown) => { if (!cancelled) setError(loadError); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -212,13 +224,34 @@ export function AdminHostingOperations() {
     }), "新的受限清理任务已排队；设备继续保持 DRAINING，只有 Agent 返回完整清理证据后才会恢复可售。 ");
   }
 
+  function submitDisputeProposal(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedDispute) return;
+    const contractId = text(selectedDispute, "contractId");
+    void run("dispute-proposal", () => adminPostAction(`/api/v2/admin/hosting/disputes/${encodeURIComponent(contractId)}/proposals`, {
+      resolution: disputeResolution,
+      expectedContractVersion: integer(selectedDispute, "contractVersion"),
+      requestReason: disputeRequestReason.trim(),
+      evidenceDigest: disputeEvidenceDigest.trim() || null,
+    }), "争议裁决方案已登记，尚未移动卡时；请由独立财务审批账号复核。 ");
+  }
+
+  function decideDispute(dispute: AdminRow, decision: "APPROVE" | "REJECT") {
+    const proposalId = text(dispute, "proposalId");
+    const decisionReason = disputeDecisionReason.trim() || text(dispute, "decisionReason");
+    void run(`dispute-${proposalId}`, () => adminPostAction(`/api/v2/admin/hosting/disputes/proposals/${encodeURIComponent(proposalId)}/decision`, {
+      decision,
+      decisionReason,
+    }), decision === "APPROVE" ? "裁决已执行：卡时账本已更新，受限清理任务已排队。" : "裁决方案已拒绝，卡时与隔离状态均未变化。 ");
+  }
+
   if (error instanceof AdminApiError && [401, 403].includes(error.status) && !session) return <AdminLoginRequired forbidden={error.status === 403} />;
 
   return (
     <div className="admin-page">
       <AdminPageHeader
         actions={<button className="admin-button secondary" disabled={loading || Boolean(busy)} onClick={() => void load()} type="button">{loading ? "读取中…" : "刷新状态"}</button>}
-        description="供应商准入、费率版本与试运营卡时采用真实服务端记录；卡时必须由 Root 发起、独立财务审批员复核后才会入账。"
+        description="供应商准入、费率、试运营卡时与争议裁决均采用真实服务端记录；资金变动必须由 Root 发起、独立财务复核。"
         kicker="Hosting trial controls"
         title="Hosting 试运营"
       />
@@ -233,6 +266,29 @@ export function AdminHostingOperations() {
         <div><span>公开支付</span><strong>关闭</strong></div>
         <div><span>当前费率</span><strong>{fee ? `${fee.platformFeeBps / 100}% / 推荐 ${fee.referralRewardBps / 100}%` : isRoot ? "未配置" : "职责外不可见"}</strong></div>
       </div> : null}
+
+      {session ? <section className="admin-panel admin-hosting-panel admin-hosting-grants" aria-labelledby="dispute-resolution-title">
+        <div className="admin-panel-head"><div><p className="admin-kicker">Dual-control disputes</p><h2 id="dispute-resolution-title">GPU 租赁争议裁决</h2></div><span className={`admin-status ${disputes.some((item) => item.contractStatus === "DISPUTED") ? "danger" : "success"}`}>{disputes.filter((item) => item.contractStatus === "DISPUTED").length} 个处理中</span></div>
+        {disputes.length ? <>
+          <div className="admin-table-wrap"><table className="admin-table"><caption>争议事实与最新裁决方案</caption><thead><tr><th>合同/设备</th><th>争议原因</th><th>计量/锁定</th><th>方案</th><th>申请人/复核人</th><th>状态</th><th>时间</th>{isApprover ? <th>独立复核</th> : null}</tr></thead><tbody>{disputes.map((item) => {
+            const proposalId = text(item, "proposalId");
+            const pending = item.proposalStatus === "REQUESTED";
+            const recoverable = ["APPROVED", "APPLIED"].includes(text(item, "proposalStatus")) && ["DISPUTED", "SETTLED", "REFUNDED"].includes(text(item, "contractStatus"));
+            const hasDecisionReason = disputeDecisionReason.trim().length >= 8 || text(item, "decisionReason").length >= 8;
+            const rowBusy = busy === `dispute-${proposalId}`;
+            return <tr key={text(item, "contractId")}><td><strong>{text(item, "offerTitle")}</strong><br/><span className="admin-mono">{text(item, "contractId")}</span><br/><span className="admin-mono">{text(item, "deviceId")}</span></td><td>{text(item, "reason")}<br/><small>{text(item, "requestReason")}</small></td><td>{integer(item, "measuredSeconds")} 秒<br/>{cardHours(item.heldMicros)} KAI</td><td>{item.proposedResolution === "REFUND" ? "全额退回锁定卡时" : item.proposedResolution === "SETTLE" ? "按冻结计量结算" : "尚未提案"}<br/><span className="admin-mono">{text(item, "evidenceDigest")}</span></td><td><span className="admin-mono">{text(item, "requestedBy")}</span><br/><span className="admin-mono">{text(item, "decidedBy")}</span></td><td><span className={`admin-status ${tone(text(item, "proposalStatus"))}`}>{text(item, "proposalStatus")}</span><br/><small>{text(item, "contractStatus")}</small></td><td>{datetime(item.requestedAt ?? item.openedAt)}<br/>{datetime(item.decidedAt)}</td>{isApprover ? <td><div className="admin-row-actions">{recoverable ? <button className="admin-button primary" disabled={rowBusy || !hasDecisionReason} onClick={() => decideDispute(item, "APPROVE")} type="button">继续执行</button> : <><button className="admin-button primary" disabled={!pending || rowBusy || disputeDecisionReason.trim().length < 8} onClick={() => decideDispute(item, "APPROVE")} type="button">批准并执行</button><button className="admin-button secondary" disabled={!pending || rowBusy || disputeDecisionReason.trim().length < 8} onClick={() => decideDispute(item, "REJECT")} type="button">拒绝</button></>}</div></td> : null}</tr>;
+          })}</tbody></table></div>
+          {isApprover && disputes.some((item) => item.proposalStatus === "REQUESTED") ? <label className="admin-hosting-decision-note"><span>本次独立复核说明</span><textarea maxLength={500} minLength={8} onChange={(event) => setDisputeDecisionReason(event.target.value)} placeholder="说明核对的 Agent、控制面、连接和计量证据，以及批准或拒绝依据" required rows={3} value={disputeDecisionReason} /></label> : null}
+          {isRoot ? <form className="admin-hosting-form admin-hosting-grant-form" onSubmit={submitDisputeProposal}>
+            <label><span>待裁决合同</span><select onChange={(event) => setDisputeTarget(event.target.value)} value={disputeTarget}><option value="">选择尚无待复核方案的争议合同</option>{disputes.filter((item) => item.contractStatus === "DISPUTED" && !["REQUESTED", "APPROVED"].includes(String(item.proposalStatus ?? ""))).map((item) => <option key={text(item, "contractId")} value={text(item, "contractId")}>{text(item, "contractId")} · {text(item, "offerTitle")}</option>)}</select></label>
+            <label><span>裁决方案</span><select onChange={(event) => setDisputeResolution(event.target.value as "REFUND" | "SETTLE")} value={disputeResolution}><option value="REFUND">全额退回锁定卡时</option><option value="SETTLE">按冻结计量与费率结算</option></select></label>
+            <label className="wide"><span>提案依据</span><textarea maxLength={500} minLength={8} onChange={(event) => setDisputeRequestReason(event.target.value)} placeholder="说明连接、运行、计量和合同证据如何支持该方案" required rows={3} value={disputeRequestReason} /></label>
+            <label><span>证据 SHA-256</span><input maxLength={64} minLength={64} onChange={(event) => setDisputeEvidenceDigest(event.target.value)} pattern="[a-fA-F0-9]{64}" placeholder="只保存证据摘要" value={disputeEvidenceDigest} /></label>
+            <button className="admin-button danger" disabled={busy === "dispute-proposal" || !selectedDispute} type="submit">{busy === "dispute-proposal" ? "正在登记…" : "提交裁决方案"}</button>
+          </form> : null}
+          <p className="admin-hosting-warning">管理员不能输入退款金额、供应方收益或佣金。全额退回释放全部锁定卡时；按计量结算只使用冻结合同费率与 Agent 计量凭证。批准后仍须完成容器、公钥和工作目录清理才允许复售。</p>
+        </> : <AdminEmpty description="买家尚未发起 GPU 租赁争议。" title="当前没有争议案件" />}
+      </section> : null}
 
       {isRoot ? <div className="admin-hosting-grid">
         <section className="admin-panel admin-hosting-panel" aria-labelledby="supplier-review-title">
