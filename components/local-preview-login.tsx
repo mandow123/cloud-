@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-export function LocalPreviewLogin({ returnTo, secret }: { returnTo: string; secret: string }) {
+export function LocalPreviewLogin({ returnTo }: { returnTo: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -13,7 +13,7 @@ export function LocalPreviewLogin({ returnTo, secret }: { returnTo: string; secr
       const response = await fetch("/api/auth/local", {
         method: "POST",
         credentials: "same-origin",
-        headers: { "content-type": "application/json", "x-kai-local-auth-secret": secret },
+        headers: { "content-type": "application/json" },
         body: "{}",
       });
       if (!response.ok) throw new Error("LOCAL_PREVIEW_LOGIN_FAILED");
