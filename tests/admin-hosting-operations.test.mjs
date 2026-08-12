@@ -9,6 +9,7 @@ import { createAccountSession } from "../lib/server/account-auth.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
 import { createSqliteCardHourStore } from "../lib/server/card-hour-store-sqlite.ts";
 import { createSqliteMarketplaceStore } from "../lib/server/marketplace-store-sqlite.ts";
+import { authorizeMarketplaceRequest, persistMarketplaceSession } from "../lib/server/marketplace-auth.ts";
 import { getHostingV2Store } from "../lib/server/hosting-v2-store.ts";
 
 import { GET as openMarketplaceSession } from "../app/api/session/route.ts";
@@ -25,13 +26,16 @@ async function json(response, expectedStatus) {
   return body;
 }
 
-async function adminBrowser(auth, username, role, now) {
+async function adminBrowser(auth, username, role, now, marketplaceToken) {
   const identity = await auth.resolveOrCreatePasswordAdministrator({ username, displayName: username, createdAt: now });
   await auth.activateMembership(identity.membership.id, [role], now);
   const active = await auth.resolveOrCreatePasswordAdministrator({ username, displayName: username, createdAt: now });
   const issued = await createAccountSession(new Request(`${ORIGIN}/api/auth/admin/password`), active, "ADMIN_PASSWORD", { store: auth, now: new Date(now) });
   const accountCookie = issued.cookie.split(";", 1)[0];
-  const sessionResponse = await openMarketplaceSession(new Request(`${ORIGIN}/api/session`, { headers: { cookie: accountCookie } }));
+  const existingMarketplaceCookie = marketplaceToken ? `kai_session_dev=${marketplaceToken}` : null;
+  const sessionResponse = await openMarketplaceSession(new Request(`${ORIGIN}/api/session`, {
+    headers: { cookie: [accountCookie, existingMarketplaceCookie].filter(Boolean).join("; ") },
+  }));
   const sessionBody = await json(sessionResponse, 200);
   const marketplaceCookie = sessionResponse.headers.get("set-cookie")?.split(";", 1)[0];
   assert.ok(marketplaceCookie);
@@ -102,8 +106,20 @@ test("Root request and independent finance approval are both required before tri
       verifiedEmail: "trial-grant-target@example.com",
       verifiedAt: now,
     });
-    const root = await adminBrowser(auth, "kai-root", "ROOT", now);
-    const approver = await adminBrowser(auth, "kai-finance-approver", "FINANCE_APPROVER", now);
+    const sharedMarketplaceToken = "a".repeat(64);
+    const targetSession = await createAccountSession(new Request(`${ORIGIN}/api/auth/kai/callback`), target, "LARK_OAUTH", { store: auth, now: new Date(now) });
+    const targetAuthorization = await authorizeMarketplaceRequest(new Request(`${ORIGIN}/api/v2/supply/profile`, {
+      headers: { cookie: `${targetSession.cookie.split(";", 1)[0]}; kai_session_dev=${sharedMarketplaceToken}` },
+    }));
+    await persistMarketplaceSession(targetAuthorization);
+    // Account switching must not require a new browser CSRF cookie. This is the
+    // same sequence used when a supplier signs out and a Root administrator
+    // signs in from the same browser.
+    const root = await adminBrowser(auth, "kai-root", "ROOT", now, sharedMarketplaceToken);
+    const approver = await adminBrowser(auth, "kai-finance-approver", "FINANCE_APPROVER", now, sharedMarketplaceToken);
+    const rootSecondBrowser = await adminBrowser(auth, "kai-root", "ROOT", now, "b".repeat(64));
+    assert.equal(root.csrfToken, approver.csrfToken);
+    assert.notEqual(root.csrfToken, rootSecondBrowser.csrfToken);
 
     const forged = await json(await requestTrialGrant(write(root, "/api/v2/admin/card-hours/trial-grants", {
       organizationId: target.organization.id,
@@ -112,6 +128,13 @@ test("Root request and independent finance approval are both required before tri
       requestedBy: "forged-actor",
     }, "admin-grant-forged-field")), 400);
     assert.equal(forged.error.code, "CARD_HOUR_ADMIN_FIELD_FORBIDDEN");
+    const secondBrowserForged = await json(await requestTrialGrant(write(rootSecondBrowser, "/api/v2/admin/card-hours/trial-grants", {
+      organizationId: target.organization.id,
+      cardHours: 12,
+      reason: "第二浏览器会话隔离验证",
+      requestedBy: "forged-actor",
+    }, "admin-grant-second-browser-forged")), 400);
+    assert.equal(secondBrowserForged.error.code, "CARD_HOUR_ADMIN_FIELD_FORBIDDEN");
 
     const requested = await json(await requestTrialGrant(write(root, "/api/v2/admin/card-hours/trial-grants", {
       organizationId: target.organization.id,
@@ -136,6 +159,12 @@ test("Root request and independent finance approval are both required before tri
     const approved = await json(await decideTrialGrant(write(approver, `/api/v2/admin/card-hours/trial-grants/${requested.record.id}/decision`, { decision: "APPROVE" }, "admin-grant-approve-0001"), { params: Promise.resolve({ grantId: requested.record.id }) }), 200);
     assert.equal(approved.record.status, "POSTED");
     assert.equal(approved.record.approvedBy, approver.accountId);
+    const sessionRows = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      assert.equal(sessionRows.prepare("SELECT COUNT(*) AS count FROM marketplace_sessions_v2").get().count, 3);
+    } finally {
+      sessionRows.close();
+    }
     const dashboard = await cardHours.dashboard(target.organization.id, new Date().toISOString());
     assert.equal(dashboard.balance.availableMicros, 12_000_000);
     assert.equal(dashboard.balance.lifetimeTopupMicros, 12_000_000);
