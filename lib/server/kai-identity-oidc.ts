@@ -28,6 +28,11 @@ type OidcMetadata = Readonly<{
 
 export type KaiIdentityStart = Readonly<{ location: string; transactionCookie: string }>;
 export type KaiIdentityCompletion = Readonly<{ issued: IssuedAccountSession; returnTo: string; clearTransactionCookie: string }>;
+export type KaiIdentityDiscoveryProbe = Readonly<{
+  available: boolean;
+  probe: "read-only";
+  errorCode?: "KAI_IDENTITY_UNAVAILABLE" | "OIDC_DISCOVERY_REDIRECT" | "OIDC_DISCOVERY_INVALID";
+}>;
 
 function environment(): Environment {
   return typeof process === "undefined" ? {} : process.env;
@@ -142,8 +147,25 @@ async function fetchJson(fetcher: typeof fetch, url: string, init: RequestInit |
   return asJsonObject(payload, code);
 }
 
-async function readMetadata(fetcher: typeof fetch): Promise<OidcMetadata> {
-  const payload = await fetchJson(fetcher, KAI_IDENTITY_DISCOVERY, { cache: "no-store", headers: { accept: "application/json" } }, "OIDC_DISCOVERY_INVALID");
+async function readMetadata(fetcher: typeof fetch, timeoutMs = 4_000): Promise<OidcMetadata> {
+  let response: Response;
+  try {
+    response = await fetcher(KAI_IDENTITY_DISCOVERY, {
+      cache: "no-store",
+      redirect: "manual",
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch {
+    throw new AccountAuthError("KAI_IDENTITY_UNAVAILABLE", 503, "KAI 统一账户暂时无法连接。");
+  }
+  if (response.status >= 300 && response.status < 400) {
+    throw new AccountAuthError("OIDC_DISCOVERY_REDIRECT", 503, "KAI 统一账户发现地址配置异常。");
+  }
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new AccountAuthError("OIDC_DISCOVERY_INVALID", 503, "KAI 统一账户元数据校验失败。");
+  }
   const expected: OidcMetadata = {
     issuer: KAI_IDENTITY_ISSUER,
     authorization_endpoint: `${KAI_IDENTITY_ISSUER}/auth`,
@@ -153,6 +175,18 @@ async function readMetadata(fetcher: typeof fetch): Promise<OidcMetadata> {
   };
   for (const [key, value] of Object.entries(expected)) if (payload[key] !== value) throw new AccountAuthError("OIDC_DISCOVERY_INVALID", 503, "KAI 统一账户元数据校验失败。");
   return expected;
+}
+
+export async function probeKaiIdentityDiscovery(options: { fetcher?: typeof fetch; timeoutMs?: number } = {}): Promise<KaiIdentityDiscoveryProbe> {
+  try {
+    await readMetadata(options.fetcher ?? fetch, options.timeoutMs ?? 2_500);
+    return { available: true, probe: "read-only" };
+  } catch (error) {
+    const errorCode = error instanceof AccountAuthError && ["KAI_IDENTITY_UNAVAILABLE", "OIDC_DISCOVERY_REDIRECT", "OIDC_DISCOVERY_INVALID"].includes(error.code)
+      ? error.code as KaiIdentityDiscoveryProbe["errorCode"]
+      : "KAI_IDENTITY_UNAVAILABLE";
+    return { available: false, probe: "read-only", errorCode };
+  }
 }
 
 function parseJwt(value: unknown) {

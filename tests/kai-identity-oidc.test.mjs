@@ -3,10 +3,17 @@ import test from "node:test";
 
 import { AccountAuthError, resolveAccountSession } from "../lib/server/account-auth.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
-import { beginKaiIdentityLogin, clearKaiIdentityTransactionCookie, completeKaiIdentityLogin, KAI_IDENTITY_DISCOVERY, KAI_IDENTITY_ISSUER } from "../lib/server/kai-identity-oidc.ts";
+import { beginKaiIdentityLogin, clearKaiIdentityTransactionCookie, completeKaiIdentityLogin, KAI_IDENTITY_DISCOVERY, KAI_IDENTITY_ISSUER, probeKaiIdentityDiscovery } from "../lib/server/kai-identity-oidc.ts";
 
 const encoder = new TextEncoder();
 const encode = (value) => Buffer.from(typeof value === "string" ? value : JSON.stringify(value)).toString("base64url");
+const validMetadata = () => ({
+  issuer: KAI_IDENTITY_ISSUER,
+  authorization_endpoint: `${KAI_IDENTITY_ISSUER}/auth`,
+  token_endpoint: `${KAI_IDENTITY_ISSUER}/token`,
+  jwks_uri: `${KAI_IDENTITY_ISSUER}/jwks`,
+  userinfo_endpoint: `${KAI_IDENTITY_ISSUER}/me`,
+});
 
 async function fixture() {
   const now = new Date("2026-08-10T08:00:00.000Z");
@@ -83,6 +90,34 @@ test("KAI Identity uses Authorization Code + PKCE and creates an ordinary active
   assert.equal(resolved?.account.id, completed.issued.context.account.id);
   assert.equal(resolved?.authMethod, "KAI_IDENTITY_OIDC");
   store.close();
+});
+
+test("KAI Identity readiness validates Discovery without following redirects", async () => {
+  const healthy = await probeKaiIdentityDiscovery({ fetcher: async (url, init) => {
+    assert.equal(String(url), KAI_IDENTITY_DISCOVERY);
+    assert.equal(init?.redirect, "manual");
+    return Response.json(validMetadata());
+  } });
+  assert.deepEqual(healthy, { available: true, probe: "read-only" });
+
+  const redirected = await probeKaiIdentityDiscovery({ fetcher: async () => new Response(null, {
+    status: 308,
+    headers: { location: KAI_IDENTITY_DISCOVERY },
+  }) });
+  assert.deepEqual(redirected, { available: false, probe: "read-only", errorCode: "OIDC_DISCOVERY_REDIRECT" });
+});
+
+test("KAI Identity login fails closed when Discovery redirects to itself", async () => {
+  const env = {
+    NODE_ENV: "production",
+    KAI_PUBLIC_ORIGIN: "https://cloud.kai.com",
+    KAI_ACCOUNT_OIDC_CLIENT_ID: "kaic_cloud_test_123456",
+    KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: "oidc-transaction-secret-000000000000000000000000",
+  };
+  await assert.rejects(beginKaiIdentityLogin(new Request("https://cloud.kai.com/api/auth/kai/start"), {
+    env,
+    fetcher: async () => new Response(null, { status: 308, headers: { location: KAI_IDENTITY_DISCOVERY } }),
+  }), (error) => error instanceof AccountAuthError && error.code === "OIDC_DISCOVERY_REDIRECT" && error.status === 503);
 });
 
 test("KAI Identity rejects a callback whose state does not match the sealed transaction", async () => {

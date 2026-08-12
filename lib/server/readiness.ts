@@ -13,6 +13,7 @@ import { getCardHourStore } from "./card-hour-store.ts";
 import { evaluateHostingV2Capability } from "./hosting-v2-readiness.ts";
 import { isHostingV2ConfigurationEnabled } from "./hosting-v2-feature.ts";
 import { getHostingV2Store } from "./hosting-v2-store.ts";
+import { probeKaiIdentityDiscovery } from "./kai-identity-oidc.ts";
 import { readMarketSnapshot } from "./market-snapshot.ts";
 import { assertMarketplaceSecurityConfiguration, createMarketplaceReadinessStore } from "./marketplace-store.ts";
 import { sshProvisionerReadiness } from "./ssh-provisioner.ts";
@@ -65,6 +66,10 @@ function capabilityReadiness(environment:Environment){
 export async function evaluateReadiness(){
   const environment=await runtimeEnvironment();
   const checkedAt=new Date().toISOString();
+  const configuredCapabilities=capabilityReadiness(environment);
+  const identityProbePromise=configuredCapabilities.kaiIdentityLogin.available
+    ? probeKaiIdentityDiscovery()
+    : Promise.resolve(null);
   const hostingV2StoragePromise=isHostingV2ConfigurationEnabled(environment)?(async()=>{
     try{
       const snapshot=await (await getHostingV2Store()).readiness(checkedAt);
@@ -84,7 +89,7 @@ export async function evaluateReadiness(){
       return{ready:health.integrity==="ok",...health,probe:"read-only" as const};
     }catch(error){return{ready:false,backend:"unknown" as const,schemaVersion:0,integrity:"error" as const,probe:"read-only" as const,errorCode:errorCode(error)};}
   })();
-  const [marketplace,exchange,supply,admin,auth,standardization,cardHours,hostingV2Storage,marketResult]=await Promise.all([
+  const [marketplace,exchange,supply,admin,auth,standardization,cardHours,hostingV2Storage,marketResult,identityProbe]=await Promise.all([
     marketplacePromise,
     storeCheck(EXCHANGE_SCHEMA_VERSION,async()=>{const products=await (await getExchangeStore()).listProductVersions();if(products.length<1)throw new Error("EXCHANGE_REFERENCE_DATA_MISSING");}),
     storeCheck(SUPPLY_SCHEMA_VERSION,async()=>{await (await getSupplyStore()).listOffers("__readiness_probe__");}),
@@ -94,6 +99,7 @@ export async function evaluateReadiness(){
     storeCheck(CARD_HOUR_SCHEMA_VERSION,async()=>{await (await getCardHourStore()).health();}),
     hostingV2StoragePromise,
     readMarketSnapshot().then((value)=>({ok:true as const,value})).catch((error)=>({ok:false as const,error})),
+    identityProbePromise,
   ]);
   let market:{source:string;publishedAt:string|null;ageHours:number|null;stale:boolean;ready:boolean;errorCode?:string};
   if(marketResult.ok){
@@ -103,7 +109,12 @@ export async function evaluateReadiness(){
   }else market={source:"unavailable",publishedAt:null,ageHours:null,stale:true,ready:false,errorCode:errorCode(marketResult.error)};
   const {snapshot:hostingOperations,...hostingV2Health}=hostingV2Storage;
   const storage={marketplace,exchange,supply,admin,auth,standardization,cardHours,hostingV2:hostingV2Health};
-  const capabilities=capabilityReadiness(environment);
+  const capabilities={
+    ...configuredCapabilities,
+    kaiIdentityLogin:identityProbe
+      ? {...configuredCapabilities.kaiIdentityLogin,...identityProbe,configured:true,missing:identityProbe.available?[]:[identityProbe.errorCode??"KAI_IDENTITY_UNAVAILABLE"]}
+      : {...configuredCapabilities.kaiIdentityLogin,configured:false,probe:"deferred" as const},
+  };
   const hostingV2=evaluateHostingV2Capability({
     environment,
     hostingStorage:hostingV2Storage,
