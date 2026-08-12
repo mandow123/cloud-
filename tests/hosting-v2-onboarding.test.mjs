@@ -27,11 +27,11 @@ test("supplier onboarding stays draft until an independent administrator approve
     assert.equal((await store.saveProfile(account, { supplierType: "INDIVIDUAL", legalDisplayName: "个人 4090 供应方", contactEmail: "supplier@example.com", expectedVersion: 0 }, mutation(account.account.id, "profile-save-000001", "profile-save-hash", "2026-08-11T03:00:01Z"))).version, 1);
 
     await assert.rejects(store.issueAgentChallenge(account, mutation(account.account.id, "challenge-before-review", "challenge-before-review-hash", "2026-08-11T03:00:02Z")), (error) => error.code === "EXCHANGE_ROLE_FORBIDDEN");
-    await assert.rejects(store.submitProfile(account.activeOrganization.id, 2, mutation(account.account.id, "profile-submit-wrong", "profile-submit-wrong-hash", "2026-08-11T03:00:03Z")), (error) => error.code === "EXCHANGE_VERSION_CONFLICT");
+    await assert.rejects(store.submitProfile(account.activeOrganization.id, 2, process.env.KAI_HOSTING_TERMS_VERSION, mutation(account.account.id, "profile-submit-wrong", "profile-submit-wrong-hash", "2026-08-11T03:00:03Z")), (error) => error.code === "EXCHANGE_VERSION_CONFLICT");
 
-    const submitted = await store.submitProfile(account.activeOrganization.id, 1, mutation(account.account.id, "profile-submit-000001", "profile-submit-hash", "2026-08-11T03:00:04Z"));
+    const submitted = await store.submitProfile(account.activeOrganization.id, 1, process.env.KAI_HOSTING_TERMS_VERSION, mutation(account.account.id, "profile-submit-000001", "profile-submit-hash", "2026-08-11T03:00:04Z"));
     assert.equal(submitted.status, "SUBMITTED");
-    assert.equal(submitted.agreementVersion, "KAI_HOSTING_2026_08");
+    assert.equal(submitted.agreementVersion, process.env.KAI_HOSTING_TERMS_VERSION);
     await assert.rejects(store.reviewProfile(account.activeOrganization.id, { decision: "APPROVE", expectedVersion: 1, reviewNote: "材料完整，允许内部试运营" }, mutation("admin-reviewer", "profile-review-wrong", "profile-review-wrong-hash", "2026-08-11T03:00:05Z")), (error) => error.code === "EXCHANGE_VERSION_CONFLICT");
 
     const approved = await store.reviewProfile(account.activeOrganization.id, { decision: "APPROVE", expectedVersion: 2, reviewNote: "材料完整，允许内部试运营", evidenceDigest: "a".repeat(64) }, mutation("admin-reviewer", "profile-review-000001", "profile-review-hash", "2026-08-11T03:00:06Z"));
@@ -39,6 +39,17 @@ test("supplier onboarding stays draft until an independent administrator approve
     assert.equal(approved.version, 3);
     assert.equal((await store.dashboard(account.activeOrganization.id, "2026-08-11T03:00:07Z")).readiness.supplierApproved, true);
     assert.match((await store.issueAgentChallenge(account, mutation(account.account.id, "challenge-after-review", "challenge-after-review-hash", "2026-08-11T03:00:08Z"))).id, /^hac_/u);
+  } finally {
+    store.close();
+  }
+});
+
+test("supplier agreement snapshot comes from the configured immutable server policy", async () => {
+  const store = await createSqliteHostingV2Store(":memory:");
+  try {
+    await store.saveProfile(account, { supplierType: "INDIVIDUAL", legalDisplayName: "协议版本测试供应方", contactEmail: "supplier@example.com", expectedVersion: 0 }, mutation(account.account.id, "terms-profile-save", "terms-profile-save-hash", "2026-08-11T03:10:01Z"));
+    const submitted = await store.submitProfile(account.activeOrganization.id, 1, "KAI_HOSTING_TERMS_2026_09", mutation(account.account.id, "terms-profile-submit", "terms-profile-submit-hash", "2026-08-11T03:10:02Z"));
+    assert.equal(submitted.agreementVersion, "KAI_HOSTING_TERMS_2026_09");
   } finally {
     store.close();
   }
@@ -61,6 +72,8 @@ test("hosting v2 APIs use formal sessions and never trust a workspace-role heade
   const submitWrite = readFileSync(supplyRoutes[2], "utf8");
   assert.ok(profileWrite.indexOf("assertAccountAuthSameOrigin(request)") < profileWrite.indexOf("requireTradingAccountSession(request)"));
   assert.ok(submitWrite.indexOf("assertAccountAuthSameOrigin(request)") < submitWrite.indexOf("requireTradingAccountSession(request)"));
+  assert.match(submitWrite, /const agreementVersion = hostingV2CurrentTermsVersion\(\)/u);
+  assert.doesNotMatch(submitWrite, /KAI_HOSTING_2026_08/u);
 
   const adminList = readFileSync("app/api/v2/admin/supply/profiles/route.ts", "utf8");
   const adminReview = readFileSync("app/api/v2/admin/supply/profiles/[organizationId]/review/route.ts", "utf8");

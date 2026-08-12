@@ -38,7 +38,7 @@ async function sign(privateKey, payload) {
 
 async function approvedSupplier(store, now) {
   await store.saveProfile(account, { supplierType: "INDIVIDUAL", legalDisplayName: "个人 4090 供应方", contactEmail: "agent@example.com", expectedVersion: 0 }, mutation(account.account.id, "agent-profile-save", "agent-profile-save-hash", now));
-  await store.submitProfile(account.activeOrganization.id, 1, mutation(account.account.id, "agent-profile-submit", "agent-profile-submit-hash", now));
+  await store.submitProfile(account.activeOrganization.id, 1, process.env.KAI_HOSTING_TERMS_VERSION, mutation(account.account.id, "agent-profile-submit", "agent-profile-submit-hash", now));
   await store.reviewProfile(account.activeOrganization.id, { decision: "APPROVE", expectedVersion: 2, reviewNote: "内部设备验真测试通过" }, mutation("admin-agent-reviewer", "agent-profile-review", "agent-profile-review-hash", now));
 }
 

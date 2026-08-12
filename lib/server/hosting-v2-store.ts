@@ -40,7 +40,7 @@ export interface HostingV2Store {
   listCleanupIncidents(): Promise<HostingCleanupIncident[]>;
   dashboard(organizationId: string, now: string): Promise<HostingDashboard>;
   saveProfile(account: AccountSessionContext, input: { supplierType: HostingSupplierType; legalDisplayName: string; contactEmail: string; expectedVersion: number }, context: HostingMutationContext): Promise<HostingSupplierProfile>;
-  submitProfile(organizationId: string, expectedVersion: number, context: HostingMutationContext): Promise<HostingSupplierProfile>;
+  submitProfile(organizationId: string, expectedVersion: number, agreementVersion: string, context: HostingMutationContext): Promise<HostingSupplierProfile>;
   listProfiles(): Promise<HostingSupplierProfile[]>;
   reviewProfile(organizationId: string, input: { decision: "APPROVE" | "REJECT" | "SUSPEND"; expectedVersion: number; reviewNote: string; evidenceDigest?: string | null }, context: HostingMutationContext): Promise<HostingSupplierProfile>;
   issueAgentChallenge(account: AccountSessionContext, context: HostingMutationContext): Promise<HostingAgentChallenge>;

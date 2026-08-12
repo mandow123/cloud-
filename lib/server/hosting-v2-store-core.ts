@@ -335,15 +335,16 @@ function createProfileMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2St
       return profile(created);
     },
 
-    async submitProfile(organizationId, expectedVersion, context) {
+    async submitProfile(organizationId, expectedVersion, agreementVersion, context) {
       const replayed = await replay(db, context, "SUBMIT_PROFILE");
       if (!replayed) {
+        if (!/^KAI_HOSTING_TERMS_\d{4}_\d{2}$/u.test(agreementVersion)) throw new ExchangeInputError("供应协议版本无效。", "agreementVersion");
         const current = await db.first<Row>("SELECT status,version FROM hosting_v2_supplier_profiles WHERE organization_id=?", [organizationId]);
         if (!current) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "供应主体不存在。");
         if (value(current, "status") !== "DRAFT") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "供应主体当前不能提交审核。");
         if (number(current, "version") !== expectedVersion) throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT", 409, "供应主体资料已变化，请刷新。");
         await db.batch([
-          { sql: "UPDATE hosting_v2_supplier_profiles SET status='SUBMITTED',agreement_version='KAI_HOSTING_2026_08',version=version+1,updated_at=? WHERE organization_id=? AND version=? AND status='DRAFT'", values: [context.now, organizationId, expectedVersion] },
+          { sql: "UPDATE hosting_v2_supplier_profiles SET status='SUBMITTED',agreement_version=?,version=version+1,updated_at=? WHERE organization_id=? AND version=? AND status='DRAFT'", values: [agreementVersion, context.now, organizationId, expectedVersion] },
           event(context, organizationId, "SUPPLIER_PROFILE", organizationId, "PROFILE_SUBMITTED"),
           receipt(context, "SUBMIT_PROFILE", "SUPPLIER_PROFILE", organizationId),
         ]);

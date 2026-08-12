@@ -33,7 +33,7 @@ test("only approved, verified and fee-backed GPU offers enter the public market"
     const clock = new Date();
     const now = clock.toISOString();
     await store.saveProfile(account, { supplierType: "INDIVIDUAL", legalDisplayName: "个人 4090 报价测试", contactEmail: "offer@example.com", expectedVersion: 0 }, mutation(account.account.id, "offer-profile-save", "offer-profile-save-hash", now));
-    await store.submitProfile(account.activeOrganization.id, 1, mutation(account.account.id, "offer-profile-submit", "offer-profile-submit-hash", now));
+    await store.submitProfile(account.activeOrganization.id, 1, process.env.KAI_HOSTING_TERMS_VERSION, mutation(account.account.id, "offer-profile-submit", "offer-profile-submit-hash", now));
     await store.reviewProfile(account.activeOrganization.id, { decision: "APPROVE", expectedVersion: 2, reviewNote: "允许内部挂牌测试" }, mutation("admin-offer-reviewer", "offer-profile-review", "offer-profile-review-hash", now));
     const challenge = await store.issueAgentChallenge(account, mutation(account.account.id, "offer-agent-challenge", "offer-agent-challenge-hash", now));
     const inventory = {

@@ -63,6 +63,8 @@ test("supplier pages read and mutate through the authenticated hosting v2 APIs",
   assert.match(onboarding, /marketplaceGet<\{ record: HostingSupplierProfile \| null \}>\("\/api\/v2\/supply\/profile"\)/u);
   assert.match(onboarding, /marketplacePut<HostingSupplierProfile>\("\/api\/v2\/supply\/profile"/u);
   assert.match(onboarding, /marketplacePost<HostingSupplierProfile>\("\/api\/v2\/supply\/profile\/submit"/u);
+  assert.match(onboarding, /marketplaceGet<\{ policy: \{ termsVersion: string \} \}>\("\/api\/v2\/supply\/policy"\)/u);
+  assert.match(onboarding, /agreementVersion \|\| "读取中"/u);
   assert.match(onboarding, /agreementAccepted: true/u);
   assert.match(onboarding, /expectedVersion: profile\.version/u);
   assert.doesNotMatch(`${dashboard}\n${onboarding}`, /x-kai-workspace-role|localStorage|sessionStorage/u);

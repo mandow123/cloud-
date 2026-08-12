@@ -33,6 +33,7 @@ export function SupplierOnboardingForm() {
   const [legalDisplayName, setLegalDisplayName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [agreementAccepted, setAgreementAccepted] = useState(false);
+  const [agreementVersion, setAgreementVersion] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<"save" | "submit" | null>(null);
   const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
@@ -51,8 +52,12 @@ export function SupplierOnboardingForm() {
     setLoading(true);
     setMessage(null);
     try {
-      const result = await marketplaceGet<{ record: HostingSupplierProfile | null }>("/api/v2/supply/profile");
-      applyProfile(result.record);
+      const [profileResult, policyResult] = await Promise.all([
+        marketplaceGet<{ record: HostingSupplierProfile | null }>("/api/v2/supply/profile"),
+        marketplaceGet<{ policy: { termsVersion: string } }>("/api/v2/supply/policy"),
+      ]);
+      applyProfile(profileResult.record);
+      setAgreementVersion(policyResult.policy.termsVersion);
     } catch (cause) {
       setMessage({ kind: "error", text: marketplaceErrorMessage(cause, "供应商审核资料暂时无法读取。") });
     } finally {
@@ -157,7 +162,7 @@ export function SupplierOnboardingForm() {
           {profile?.status === "DRAFT" ? (
             <label className={styles.agreement}>
               <input checked={agreementAccepted} disabled={busy !== null} onChange={(event) => setAgreementAccepted(event.target.checked)} type="checkbox" />
-              <span>我确认资料真实，并同意当前版本《KAI Hosting 算力供应协议》。设备权属、网络许可和交付能力仍需进一步审核。</span>
+              <span>我确认资料真实，并同意《KAI Hosting 算力供应协议》版本 <strong>{agreementVersion || "读取中"}</strong>。设备权属、网络许可和交付能力仍需进一步审核。</span>
             </label>
           ) : null}
 
