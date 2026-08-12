@@ -11,8 +11,13 @@ export const metadata: Metadata = {
   description: "管理 KAI Cloud 供应主体、设备、挂牌、订单、收益和风险状态。",
 };
 
+function hostingLandingUrl() {
+  const origin = process.env.KAI_PUBLIC_ORIGIN?.trim();
+  return origin ? new URL("/hosting", origin).toString() : "/hosting";
+}
+
 export default function SupplyLayout({ children }: { children: React.ReactNode }) {
-  if (!isHostingV2SetupEnabled()) redirect("/hosting");
+  if (!isHostingV2SetupEnabled()) redirect(hostingLandingUrl());
 
   return (
     <AccountRequired purpose="管理供应资源">
