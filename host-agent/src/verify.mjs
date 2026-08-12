@@ -6,11 +6,12 @@ import { totalmem } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { collectInventory } from "./inventory.mjs";
+import { verifyWorkloadImages } from "./actuator-client.mjs";
 import { AgentError, digestJson, randomNonce } from "./protocol.mjs";
 
 const execFile = promisify(execFileCallback);
 const lookup = promisify(lookupCallback);
-export const VERIFY_TESTS = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"];
+export const VERIFY_TESTS = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "WORKLOAD_IMAGE", "PORT_REACHABILITY"];
 
 function verificationError(code, message) {
   return new AgentError(code, message);
@@ -86,6 +87,9 @@ export function defaultVerificationRunners(state, inventoryCollector = collectIn
       const [apiAddress, publicAddress] = await Promise.all([lookup(apiHost), lookup(state.inventoryConfig.publicHost.replace(/^\[|\]$/gu, ""))]);
       return { apiFamily: apiAddress.family, publicHostFamily: publicAddress.family };
     },
+    async WORKLOAD_IMAGE(command) {
+      return verifyWorkloadImages(command.payload.approvedImages);
+    },
     async PORT_REACHABILITY(command) {
       return controlPlaneChallenge(state, command);
     },
@@ -95,7 +99,8 @@ export function defaultVerificationRunners(state, inventoryCollector = collectIn
 function validateCommand(command, state) {
   if (!command || typeof command !== "object" || command.type !== "VERIFY" || typeof command.id !== "string") throw verificationError("COMMAND_UNSUPPORTED", "Only VERIFY commands are supported by this Agent version.");
   const payload = command.payload;
-  if (!payload || typeof payload !== "object" || Array.isArray(payload) || payload.expectedInventoryDigest !== state.inventoryDigest || !Array.isArray(payload.tests)) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload) || payload.expectedInventoryDigest !== state.inventoryDigest || !Array.isArray(payload.tests)
+    || !Array.isArray(payload.approvedImages) || payload.approvedImages.length === 0) {
     throw verificationError("VERIFY_COMMAND_INVALID", "Verification command does not match the registered device inventory.");
   }
   if (payload.tests.length !== VERIFY_TESTS.length || new Set(payload.tests).size !== VERIFY_TESTS.length || VERIFY_TESTS.some((name) => !payload.tests.includes(name))) {

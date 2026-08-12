@@ -69,8 +69,8 @@ function verificationDetails(inventoryDigest, observedAt, challengeDigest) {
     protocolVersion: 1,
     inventoryDigest,
     observedAt,
-    tests: ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"]
-      .map((name, index) => ({ name, status: "PASSED", evidenceDigest: `sha256:${String(index + 1).repeat(64)}`, ...(name === "PORT_REACHABILITY" ? { summary: { port: 27_000, scope: "CONTROL_PLANE_CHALLENGE", challengeDigest } } : {}) })),
+    tests: ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "WORKLOAD_IMAGE", "PORT_REACHABILITY"]
+      .map((name, index) => ({ name, status: "PASSED", evidenceDigest: `sha256:${String(index + 1).repeat(64)}`, ...(name === "WORKLOAD_IMAGE" ? { summary: { protocolVersion: 1, scope: "APPROVED_WORKLOAD_IMAGES", images: [process.env.KAI_HOSTING_APPROVED_IMAGES], allPresent: true } } : {}), ...(name === "PORT_REACHABILITY" ? { summary: { port: 27_000, scope: "CONTROL_PLANE_CHALLENGE", challengeDigest } } : {}) })),
   };
 }
 
@@ -236,7 +236,7 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
       displayName: "黄金闭环 RTX 4090",
       deviceKeyId: `sha256:${"4".repeat(64)}`,
       devicePublicKey: "A".repeat(43),
-      agentVersion: "1.8.0",
+      agentVersion: "1.9.0",
       inventory: inventory(),
       inventoryDigest,
     }, mutation("agent:golden", "golden-device-register", now));

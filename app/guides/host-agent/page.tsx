@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../guides.module.css";
 
-const HOST_AGENT_VERSION = "1.8.0";
+const HOST_AGENT_VERSION = "1.9.0";
 const AGENT_VERSION = HOST_AGENT_VERSION;
 const ARCHIVE = `kai-host-agent-${AGENT_VERSION}.tgz`;
 
@@ -68,14 +68,14 @@ export default function HostAgentGuidePage() {
         <section>
           <div className={styles.sectionLabel}>05 · APPROVED IMAGE & START</div>
           <h2>配置平台批准的不可变镜像</h2>
-          <p>从供应商控制台复制完整的 `ghcr.io/...@sha256:...` 镜像摘要，写入 `/etc/kai-host-actuator.env`。`latest`、普通 tag 和任意第三方仓库都会被拒绝。</p>
-          <Command>{`sudoedit /etc/kai-host-actuator.env\nsudo systemctl restart kai-host-actuator\nsudo systemctl enable --now kai-host-agent\nsudo systemctl status kai-host-agent --no-pager`}</Command>
+          <p>从供应商控制台复制完整的 `ghcr.io/...@sha256:...` 镜像摘要，先按摘要拉取，再写入 `/etc/kai-host-actuator.env`。`latest`、普通 tag 和任意第三方仓库都会被拒绝；验真会重新检查本机镜像的 RepoDigest。</p>
+          <Command>{`sudo docker pull "ghcr.io/mandow123/kai-cloud-gpu-workload@sha256:<平台显示的64位摘要>"\nsudoedit /etc/kai-host-actuator.env\nsudo systemctl restart kai-host-actuator\nsudo systemctl enable --now kai-host-agent\nsudo systemctl status kai-host-agent --no-pager`}</Command>
         </section>
 
         <section>
           <div className={styles.sectionLabel}>06 · VERIFY & RECOVERY</div>
           <h2>回到控制台完成验真</h2>
-          <p>设备心跳出现后创建验真任务。平台会核对 GPU 身份、CUDA、显存、存储、网络和端口可达性。证据过期、规格变化、Agent 离线或清理失败会自动暂停报价；清理失败的设备保持 DRAINING，不能再次出租。</p>
+          <p>设备心跳出现后创建验真任务。平台会核对 GPU 身份、CUDA、显存、存储、不可变工作负载镜像、网络和端口可达性。证据过期、镜像策略变化、规格变化、Agent 离线或清理失败会自动暂停报价；清理失败的设备保持 DRAINING，不能再次出租。</p>
           <Link className={styles.actionLink} href="/login?returnTo=%2Fsupply%2Fresources">查看设备与验真状态 →</Link>
         </section>
       </article>

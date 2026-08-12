@@ -48,6 +48,19 @@ export async function doctorActuator({ call = callActuator } = {}) {
   return result;
 }
 
+export async function verifyWorkloadImages(images, { call = callActuator } = {}) {
+  if (!Array.isArray(images) || images.length === 0 || images.length > 20 || new Set(images).size !== images.length
+    || images.some((image) => typeof image !== "string" || !/^ghcr\.io\/(?:kai-cloud\/cuda-pytorch|mandow123\/kai-cloud-gpu-workload)@sha256:[a-f0-9]{64}$/u.test(image))) {
+    throw new AgentError("VERIFY_IMAGES_COMMAND_INVALID", "Verification command contains an invalid approved image set.");
+  }
+  const result = await call({ protocolVersion: 1, operation: "VERIFY_IMAGES", images });
+  if (result.protocolVersion !== 1 || result.scope !== "APPROVED_WORKLOAD_IMAGES" || result.allPresent !== true
+    || JSON.stringify(result.images) !== JSON.stringify(images)) {
+    throw new AgentError("ACTUATOR_RESULT_INVALID", "The workload actuator returned invalid image readiness evidence.");
+  }
+  return result;
+}
+
 export async function provisionWorkload(command, state, { call = callActuator } = {}) {
   const payload = command?.payload;
   const inventory = state?.inventory;

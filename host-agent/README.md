@@ -1,6 +1,6 @@
 # KAI Host Agent
 
-KAI Host Agent is the supplier-side device identity and control service for KAI Hosting V2. Version `1.8.0` in this checkpoint implements:
+KAI Host Agent is the supplier-side device identity and control service for KAI Hosting V2. Version `1.9.0` in this checkpoint implements:
 
 - contract-bound cleanup for partially provisioned or SSH-unreachable workloads, so failed delivery can be refunded and proven clean before relisting;
 
@@ -12,7 +12,7 @@ KAI Host Agent is the supplier-side device identity and control service for KAI 
 - automatic offline reporting when inventory collection fails;
 - root-owned Docker and NVIDIA Runtime preflight exposed to the non-root Agent through one fixed local `DOCTOR` operation, without granting Docker socket access;
 - signed command polling with a lease-based retry path;
-- six fixed verification checks for GPU identity, NVIDIA compute mode, memory, storage, network and the declared public port;
+- seven fixed verification checks for GPU identity, NVIDIA compute mode, memory, storage, network, every approved immutable workload image and the declared public port;
 - immutable-image `PROVISION` through a separate root actuator that accepts one fixed operation over a local Unix socket;
 - contract-bound `START` followed by a public-endpoint SSH protocol readiness check;
 - contract-bound `STOP` with fixed graceful shutdown and runtime-duration evidence;

@@ -37,12 +37,12 @@ function testPublicKey() {
 }
 
 function successfulVerificationDetails(inventoryDigest, observedAt, challengeDigest) {
-  const tests = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"];
+  const tests = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "WORKLOAD_IMAGE", "PORT_REACHABILITY"];
   return {
     protocolVersion: 1,
     inventoryDigest,
     observedAt,
-    tests: tests.map((name, index) => ({ name, status: "PASSED", evidenceDigest: `sha256:${String(index + 1).repeat(64)}`, ...(name === "PORT_REACHABILITY" ? { summary: { port: 24_000, scope: "CONTROL_PLANE_CHALLENGE", challengeDigest } } : {}) })),
+    tests: tests.map((name, index) => ({ name, status: "PASSED", evidenceDigest: `sha256:${String(index + 1).repeat(64)}`, ...(name === "WORKLOAD_IMAGE" ? { summary: { protocolVersion: 1, scope: "APPROVED_WORKLOAD_IMAGES", images: [process.env.KAI_HOSTING_APPROVED_IMAGES], allPresent: true } } : {}), ...(name === "PORT_REACHABILITY" ? { summary: { port: 24_000, scope: "CONTROL_PLANE_CHALLENGE", challengeDigest } } : {}) })),
   };
 }
 
@@ -57,7 +57,7 @@ async function publishedOffer(store, supplier, clock) {
     displayName: "预留测试 4090",
     deviceKeyId: `sha256:${"4".repeat(64)}`,
     devicePublicKey: "A".repeat(43),
-    agentVersion: "1.8.0",
+    agentVersion: "1.9.0",
     inventory: { hostnameDigest: `sha256:${"1".repeat(64)}`, gpuModel: "RTX_4090", gpuUuidDigest: `sha256:${"2".repeat(64)}`, gpuMemoryMiB: 24_576, driverVersion: "580.10", cudaVersion: "13.0", cpuModel: "AMD Ryzen 9 9950X", memoryMiB: 65_536, storageGiB: 2_048, publicHost: "reserve-gpu.example.com", sshPortStart: 24_000, sshPortEnd: 24_019 },
     inventoryDigest,
   }, mutation("agent-reserve", "reserve-device-register", "reserve-device-register-hash", now));

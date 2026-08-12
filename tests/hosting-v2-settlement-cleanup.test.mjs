@@ -49,7 +49,10 @@ function seedStoppedContract(path, suffix, buyer, supplier, now, withMeteringPro
   db.prepare("INSERT OR IGNORE INTO hosting_v2_supplier_profiles(organization_id,account_id,supplier_type,legal_display_name,contact_email,agreement_version,status,version,created_at,updated_at) VALUES(?,?,'INDIVIDUAL','结算测试供应方',?,'KAI_HOSTING_2026_08','APPROVED',3,?,?)").run(supplier.activeOrganization.id, supplier.account.id, supplier.account.primaryEmail, now, now);
   db.prepare("INSERT OR IGNORE INTO hosting_v2_fee_schedules(id,platform_fee_bps,referral_reward_bps,status,effective_from,created_by,created_at) VALUES(?,1000,300,'ACTIVE',?,'admin-market',?)").run(feeId, now, now);
   db.prepare(`INSERT INTO hosting_v2_devices(id,organization_id,account_id,display_name,device_key_id,device_public_key,agent_version,inventory_json,inventory_digest,status,verification_status,verification_evidence_digest,verified_until,last_sequence,last_seen_at,version,created_at,updated_at)
-    VALUES(?,?,?,?,?,?,?,?,?,'VERIFIED','PASSED',?,?,1,?,1,?,?)`).run(deviceId, supplier.activeOrganization.id, supplier.account.id, `Settlement GPU ${suffix}`, `sha256:${suffix.padEnd(64, "3").slice(0, 64)}`, "A".repeat(43), "1.8.0", JSON.stringify(inventory), `sha256:${suffix.padEnd(64, "4").slice(0, 64)}`, `sha256:${suffix.padEnd(64, "5").slice(0, 64)}`, new Date(Date.parse(now) + 86_400_000).toISOString(), now, now, now);
+    VALUES(?,?,?,?,?,?,?,?,?,'VERIFIED','PASSED',?,?,1,?,1,?,?)`).run(deviceId, supplier.activeOrganization.id, supplier.account.id, `Settlement GPU ${suffix}`, `sha256:${suffix.padEnd(64, "3").slice(0, 64)}`, "A".repeat(43), "1.9.0", JSON.stringify(inventory), `sha256:${suffix.padEnd(64, "4").slice(0, 64)}`, `sha256:${suffix.padEnd(64, "5").slice(0, 64)}`, new Date(Date.parse(now) + 86_400_000).toISOString(), now, now, now);
+  const verificationCommandId = `hcmd_seed_verify_${suffix}`;
+  db.prepare("INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,evidence_digest,created_at,delivered_at,completed_at) VALUES(?,?,NULL,'VERIFY',?,'SUCCEEDED',1,?,?,?,?)").run(verificationCommandId, deviceId, JSON.stringify({ expectedInventoryDigest: `sha256:${suffix.padEnd(64, "4").slice(0, 64)}`, tests: ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "WORKLOAD_IMAGE", "PORT_REACHABILITY"], approvedImages: [process.env.KAI_HOSTING_APPROVED_IMAGES], reachabilityChallenge: "1".repeat(32) }), `sha256:${suffix.padEnd(64, "5").slice(0, 64)}`, now, now, now);
+  db.prepare("INSERT INTO hosting_v2_verification_proofs(command_id,device_id,agent_evidence_digest,control_plane_reachability_digest,public_host,public_port,recorded_at) VALUES(?,?,?,?,?,?,?)").run(verificationCommandId, deviceId, `sha256:${suffix.padEnd(64, "5").slice(0, 64)}`, `sha256:${suffix.padEnd(64, "6").slice(0, 64)}`, inventory.publicHost, inventory.sshPortStart, now);
   db.prepare(`INSERT INTO hosting_v2_offers(id,organization_id,device_id,fee_schedule_id,title,gpu_model,region,card_hour_micros_per_gpu_hour,min_rental_seconds,max_rental_seconds,available_from,available_until,approved_image,terms_version,status,version,created_at,updated_at)
     VALUES(?,?,?,?,?,'RTX_4090','中国·北京',3600000,180,3600,?,?,?,'KAI_HOSTING_TERMS_2026_08','RESERVED',2,?,?)`).run(offerId, supplier.activeOrganization.id, deviceId, feeId, `Settlement RTX 4090 ${suffix}`, new Date(Date.parse(now) - 60_000).toISOString(), new Date(Date.parse(now) + 86_400_000).toISOString(), process.env.KAI_HOSTING_APPROVED_IMAGES, now, now);
   const snapshot = { title: `Settlement RTX 4090 ${suffix}`, gpuModel: "RTX_4090", region: "中国·北京", cardHourMicrosPerGpuHour: 3_600_000, approvedImage: process.env.KAI_HOSTING_APPROVED_IMAGES, termsVersion: "KAI_HOSTING_TERMS_2026_08", platformFeeBps: 1_000, referralRewardBps: 300, acceptanceWindowSeconds: 1_800 };
@@ -204,6 +207,22 @@ test("buyer acceptance settles actual card-hours, vests income and relists only 
     assert.equal(expired.device.status, "ONLINE");
     assert.equal(expired.device.verificationStatus, "EXPIRED");
     assert.equal((await hosting.getOffer(expiredSeed.offerId)).status, "SUSPENDED", "expired verification must not auto-relist after cleanup");
+
+    const rotatedSeed = seedStoppedContract(path, "image-rotated", buyer, supplier, now);
+    seedAcceptanceDecision(path, rotatedSeed.contractId, now);
+    await hosting.markContractSettled(rotatedSeed.contractId, { measuredSeconds: 600, settledMicros: 600_000, supplierIncomeMicros: 540_000, commissionMicros: 0 }, mutation("admin-image-rotation", "cleanup-image-rotation-queue", "cleanup-image-rotation-queue-hash", now));
+    const rotatedCleanup = await hosting.pollCommand(rotatedSeed.deviceId, now);
+    const originalImagePolicy = process.env.KAI_HOSTING_APPROVED_IMAGES;
+    try {
+      process.env.KAI_HOSTING_APPROVED_IMAGES = `ghcr.io/kai-cloud/cuda-pytorch@sha256:${"b".repeat(64)}`;
+      const rotated = await hosting.completeCommand(rotatedSeed.deviceId, rotatedCleanup.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"a".repeat(64)}`, details: cleanupDetails(rotatedSeed.contractId, now) }, mutation(`agent:${rotatedSeed.deviceId}`, "cleanup-image-rotated", "cleanup-image-rotated-hash", now));
+      assert.equal(rotated.contract.status, "CLEANED");
+      assert.equal(rotated.device.status, "ONLINE");
+      assert.equal(rotated.device.verificationStatus, "EXPIRED");
+      assert.equal((await hosting.getOffer(rotatedSeed.offerId)).status, "SUSPENDED", "an image policy change must require fresh evidence before relisting");
+    } finally {
+      process.env.KAI_HOSTING_APPROVED_IMAGES = originalImagePolicy;
+    }
   } finally {
     cardHours.close();
     hosting.close();

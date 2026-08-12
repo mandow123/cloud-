@@ -25,12 +25,12 @@ function mutation(actorId, key, hash, now) {
 }
 
 function successfulVerificationDetails(inventoryDigest, observedAt, challengeDigest) {
-  const tests = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"];
+  const tests = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "WORKLOAD_IMAGE", "PORT_REACHABILITY"];
   return {
     protocolVersion: 1,
     inventoryDigest,
     observedAt,
-    tests: tests.map((name, index) => ({ name, status: "PASSED", evidenceDigest: `sha256:${String(index + 1).repeat(64)}`, ...(name === "PORT_REACHABILITY" ? { summary: { port: 23_000, scope: "CONTROL_PLANE_CHALLENGE", challengeDigest } } : {}) })),
+    tests: tests.map((name, index) => ({ name, status: "PASSED", evidenceDigest: `sha256:${String(index + 1).repeat(64)}`, ...(name === "WORKLOAD_IMAGE" ? { summary: { protocolVersion: 1, scope: "APPROVED_WORKLOAD_IMAGES", images: [approvedImage], allPresent: true } } : {}), ...(name === "PORT_REACHABILITY" ? { summary: { port: 23_000, scope: "CONTROL_PLANE_CHALLENGE", challengeDigest } } : {}) })),
   };
 }
 
@@ -60,7 +60,7 @@ test("only approved, verified and fee-backed GPU offers enter the public market"
       sshPortEnd: 23_019,
     };
     const inventoryDigest = `sha256:${"3".repeat(64)}`;
-    const device = await store.registerDevice(challenge.id, { displayName: "4090 报价机", deviceKeyId: `sha256:${"4".repeat(64)}`, devicePublicKey: "A".repeat(43), agentVersion: "1.8.0", inventory, inventoryDigest }, mutation("agent-offer", "offer-device-register", "offer-device-register-hash", now));
+    const device = await store.registerDevice(challenge.id, { displayName: "4090 报价机", deviceKeyId: `sha256:${"4".repeat(64)}`, devicePublicKey: "A".repeat(43), agentVersion: "1.9.0", inventory, inventoryDigest }, mutation("agent-offer", "offer-device-register", "offer-device-register-hash", now));
     await store.acceptHeartbeat(device.id, { sequence: 1, inventoryDigest, capacityState: "ONLINE", observedAt: now }, mutation(`agent:${device.id}`, "offer-heartbeat-1", "offer-heartbeat-hash", now));
     const verification = await store.queueVerification(account.activeOrganization.id, device.id, mutation(account.account.id, "offer-verify", "offer-verify-hash", now));
     await store.pollCommand(device.id, now);
@@ -94,6 +94,17 @@ test("only approved, verified and fee-backed GPU offers enter the public market"
     const published = await store.updateOfferStatus(account.activeOrganization.id, offer.id, { status: "PUBLISHED", expectedVersion: 1 }, mutation(account.account.id, "offer-publish-0001", "offer-publish-hash", now));
     assert.equal(published.status, "PUBLISHED");
     assert.equal((await store.listPublicOffers(now)).length, 1);
+    const originalImagePolicy = process.env.KAI_HOSTING_APPROVED_IMAGES;
+    const rotatedImage = `ghcr.io/mandow123/kai-cloud-gpu-workload@sha256:${"c".repeat(64)}`;
+    try {
+      process.env.KAI_HOSTING_APPROVED_IMAGES = rotatedImage;
+      assert.equal((await store.listPublicOffers(now)).length, 0, "a policy rotation must hide an offer backed only by stale image proof");
+      await assert.rejects(store.createOffer(account.activeOrganization.id, { ...offerInput, title: "未重新验真的新镜像", approvedImage: rotatedImage }, mutation(account.account.id, "offer-rotated-unverified", "offer-rotated-unverified-hash", now)), (error) => error.code === "EXCHANGE_VERIFICATION_REQUIRED");
+      await assert.rejects(store.reserveContract(account, offer.id, 180, 180_000, mutation(account.account.id, "offer-rotated-reserve", "offer-rotated-reserve-hash", now)), (error) => error.code === "EXCHANGE_CAPACITY_CONFLICT");
+    } finally {
+      process.env.KAI_HOSTING_APPROVED_IMAGES = originalImagePolicy;
+    }
+    assert.equal((await store.listPublicOffers(now)).length, 1);
     await assert.rejects(store.updateOfferStatus("org-other", offer.id, { status: "PAUSED", expectedVersion: 2 }, mutation("acct-other", "offer-cross-org", "offer-cross-org-hash", now)), (error) => error.code === "EXCHANGE_NOT_FOUND");
 
     const downgrade = new DatabaseSync(databasePath);
@@ -108,7 +119,7 @@ test("only approved, verified and fee-backed GPU offers enter the public market"
     assert.equal((await store.listPublicOffers(now)).length, 0);
     await assert.rejects(store.updateOfferStatus(account.activeOrganization.id, offer.id, { status: "PUBLISHED", expectedVersion: 3 }, mutation(account.account.id, "offer-old-agent-republish", "offer-old-agent-republish-hash", now)), (error) => error.code === "HOSTING_AGENT_UPGRADE_REQUIRED");
     const upgrade = new DatabaseSync(databasePath);
-    upgrade.prepare("UPDATE hosting_v2_devices SET agent_version='1.8.0' WHERE id=?").run(device.id);
+    upgrade.prepare("UPDATE hosting_v2_devices SET agent_version='1.9.0' WHERE id=?").run(device.id);
     upgrade.close();
     const republished = await store.updateOfferStatus(account.activeOrganization.id, offer.id, { status: "PUBLISHED", expectedVersion: 3 }, mutation(account.account.id, "offer-republish-0001", "offer-republish-hash", now));
     assert.equal(republished.status, "PUBLISHED");

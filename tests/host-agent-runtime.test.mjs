@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { heartbeat, pairDevice, processOneCommand } from "../host-agent/src/client.mjs";
-import { doctorActuator } from "../host-agent/src/actuator-client.mjs";
+import { doctorActuator, verifyWorkloadImages } from "../host-agent/src/actuator-client.mjs";
 import { runDoctor } from "../host-agent/src/doctor.mjs";
 import { parseNvidiaInventory } from "../host-agent/src/inventory.mjs";
 import { AgentError, assertHttpsEndpoint, canonicalJson, digestJson, generateDeviceIdentity, signPayload } from "../host-agent/src/protocol.mjs";
@@ -89,9 +89,21 @@ test("doctor obtains Docker readiness only through the constrained root actuator
   await assert.rejects(doctorActuator({ call: async () => ({ protocolVersion: 1, dockerVersion: "28.0.4", nvidiaRuntime: false }) }), (error) => error.code === "ACTUATOR_RESULT_INVALID");
 });
 
-test("VERIFY runs only the fixed six probes and binds every result to signed evidence", async () => {
+test("non-root verification accepts only exact image evidence from the root actuator", async () => {
+  const images = [process.env.KAI_HOSTING_APPROVED_IMAGES];
+  let request = null;
+  const result = await verifyWorkloadImages(images, { call: async (value) => {
+    request = value;
+    return { protocolVersion: 1, scope: "APPROVED_WORKLOAD_IMAGES", images, allPresent: true };
+  } });
+  assert.deepEqual(request, { protocolVersion: 1, operation: "VERIFY_IMAGES", images });
+  assert.equal(result.allPresent, true);
+  await assert.rejects(verifyWorkloadImages(images, { call: async () => ({ protocolVersion: 1, scope: "APPROVED_WORKLOAD_IMAGES", images: [], allPresent: true }) }), (error) => error.code === "ACTUATOR_RESULT_INVALID");
+});
+
+test("VERIFY runs only the fixed seven probes and binds every result to signed evidence", async () => {
   const state = { inventoryDigest: await hostingAgentDigest(inventory) };
-  const command = { id: "cmd_runtime_verify_000001", type: "VERIFY", payload: { expectedInventoryDigest: state.inventoryDigest, tests: [...VERIFY_TESTS] } };
+  const command = { id: "cmd_runtime_verify_000001", type: "VERIFY", payload: { expectedInventoryDigest: state.inventoryDigest, tests: [...VERIFY_TESTS], approvedImages: [process.env.KAI_HOSTING_APPROVED_IMAGES] } };
   const runners = Object.fromEntries(VERIFY_TESTS.map((name) => [name, async () => ({ probe: name, ok: true })]));
   const result = await runVerification(command, state, { runners });
   assert.equal(result.outcome, "SUCCEEDED");
@@ -168,7 +180,7 @@ test("pairing and heartbeat persist a private 0600 identity and send server-veri
       if (url.endsWith(`/devices/${registeredDeviceId}/commands/poll`)) {
         const { signature, issuedAt, expiresAt, requestNonce } = body;
         await verifyHostingAgentSignature(publicKey, { operation: "POLL_COMMAND", deviceId: registeredDeviceId, requestNonce, issuedAt, expiresAt }, signature);
-        return { command: { id: "cmd_runtime_verify_000001", type: "VERIFY", payload: { expectedInventoryDigest: await hostingAgentDigest(inventory), tests: [...VERIFY_TESTS] } } };
+        return { command: { id: "cmd_runtime_verify_000001", type: "VERIFY", payload: { expectedInventoryDigest: await hostingAgentDigest(inventory), tests: [...VERIFY_TESTS], approvedImages: [process.env.KAI_HOSTING_APPROVED_IMAGES] } } };
       }
       if (url.endsWith(`/devices/${registeredDeviceId}/commands/cmd_runtime_verify_000001/complete`)) {
         const { signature, issuedAt, expiresAt, outcome, evidenceDigest, errorCode, details } = body;
@@ -186,7 +198,7 @@ test("pairing and heartbeat persist a private 0600 identity and send server-veri
         registerEndpoint: "http://127.0.0.1:3014/api/v2/agent/register",
         challengeId: "hac_runtime_challenge_000001",
         nonce: "runtimeNonceValue000001",
-        minimumAgentVersion: "1.8.0",
+        minimumAgentVersion: "1.9.0",
         expiresAt: new Date(Date.now() + 300_000).toISOString(),
       },
       displayName: "4090 工作站 01",
@@ -268,6 +280,6 @@ test("installer is offline, non-root at runtime and systemd-hardened", async () 
   assert.match(installer, /src\/verify\.mjs/u);
   assert.match(installer, /src\/doctor\.mjs/u);
   assert.match(installer, /kai-host-actuator\.service/u);
-  assert.equal(packageJson.version, "1.8.0");
+  assert.equal(packageJson.version, "1.9.0");
   assert.equal(packageJson.dependencies, undefined);
 });

@@ -7,7 +7,7 @@ import type { SupplierHostingDashboard } from "@/lib/hosting-v2-client";
 import { createIdempotencyKey, marketplaceErrorMessage, marketplaceGet, marketplacePost } from "@/lib/client/marketplace-client";
 import styles from "./supply-console.module.css";
 
-const HOST_AGENT_VERSION = "1.8.0";
+const HOST_AGENT_VERSION = "1.9.0";
 const HOST_AGENT_ARCHIVE = `kai-host-agent-${HOST_AGENT_VERSION}.tgz`;
 
 const templates = [

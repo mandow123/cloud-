@@ -97,6 +97,19 @@ export function parseDoctorRequest(value) {
   return { protocolVersion: 1, operation: "DOCTOR" };
 }
 
+export function parseVerifyImagesRequest(value, environment = process.env) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw fail("VERIFY_IMAGES_REQUEST_INVALID", "Image verification request must be an object.");
+  assertExactKeys(value, ["protocolVersion", "operation", "images"], "VERIFY_IMAGES_REQUEST_INVALID");
+  if (value.protocolVersion !== 1 || value.operation !== "VERIFY_IMAGES" || !Array.isArray(value.images)
+    || value.images.length === 0 || value.images.length > 20 || new Set(value.images).size !== value.images.length
+    || value.images.some((image) => typeof image !== "string" || !IMAGE_PATTERN.test(image))) {
+    throw fail("VERIFY_IMAGES_REQUEST_INVALID", "Image verification protocol is unsupported.");
+  }
+  const allowed = approvedImages(environment);
+  if (value.images.some((image) => !allowed.has(image))) throw fail("IMAGE_NOT_APPROVED", "Image verification requested an image outside the root-owned allowlist.");
+  return { protocolVersion: 1, operation: "VERIFY_IMAGES", images: [...value.images] };
+}
+
 async function docker(args) {
   try {
     return await execFile("/usr/bin/docker", args, { encoding: "utf8", timeout: 30_000, maxBuffer: 256 * 1024 });
@@ -125,6 +138,18 @@ export async function executeDoctor(value, { runDocker = docker } = {}) {
   if (!/^\d+\.\d+(?:\.\d+)?(?:[-+._A-Za-z0-9]*)?$/u.test(dockerVersion)) throw fail("DOCKER_VERSION_INVALID", "Docker returned an invalid server version.");
   if (!runtimes || typeof runtimes !== "object" || Array.isArray(runtimes) || !("nvidia" in runtimes)) throw fail("NVIDIA_RUNTIME_MISSING", "Docker is not configured with the NVIDIA container runtime.");
   return { protocolVersion: 1, dockerVersion, nvidiaRuntime: true };
+}
+
+export async function executeVerifyImages(value, { environment = process.env, runDocker = docker } = {}) {
+  const request = parseVerifyImagesRequest(value, environment);
+  for (const image of request.images) {
+    const inspected = await runDocker(["image", "inspect", "--format", "{{json .RepoDigests}}", image]);
+    let repoDigests;
+    try { repoDigests = JSON.parse(inspected.stdout.trim()); }
+    catch (error) { throw fail("IMAGE_INSPECTION_INVALID", "Docker returned invalid image digest evidence.", error); }
+    if (!Array.isArray(repoDigests) || !repoDigests.includes(image)) throw fail("IMAGE_DIGEST_MISMATCH", "A platform-approved immutable workload image is not present on this host.");
+  }
+  return { protocolVersion: 1, scope: "APPROVED_WORKLOAD_IMAGES", images: request.images, allPresent: true };
 }
 
 async function writeJsonAtomic(path, value) {

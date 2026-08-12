@@ -99,7 +99,7 @@ export function SupplyResourceDetail({ deviceId }: { deviceId: string }) {
         </div>
 
         <aside className={styles.sidePanel}>
-          <section><h2>验真测试</h2><ul><li>GPU 型号与 UUID</li><li>CUDA 受控冒烟测试</li><li>显存、内存与存储</li><li>网络和公网端口可达性</li></ul></section>
+          <section><h2>验真测试</h2><ul><li>GPU 型号与 UUID</li><li>CUDA 受控冒烟测试</li><li>显存、内存与存储</li><li>批准镜像 RepoDigest</li><li>网络和公网端口可达性</li></ul></section>
           <section><h3>自动暂停条件</h3><ul><li>Agent 心跳超过阈值</li><li>硬件清单摘要变化</li><li>验真证据过期</li><li>清理失败进入 DRAINING</li></ul></section>
           <section><h3>当前限制</h3><p>首期仅支持单卡、非 MIG、单租户容器。设备通过验真并保持在线后，下一步才可创建报价。</p></section>
         </aside>

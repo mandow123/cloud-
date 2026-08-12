@@ -2,7 +2,7 @@ import { HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, t
 import { HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { hostingAgentDigest } from "./hosting-agent-crypto.ts";
-import { assertHostingV2ApprovedImage } from "./hosting-v2-image-policy.ts";
+import { assertHostingV2ApprovedImage, hostingV2ApprovedImages } from "./hosting-v2-image-policy.ts";
 import type { HostingMutationContext, HostingV2DatabaseAdapter, HostingV2Sql, HostingV2Store } from "./hosting-v2-store.ts";
 
 type Row = Record<string, unknown>;
@@ -11,8 +11,8 @@ const nullable = (row: Row, key: string) => row[key] == null ? null : String(row
 const number = (row: Row, key: string) => Number(row[key]);
 const json = <T>(row: Row, key: string) => JSON.parse(value(row, key)) as T;
 const id = (prefix: string) => `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
-const VERIFY_TEST_NAMES = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"] as const;
-const HOSTING_V2_MIN_AGENT_VERSION = "1.8.0";
+const VERIFY_TEST_NAMES = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "WORKLOAD_IMAGE", "PORT_REACHABILITY"] as const;
+const HOSTING_V2_MIN_AGENT_VERSION = "1.9.0";
 const HOSTING_V2_AUTOMATED_STOP_ATTEMPTS = 4;
 
 function agentVersionAtLeast(valueToCheck: string, minimum: string) {
@@ -30,7 +30,14 @@ function agentVersionAtLeast(valueToCheck: string, minimum: string) {
   return true;
 }
 
-function assertSuccessfulVerificationDetails(details: Record<string, unknown> | undefined, expectedInventoryDigest: string, controlPlaneReachabilityDigest: string | undefined, now: string) {
+function verificationAllowsImage(row: Row, image: string) {
+  try {
+    const payload = json<Record<string, unknown>>(row, "verification_payload_json");
+    return Array.isArray(payload.approvedImages) && payload.approvedImages.includes(image);
+  } catch { return false; }
+}
+
+function assertSuccessfulVerificationDetails(details: Record<string, unknown> | undefined, payload: Record<string, unknown>, expectedInventoryDigest: string, controlPlaneReachabilityDigest: string | undefined, now: string) {
   if (!details || details.protocolVersion !== 1 || details.inventoryDigest !== expectedInventoryDigest || typeof details.observedAt !== "string") {
     throw new ExchangeInputError("设备验真结果结构无效。", "details");
   }
@@ -39,6 +46,7 @@ function assertSuccessfulVerificationDetails(details: Record<string, unknown> | 
   if (!Array.isArray(details.tests) || details.tests.length !== VERIFY_TEST_NAMES.length) throw new ExchangeInputError("设备验真测试数量无效。", "details.tests");
   const names = new Set<string>();
   let portReachability: Record<string, unknown> | null = null;
+  let workloadImage: Record<string, unknown> | null = null;
   for (const item of details.tests) {
     if (!item || typeof item !== "object" || Array.isArray(item)) throw new ExchangeInputError("设备验真测试结构无效。", "details.tests");
     const result = item as Record<string, unknown>;
@@ -46,9 +54,18 @@ function assertSuccessfulVerificationDetails(details: Record<string, unknown> | 
       throw new ExchangeInputError("设备验真测试结果无效。", "details.tests");
     }
     if (result.name === "PORT_REACHABILITY") portReachability = result;
+    if (result.name === "WORKLOAD_IMAGE") workloadImage = result;
     names.add(String(result.name));
   }
   if (names.size !== VERIFY_TEST_NAMES.length) throw new ExchangeInputError("设备验真测试存在重复或缺失。", "details.tests");
+  const approvedImages = Array.isArray(payload.approvedImages) ? payload.approvedImages : [];
+  const workloadSummary = workloadImage?.summary;
+  if (approvedImages.length === 0 || !workloadSummary || typeof workloadSummary !== "object" || Array.isArray(workloadSummary)
+    || (workloadSummary as Record<string, unknown>).scope !== "APPROVED_WORKLOAD_IMAGES"
+    || (workloadSummary as Record<string, unknown>).allPresent !== true
+    || JSON.stringify((workloadSummary as Record<string, unknown>).images) !== JSON.stringify(approvedImages)) {
+    throw new ExchangeInputError("设备未证明平台批准的不可变工作负载镜像已就绪。", "details.tests.WORKLOAD_IMAGE");
+  }
   const summary = portReachability?.summary;
   if (!summary || typeof summary !== "object" || Array.isArray(summary)
     || (summary as Record<string, unknown>).scope !== "CONTROL_PLANE_CHALLENGE"
@@ -612,8 +629,9 @@ function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       const current = await db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=? AND organization_id=?", [deviceId, organizationId]);
       if (!current || !["ONLINE", "VERIFIED"].includes(value(current, "status"))) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备需在线后才能验真。");
       const commandId = id("hcmd");
+      const approvedImages = [...hostingV2ApprovedImages()].sort();
       await db.batch([
-        { sql: "INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at) VALUES(?,?,NULL,'VERIFY',?,'PENDING',0,?)", values: [commandId, deviceId, JSON.stringify({ expectedInventoryDigest: value(current, "inventory_digest"), tests: ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"], reachabilityChallenge: crypto.randomUUID().replaceAll("-", "") }), context.now] },
+        { sql: "INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at) VALUES(?,?,NULL,'VERIFY',?,'PENDING',0,?)", values: [commandId, deviceId, JSON.stringify({ expectedInventoryDigest: value(current, "inventory_digest"), tests: [...VERIFY_TEST_NAMES], approvedImages, reachabilityChallenge: crypto.randomUUID().replaceAll("-", "") }), context.now] },
         { sql: "UPDATE hosting_v2_devices SET status='VERIFYING',verification_status='PENDING',version=version+1,updated_at=? WHERE id=?", values: [context.now, deviceId] },
         event(context, organizationId, "DEVICE", deviceId, "DEVICE_VERIFICATION_QUEUED", { commandId }),
         receipt(context, "QUEUE_VERIFICATION", "AGENT_COMMAND", commandId),
@@ -665,7 +683,11 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       }
       const [profileRow, deviceRow, feeRow] = await Promise.all([
         db.first<Row>("SELECT * FROM hosting_v2_supplier_profiles WHERE organization_id=?", [organizationId]),
-        db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=? AND organization_id=?", [input.deviceId, organizationId]),
+        db.first<Row>(`SELECT d.*,(SELECT cmd.payload_json FROM hosting_v2_verification_proofs proof
+          JOIN hosting_v2_agent_commands cmd ON cmd.id=proof.command_id
+          WHERE proof.device_id=d.id AND proof.agent_evidence_digest=d.verification_evidence_digest
+          ORDER BY proof.recorded_at DESC LIMIT 1) AS verification_payload_json
+          FROM hosting_v2_devices d WHERE d.id=? AND d.organization_id=?`, [input.deviceId, organizationId]),
         db.first<Row>("SELECT * FROM hosting_v2_fee_schedules WHERE status='ACTIVE' AND effective_from<=? ORDER BY effective_from DESC LIMIT 1", [context.now]),
       ]);
       if (!profileRow || value(profileRow, "status") !== "APPROVED") throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "供应主体未通过审核。");
@@ -687,6 +709,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       const availableUntil = Date.parse(input.availableUntil);
       if (!Number.isFinite(availableFrom) || !Number.isFinite(availableUntil) || availableUntil <= availableFrom || availableUntil <= Date.parse(context.now)) throw new ExchangeInputError("可用时间窗无效。", "availableUntil");
       assertHostingV2ApprovedImage(input.approvedImage);
+      if (!verificationAllowsImage(deviceRow, input.approvedImage)) throw new ExchangeDomainError("EXCHANGE_VERIFICATION_REQUIRED", 409, "设备需重新验真并确认当前工作负载镜像后才能挂牌。");
       if (!/^KAI_HOSTING_TERMS_\d{4}_\d{2}$/u.test(input.termsVersion)) throw new ExchangeInputError("挂牌协议版本无效。", "termsVersion");
       const recordId = id("hofr");
       await db.batch([
@@ -703,12 +726,19 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
     async updateOfferStatus(organizationId, offerId, input, context) {
       const replayed = await replay(db, context, "UPDATE_OFFER_STATUS");
       if (!replayed) {
-        const current = await db.first<Row>("SELECT o.*,d.status device_status,d.verification_status device_verification,d.verified_until,d.last_seen_at,d.agent_version device_agent_version,p.status supplier_status FROM hosting_v2_offers o JOIN hosting_v2_devices d ON d.id=o.device_id JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id WHERE o.id=? AND o.organization_id=?", [offerId, organizationId]);
+        const current = await db.first<Row>(`SELECT o.*,d.status device_status,d.verification_status device_verification,d.verification_evidence_digest,d.verified_until,d.last_seen_at,d.agent_version device_agent_version,p.status supplier_status,
+          (SELECT cmd.payload_json FROM hosting_v2_verification_proofs proof JOIN hosting_v2_agent_commands cmd ON cmd.id=proof.command_id
+           WHERE proof.device_id=d.id AND proof.agent_evidence_digest=d.verification_evidence_digest ORDER BY proof.recorded_at DESC LIMIT 1) AS verification_payload_json
+          FROM hosting_v2_offers o JOIN hosting_v2_devices d ON d.id=o.device_id JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id WHERE o.id=? AND o.organization_id=?`, [offerId, organizationId]);
         if (!current) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "挂牌不存在。");
         if (number(current, "version") !== input.expectedVersion) throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT", 409, "挂牌版本已变化。");
         if (input.status === "PUBLISHED" && value(current, "supplier_status") !== "APPROVED") throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "供应主体当前未获准发布挂牌。");
         if (input.status === "PUBLISHED" && (value(current, "device_status") !== "VERIFIED" || value(current, "device_verification") !== "PASSED" || Date.parse(value(current, "verified_until")) <= Date.parse(context.now) || Date.parse(value(current, "last_seen_at")) < Date.parse(context.now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000)) throw new ExchangeDomainError("EXCHANGE_VERIFICATION_EXPIRED", 409, "设备不在线或验真已经过期。");
         if (input.status === "PUBLISHED" && !agentVersionAtLeast(value(current, "device_agent_version"), HOSTING_V2_MIN_AGENT_VERSION)) throw new ExchangeDomainError("HOSTING_AGENT_UPGRADE_REQUIRED", 409, `Host Agent 需要升级到 ${HOSTING_V2_MIN_AGENT_VERSION} 或更高版本。`);
+        if (input.status === "PUBLISHED") {
+          assertHostingV2ApprovedImage(value(current, "approved_image"));
+          if (!verificationAllowsImage(current, value(current, "approved_image"))) throw new ExchangeDomainError("EXCHANGE_VERIFICATION_EXPIRED", 409, "设备尚未证明当前工作负载镜像可交付，请重新验真。");
+        }
         const allowed = input.status === "PUBLISHED" ? ["DRAFT", "PAUSED"] : input.status === "PAUSED" ? ["PUBLISHED"] : ["DRAFT", "PUBLISHED", "PAUSED", "SUSPENDED"];
         if (!allowed.includes(value(current, "status"))) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "挂牌当前不能执行这个动作。");
         await db.batch([
@@ -724,10 +754,15 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
 
     async listPublicOffers(now) {
       const cutoff = new Date(Date.parse(now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000).toISOString();
-      return (await db.all<Row>(`SELECT o.*,d.agent_version device_agent_version FROM hosting_v2_offers o JOIN hosting_v2_devices d ON d.id=o.device_id JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id
+      const approvedImages = hostingV2ApprovedImages();
+      return (await db.all<Row>(`SELECT o.*,d.agent_version device_agent_version,
+          (SELECT cmd.payload_json FROM hosting_v2_verification_proofs proof JOIN hosting_v2_agent_commands cmd ON cmd.id=proof.command_id
+           WHERE proof.device_id=d.id AND proof.agent_evidence_digest=d.verification_evidence_digest ORDER BY proof.recorded_at DESC LIMIT 1) AS verification_payload_json
+        FROM hosting_v2_offers o JOIN hosting_v2_devices d ON d.id=o.device_id JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id
         WHERE o.status='PUBLISHED' AND p.status='APPROVED' AND o.available_from<=? AND o.available_until>? AND d.status='VERIFIED' AND d.verification_status='PASSED' AND d.verified_until>? AND d.last_seen_at>=?
         ORDER BY o.card_hour_micros_per_gpu_hour,o.created_at`, [now, now, now, cutoff]))
-        .filter((row) => agentVersionAtLeast(value(row, "device_agent_version"), HOSTING_V2_MIN_AGENT_VERSION))
+        .filter((row) => agentVersionAtLeast(value(row, "device_agent_version"), HOSTING_V2_MIN_AGENT_VERSION)
+          && approvedImages.has(value(row, "approved_image")) && verificationAllowsImage(row, value(row, "approved_image")))
         .map(offer);
     },
 
@@ -744,13 +779,17 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         return contract(row);
       }
       const staleCutoff = new Date(Date.parse(context.now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000).toISOString();
-      const row = await db.first<Row>(`SELECT o.*,f.platform_fee_bps,f.referral_reward_bps,d.agent_version device_agent_version FROM hosting_v2_offers o
+      const row = await db.first<Row>(`SELECT o.*,f.platform_fee_bps,f.referral_reward_bps,d.agent_version device_agent_version,
+          (SELECT cmd.payload_json FROM hosting_v2_verification_proofs proof JOIN hosting_v2_agent_commands cmd ON cmd.id=proof.command_id
+           WHERE proof.device_id=d.id AND proof.agent_evidence_digest=d.verification_evidence_digest ORDER BY proof.recorded_at DESC LIMIT 1) AS verification_payload_json
+        FROM hosting_v2_offers o
         JOIN hosting_v2_fee_schedules f ON f.id=o.fee_schedule_id
         JOIN hosting_v2_devices d ON d.id=o.device_id
         JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id
         WHERE o.id=? AND o.status='PUBLISHED' AND p.status='APPROVED' AND o.available_from<=? AND o.available_until>? AND d.status='VERIFIED' AND d.verification_status='PASSED' AND d.verified_until>? AND d.last_seen_at>=?`, [offerId, context.now, context.now, context.now, staleCutoff]);
       if (!row) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源已不可租用，请刷新市场。");
       if (!agentVersionAtLeast(value(row, "device_agent_version"), HOSTING_V2_MIN_AGENT_VERSION)) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源交付组件正在升级，请刷新市场。");
+      if (!hostingV2ApprovedImages().has(value(row, "approved_image")) || !verificationAllowsImage(row, value(row, "approved_image"))) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源工作负载镜像尚未通过当前验真，请刷新市场。");
       if (value(row, "organization_id") === account.activeOrganization.id) throw new ExchangeDomainError("EXCHANGE_OWNERSHIP_FORBIDDEN", 403, "供应方不能购买自己的资源。");
       if (!Number.isInteger(reservedSeconds) || reservedSeconds < number(row, "min_rental_seconds") || reservedSeconds > number(row, "max_rental_seconds")) throw new ExchangeInputError("租用时长不在挂牌范围内。", "reservedSeconds");
       const recordId = id("hctr");
@@ -998,7 +1037,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       const commandPayload = json<Record<string, unknown>>(commandRow, "payload_json");
       const deviceInventory = json<HostingDeviceInventory>(deviceRow, "inventory_json");
       const recoveredStopFailureRow = type === "STOP" ? await db.first<Row>("SELECT * FROM hosting_v2_stop_failures WHERE contract_id=? AND recovery_command_id=? AND status='RETRYING'", [nullable(commandRow, "contract_id"), commandId]) : null;
-      if (type === "VERIFY" && success) assertSuccessfulVerificationDetails(input.details, value(deviceRow, "inventory_digest"), input.controlPlaneReachabilityDigest, context.now);
+      if (type === "VERIFY" && success) assertSuccessfulVerificationDetails(input.details, commandPayload, value(deviceRow, "inventory_digest"), input.controlPlaneReachabilityDigest, context.now);
       const provisionEndpoint = type === "PROVISION" && success ? assertSuccessfulProvisionDetails(input.details, commandPayload, deviceInventory, context.now) : null;
       if (type === "START" && success) assertSuccessfulStartDetails(input.details, commandPayload, context.now);
       if (type === "STOP" && success) assertSuccessfulStopDetails(input.details, commandPayload, context.now, Boolean(recoveredStopFailureRow));
@@ -1081,7 +1120,16 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
             ...(recoveredStopFailureRow ? [{ sql: "UPDATE hosting_v2_stop_failures SET status='RECOVERED',resolved_at=? WHERE command_id=? AND status='RETRYING'", values: [context.now, value(recoveredStopFailureRow, "command_id")] } satisfies HostingV2Sql] : []),
           );
         } else if (type === "CLEANUP") {
-          const verificationFresh = value(deviceRow, "verification_status") === "PASSED"
+          const cleanupOffer = await db.first<Row>(`SELECT o.approved_image,
+              (SELECT cmd.payload_json FROM hosting_v2_verification_proofs proof JOIN hosting_v2_agent_commands cmd ON cmd.id=proof.command_id
+               WHERE proof.device_id=d.id AND proof.agent_evidence_digest=d.verification_evidence_digest ORDER BY proof.recorded_at DESC LIMIT 1) AS verification_payload_json
+            FROM hosting_v2_offers o JOIN hosting_v2_devices d ON d.id=o.device_id WHERE o.id=?`, [value(currentContract, "offer_id")]);
+          let verifiedImageCurrent = false;
+          try {
+            verifiedImageCurrent = Boolean(cleanupOffer && hostingV2ApprovedImages().has(value(cleanupOffer, "approved_image"))
+              && verificationAllowsImage(cleanupOffer, value(cleanupOffer, "approved_image")));
+          } catch { /* Missing or invalid policy keeps the cleaned device safely unlisted. */ }
+          const verificationFresh = verifiedImageCurrent && value(deviceRow, "verification_status") === "PASSED"
             && Date.parse(nullable(deviceRow, "verified_until") ?? "") > Date.parse(context.now)
             && Date.parse(nullable(deviceRow, "last_seen_at") ?? "") >= Date.parse(context.now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000;
           statements.push(
@@ -1093,7 +1141,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
               ) OR EXISTS(SELECT 1 FROM hosting_v2_delivery_failures f WHERE f.contract_id=hosting_v2_contracts.id AND f.status='CLEANING')
               THEN 'REFUNDED' ELSE 'CLEANED' END,version=version+1,updated_at=? WHERE id=? AND status='CLEANING'`, values: [context.now, contractId] },
             ...(deliveryFailureRow ? [{ sql: "UPDATE hosting_v2_delivery_failures SET status='CLEANED',cleaned_at=? WHERE contract_id=? AND status='CLEANING'", values: [String(input.details?.cleanedAt), contractId] } satisfies HostingV2Sql] : []),
-            { sql: "UPDATE hosting_v2_devices SET status=?,verification_status=?,version=version+1,updated_at=? WHERE id=?", values: [verificationFresh ? "VERIFIED" : "ONLINE", value(deviceRow, "verification_status") === "PASSED" && Date.parse(nullable(deviceRow, "verified_until") ?? "") <= Date.parse(context.now) ? "EXPIRED" : value(deviceRow, "verification_status"), context.now, deviceId] },
+            { sql: "UPDATE hosting_v2_devices SET status=?,verification_status=?,verified_until=?,version=version+1,updated_at=? WHERE id=?", values: [verificationFresh ? "VERIFIED" : "ONLINE", verificationFresh ? "PASSED" : "EXPIRED", verificationFresh ? nullable(deviceRow, "verified_until") : null, context.now, deviceId] },
             { sql: "UPDATE hosting_v2_offers SET status=?,version=version+1,updated_at=? WHERE id=? AND status IN ('RESERVED','SUSPENDED')", values: [verificationFresh ? "PUBLISHED" : "SUSPENDED", context.now, value(currentContract, "offer_id")] },
           );
         }

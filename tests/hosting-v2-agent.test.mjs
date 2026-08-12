@@ -27,7 +27,7 @@ function base64url(value) {
 }
 
 function successfulVerificationDetails(inventoryDigest, observedAt, challengeDigest) {
-  const tests = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"];
+  const tests = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "WORKLOAD_IMAGE", "PORT_REACHABILITY"];
   return {
     protocolVersion: 1,
     inventoryDigest,
@@ -36,6 +36,7 @@ function successfulVerificationDetails(inventoryDigest, observedAt, challengeDig
       name,
       status: "PASSED",
       evidenceDigest: `sha256:${String(index + 1).repeat(64)}`,
+      ...(name === "WORKLOAD_IMAGE" ? { summary: { protocolVersion: 1, scope: "APPROVED_WORKLOAD_IMAGES", images: [process.env.KAI_HOSTING_APPROVED_IMAGES], allPresent: true } } : {}),
       ...(name === "PORT_REACHABILITY" ? { summary: { port: 22_000, scope: "CONTROL_PLANE_CHALLENGE", challengeDigest } } : {}),
     })),
   };
@@ -57,7 +58,7 @@ test("signed Host Agent registration, heartbeat and verification close without r
     const now = new Date();
     await approvedSupplier(store, now.toISOString());
     const challenge = await store.issueAgentChallenge(account, mutation(account.account.id, "agent-challenge-0001", "agent-challenge-hash", now.toISOString()));
-    assert.equal(challenge.minimumAgentVersion, "1.8.0");
+    assert.equal(challenge.minimumAgentVersion, "1.9.0");
     const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
     const devicePublicKey = base64url(await crypto.subtle.exportKey("raw", keys.publicKey));
     const inventory = parseHostingDeviceInventory({
@@ -77,7 +78,7 @@ test("signed Host Agent registration, heartbeat and verification close without r
     const inventoryDigest = await hostingAgentDigest(inventory);
     const issuedAt = now.toISOString();
     const expiresAt = new Date(now.getTime() + 60_000).toISOString();
-    const registration = { operation: "REGISTER_DEVICE", challengeId: challenge.id, nonce: challenge.nonce, displayName: "4090 工作站 01", devicePublicKey, agentVersion: "1.8.0", inventory, inventoryDigest, issuedAt, expiresAt };
+    const registration = { operation: "REGISTER_DEVICE", challengeId: challenge.id, nonce: challenge.nonce, displayName: "4090 工作站 01", devicePublicKey, agentVersion: "1.9.0", inventory, inventoryDigest, issuedAt, expiresAt };
     const registrationSignature = await sign(keys.privateKey, registration);
     await verifyHostingAgentSignature(devicePublicKey, registration, registrationSignature);
     await assert.rejects(verifyHostingAgentSignature(devicePublicKey, { ...registration, displayName: "tampered" }, registrationSignature), (error) => error.code === "AGENT_SIGNATURE_INVALID");
@@ -109,6 +110,12 @@ test("signed Host Agent registration, heartbeat and verification close without r
       (error) => error.name === "ExchangeInputError",
     );
     const challengeDigest = await hostingAgentDigest({ protocolVersion: 1, deviceId: device.id, commandId: command.id, publicHost: inventory.publicHost, publicPort: inventory.sshPortStart, challenge: command.payload.reachabilityChallenge });
+    const legacyDetails = successfulVerificationDetails(inventoryDigest, new Date(now.getTime() + 61_000).toISOString(), challengeDigest);
+    legacyDetails.tests = legacyDetails.tests.filter((item) => item.name !== "WORKLOAD_IMAGE");
+    await assert.rejects(
+      store.completeCommand(device.id, command.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"3".repeat(64)}`, controlPlaneReachabilityDigest: challengeDigest, details: legacyDetails }, mutation(`agent:${device.id}`, `command:${command.id}:legacy`, "verify-legacy-hash", new Date(now.getTime() + 61_000).toISOString())),
+      (error) => error.name === "ExchangeInputError",
+    );
     const completed = await store.completeCommand(device.id, command.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"3".repeat(64)}`, controlPlaneReachabilityDigest: challengeDigest, details: successfulVerificationDetails(inventoryDigest, new Date(now.getTime() + 61_000).toISOString(), challengeDigest) }, mutation(`agent:${device.id}`, `command:${command.id}:SUCCEEDED`, "verify-result-hash", new Date(now.getTime() + 61_000).toISOString()));
     assert.equal(completed.device.status, "VERIFIED");
     assert.equal(completed.device.verificationStatus, "PASSED");

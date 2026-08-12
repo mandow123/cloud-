@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { cleanupWorkload, probeSshReadiness, provisionWorkload, startWorkload, stopWorkload } from "../host-agent/src/actuator-client.mjs";
-import { enforceExpiredWorkloads, executeCleanup, executeDoctor, executeProvision, executeStart, executeStop, parseCleanupRequest, parseDoctorRequest, parseProvisionRequest, parseStartRequest, parseStopRequest } from "../host-agent/src/actuator.mjs";
+import { enforceExpiredWorkloads, executeCleanup, executeDoctor, executeProvision, executeStart, executeStop, executeVerifyImages, parseCleanupRequest, parseDoctorRequest, parseProvisionRequest, parseStartRequest, parseStopRequest, parseVerifyImagesRequest } from "../host-agent/src/actuator.mjs";
 import { processOneCommand } from "../host-agent/src/client.mjs";
 import { AgentError, digestJson, generateDeviceIdentity } from "../host-agent/src/protocol.mjs";
 import { writeState } from "../host-agent/src/state.mjs";
@@ -52,6 +52,21 @@ test("root actuator exposes one exact Docker and NVIDIA Runtime readiness operat
   assert.deepEqual(calls, [["version", "--format", "{{.Server.Version}}"], ["info", "--format", "{{json .Runtimes}}"]]);
   assert.deepEqual(result, { protocolVersion: 1, dockerVersion: "28.0.4", nvidiaRuntime: true });
   await assert.rejects(executeDoctor({ protocolVersion: 1, operation: "DOCTOR" }, { runDocker: async (args) => args[0] === "version" ? { stdout: "28.0.4" } : { stdout: "{}" } }), (error) => error.code === "NVIDIA_RUNTIME_MISSING");
+});
+
+test("root actuator proves every approved immutable workload image is locally present", async () => {
+  const environment = { KAI_HOSTING_APPROVED_IMAGES: productionWorkloadImage };
+  const calls = [];
+  const request = { protocolVersion: 1, operation: "VERIFY_IMAGES", images: [productionWorkloadImage] };
+  assert.deepEqual(parseVerifyImagesRequest(request, environment), request);
+  assert.throws(() => parseVerifyImagesRequest({ ...request, images: [`ghcr.io/mandow123/other@sha256:${"b".repeat(64)}`] }, environment), (error) => error.code === "VERIFY_IMAGES_REQUEST_INVALID");
+  const result = await executeVerifyImages(request, { environment, runDocker: async (args) => {
+    calls.push(args);
+    return { stdout: JSON.stringify([productionWorkloadImage]) };
+  } });
+  assert.deepEqual(calls, [["image", "inspect", "--format", "{{json .RepoDigests}}", productionWorkloadImage]]);
+  assert.deepEqual(result, { protocolVersion: 1, scope: "APPROVED_WORKLOAD_IMAGES", images: [productionWorkloadImage], allPresent: true });
+  await assert.rejects(executeVerifyImages(request, { environment, runDocker: async () => ({ stdout: "[]" }) }), (error) => error.code === "IMAGE_DIGEST_MISMATCH");
 });
 
 test("root actuator accepts the exact production workload repository but not arbitrary owner images", () => {
