@@ -1,0 +1,38 @@
+name: Publish approved GPU workload
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Build and publish the immutable workload
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          owner=$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          image="ghcr.io/$owner/kai-cloud-gpu-workload"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_ACTOR" --password-stdin
+          docker build --pull --platform linux/amd64 \
+            --build-arg "KAI_WORKLOAD_REVISION=$GITHUB_SHA" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --tag "$image:$GITHUB_SHA" workload
+          docker push "$image:$GITHUB_SHA"
+          docker pull "$image:$GITHUB_SHA"
+          revision=$(docker image inspect "$image:$GITHUB_SHA" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')
+          test "$revision" = "$GITHUB_SHA"
+          immutable=$(docker image inspect "$image:$GITHUB_SHA" --format '{{ range .RepoDigests }}{{ println . }}{{ end }}' | awk -v prefix="$image@sha256:" 'index($0,prefix)==1 {print $0}')
+          test "$(printf '%s\n' "$immutable" | sed '/^$/d' | wc -l)" -eq 1
+          printf '### Approved workload\n\n- Commit: `%s`\n- Immutable image: `%s`\n' "$GITHUB_SHA" "$immutable" >> "$GITHUB_STEP_SUMMARY"
