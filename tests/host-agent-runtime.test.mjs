@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { heartbeat, pairDevice, processOneCommand } from "../host-agent/src/client.mjs";
+import { checkConnection, heartbeat, pairDevice, processOneCommand } from "../host-agent/src/client.mjs";
 import { doctorActuator, verifyWorkloadImages } from "../host-agent/src/actuator-client.mjs";
 import { runDoctor } from "../host-agent/src/doctor.mjs";
 import { parseNvidiaInventory } from "../host-agent/src/inventory.mjs";
 import { AgentError, assertHttpsEndpoint, canonicalJson, digestJson, generateDeviceIdentity, signPayload } from "../host-agent/src/protocol.mjs";
-import { readState } from "../host-agent/src/state.mjs";
+import { readPairingFile, readState } from "../host-agent/src/state.mjs";
 import { defaultVerificationRunners, runVerification, VERIFY_TESTS } from "../host-agent/src/verify.mjs";
 import { hostingAgentCanonicalJson, hostingAgentDigest, verifyHostingAgentSignature } from "../lib/server/hosting-agent-crypto.ts";
 
@@ -53,6 +53,24 @@ test("NVIDIA inventory parser accepts one supported GPU and rejects ambiguous ho
   assert.equal(parseNvidiaInventory("GPU-h100, NVIDIA H100 80GB HBM3, 81559, 580.10", "CUDA Version: 13.0").gpuModel, "H100_80GB");
   assert.throws(() => parseNvidiaInventory("GPU-a, RTX 4090, 24576, 580.10\nGPU-b, RTX 4090, 24576, 580.10", "CUDA Version: 13.0"), (error) => error.code === "GPU_COUNT_UNSUPPORTED");
   assert.throws(() => parseNvidiaInventory("GPU-a, RTX 3090, 24576, 580.10", "CUDA Version: 13.0"), (error) => error.code === "GPU_MODEL_UNSUPPORTED");
+});
+
+test("pairing files must be absolute private regular files and never symbolic links", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "kai-host-agent-pairing-file-"));
+  const pairingFile = join(directory, "pairing.json");
+  const pairingLink = join(directory, "pairing-link.json");
+  try {
+    await writeFile(pairingFile, '{"version":1}\n', { mode: 0o600 });
+    assert.deepEqual(await readPairingFile(pairingFile), { version: 1 });
+    await chmod(pairingFile, 0o640);
+    await assert.rejects(readPairingFile(pairingFile), (error) => error.code === "PAIRING_FILE_PERMISSIONS_INVALID");
+    await chmod(pairingFile, 0o600);
+    await symlink(pairingFile, pairingLink);
+    await assert.rejects(readPairingFile(pairingLink), (error) => error.code === "PAIRING_FILE_SYMLINK_FORBIDDEN");
+    await assert.rejects(readPairingFile("pairing.json"), (error) => error.code === "PAIRING_FILE_INVALID");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("doctor fails closed unless Docker, NVIDIA runtime, capacity and the managed port are ready", async () => {
@@ -198,7 +216,7 @@ test("pairing and heartbeat persist a private 0600 identity and send server-veri
         registerEndpoint: "http://127.0.0.1:3014/api/v2/agent/register",
         challengeId: "hac_runtime_challenge_000001",
         nonce: "runtimeNonceValue000001",
-        minimumAgentVersion: "1.9.0",
+        minimumAgentVersion: "1.9.1",
         expiresAt: new Date(Date.now() + 300_000).toISOString(),
       },
       displayName: "4090 工作站 01",
@@ -223,6 +241,10 @@ test("pairing and heartbeat persist a private 0600 identity and send server-veri
     const beat = await heartbeat({ stateFile, allowInsecureLocal: true, inventoryCollector: async () => inventory, post });
     assert.equal(beat.state.lastSequence, 1);
     assert.equal((await readState(stateFile)).lastSequence, 1);
+
+    const connection = await checkConnection({ stateFile, allowInsecureLocal: true, inventoryCollector: async () => inventory, post });
+    assert.equal(connection.state.lastSequence, 2);
+    assert.equal(connection.capacityState, "OFFLINE");
 
     const processed = await processOneCommand({
       stateFile,
@@ -257,6 +279,9 @@ test("installer is offline, non-root at runtime and systemd-hardened", async () 
   assert.doesNotMatch(installer, /curl|wget|apt-get|npm install|docker group/u);
   assert.match(installer, /useradd --system/u);
   assert.match(installer, /ID=ubuntu/u);
+  assert.match(installer, /NODE_BINARY=\$\(command -v node\)/u);
+  assert.match(installer, /\/usr\/bin\/node\|\/usr\/local\/bin\/node/u);
+  assert.match(installer, /sed -i .*ExecStart/u);
   assert.match(service, /^User=kai-host-agent$/mu);
   assert.match(service, /^NoNewPrivileges=true$/mu);
   assert.match(service, /^ProtectSystem=strict$/mu);
@@ -280,6 +305,8 @@ test("installer is offline, non-root at runtime and systemd-hardened", async () 
   assert.match(installer, /src\/verify\.mjs/u);
   assert.match(installer, /src\/doctor\.mjs/u);
   assert.match(installer, /kai-host-actuator\.service/u);
-  assert.equal(packageJson.version, "1.9.0");
+  assert.match(runtime, /check-connection/u);
+  assert.match(runtime, /readPairingFile/u);
+  assert.equal(packageJson.version, "1.9.1");
   assert.equal(packageJson.dependencies, undefined);
 });

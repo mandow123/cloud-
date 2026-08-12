@@ -15,7 +15,7 @@ import { readState, stateFilePath, writeState } from "./state.mjs";
 import { cleanupWorkload, provisionWorkload, startWorkload, stopWorkload } from "./actuator-client.mjs";
 import { runVerification } from "./verify.mjs";
 
-export const AGENT_VERSION = "1.9.0";
+export const AGENT_VERSION = "1.9.1";
 
 function validatePairingBundle(value, options = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new AgentError("PAIRING_INVALID", "Pairing bundle must be a JSON object.");
@@ -184,6 +184,10 @@ export async function heartbeat({
     }
     throw error;
   }
+}
+
+export async function checkConnection(options = {}) {
+  return heartbeat({ ...options, capacityState: "OFFLINE" });
 }
 
 export async function resumePairing({ stateFile = stateFilePath(), allowInsecureLocal = false, post = apiPost } = {}) {

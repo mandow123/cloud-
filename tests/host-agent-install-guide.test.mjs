@@ -10,6 +10,11 @@ test("public Host Agent guide uses verified downloads and never recommends pipin
   assert.match(guide, /less release-manifest\.json/u);
   assert.match(guide, /sudo -u kai-host-agent -- kai-host-agent doctor/u);
   assert.match(guide, /sudo -u kai-host-agent -- kai-host-agent pair/u);
+  assert.match(guide, /--pairing-file \/var\/lib\/kai-host-agent\/pairing\.json/u);
+  assert.match(guide, /kai-host-agent check-connection/u);
+  assert.match(guide, /connection\.verified/u);
+  assert.match(guide, /OFFLINE 状态/u);
+  assert.doesNotMatch(guide, /< \/var\/lib\/kai-host-agent\/pairing\.json/u);
   assert.match(guide, /`latest`、普通 tag 和任意第三方仓库都会被拒绝/u);
   assert.doesNotMatch(guide, /curl[^\n|]*\||wget[^\n|]*\||ghcr\.io\/[A-Za-z0-9._/-]+:latest/u);
 });

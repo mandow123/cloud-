@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { HostingAgentChallenge, HostingDevice } from "@/lib/hosting-v2";
-import type { SupplierHostingDashboard } from "@/lib/hosting-v2-client";
+import type { SupplierHostingDashboard, SupplierHostingPolicy } from "@/lib/hosting-v2-client";
 import { createIdempotencyKey, marketplaceErrorMessage, marketplaceGet, marketplacePost } from "@/lib/client/marketplace-client";
 import styles from "./supply-console.module.css";
 
-const HOST_AGENT_VERSION = "1.9.0";
+const HOST_AGENT_VERSION = "1.9.1";
 const HOST_AGENT_ARCHIVE = `kai-host-agent-${HOST_AGENT_VERSION}.tgz`;
 
 type PairingDevice = Pick<HostingDevice, "id" | "displayName" | "agentVersion" | "status" | "verificationStatus" | "lastSequence" | "lastSeenAt"> & Readonly<{ gpuModel: HostingDevice["inventory"]["gpuModel"] }>;
@@ -21,6 +21,7 @@ const templates = [
 
 export function SupplyResourceRegistration() {
   const [dashboard, setDashboard] = useState<SupplierHostingDashboard | null>(null);
+  const [policy, setPolicy] = useState<SupplierHostingPolicy | null>(null);
   const [selected, setSelected] = useState<(typeof templates)[number]["id"]>("personal-gpu");
   const [challenge, setChallenge] = useState<HostingAgentChallenge | null>(null);
   const [busy, setBusy] = useState(false);
@@ -29,12 +30,17 @@ export function SupplyResourceRegistration() {
   const [pairingExpired, setPairingExpired] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const issueKey = useRef<string | null>(null);
-  const agentOnline = Boolean(pairedDevice && pairedDevice.lastSequence > 0 && ["ONLINE", "VERIFIED"].includes(pairedDevice.status));
+  const connectionVerified = Boolean(pairedDevice && pairedDevice.lastSequence > 0);
+  const agentOnline = Boolean(connectionVerified && pairedDevice && ["ONLINE", "VERIFIED"].includes(pairedDevice.status));
 
   const load = useCallback(async () => {
     try {
-      const result = await marketplaceGet<{ dashboard: SupplierHostingDashboard }>("/api/v2/supply/dashboard");
-      setDashboard(result.dashboard);
+      const [dashboardResult, policyResult] = await Promise.all([
+        marketplaceGet<{ dashboard: SupplierHostingDashboard }>("/api/v2/supply/dashboard"),
+        marketplaceGet<{ policy: SupplierHostingPolicy }>("/api/v2/supply/policy"),
+      ]);
+      setDashboard(dashboardResult.dashboard);
+      setPolicy(policyResult.policy);
     } catch (cause) {
       setError(marketplaceErrorMessage(cause, "供应主体状态暂时无法读取。"));
     }
@@ -135,6 +141,10 @@ export function SupplyResourceRegistration() {
             <li><span>公网端口范围可达</span><strong className={styles.ready}>REQUIRED</strong></li>
             <li><span>Agent 仅能主动通过 HTTPS 领取受限命令</span><strong className={styles.ready}>ENFORCED</strong></li>
           </ul>
+          <div className={styles.approvedImages}>
+            <div><strong>平台批准的不可变工作负载镜像</strong><p>验真和正式订单只允许下列完整 RepoDigest；请在启动服务前拉取并配置到 `/etc/kai-host-actuator.env`。</p></div>
+            {policy?.approvedImages.length ? policy.approvedImages.map((image) => <code key={image}>{image}</code>) : <span>正在读取平台镜像策略…</span>}
+          </div>
 
           {!challenge ? (
             <div className={styles.actionRow}>
@@ -158,8 +168,10 @@ export function SupplyResourceRegistration() {
                   <div><span>HOST ONLINE</span><strong>{pairedDevice.displayName}</strong><p>{pairedDevice.gpuModel.replace("_", " ")} · Agent {pairedDevice.agentVersion} · 服务端已收到第 {pairedDevice.lastSequence} 次签名心跳</p></div>
                   <Link className={styles.actionButton} href={`/supply/resources/${encodeURIComponent(pairedDevice.id)}`}>进入设备验真</Link>
                 </div>
+              ) : connectionVerified && pairedDevice ? (
+                <div className={styles.connectionWaiting} role="status"><span aria-hidden="true" /><div><strong>{pairedDevice.displayName} 的签名连接已验证</strong><p>请完成批准镜像配置并启动 Host Agent 服务；收到在线心跳后会自动开放验真入口。</p></div></div>
               ) : pairedDevice ? (
-                <div className={styles.connectionWaiting} role="status"><span aria-hidden="true" /><div><strong>{pairedDevice.displayName} 已完成签名注册</strong><p>请在主机启动 Host Agent 服务；收到第一条签名心跳后会自动开放验真入口。</p></div></div>
+                <div className={styles.connectionWaiting} role="status"><span aria-hidden="true" /><div><strong>{pairedDevice.displayName} 已完成签名注册</strong><p>请按安装教程运行一次 `kai-host-agent check-connection`；Cloud 接受签名连接检查后会自动更新此状态。</p></div></div>
               ) : pairingExpired ? (
                 <div className={styles.connectionExpired} role="alert"><div><strong>这份一次性凭证已过期</strong><p>主机尚未完成注册。请废弃旧内容并重新签发，不要继续使用已过期凭证。</p></div><button className={styles.secondaryAction} onClick={() => { setChallenge(null); setPairingExpired(false); issueKey.current = null; }} type="button">重新签发</button></div>
               ) : (

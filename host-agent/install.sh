@@ -25,6 +25,15 @@ if [ "$NODE_MAJOR" -lt 24 ] || { [ "$NODE_MAJOR" -eq 24 ] && [ "$NODE_MINOR" -lt
   exit 1
 fi
 
+NODE_BINARY=$(command -v node)
+case "$NODE_BINARY" in
+  /usr/bin/node|/usr/local/bin/node) ;;
+  *)
+    echo "Node.js must be installed system-wide at /usr/bin/node or /usr/local/bin/node for the systemd services." >&2
+    exit 1
+    ;;
+esac
+
 if ! command -v nvidia-smi >/dev/null 2>&1; then
   echo "nvidia-smi is required before installing KAI Host Agent." >&2
   exit 1
@@ -64,6 +73,7 @@ if [ ! -e /etc/kai-host-actuator.env ]; then
 fi
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/kai-host-actuator.service" /etc/systemd/system/kai-host-actuator.service
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/kai-host-agent.service" /etc/systemd/system/kai-host-agent.service
+sed -i "s|^ExecStart=.*src/actuator-server.mjs$|ExecStart=$NODE_BINARY /opt/kai-host-agent/src/actuator-server.mjs|" /etc/systemd/system/kai-host-actuator.service
 systemctl daemon-reload
 systemctl enable --now kai-host-actuator.service
 

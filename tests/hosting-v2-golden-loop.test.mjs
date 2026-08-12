@@ -9,12 +9,16 @@ import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.
 import { getCardHourStore } from "../lib/server/card-hour-store.ts";
 import { getHostingV2Store } from "../lib/server/hosting-v2-store.ts";
 import { hostingAgentDigest } from "../lib/server/hosting-agent-crypto.ts";
+import { checkConnection, heartbeat, pairDevice } from "../host-agent/src/client.mjs";
+import { AgentError } from "../host-agent/src/protocol.mjs";
 
 import { GET as openMarketplaceSession } from "../app/api/session/route.ts";
 import { PUT as saveSupplierProfile } from "../app/api/v2/supply/profile/route.ts";
 import { POST as submitSupplierProfile } from "../app/api/v2/supply/profile/submit/route.ts";
 import { POST as issueAgentChallenge } from "../app/api/v2/supply/agent-challenges/route.ts";
 import { GET as getAgentChallengeStatus } from "../app/api/v2/supply/agent-challenges/[challengeId]/route.ts";
+import { POST as registerHostAgent } from "../app/api/v2/agent/register/route.ts";
+import { POST as acceptHostAgentHeartbeat } from "../app/api/v2/agent/devices/[deviceId]/heartbeat/route.ts";
 import { POST as queueDeviceVerification } from "../app/api/v2/supply/devices/[deviceId]/verify/route.ts";
 import { GET as getSupplyPolicy } from "../app/api/v2/supply/policy/route.ts";
 import { POST as createSupplyOffer } from "../app/api/v2/supply/offers/route.ts";
@@ -176,6 +180,31 @@ async function createBrowserSession(auth, subject, now) {
   };
 }
 
+async function hostAgentPost(url, body, options = {}) {
+  const endpoint = new URL(url);
+  const request = new Request(endpoint, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "user-agent": "KAI-Host-Agent/1.9.1",
+      ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  let response;
+  if (endpoint.pathname === "/api/v2/agent/register") {
+    response = await registerHostAgent(request);
+  } else {
+    const match = /^\/api\/v2\/agent\/devices\/(had_[a-z0-9]+)\/heartbeat$/u.exec(endpoint.pathname);
+    if (!match) throw new Error(`Unexpected Host Agent endpoint: ${endpoint.pathname}`);
+    response = await acceptHostAgentHeartbeat(request, { params: Promise.resolve({ deviceId: match[1] }) });
+  }
+  const payload = await response.json();
+  if (!response.ok) throw new AgentError(payload?.error?.code ?? `HTTP_${response.status}`, payload?.error?.message ?? "Host Agent request failed.");
+  return payload;
+}
+
 test("fresh supplier and buyer browsers complete the real three-minute GPU lifecycle through V2 APIs", async () => {
   const directory = mkdtempSync(join(tmpdir(), "kai-hosting-golden-loop-"));
   const databasePath = join(directory, "kai-cloud.sqlite");
@@ -232,15 +261,28 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     await hosting.reviewProfile(supplier.context.activeOrganization.id, { decision: "APPROVE", expectedVersion: 2, reviewNote: "内部真实 GPU 黄金闭环验收" }, mutation("golden-admin-reviewer", "golden-profile-approve", now));
 
     const challenge = await json(await issueAgentChallenge(browserRequest(supplier, "/api/v2/supply/agent-challenges", "POST", {}, "golden-agent-challenge")), 201);
-    const inventoryDigest = `sha256:${"3".repeat(64)}`;
-    const device = await hosting.registerDevice(challenge.record.id, {
+    const agentStateFile = join(directory, "golden-host-agent", "identity.json");
+    const paired = await pairDevice({
+      bundle: {
+        version: 1,
+        registerEndpoint: `${ORIGIN}/api/v2/agent/register`,
+        challengeId: challenge.record.id,
+        nonce: challenge.record.nonce,
+        minimumAgentVersion: challenge.record.minimumAgentVersion,
+        expiresAt: challenge.record.expiresAt,
+      },
       displayName: "黄金闭环 RTX 4090",
-      deviceKeyId: `sha256:${"4".repeat(64)}`,
-      devicePublicKey: "A".repeat(43),
-      agentVersion: "1.9.0",
-      inventory: inventory(),
-      inventoryDigest,
-    }, mutation("agent:golden", "golden-device-register", now));
+      publicHost: "golden-loop-gpu.example.com",
+      sshPortStart: 27_000,
+      sshPortEnd: 27_019,
+      stateFile: agentStateFile,
+      allowInsecureLocal: true,
+      inventoryCollector: async () => inventory(),
+      post: hostAgentPost,
+    });
+    const device = await hosting.getDevice(paired.deviceId);
+    assert.ok(device);
+    const inventoryDigest = device.inventoryDigest;
     assert.equal((await hosting.getAgentRegistration(supplier.context.activeOrganization.id, challenge.record.id))?.device?.id, device.id);
     const registeredStatus = await json(await getAgentChallengeStatus(browserRead(supplier, `/api/v2/supply/agent-challenges/${challenge.record.id}`), { params: Promise.resolve({ challengeId: challenge.record.id }) }), 200);
     assert.equal(registeredStatus.record.device.id, device.id);
@@ -250,10 +292,17 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     assert.equal("organizationId" in registeredStatus.record.device, false);
     const crossOrganizationStatus = await json(await getAgentChallengeStatus(browserRead(buyer, `/api/v2/supply/agent-challenges/${challenge.record.id}`), { params: Promise.resolve({ challengeId: challenge.record.id }) }), 404);
     assert.equal(crossOrganizationStatus.error.code, "HOSTING_AGENT_CHALLENGE_NOT_FOUND");
-    await hosting.acceptHeartbeat(device.id, { sequence: 1, inventoryDigest, capacityState: "ONLINE", observedAt: now }, mutation(`agent:${device.id}`, "golden-heartbeat-1", now));
+    const connection = await checkConnection({ stateFile: agentStateFile, allowInsecureLocal: true, inventoryCollector: async () => inventory(), post: hostAgentPost });
+    assert.equal(connection.capacityState, "OFFLINE");
+    const checkedStatus = await json(await getAgentChallengeStatus(browserRead(supplier, `/api/v2/supply/agent-challenges/${challenge.record.id}`), { params: Promise.resolve({ challengeId: challenge.record.id }) }), 200);
+    assert.equal(checkedStatus.record.device.status, "OFFLINE");
+    assert.equal(checkedStatus.record.device.lastSequence, 1);
+    const liveHeartbeat = await heartbeat({ stateFile: agentStateFile, allowInsecureLocal: true, inventoryCollector: async () => inventory(), post: hostAgentPost });
+    assert.equal(liveHeartbeat.capacityState, "ONLINE");
     const onlineStatus = await json(await getAgentChallengeStatus(browserRead(supplier, `/api/v2/supply/agent-challenges/${challenge.record.id}`), { params: Promise.resolve({ challengeId: challenge.record.id }) }), 200);
-    assert.equal(onlineStatus.record.device.lastSequence, 1);
-    assert.equal(onlineStatus.record.device.lastSeenAt, now);
+    assert.equal(onlineStatus.record.device.status, "ONLINE");
+    assert.equal(onlineStatus.record.device.lastSequence, 2);
+    assert.ok(Date.parse(onlineStatus.record.device.lastSeenAt) >= Date.parse(now));
     const queuedVerification = await json(await queueDeviceVerification(browserRequest(supplier, `/api/v2/supply/devices/${device.id}/verify`, "POST", {}, "golden-device-verify"), { params: Promise.resolve({ deviceId: device.id }) }), 201);
     const verificationCommand = await hosting.pollCommand(device.id, now);
     assert.equal(verificationCommand.id, queuedVerification.record.id);
@@ -322,7 +371,7 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     assert.equal(accepted.record.status, "CLEANING");
     assert.deepEqual(accepted.settlement, { heldMicros: 180_000, settledMicros: 180_000, releasedMicros: 0, supplierIncomeMicros: 162_000, commissionMicros: 5_400, platformFeeMicros: 18_000 });
     const heartbeatAt = new Date().toISOString();
-    await hosting.acceptHeartbeat(device.id, { sequence: 2, inventoryDigest, capacityState: "BUSY", observedAt: heartbeatAt }, mutation(`agent:${device.id}`, "golden-heartbeat-2", heartbeatAt));
+    await hosting.acceptHeartbeat(device.id, { sequence: 3, inventoryDigest, capacityState: "BUSY", observedAt: heartbeatAt }, mutation(`agent:${device.id}`, "golden-heartbeat-3", heartbeatAt));
     const cleanupCommand = await hosting.pollCommand(device.id, heartbeatAt);
     assert.equal(cleanupCommand.type, "CLEANUP");
     const cleanedAt = new Date().toISOString();

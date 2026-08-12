@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 import { dirname } from "node:path";
-import { AGENT_VERSION, heartbeat, pairDevice, processOneCommand, resumePairing } from "./client.mjs";
+import { AGENT_VERSION, checkConnection, heartbeat, pairDevice, processOneCommand, resumePairing } from "./client.mjs";
 import { runDoctor } from "./doctor.mjs";
 import { AgentError } from "./protocol.mjs";
-import { readState, stateFilePath } from "./state.mjs";
+import { readPairingFile, readState, stateFilePath } from "./state.mjs";
 
 function log(event, fields = {}) {
   process.stdout.write(`${JSON.stringify({ timestamp: new Date().toISOString(), event, ...fields })}\n`);
@@ -77,7 +77,7 @@ async function main() {
   }
   if (command === "pair") {
     const input = options(args);
-    const bundle = await stdinJson();
+    const bundle = input["pairing-file"] ? await readPairingFile(input["pairing-file"]) : await stdinJson();
     const result = await pairDevice({
       bundle,
       displayName: input["display-name"],
@@ -91,6 +91,11 @@ async function main() {
   if (command === "resume-pair") {
     const result = await resumePairing();
     log("pairing.completed", { deviceId: result.deviceId });
+    return;
+  }
+  if (command === "check-connection") {
+    const result = await checkConnection();
+    log("connection.verified", { deviceId: result.state.deviceId, sequence: result.state.lastSequence, capacityState: result.capacityState });
     return;
   }
   if (command === "doctor") {
@@ -123,7 +128,7 @@ async function main() {
     log("state.summary", { status: state.status, deviceId: state.deviceId ?? null, lastSequence: state.lastSequence ?? 0, pairedAt: state.pairedAt ?? null });
     return;
   }
-  process.stdout.write("KAI Host Agent\n\nCommands: pair, resume-pair, doctor, run, show-state, version\n");
+  process.stdout.write("KAI Host Agent\n\nCommands: pair, resume-pair, check-connection, doctor, run, show-state, version\n");
 }
 
 main().catch(fail);

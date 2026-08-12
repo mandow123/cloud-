@@ -1,6 +1,6 @@
 # KAI Host Agent
 
-KAI Host Agent is the supplier-side device identity and control service for KAI Hosting V2. Version `1.9.0` in this checkpoint implements:
+KAI Host Agent is the supplier-side device identity and control service for KAI Hosting V2. Version `1.9.1` in this checkpoint implements:
 
 - contract-bound cleanup for partially provisioned or SSH-unreachable workloads, so failed delivery can be refunded and proven clean before relisting;
 
@@ -37,17 +37,25 @@ Download the versioned archive and its SHA-256 file from [the KAI Cloud Host Age
 
 Before accepting any rental, put the exact KAI-approved `repository@sha256` image references in `/etc/kai-host-actuator.env` and restart `kai-host-actuator`. Tags are rejected. The approved image contract runs as UID/GID `1000:1000`, listens for SSH on container port `2222`, reads `/home/kai/.ssh/authorized_keys`, and uses `/workspace` for writable data.
 
-Copy the pairing JSON from the supplier console into a root-owned temporary file, then run the pairing command as the restricted service user:
+Copy the pairing JSON from the supplier console into a private file owned by the restricted service user. The Agent rejects relative paths, symbolic links, another owner, or group/other-readable modes:
 
 ```text
 sudo -u kai-host-agent -- kai-host-agent pair \
+  --pairing-file /var/lib/kai-host-agent/pairing.json \
   --display-name "4090 工作站 01" \
   --public-host "gpu.example.com" \
   --ssh-port-start "22000" \
-  --ssh-port-end "22019" < pairing.json
+  --ssh-port-end "22019"
 ```
 
-After pairing succeeds:
+After pairing succeeds, remove the one-time file and prove the signed heartbeat path before enabling the background service:
+
+```text
+sudo shred -u /var/lib/kai-host-agent/pairing.json
+sudo -u kai-host-agent -- kai-host-agent check-connection
+```
+
+Only a `connection.verified` event proves that Cloud accepted the signed connection check. The check reports the device as OFFLINE and never polls or leases a command, so an unconfigured actuator cannot appear ready for verification. Then enable the service:
 
 ```text
 sudo systemctl enable --now kai-host-agent

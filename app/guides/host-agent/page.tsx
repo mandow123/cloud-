@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../guides.module.css";
 
-const HOST_AGENT_VERSION = "1.9.0";
+const HOST_AGENT_VERSION = "1.9.1";
 const AGENT_VERSION = HOST_AGENT_VERSION;
 const ARCHIVE = `kai-host-agent-${AGENT_VERSION}.tgz`;
 
@@ -60,9 +60,10 @@ export default function HostAgentGuidePage() {
           <ol className={styles.steps}>
             <li><span>1</span><div><h3>完成供应商审核</h3><p>登录后进入供应商控制台，提交主体与设备权属资料，等待管理员批准。</p></div></li>
             <li><span>2</span><div><h3>签发配对内容</h3><p>在“资源 → 登记新资源”签发一次性 JSON。它只在五分钟内有效，成功注册后立即失效。</p></div></li>
-            <li><span>3</span><div><h3>通过标准输入配对</h3><p>把 JSON 保存到 root-owned 临时文件，不要放进命令参数、聊天或日志。</p></div></li>
+            <li><span>3</span><div><h3>通过私有文件配对</h3><p>把 JSON 放进 Agent 专属目录并设为 `0600`。Agent 会拒绝相对路径、软链接、其他所有者或可被组/其他用户读取的文件。</p></div></li>
           </ol>
-          <Command>{`sudo install -o kai-host-agent -g kai-host-agent -m 0600 pairing.json /var/lib/kai-host-agent/pairing.json\nsudo -u kai-host-agent -- kai-host-agent pair \\\n  --display-name "4090 工作站 01" \\\n  --public-host "gpu.example.com" \\\n  --ssh-port-start "22000" \\\n  --ssh-port-end "22019" \\\n  < /var/lib/kai-host-agent/pairing.json\nsudo shred -u /var/lib/kai-host-agent/pairing.json`}</Command>
+          <Command>{`sudo install -o kai-host-agent -g kai-host-agent -m 0600 pairing.json /var/lib/kai-host-agent/pairing.json\nsudo -u kai-host-agent -- kai-host-agent pair \\\n  --pairing-file /var/lib/kai-host-agent/pairing.json \\\n  --display-name "4090 工作站 01" \\\n  --public-host "gpu.example.com" \\\n  --ssh-port-start "22000" \\\n  --ssh-port-end "22019"\nsudo shred -u /var/lib/kai-host-agent/pairing.json\nsudo -u kai-host-agent -- kai-host-agent check-connection`}</Command>
+          <p>只有最后一条命令返回 `connection.verified` 才表示 Cloud 已接受设备的第一条签名连接检查。此命令以 OFFLINE 状态报告，不会领取验真或租赁任务；网页会自动显示“连接已验证，等待启动服务”。</p>
         </section>
 
         <section>
@@ -75,7 +76,7 @@ export default function HostAgentGuidePage() {
         <section>
           <div className={styles.sectionLabel}>06 · VERIFY & RECOVERY</div>
           <h2>回到控制台完成验真</h2>
-          <p>设备心跳出现后创建验真任务。平台会核对 GPU 身份、CUDA、显存、存储、不可变工作负载镜像、网络和端口可达性。证据过期、镜像策略变化、规格变化、Agent 离线或清理失败会自动暂停报价；清理失败的设备保持 DRAINING，不能再次出租。</p>
+          <p>先配置批准镜像并启动常驻服务。网页看到在线心跳后再创建验真任务；平台会核对 GPU 身份、CUDA、显存、存储、不可变工作负载镜像、网络和端口可达性。证据过期、镜像策略变化、规格变化、Agent 离线或清理失败会自动暂停报价；清理失败的设备保持 DRAINING，不能再次出租。</p>
           <Link className={styles.actionLink} href="/login?returnTo=%2Fsupply%2Fresources">查看设备与验真状态 →</Link>
         </section>
       </article>

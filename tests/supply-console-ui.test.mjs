@@ -40,6 +40,9 @@ test("resource registration issues a short-lived server challenge without client
   const source = readFileSync("components/supply-resource-registration.tsx", "utf8");
   const agentPackage = JSON.parse(readFileSync("host-agent/package.json", "utf8"));
   assert.match(source, /marketplacePost<HostingAgentChallenge>\("\/api\/v2\/supply\/agent-challenges", \{\}/u);
+  assert.match(source, /marketplaceGet<\{ policy: SupplierHostingPolicy \}>\("\/api\/v2\/supply\/policy"\)/u);
+  assert.match(source, /policy\?\.approvedImages\.length/u);
+  assert.match(source, /\/etc\/kai-host-actuator\.env/u);
   assert.match(source, /challengeId: challenge\.id/u);
   assert.match(source, /nonce: challenge\.nonce/u);
   assert.match(source, /minimumAgentVersion: challenge\.minimumAgentVersion/u);
@@ -48,6 +51,8 @@ test("resource registration issues a short-lived server challenge without client
   assert.match(source, /`\/api\/v2\/supply\/agent-challenges\/\$\{encodeURIComponent\(challenge\.id\)\}`/u);
   assert.match(source, /window\.setInterval\(\(\) => \{ void check\(\); \}, 3_000\)/u);
   assert.match(source, /进入设备验真/u);
+  assert.match(source, /const connectionVerified = Boolean\(pairedDevice && pairedDevice\.lastSequence > 0\)/u);
+  assert.match(source, /签名连接已验证/u);
   assert.match(source, new RegExp(`const HOST_AGENT_VERSION = "${agentPackage.version.replaceAll(".", "\\.")}"`, "u"));
   assert.match(source, /const HOST_AGENT_ARCHIVE = `kai-host-agent-\$\{HOST_AGENT_VERSION\}\.tgz`/u);
   assert.match(source, /href=\{`\/downloads\/\$\{HOST_AGENT_ARCHIVE\}`\}/u);

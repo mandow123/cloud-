@@ -666,6 +666,38 @@
   white-space: pre;
 }
 
+.approvedImages {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border);
+  background: var(--canvas);
+  padding: 16px;
+}
+
+.approvedImages strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.approvedImages p,
+.approvedImages span {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+.approvedImages code {
+  overflow-wrap: anywhere;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-muted);
+  padding: 10px 12px;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem;
+  line-height: 1.6;
+}
+
 .warningBox {
   border-left: 3px solid var(--warning);
   background: var(--warning-bg);
