@@ -346,6 +346,56 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       return { record: holdRecord(updated), resolution, settledMicros, supplierIncomeMicros, commissionMicros, applied: true };
     },
 
+    async refundFailedHostingOrder(input) {
+      const current = await db.first<Row>(`SELECT
+          cmd.id command_id,cmd.command_type,cmd.status command_status,cmd.evidence_digest,cmd.error_code,
+          c.id contract_id,c.status contract_status,c.buyer_organization_id,c.measured_seconds,c.settled_micros,
+          h.id hold_id,h.status hold_status,h.amount_micros,h.settled_micros hold_settled_micros,
+          f.status failure_status,f.refund_payload_hash
+        FROM hosting_v2_agent_commands cmd
+        JOIN hosting_v2_contracts c ON c.id=cmd.contract_id
+        JOIN card_hour_order_holds h ON h.source_system='HOSTING_V2' AND h.order_id=c.id AND h.organization_id=c.buyer_organization_id
+        JOIN hosting_v2_delivery_failures f ON f.command_id=cmd.id AND f.contract_id=c.id
+        WHERE cmd.id=?`, [input.commandId]);
+      if (!current || !["PROVISION", "START"].includes(text(current, "command_type")) || text(current, "command_status") !== "FAILED"
+        || current.evidence_digest == null || current.error_code == null) {
+        throw new AccountAuthError("HOSTING_DELIVERY_FAILURE_INVALID", 409, "交付失败事实或卡时预留不存在。 ");
+      }
+      const contractId = text(current, "contract_id");
+      const holdId = text(current, "hold_id");
+      const amountMicros = number(current, "amount_micros");
+      if (text(current, "hold_status") === "RELEASED") {
+        if (!["REFUNDED", "CLEANING", "CLEANED"].includes(text(current, "failure_status")) || text(current, "refund_payload_hash") !== input.payloadHash
+          || current.measured_seconds != null || current.settled_micros != null || current.hold_settled_micros != null) throw new AccountAuthError("HOSTING_DELIVERY_FAILURE_STATE_CONFLICT", 409, "失败退款与计量或结算状态不一致。 ");
+        const replayHold = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE id=?", [holdId]);
+        if (!replayHold) throw new Error("HOSTING_DELIVERY_FAILURE_HOLD_MISSING");
+        return { record: holdRecord(replayHold), contractId, amountMicros, applied: false };
+      }
+      if (text(current, "hold_status") !== "HELD" || text(current, "contract_status") !== "FAILED"
+        || text(current, "failure_status") !== "RECORDED" || current.measured_seconds != null || current.settled_micros != null) {
+        throw new AccountAuthError("HOSTING_DELIVERY_FAILURE_STATE_CONFLICT", 409, "只有未开始计量的失败交付可以全额退回锁定卡时。 ");
+      }
+      const eventId = `chhe_${crypto.randomUUID()}`;
+      const batchId = `chb_${crypto.randomUUID()}`;
+      const buyerOrganizationId = text(current, "buyer_organization_id");
+      const results = await db.batch([
+        { sql: `UPDATE hosting_v2_delivery_failures SET status='REFUNDED',refund_payload_hash=?,refund_applied_at=?
+          WHERE command_id=? AND status='RECORDED'`, values: [input.payloadHash, input.now, input.commandId] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        { sql: "INSERT INTO card_hour_hold_events(id,hold_id,event_type,amount_micros,payload_hash,occurred_at) VALUES(?,?,'RELEASED',?,?,?)", values: [eventId, holdId, amountMicros, input.payloadHash, input.now] },
+        { sql: "UPDATE card_hour_order_holds SET status='RELEASED',updated_at=? WHERE id=? AND status='HELD'", values: [input.now, holdId] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,version=version+1,updated_at=? WHERE organization_id=?", values: [amountMicros, amountMicros, input.now, buyerOrganizationId] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) VALUES(?,?,'ORDER_REFUND',?,?,'POSTED',?,?)", values: [batchId, buyerOrganizationId, `delivery-failure-refund:HOSTING_V2:${contractId}`, amountMicros, JSON.stringify({ commandId: input.commandId, orderId: contractId, source: "HELD_BALANCE_RELEASE" }), input.now] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, batchId, buyerOrganizationId, amountMicros, input.now, buyerOrganizationId] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_HELD','DEBIT',?,held_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, batchId, buyerOrganizationId, amountMicros, input.now, buyerOrganizationId] },
+      ]);
+      const updated = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE id=?", [holdId]);
+      if (!updated || results[3]?.changes !== 1 || results[5]?.changes !== 1) throw new Error("HOSTING_DELIVERY_FAILURE_REFUND_FAILED");
+      return { record: holdRecord(updated), contractId, amountMicros, applied: true };
+    },
+
     async releaseHostingOrder(input) {
       const organizationId = input.account.activeOrganization.id;
       const current = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE source_system='HOSTING_V2' AND order_id=? AND organization_id=?", [input.orderId, organizationId]);

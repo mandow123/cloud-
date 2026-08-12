@@ -6,6 +6,7 @@ import { verifyControlPlaneReachability } from "@/lib/server/hosting-agent-reach
 import { hostingObject, requireHostingV2SetupEnabled } from "@/lib/server/hosting-v2-api";
 import { isHostingV2Enabled } from "@/lib/server/hosting-v2-feature";
 import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
+import { reconcileFailedHostingDelivery } from "@/lib/server/hosting-delivery-failure-service";
 
 export const dynamic = "force-dynamic";
 
@@ -46,8 +47,19 @@ export async function POST(request: Request, contextValue: { params: Promise<{ d
       });
       return jsonResponse(result, 200, undefined, context);
     }
+    if (commandAlreadyTerminal) {
+      const result = await store.completeCommand(deviceId, commandId, { outcome, evidenceDigest, errorCode, details }, {
+        actorId: `agent:${deviceId}`,
+        idempotencyKey: `command:${commandId}:${outcome}`,
+        payloadHash: await hostingAgentDigest({ operation: "TERMINAL_COMMAND_REPLAY", deviceId, commandId, outcome, evidenceDigest, errorCode }),
+        now: new Date().toISOString(),
+      });
+      const recoveredAt = new Date().toISOString();
+      const recovery = await reconcileFailedHostingDelivery(result.command, recoveredAt);
+      return jsonResponse(recovery ? { ...result, contract: recovery.cleanup.contract, recovery: { billingStatus: String(recovery.refund.record.status), cleanupCommandId: recovery.cleanup.command.id } } : result, 200, undefined, context);
+    }
     let controlPlaneReachabilityDigest: string | undefined;
-    if (!commandAlreadyTerminal && command.type === "VERIFY" && outcome === "SUCCEEDED") {
+    if (command.type === "VERIFY" && outcome === "SUCCEEDED") {
       try {
         controlPlaneReachabilityDigest = await verifyControlPlaneReachability(device, command);
       } catch (reachabilityError) {
@@ -65,13 +77,15 @@ export async function POST(request: Request, contextValue: { params: Promise<{ d
         return jsonResponse(result, 200, undefined, context);
       }
     }
+    const completedAt = new Date().toISOString();
     const result = await store.completeCommand(deviceId, commandId, { outcome, evidenceDigest, errorCode, details, controlPlaneReachabilityDigest }, {
       actorId: `agent:${deviceId}`,
       idempotencyKey: `command:${commandId}:${outcome}`,
       payloadHash: await hostingAgentDigest({ operation: "COMPLETE_COMMAND", deviceId, ...fields, issuedAt: proof.issuedAt, expiresAt: proof.expiresAt }),
-      now: new Date().toISOString(),
+      now: completedAt,
     });
-    return jsonResponse(result, 200, undefined, context);
+    const recovery = await reconcileFailedHostingDelivery(result.command, completedAt);
+    return jsonResponse(recovery ? { ...result, contract: recovery.cleanup.contract, recovery: { billingStatus: String(recovery.refund.record.status), cleanupCommandId: recovery.cleanup.command.id } } : result, 200, undefined, context);
   } catch (error) {
     return apiErrorResponse(hostingAgentHttpError(error), undefined, context);
   }

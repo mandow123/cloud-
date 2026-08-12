@@ -1,4 +1,4 @@
-export const HOSTING_V2_SCHEMA_VERSION = 7;
+export const HOSTING_V2_SCHEMA_VERSION = 8;
 
 export const hostingV2SchemaStatements = [
   `CREATE TABLE IF NOT EXISTS hosting_v2_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`,
@@ -191,6 +191,37 @@ export const hostingV2SchemaStatements = [
   )`,
   `CREATE INDEX IF NOT EXISTS hosting_v2_commands_device_idx ON hosting_v2_agent_commands(device_id, status, created_at)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS hosting_v2_commands_contract_stop_unique ON hosting_v2_agent_commands(contract_id, command_type) WHERE contract_id IS NOT NULL AND command_type='STOP'`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_terminal_command_immutable BEFORE UPDATE ON hosting_v2_agent_commands
+    WHEN OLD.status IN ('SUCCEEDED','FAILED')
+    BEGIN SELECT RAISE(ABORT, 'hosting terminal command immutable'); END`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_command_immutable_delete BEFORE DELETE ON hosting_v2_agent_commands BEGIN SELECT RAISE(ABORT, 'hosting command immutable'); END`,
+  `CREATE TABLE IF NOT EXISTS hosting_v2_delivery_failures (
+    command_id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL UNIQUE,
+    failure_stage TEXT NOT NULL CHECK (failure_stage IN ('PROVISION','START')),
+    error_code TEXT NOT NULL,
+    evidence_digest TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('RECORDED','REFUNDED','CLEANING','CLEANED')),
+    refund_payload_hash TEXT,
+    refund_applied_at TEXT,
+    cleanup_command_id TEXT,
+    cleanup_queued_at TEXT,
+    cleaned_at TEXT,
+    failed_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS hosting_v2_delivery_failures_status_idx ON hosting_v2_delivery_failures(status,failed_at)`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_delivery_failure_identity_immutable BEFORE UPDATE ON hosting_v2_delivery_failures
+    WHEN OLD.command_id<>NEW.command_id OR OLD.contract_id<>NEW.contract_id OR OLD.failure_stage<>NEW.failure_stage
+      OR OLD.error_code<>NEW.error_code OR OLD.evidence_digest<>NEW.evidence_digest OR OLD.failed_at<>NEW.failed_at
+    BEGIN SELECT RAISE(ABORT, 'hosting delivery failure identity immutable'); END`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_delivery_failure_transition_guard BEFORE UPDATE ON hosting_v2_delivery_failures
+    WHEN NOT (
+      (OLD.status='RECORDED' AND NEW.status='REFUNDED' AND NEW.refund_payload_hash IS NOT NULL AND NEW.refund_applied_at IS NOT NULL)
+      OR (OLD.status='REFUNDED' AND NEW.status='CLEANING' AND NEW.cleanup_command_id IS NOT NULL AND NEW.cleanup_queued_at IS NOT NULL)
+      OR (OLD.status='CLEANING' AND NEW.status='CLEANED' AND NEW.cleaned_at IS NOT NULL)
+    )
+    BEGIN SELECT RAISE(ABORT, 'hosting delivery failure transition invalid'); END`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_delivery_failure_immutable_delete BEFORE DELETE ON hosting_v2_delivery_failures BEGIN SELECT RAISE(ABORT, 'hosting delivery failure immutable'); END`,
   `CREATE TABLE IF NOT EXISTS hosting_v2_verification_proofs (
     command_id TEXT PRIMARY KEY,
     device_id TEXT NOT NULL,

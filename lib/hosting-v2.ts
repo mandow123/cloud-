@@ -201,6 +201,13 @@ export type HostingContractEvidence = Readonly<{
     requestedAt: string | null;
     decidedAt: string | null;
   }> | null;
+  deliveryFailure: Readonly<{
+    commandId: string;
+    stage: "PROVISION" | "START";
+    errorCode: string;
+    evidenceDigest: string;
+    failedAt: string;
+  }> | null;
 }>;
 
 export type HostingDisputeCase = Readonly<{

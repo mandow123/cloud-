@@ -273,6 +273,54 @@ test("CLEANUP removes the stopped container, temporary key and workspace before 
   }
 });
 
+test("CLEANUP safely removes a partially provisioned workload before any instance was acknowledged", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "kai-actuator-failed-provision-"));
+  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_ACTUATOR_STATE_DIR: directory };
+  const containerId = "c".repeat(64);
+  let workloadName = "";
+  let containerExists = false;
+  let running = false;
+  const runDocker = async (args) => {
+    if (args[0] === "image") return { stdout: JSON.stringify([image]) };
+    if (args[0] === "container" && args[1] === "create") {
+      workloadName = args[args.indexOf("--name") + 1];
+      containerExists = true;
+      return { stdout: `${containerId}\n` };
+    }
+    if (args[0] === "container" && args[1] === "ls") return { stdout: containerExists ? `${containerId}\n` : "" };
+    if (args[0] === "container" && args[1] === "inspect") return { stdout: JSON.stringify({ id: containerId, labels: { "kai.cloud.managed": "true", "kai.cloud.contract-digest": digestJson({ contractId: request().contractId }) }, running }) };
+    if (args[0] === "container" && args[1] === "stop") { running = false; return { stdout: `${workloadName}\n` }; }
+    if (args[0] === "container" && args[1] === "rm") { containerExists = false; return { stdout: `${containerId}\n` }; }
+    throw new Error(`unexpected docker operation: ${args.join(" ")}`);
+  };
+  try {
+    let createCalled = false;
+    await assert.rejects(executeProvision(request(), {
+      environment,
+      changeOwner: async () => undefined,
+      runDocker: async (args) => {
+        if (args[0] === "image") return { stdout: JSON.stringify([image]) };
+        if (args[0] === "container" && args[1] === "create") {
+          createCalled = true;
+          workloadName = args[args.indexOf("--name") + 1];
+          containerExists = true;
+          return { stdout: "not-a-container-id\n" };
+        }
+        throw new Error("unexpected");
+      },
+    }), (error) => error.code === "CONTAINER_ID_INVALID");
+    assert.equal(createCalled, true);
+    const manifestPath = join(directory, "workloads", workloadName, "manifest.json");
+    assert.match(await readFile(manifestPath, "utf8"), /"contractId": "hctr_actuator0001"/u);
+    const cleanupRequest = { protocolVersion: 1, operation: "CLEANUP", commandId: "hcmd_cleanupfailed0001", contractId: request().contractId };
+    const cleaned = await executeCleanup(cleanupRequest, { environment, runDocker, now: () => "2026-08-11T08:12:00.000Z" });
+    assert.deepEqual({ container: cleaned.containerRemoved, key: cleaned.authorizedKeyRemoved, workspace: cleaned.workspaceRemoved }, { container: true, key: true, workspace: true });
+    assert.equal(containerExists, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("non-root Host Agent passes PROVISION to the actuator without gaining container arguments", async () => {
   const command = {
     id: "hcmd_actuator0001",

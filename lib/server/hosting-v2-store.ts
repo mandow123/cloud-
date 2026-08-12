@@ -70,9 +70,11 @@ export interface HostingV2Store {
   contractForViewer(organizationId: string, contractId: string): Promise<HostingContract | null>;
   contractEvidenceForViewer(organizationId: string, contractId: string): Promise<HostingContractEvidence | null>;
   expiredAcceptanceForDevice(deviceId: string, now: string): Promise<HostingContract | null>;
+  failedDeliveryForDevice(deviceId: string): Promise<HostingAgentCommand | null>;
   getCommand(deviceId: string, commandId: string): Promise<HostingAgentCommand | null>;
   pollCommand(deviceId: string, now: string, allowedTypes?: readonly HostingAgentCommand["type"][]): Promise<HostingAgentCommand | null>;
   completeCommand(deviceId: string, commandId: string, input: { outcome: "SUCCEEDED" | "FAILED"; evidenceDigest: string; errorCode?: string | null; details?: Record<string, unknown>; controlPlaneReachabilityDigest?: string }, context: HostingMutationContext): Promise<{ command: HostingAgentCommand; contract: HostingContract | null; device: HostingDevice }>;
+  queueFailedDeliveryCleanup(commandId: string, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand }>;
   markContractSettled(contractId: string, input: { measuredSeconds: number; settledMicros: number; supplierIncomeMicros: number; commissionMicros: number }, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand }>;
   retryCleanup(contractId: string, input: { expectedContractVersion: number; expectedDeviceVersion: number; reason: string }, context: HostingMutationContext): Promise<{ contract: HostingContract; device: HostingDevice; command: HostingAgentCommand }>;
   cancelContract(contractId: string, reason: string, context: HostingMutationContext): Promise<HostingContract>;

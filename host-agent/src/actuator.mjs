@@ -202,7 +202,7 @@ export async function executeProvision(value, {
     return result;
   } catch (error) {
     const code = error instanceof AgentError ? error.code : "PROVISION_FAILED";
-    await writeJsonAtomic(manifestPath, { protocolVersion: 1, status: "FAILED", requestDigest, errorCode: code, updatedAt: now() }).catch(() => undefined);
+    await writeJsonAtomic(manifestPath, { protocolVersion: 1, status: "FAILED", requestDigest, commandId: request.commandId, contractId: request.contractId, errorCode: code, updatedAt: now() }).catch(() => undefined);
     if (error instanceof AgentError) throw error;
     throw fail("PROVISION_FAILED", "The isolated workload could not be provisioned.", error);
   }
@@ -236,6 +236,25 @@ async function inspectManagedContainer(workloadName, manifest, runDocker) {
     contractDigest: digestJson({ contractId: manifest.result.contractId }),
     containerDigest: manifest.result.containerDigest,
   });
+}
+
+async function inspectFailedContainer(workloadName, contractId, runDocker) {
+  const output = await runDocker([
+    "container", "inspect", "--format",
+    "{\"id\":{{json .Id}},\"labels\":{{json .Config.Labels}},\"running\":{{json .State.Running}}}",
+    workloadName,
+  ]);
+  let inspection;
+  try { inspection = JSON.parse(output.stdout.trim()); }
+  catch (error) { throw fail("CLEANUP_CONTAINER_INSPECTION_INVALID", "Failed workload container evidence is invalid.", error); }
+  if (!inspection || typeof inspection !== "object" || Array.isArray(inspection)
+    || typeof inspection.id !== "string" || !/^[a-f0-9]{64}$/u.test(inspection.id)
+    || inspection.labels?.["kai.cloud.managed"] !== "true"
+    || inspection.labels?.["kai.cloud.contract-digest"] !== digestJson({ contractId })
+    || typeof inspection.running !== "boolean") {
+    throw fail("CLEANUP_CONTAINER_IDENTITY_MISMATCH", "Failed workload container does not belong to the cleanup contract.");
+  }
+  return { running: inspection.running, containerDigest: digestJson({ containerId: inspection.id }) };
 }
 
 export async function executeStart(value, {
@@ -410,10 +429,6 @@ export async function executeCleanup(value, {
   const requestDigest = digestJson(request);
   const { workloadName, workloadRoot, manifestPath } = workloadIdentity(request.contractId, environment);
   let manifest = await readManifest(manifestPath, "CLEANUP_WORKLOAD_NOT_PROVISIONED");
-  if (manifest.result?.contractId !== request.contractId || manifest.result?.protocolVersion !== 1
-    || !manifest.stopResult || typeof manifest.result.containerDigest !== "string") {
-    throw fail("CLEANUP_MANIFEST_INVALID", "Stopped workload evidence does not match the cleanup contract.");
-  }
   const workspace = join(workloadRoot, "workspace");
   const authorizedKeys = join(workloadRoot, "authorized_keys");
   if (manifest.status === "CLEANED") {
@@ -423,16 +438,35 @@ export async function executeCleanup(value, {
     await assertPathAbsent(workspace);
     return manifest.cleanupResult;
   }
-  if (manifest.status !== "STOPPED" && manifest.status !== "CLEANING") throw fail("CLEANUP_STATE_INVALID", "Workload is not stopped and ready for cleanup.");
-  if (manifest.status === "CLEANING" && manifest.cleanupRequestDigest !== requestDigest) throw fail("CLEANUP_REPLAY_CONFLICT", "A different cleanup command is already in progress.");
+  const normalCleanup = manifest.result?.contractId === request.contractId && manifest.result?.protocolVersion === 1
+    && manifest.stopResult && typeof manifest.result.containerDigest === "string" && ["STOPPED", "CLEANING"].includes(manifest.status);
+  const failedCleanup = (manifest.contractId === request.contractId || manifest.result?.contractId === request.contractId)
+    && ["FAILED", "READY", "STARTING", "RUNNING", "CLEANING"].includes(manifest.status)
+    && (typeof manifest.errorCode === "string" || typeof manifest.lastStartErrorCode === "string"
+      || ["READY", "STARTING", "RUNNING", "CLEANING"].includes(manifest.status));
+  if (!normalCleanup && !failedCleanup) throw fail("CLEANUP_MANIFEST_INVALID", "Workload evidence does not match a stopped or failed cleanup contract.");
+  if (manifest.status === "CLEANING" && manifest.cleanupRequestDigest !== requestDigest && typeof manifest.lastCleanupErrorCode !== "string") throw fail("CLEANUP_REPLAY_CONFLICT", "A different cleanup command is already in progress.");
 
   const cleaning = { ...manifest, status: "CLEANING", cleanupCommandId: request.commandId, cleanupRequestDigest: requestDigest, updatedAt: now() };
   await writeJsonAtomic(manifestPath, cleaning);
   try {
     const containerId = await namedContainerId(workloadName, runDocker);
+    let containerDigest = typeof cleaning.result?.containerDigest === "string"
+      ? cleaning.result.containerDigest
+      : digestJson({ contractId: request.contractId, containerId: null });
     if (containerId) {
-      const inspection = await inspectManagedContainer(workloadName, cleaning, runDocker);
-      if (inspection.running) throw fail("CLEANUP_REQUIRES_STOPPED", "Cleanup refuses to remove a running container.");
+      const inspection = cleaning.result?.containerDigest
+        ? await inspectManagedContainer(workloadName, cleaning, runDocker)
+        : await inspectFailedContainer(workloadName, request.contractId, runDocker);
+      containerDigest = inspection.containerDigest;
+      if (inspection.running) {
+        if (!failedCleanup) throw fail("CLEANUP_REQUIRES_STOPPED", "Cleanup refuses to remove a running container.");
+        await runDocker(["container", "stop", "--time", "30", workloadName]);
+        const stopped = cleaning.result?.containerDigest
+          ? await inspectManagedContainer(workloadName, cleaning, runDocker)
+          : await inspectFailedContainer(workloadName, request.contractId, runDocker);
+        if (stopped.running) throw fail("CLEANUP_REQUIRES_STOPPED", "Failed workload could not be stopped before cleanup.");
+      }
       await runDocker(["container", "rm", workloadName]);
     }
     if (await namedContainerId(workloadName, runDocker)) throw fail("CLEANUP_RESIDUAL_CONTAINER", "Container still exists after cleanup.");
@@ -444,8 +478,8 @@ export async function executeCleanup(value, {
     const result = {
       protocolVersion: 1,
       contractId: request.contractId,
-      containerDigest: cleaning.result.containerDigest,
-      cleanupDigest: digestJson({ contractId: request.contractId, workloadName, containerDigest: cleaning.result.containerDigest, containerRemoved: true, authorizedKeyRemoved: true, workspaceRemoved: true }),
+      containerDigest,
+      cleanupDigest: digestJson({ contractId: request.contractId, workloadName, containerDigest, containerRemoved: true, authorizedKeyRemoved: true, workspaceRemoved: true }),
       containerRemoved: true,
       authorizedKeyRemoved: true,
       workspaceRemoved: true,

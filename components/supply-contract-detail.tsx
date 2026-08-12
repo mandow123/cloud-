@@ -23,13 +23,15 @@ function deliveryMessage(contract: SupplierHostingContract) {
     case "IN_SERVICE": return "实例正在运行，服务端以 Agent 证据计算实际运行秒数。";
     case "AWAITING_ACCEPTANCE": return "实例已停止并生成计量结果，等待买家在冻结时限内验收或发起争议；无争议到期后平台自动结算。";
     case "SETTLED": return "租金已按冻结计量与合同费率归属，等待受限清理任务排队。";
-    case "CLEANING": return contract.evidence?.dispute?.proposedResolution === "REFUND" && contract.evidence.dispute.proposalStatus === "APPLIED"
+    case "CLEANING": return contract.evidence?.deliveryFailure
+      ? "开通未成功，买家锁定卡时已全额退回；Host Agent 正在清除可能残留的容器、公钥和工作区，供应方不会获得本单租金。"
+      : contract.evidence?.dispute?.proposedResolution === "REFUND" && contract.evidence.dispute.proposalStatus === "APPLIED"
       ? "卡时已全额退回，Host Agent 正在撤权并清理工作区；供应方不会获得本单租金。"
       : "租金已归属，Host Agent 正在撤权并清理工作区。";
     case "CLEANED": return "容器、公钥和工作目录已清理，设备通过复用检查后可重新挂牌。";
-    case "FAILED": return "交付失败，设备已进入排空或风控处理，不能自动重新挂牌。";
+    case "FAILED": return "交付失败事实已记录，系统正在全额释放买家卡时并隔离设备；清理凭证完成前不能重新挂牌。";
     case "DISPUTED": return "买家已发起争议，卡时和机器均保持冻结；平台提案须经独立财务复核后才能退款或结算。";
-    case "REFUNDED": return "争议已裁决为全额退回；临时权限已清理，供应方未获得本单租金。";
+    case "REFUNDED": return contract.evidence?.deliveryFailure ? "开通未成功，买家卡时已全额退回且残留访问权限已清理；供应方未获得本单租金。" : "争议已裁决为全额退回；临时权限已清理，供应方未获得本单租金。";
     default: return `订单当前为“${hostingContractStatusLabel(contract.status)}”。`;
   }
 }
@@ -99,6 +101,7 @@ export function SupplyContractDetail({ contractId }: { contractId: string }) {
               <li><span>容器身份</span><strong title={contract.evidence?.instance?.containerDigest}>{formatEvidenceDigest(contract.evidence?.instance?.containerDigest)}</strong></li>
               <li><span>平台计费凭证</span><strong>{contract.evidence?.metering ? `${contract.evidence.metering.serverMeasuredSeconds} 秒 · ${formatEvidenceDigest(contract.evidence.metering.evidenceDigest)}` : "尚未生成"}</strong></li>
               <li><span>撤权清理凭证</span><strong>{contract.evidence?.cleanup ? `三项已验证 · ${formatEvidenceDigest(contract.evidence.cleanup.evidenceDigest)}` : "尚未生成"}</strong></li>
+              {contract.evidence?.deliveryFailure ? <li><span>失败交付证据</span><strong>{contract.evidence.deliveryFailure.stage} · {contract.evidence.deliveryFailure.errorCode} · {formatEvidenceDigest(contract.evidence.deliveryFailure.evidenceDigest)}</strong></li> : null}
             </ul>
           </section>
         </div>
