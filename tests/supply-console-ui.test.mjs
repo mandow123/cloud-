@@ -21,7 +21,9 @@ test("supplier console exposes the implemented resource, listing, order and earn
 
   const layout = readFileSync("app/supply/layout.tsx", "utf8");
   assert.match(layout, /isHostingV2SetupEnabled\(\)/u);
-  assert.match(layout, /redirect\("\/hosting"\)/u);
+  assert.match(layout, /process\.env\.KAI_PUBLIC_ORIGIN/u);
+  assert.match(layout, /new URL\("\/hosting", origin\)\.toString\(\)/u);
+  assert.match(layout, /redirect\(hostingLandingUrl\(\)\)/u);
   assert.match(layout, /<AccountRequired purpose="管理供应资源">/u);
 
   const shell = readFileSync("components/supply-console-shell.tsx", "utf8");
