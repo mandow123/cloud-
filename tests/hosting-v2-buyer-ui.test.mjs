@@ -38,6 +38,8 @@ test("buyer workspace drives every lifecycle action through its server endpoint"
   }
   assert.match(workspace, /marketplaceGet<\{ record: BuyerHostingContract \}>\(`\/api\/v2\/contracts\/\$\{encodeURIComponent\(contractId\)\}`\)/u);
   assert.match(workspace, /浏览器不能提交运行时长或金额/u);
+  assert.match(workspace, /DELIVERY EVIDENCE/u);
+  assert.match(workspace, /containerRemoved/u);
   assert.doesNotMatch(workspace, /marketplacePost[^\n]+(?:measuredSeconds|settledMicros|heldMicros|supplierIncomeMicros)/u);
   assert.match(workspace, /window\.setInterval\(\(\) => \{ void load\(true\); \}, 5_000\)/u);
 });
@@ -46,5 +48,5 @@ test("buyer contract collection is scoped to the signed-in buyer organization", 
   const route = read("app/api/v2/contracts/route.ts");
   assert.match(route, /requireTradingAccountSession\(request\)/u);
   assert.match(route, /contract\.buyerOrganizationId === account\.activeOrganization\.id/u);
-  assert.match(route, /\.map\(hostingContractClientView\)/u);
+  assert.match(route, /\.map\(\(contract\) => hostingContractClientView\(contract\)\)/u);
 });

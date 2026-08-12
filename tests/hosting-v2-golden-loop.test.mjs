@@ -19,11 +19,13 @@ import { POST as createSupplyOffer } from "../app/api/v2/supply/offers/route.ts"
 import { POST as changeSupplyOfferStatus } from "../app/api/v2/supply/offers/[offerId]/status/route.ts";
 import { GET as listPublicOffers } from "../app/api/v2/offers/route.ts";
 import { GET as listBuyerContracts, POST as reserveBuyerContract } from "../app/api/v2/contracts/route.ts";
+import { GET as getBuyerContract } from "../app/api/v2/contracts/[contractId]/route.ts";
 import { POST as attachBuyerSshKey } from "../app/api/v2/contracts/[contractId]/ssh-key/route.ts";
 import { POST as startBuyerContract } from "../app/api/v2/contracts/[contractId]/start/route.ts";
 import { POST as stopBuyerContract } from "../app/api/v2/contracts/[contractId]/stop/route.ts";
 import { POST as acceptBuyerContract } from "../app/api/v2/contracts/[contractId]/accept/route.ts";
 import { GET as listSupplierContracts } from "../app/api/v2/supply/contracts/route.ts";
+import { GET as getSupplierContract } from "../app/api/v2/supply/contracts/[contractId]/route.ts";
 import { GET as getSupplierEarnings } from "../app/api/v2/supply/earnings/route.ts";
 
 const ORIGIN = "http://localhost:3014";
@@ -88,7 +90,7 @@ function startDetails(contractId, startedAt) {
     protocolVersion: 1,
     contractId,
     endpointDisplay: "golden-loop-gpu.example.com:27000",
-    containerDigest: `sha256:${"9".repeat(64)}`,
+    containerDigest: `sha256:${"7".repeat(64)}`,
     runtimeStateDigest: `sha256:${"a".repeat(64)}`,
     sshBannerDigest: `sha256:${"b".repeat(64)}`,
     runtimeStatus: "RUNNING",
@@ -101,7 +103,7 @@ function stopDetails(contractId, startedAt, stoppedAt) {
   return {
     protocolVersion: 1,
     contractId,
-    containerDigest: `sha256:${"c".repeat(64)}`,
+    containerDigest: `sha256:${"7".repeat(64)}`,
     runtimeStateDigest: `sha256:${"d".repeat(64)}`,
     runtimeStatus: "STOPPED",
     startedAt,
@@ -115,7 +117,7 @@ function cleanupDetails(contractId, observedAt) {
   return {
     protocolVersion: 1,
     contractId,
-    containerDigest: `sha256:${"e".repeat(64)}`,
+    containerDigest: `sha256:${"7".repeat(64)}`,
     cleanupDigest: `sha256:${"f".repeat(64)}`,
     containerRemoved: true,
     authorizedKeyRemoved: true,
@@ -313,6 +315,17 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     assert.equal(cleaned.contract.status, "CLEANED");
     assert.equal(cleaned.device.status, "VERIFIED");
 
+    const buyerDetail = await json(await getBuyerContract(browserRead(buyer, `/api/v2/contracts/${contractId}`), { params: Promise.resolve({ contractId }) }), 200);
+    assert.equal(buyerDetail.record.evidence.instance.status, "CLEANED");
+    assert.equal(buyerDetail.record.evidence.metering.serverMeasuredSeconds, 180);
+    assert.deepEqual({ container: buyerDetail.record.evidence.cleanup.containerRemoved, key: buyerDetail.record.evidence.cleanup.authorizedKeyRemoved, workspace: buyerDetail.record.evidence.cleanup.workspaceRemoved }, { container: true, key: true, workspace: true });
+    assert.equal("supplierOrganizationId" in buyerDetail.record, false);
+
+    const supplierDetail = await json(await getSupplierContract(browserRead(supplier, `/api/v2/supply/contracts/${contractId}`), { params: Promise.resolve({ contractId }) }), 200);
+    assert.equal(supplierDetail.record.evidence.cleanup.evidenceDigest, `sha256:${"9".repeat(64)}`);
+    assert.equal("buyerOrganizationId" in supplierDetail.record, false);
+    assert.equal("buyerAccountId" in supplierDetail.record, false);
+
     const supplierContracts = await json(await listSupplierContracts(browserRead(supplier, "/api/v2/supply/contracts")), 200);
     assert.equal(supplierContracts.records[0].status, "CLEANED");
     assert.equal(supplierContracts.records[0].supplierIncomeMicros, 162_000);
@@ -327,7 +340,7 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     const publicAfter = await json(await listPublicOffers(new Request(`${ORIGIN}/api/v2/offers`)), 200);
     assert.equal(publicAfter.records.length, 1, "cleaned and freshly verified inventory must become sellable again");
     const operations = await hosting.readiness(cleanedAt);
-    assert.equal(operations.schemaVersion, 2);
+    assert.equal(operations.schemaVersion, 3);
     assert.match(operations.activeFeeScheduleId, /^hfee_/u);
     assert.deepEqual({
       approvedSupplierCount: operations.approvedSupplierCount,

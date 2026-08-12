@@ -1,4 +1,4 @@
-import { HOSTING_V2_AGENT_STALE_SECONDS, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingFeeSchedule, type HostingOffer, type HostingSupplierProfile } from "../hosting-v2.ts";
+import { HOSTING_V2_AGENT_STALE_SECONDS, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingFeeSchedule, type HostingOffer, type HostingSupplierProfile } from "../hosting-v2.ts";
 import { HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { assertHostingV2ApprovedImage } from "./hosting-v2-image-policy.ts";
@@ -176,6 +176,25 @@ function contract(row: Row): HostingContract {
     id: value(row, "id"), offerId: value(row, "offer_id"), deviceId: value(row, "device_id"), buyerOrganizationId: value(row, "buyer_organization_id"), buyerAccountId: value(row, "buyer_account_id"), supplierOrganizationId: value(row, "supplier_organization_id"), feeScheduleId: value(row, "fee_schedule_id"),
     snapshot: json<HostingContract["snapshot"]>(row, "snapshot_json"), reservedSeconds: number(row, "reserved_seconds"), measuredSeconds: row.measured_seconds == null ? null : number(row, "measured_seconds"), heldMicros: number(row, "held_micros"), settledMicros: row.settled_micros == null ? null : number(row, "settled_micros"), supplierIncomeMicros: row.supplier_income_micros == null ? null : number(row, "supplier_income_micros"), commissionMicros: row.commission_micros == null ? null : number(row, "commission_micros"), status: value(row, "status") as HostingContract["status"],
     sshPublicKeyFingerprint: nullable(row, "ssh_public_key_fingerprint"), endpointDisplay: nullable(row, "endpoint_display"), startedAt: nullable(row, "started_at"), stoppedAt: nullable(row, "stopped_at"), acceptedAt: nullable(row, "accepted_at"), version: number(row, "version"), createdAt: value(row, "created_at"), updatedAt: value(row, "updated_at"),
+  };
+}
+
+function contractEvidence(instanceRow: Row | null, meteringRow: Row | null, cleanupRow: Row | null): HostingContractEvidence {
+  return {
+    instance: instanceRow ? {
+      status: value(instanceRow, "status") as NonNullable<HostingContractEvidence["instance"]>["status"],
+      containerDigest: value(instanceRow, "container_digest"), workspaceDigest: value(instanceRow, "workspace_digest"),
+      provisionEvidenceDigest: value(instanceRow, "provision_evidence_digest"), startEvidenceDigest: nullable(instanceRow, "start_evidence_digest"), stopEvidenceDigest: nullable(instanceRow, "stop_evidence_digest"),
+      provisionedAt: value(instanceRow, "provisioned_at"), startedAt: nullable(instanceRow, "started_at"), stoppedAt: nullable(instanceRow, "stopped_at"), cleanedAt: nullable(instanceRow, "cleaned_at"),
+    } : null,
+    metering: meteringRow ? {
+      runtimeStateDigest: value(meteringRow, "runtime_state_digest"), agentStartedAt: value(meteringRow, "agent_started_at"), agentStoppedAt: value(meteringRow, "agent_stopped_at"),
+      agentRuntimeSeconds: number(meteringRow, "agent_runtime_seconds"), serverMeasuredSeconds: number(meteringRow, "server_measured_seconds"), evidenceDigest: value(meteringRow, "evidence_digest"), recordedAt: value(meteringRow, "recorded_at"),
+    } : null,
+    cleanup: cleanupRow ? {
+      cleanupDigest: value(cleanupRow, "cleanup_digest"), containerRemoved: true, authorizedKeyRemoved: true, workspaceRemoved: true,
+      evidenceDigest: value(cleanupRow, "evidence_digest"), cleanedAt: value(cleanupRow, "cleaned_at"), recordedAt: value(cleanupRow, "recorded_at"),
+    } : null,
   };
 }
 
@@ -645,6 +664,17 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       return row ? contract(row) : null;
     },
 
+    async contractEvidenceForViewer(organizationId, contractId) {
+      const visible = await db.first<Row>("SELECT id FROM hosting_v2_contracts WHERE id=? AND (buyer_organization_id=? OR supplier_organization_id=?)", [contractId, organizationId, organizationId]);
+      if (!visible) return null;
+      const [instanceRow, meteringRow, cleanupRow] = await Promise.all([
+        db.first<Row>("SELECT * FROM hosting_v2_instances WHERE contract_id=?", [contractId]),
+        db.first<Row>("SELECT * FROM hosting_v2_metering_proofs WHERE contract_id=?", [contractId]),
+        db.first<Row>("SELECT * FROM hosting_v2_cleanup_proofs WHERE contract_id=?", [contractId]),
+      ]);
+      return contractEvidence(instanceRow, meteringRow, cleanupRow);
+    },
+
     async cancelContract(contractId, reason, context) {
       const replayed = await replay(db, context, "CANCEL_CONTRACT");
       if (!replayed) {
@@ -794,29 +824,59 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         const currentContract = await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [contractId]);
         if (!currentContract) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "任务关联合同不存在。");
         organizationId = value(currentContract, "supplier_organization_id");
+        const instanceRow = await db.first<Row>("SELECT * FROM hosting_v2_instances WHERE contract_id=?", [contractId]);
+        if (success) {
+          const requiredContractStatus: Partial<Record<HostingAgentCommand["type"], HostingContract["status"]>> = {
+            PROVISION: "PROVISIONING", START: "READY", STOP: "IN_SERVICE", CLEANUP: "CLEANING",
+          };
+          if (requiredContractStatus[type] && value(currentContract, "status") !== requiredContractStatus[type]) {
+            throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同状态已经变化，Agent 结果未被采纳。");
+          }
+          if (type === "PROVISION" && instanceRow) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同已经存在实例记录。");
+          if (["START", "STOP", "CLEANUP"].includes(type)) {
+            if (!instanceRow) throw new ExchangeDomainError("HOSTING_INSTANCE_EVIDENCE_MISSING", 409, "实例身份记录缺失，不能继续履约或重新挂牌，请人工核验。");
+            if (input.details?.containerDigest !== value(instanceRow, "container_digest")) throw new ExchangeInputError("Agent 返回的容器身份与开通记录不一致。", "details.containerDigest");
+            const expectedInstanceStatus = type === "START" ? "READY" : type === "STOP" ? "RUNNING" : "STOPPED";
+            if (value(instanceRow, "status") !== expectedInstanceStatus) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "实例状态已经变化，Agent 结果未被采纳。");
+          }
+        }
         if (!success) {
           statements.push({ sql: "UPDATE hosting_v2_contracts SET status=?,version=version+1,updated_at=? WHERE id=?", values: [type === "CLEANUP" ? "CLEANING" : "FAILED", context.now, contractId] });
+          if (instanceRow && type !== "CLEANUP") statements.push({ sql: "UPDATE hosting_v2_instances SET status='FAILED',updated_at=? WHERE contract_id=?", values: [context.now, contractId] });
           statements.push(
               { sql: "UPDATE hosting_v2_devices SET status='DRAINING',version=version+1,updated_at=? WHERE id=?", values: [context.now, deviceId] },
               { sql: "UPDATE hosting_v2_offers SET status='SUSPENDED',version=version+1,updated_at=? WHERE id=?", values: [context.now, value(currentContract, "offer_id")] },
             );
         } else if (type === "PROVISION") {
           statements.push(
+            { sql: `INSERT INTO hosting_v2_instances(contract_id,device_id,provision_command_id,approved_image,endpoint_display,container_digest,workspace_digest,status,provision_evidence_digest,provisioned_at,updated_at)
+              VALUES(?,?,?,?,?,?,?,'READY',?,?,?)`, values: [contractId, deviceId, commandId, String(commandPayload.image), provisionEndpoint, String(input.details?.containerDigest), String(input.details?.workspaceDigest), input.evidenceDigest, context.now, context.now] },
             { sql: "UPDATE hosting_v2_contracts SET status='READY',endpoint_display=?,version=version+1,updated_at=? WHERE id=? AND status='PROVISIONING'", values: [provisionEndpoint, context.now, contractId] },
             { sql: "UPDATE hosting_v2_devices SET status='BUSY',version=version+1,updated_at=? WHERE id=?", values: [context.now, deviceId] },
           );
         } else if (type === "START") {
-          statements.push({ sql: "UPDATE hosting_v2_contracts SET status='IN_SERVICE',started_at=?,version=version+1,updated_at=? WHERE id=? AND status='READY'", values: [context.now, context.now, contractId] });
+          statements.push(
+            { sql: "UPDATE hosting_v2_instances SET status='RUNNING',start_evidence_digest=?,started_at=?,updated_at=? WHERE contract_id=? AND status='READY'", values: [input.evidenceDigest, String(input.details?.startedAt), context.now, contractId] },
+            { sql: "UPDATE hosting_v2_contracts SET status='IN_SERVICE',started_at=?,version=version+1,updated_at=? WHERE id=? AND status='READY'", values: [context.now, context.now, contractId] },
+          );
         } else if (type === "STOP") {
           const rawMeasured = Number(input.details?.runtimeSeconds);
           const wallClockSeconds = Math.max(0, Math.ceil((Date.parse(context.now) - Date.parse(value(currentContract, "started_at"))) / 1_000));
           const measured = Math.max(180, Math.min(number(currentContract, "reserved_seconds"), wallClockSeconds, rawMeasured));
-          statements.push({ sql: "UPDATE hosting_v2_contracts SET status='AWAITING_ACCEPTANCE',measured_seconds=?,stopped_at=?,version=version+1,updated_at=? WHERE id=? AND status='IN_SERVICE'", values: [measured, context.now, context.now, contractId] });
+          statements.push(
+            { sql: "UPDATE hosting_v2_instances SET status='STOPPED',stop_evidence_digest=?,stopped_at=?,updated_at=? WHERE contract_id=? AND status='RUNNING'", values: [input.evidenceDigest, String(input.details?.stoppedAt), context.now, contractId] },
+            { sql: `INSERT INTO hosting_v2_metering_proofs(id,contract_id,command_id,container_digest,runtime_state_digest,agent_started_at,agent_stopped_at,agent_runtime_seconds,server_measured_seconds,evidence_digest,recorded_at)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?)`, values: [id("hmp"), contractId, commandId, String(input.details?.containerDigest), String(input.details?.runtimeStateDigest), String(input.details?.startedAt), String(input.details?.stoppedAt), rawMeasured, measured, input.evidenceDigest, context.now] },
+            { sql: "UPDATE hosting_v2_contracts SET status='AWAITING_ACCEPTANCE',measured_seconds=?,stopped_at=?,version=version+1,updated_at=? WHERE id=? AND status='IN_SERVICE'", values: [measured, context.now, context.now, contractId] },
+          );
         } else if (type === "CLEANUP") {
           const verificationFresh = value(deviceRow, "verification_status") === "PASSED"
             && Date.parse(nullable(deviceRow, "verified_until") ?? "") > Date.parse(context.now)
             && Date.parse(nullable(deviceRow, "last_seen_at") ?? "") >= Date.parse(context.now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000;
           statements.push(
+            { sql: "UPDATE hosting_v2_instances SET status='CLEANED',cleaned_at=?,updated_at=? WHERE contract_id=? AND status='STOPPED'", values: [String(input.details?.cleanedAt), context.now, contractId] },
+            { sql: `INSERT INTO hosting_v2_cleanup_proofs(id,contract_id,command_id,container_digest,cleanup_digest,container_removed,authorized_key_removed,workspace_removed,evidence_digest,cleaned_at,recorded_at)
+              VALUES(?,?,?,?,?,1,1,1,?,?,?)`, values: [id("hcp"), contractId, commandId, String(input.details?.containerDigest), String(input.details?.cleanupDigest), input.evidenceDigest, String(input.details?.cleanedAt), context.now] },
             { sql: "UPDATE hosting_v2_contracts SET status='CLEANED',version=version+1,updated_at=? WHERE id=? AND status='CLEANING'", values: [context.now, contractId] },
             { sql: "UPDATE hosting_v2_devices SET status=?,verification_status=?,version=version+1,updated_at=? WHERE id=?", values: [verificationFresh ? "VERIFIED" : "ONLINE", value(deviceRow, "verification_status") === "PASSED" && Date.parse(nullable(deviceRow, "verified_until") ?? "") <= Date.parse(context.now) ? "EXPIRED" : value(deviceRow, "verification_status"), context.now, deviceId] },
             { sql: "UPDATE hosting_v2_offers SET status=?,version=version+1,updated_at=? WHERE id=? AND status IN ('RESERVED','SUSPENDED')", values: [verificationFresh ? "PUBLISHED" : "SUSPENDED", context.now, value(currentContract, "offer_id")] },
@@ -843,6 +903,8 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       }
       const current = await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [contractId]);
       if (!current || value(current, "status") !== "AWAITING_ACCEPTANCE") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同当前不能结算。");
+      const meteringProof = await db.first<Row>("SELECT contract_id FROM hosting_v2_metering_proofs WHERE contract_id=?", [contractId]);
+      if (!meteringProof) throw new ExchangeDomainError("HOSTING_INSTANCE_EVIDENCE_MISSING", 409, "平台计量凭证缺失，合同已停止自动结算，请人工核验。");
       if (!Number.isSafeInteger(input.measuredSeconds) || input.measuredSeconds < 180 || input.measuredSeconds > number(current, "reserved_seconds") || !Number.isSafeInteger(input.settledMicros) || input.settledMicros < 1 || input.settledMicros > number(current, "held_micros")) throw new ExchangeInputError("合同计量或结算金额无效。");
       if (input.supplierIncomeMicros < 0 || input.commissionMicros < 0 || input.supplierIncomeMicros + input.commissionMicros > input.settledMicros) throw new ExchangeInputError("收益拆分无效。");
       const commandId = id("hcmd");

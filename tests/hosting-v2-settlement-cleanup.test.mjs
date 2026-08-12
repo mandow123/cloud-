@@ -38,7 +38,7 @@ function cleanupDetails(contractId, now) {
   };
 }
 
-function seedStoppedContract(path, suffix, buyer, supplier, now) {
+function seedStoppedContract(path, suffix, buyer, supplier, now, withMeteringProof = true) {
   const db = new DatabaseSync(path, { enableForeignKeyConstraints: true });
   const deviceId = `had_settlement_${suffix}`;
   const offerId = `hofr_settlement_${suffix}`;
@@ -54,6 +54,10 @@ function seedStoppedContract(path, suffix, buyer, supplier, now) {
   const snapshot = { title: `Settlement RTX 4090 ${suffix}`, gpuModel: "RTX_4090", region: "中国·北京", cardHourMicrosPerGpuHour: 3_600_000, approvedImage: process.env.KAI_HOSTING_APPROVED_IMAGES, termsVersion: "KAI_HOSTING_TERMS_2026_08", platformFeeBps: 1_000, referralRewardBps: 300 };
   db.prepare(`INSERT INTO hosting_v2_contracts(id,offer_id,device_id,buyer_organization_id,buyer_account_id,supplier_organization_id,fee_schedule_id,snapshot_json,reserved_seconds,measured_seconds,held_micros,status,started_at,stopped_at,idempotency_key,payload_hash,version,created_at,updated_at)
     VALUES(?,?,?,?,?,?,?,?,3600,600,3600000,'AWAITING_ACCEPTANCE',?,?,?, ?,5,?,?)`).run(contractId, offerId, deviceId, buyer.activeOrganization.id, buyer.account.id, supplier.activeOrganization.id, feeId, JSON.stringify(snapshot), new Date(Date.parse(now) - 600_000).toISOString(), now, `seed-settlement-${suffix}`, `seed-settlement-hash-${suffix}`, now, now);
+  db.prepare(`INSERT INTO hosting_v2_instances(contract_id,device_id,provision_command_id,approved_image,endpoint_display,container_digest,workspace_digest,status,provision_evidence_digest,start_evidence_digest,stop_evidence_digest,provisioned_at,started_at,stopped_at,updated_at)
+    VALUES(?,?,?,?,?,?,?,'STOPPED',?,?,?,?,?,?,?)`).run(contractId, deviceId, `hcmd_seed_provision_${suffix}`, process.env.KAI_HOSTING_APPROVED_IMAGES, `${suffix}.settlement-gpu.example.com:26000`, `sha256:${"6".repeat(64)}`, `sha256:${suffix.padEnd(64, "8").slice(0, 64)}`, `sha256:${suffix.padEnd(64, "9").slice(0, 64)}`, `sha256:${suffix.padEnd(64, "a").slice(0, 64)}`, `sha256:${suffix.padEnd(64, "b").slice(0, 64)}`, new Date(Date.parse(now) - 700_000).toISOString(), new Date(Date.parse(now) - 600_000).toISOString(), now, now);
+  if (withMeteringProof) db.prepare(`INSERT INTO hosting_v2_metering_proofs(id,contract_id,command_id,container_digest,runtime_state_digest,agent_started_at,agent_stopped_at,agent_runtime_seconds,server_measured_seconds,evidence_digest,recorded_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(`hmp_seed_${suffix}`, contractId, `hcmd_seed_stop_${suffix}`, `sha256:${"6".repeat(64)}`, `sha256:${suffix.padEnd(64, "c").slice(0, 64)}`, new Date(Date.parse(now) - 600_000).toISOString(), now, 600, 600, `sha256:${suffix.padEnd(64, "d").slice(0, 64)}`, now);
   db.close();
   return { contractId, deviceId, offerId };
 }
@@ -64,8 +68,9 @@ test("buyer acceptance settles actual card-hours, vests income and relists only 
   const hosting = await createSqliteHostingV2Store(path);
   const cardHours = await createSqliteCardHourStore(path);
   const buyer = account("settlement-buyer");
-  const supplier = account("settlement-supplier");
-  const referrer = account("settlement-referrer");
+    const supplier = account("settlement-supplier");
+    const referrer = account("settlement-referrer");
+    const missingProofBuyer = account("missing-proof-buyer");
   const stores = { hosting, cardHours };
   try {
     const now = new Date().toISOString();
@@ -75,6 +80,16 @@ test("buyer acceptance settles actual card-hours, vests income and relists only 
     const referral = await cardHours.dashboard(referrer.activeOrganization.id, now);
     await cardHours.attachReferral({ account: buyer, code: referral.referral.code, now });
     await cardHours.holdHostingOrder({ account: buyer, orderId: seeded.contractId, amountMicros: 3_600_000, idempotencyKey: `hosting-hold:${seeded.contractId}`, payloadHash: "settlement-hold-hash", now });
+
+    const missingProof = seedStoppedContract(path, "missingproof", missingProofBuyer, supplier, now, false);
+    const missingProofGrant = await cardHours.requestTrialGrant({ organizationId: missingProofBuyer.activeOrganization.id, amountMicros: 1_000_000, reason: "计量凭证缺失保护测试", requestedBy: "admin-missing-proof-requester", idempotencyKey: "missing-proof-trial-grant", payloadHash: "missing-proof-trial-grant-hash", now });
+    await cardHours.decideTrialGrant({ grantId: missingProofGrant.id, decision: "APPROVE", approvedBy: "admin-missing-proof-approver", payloadHash: "missing-proof-trial-approval-hash", now });
+    await cardHours.holdHostingOrder({ account: missingProofBuyer, orderId: missingProof.contractId, amountMicros: 600_000, idempotencyKey: `hosting-hold:${missingProof.contractId}`, payloadHash: "missing-proof-hold-hash", now });
+    const beforeMissingProofAcceptance = await cardHours.dashboard(missingProofBuyer.activeOrganization.id, now);
+    await assert.rejects(acceptHostingContract({ account: missingProofBuyer, contractId: missingProof.contractId, mutation: mutation(missingProofBuyer.account.id, "missing-proof-accept", "missing-proof-accept-hash", now) }, stores), (error) => error.code === "HOSTING_INSTANCE_EVIDENCE_MISSING");
+    const afterMissingProofAcceptance = await cardHours.dashboard(missingProofBuyer.activeOrganization.id, now);
+    assert.deepEqual(afterMissingProofAcceptance.balance, beforeMissingProofAcceptance.balance, "missing evidence must fail before card-hours move");
+    assert.equal((await hosting.contractForViewer(missingProofBuyer.activeOrganization.id, missingProof.contractId)).status, "AWAITING_ACCEPTANCE");
 
     await assert.rejects(acceptHostingContract({ account: supplier, contractId: seeded.contractId, mutation: mutation(supplier.account.id, "supplier-cannot-accept", "supplier-cannot-accept-hash", now) }, stores), (error) => error.code === "EXCHANGE_OWNERSHIP_FORBIDDEN");
     const acceptInput = { account: buyer, contractId: seeded.contractId, mutation: mutation(buyer.account.id, "buyer-accept-0001", "buyer-accept-hash", now) };

@@ -6,7 +6,7 @@ import { evaluateHostingV2Capability } from "../lib/server/hosting-v2-readiness.
 const image = `ghcr.io/kai-cloud/cuda-pytorch@sha256:${"a".repeat(64)}`;
 const storage = { ready: true };
 const operations = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   integrity: "ok",
   activeFeeScheduleId: "hfee_active",
   approvedSupplierCount: 1,

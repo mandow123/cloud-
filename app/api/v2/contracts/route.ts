@@ -40,7 +40,7 @@ export async function GET(request: Request) {
     const dashboard = await (await getHostingV2Store()).dashboard(account.activeOrganization.id, new Date().toISOString());
     const records = dashboard.contracts
       .filter((contract) => contract.buyerOrganizationId === account.activeOrganization.id)
-      .map(hostingContractClientView);
+      .map((contract) => hostingContractClientView(contract));
     return jsonResponse({ records, count: records.length, updatedAt: new Date().toISOString() }, 200, undefined, context);
   } catch (error) {
     return apiErrorResponse(error, undefined, context);

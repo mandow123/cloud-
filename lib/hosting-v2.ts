@@ -152,6 +152,39 @@ export type HostingContract = Readonly<{
   updatedAt: string;
 }>;
 
+export type HostingContractEvidence = Readonly<{
+  instance: Readonly<{
+    status: "READY" | "RUNNING" | "STOPPED" | "CLEANED" | "FAILED";
+    containerDigest: string;
+    workspaceDigest: string;
+    provisionEvidenceDigest: string;
+    startEvidenceDigest: string | null;
+    stopEvidenceDigest: string | null;
+    provisionedAt: string;
+    startedAt: string | null;
+    stoppedAt: string | null;
+    cleanedAt: string | null;
+  }> | null;
+  metering: Readonly<{
+    runtimeStateDigest: string;
+    agentStartedAt: string;
+    agentStoppedAt: string;
+    agentRuntimeSeconds: number;
+    serverMeasuredSeconds: number;
+    evidenceDigest: string;
+    recordedAt: string;
+  }> | null;
+  cleanup: Readonly<{
+    cleanupDigest: string;
+    containerRemoved: true;
+    authorizedKeyRemoved: true;
+    workspaceRemoved: true;
+    evidenceDigest: string;
+    cleanedAt: string;
+    recordedAt: string;
+  }> | null;
+}>;
+
 export type HostingAgentCommand = Readonly<{
   id: string;
   deviceId: string;

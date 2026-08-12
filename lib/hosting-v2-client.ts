@@ -1,4 +1,4 @@
-import type { HostingContractStatus, HostingDashboard, HostingDevice, HostingGpuModel, HostingSupplierProfile } from "./hosting-v2.ts";
+import type { HostingContractEvidence, HostingContractStatus, HostingDashboard, HostingDevice, HostingGpuModel, HostingSupplierProfile } from "./hosting-v2.ts";
 
 export type PublicHostingOffer = Readonly<{
   id: string;
@@ -44,6 +44,7 @@ export type BuyerHostingContract = Readonly<{
   version: number;
   createdAt: string;
   updatedAt: string;
+  evidence?: HostingContractEvidence;
 }>;
 
 export type SupplierHostingOffer = Readonly<{
@@ -85,6 +86,7 @@ export type SupplierHostingContract = Readonly<{
   version: number;
   createdAt: string;
   updatedAt: string;
+  evidence?: HostingContractEvidence;
 }>;
 
 export type SupplierHostingDashboard = Readonly<{
@@ -134,6 +136,11 @@ export function formatHostingTime(value: string | null) {
   if (!value) return "—";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "short" }).format(date);
+}
+
+export function formatEvidenceDigest(value: string | null | undefined) {
+  if (!value) return "—";
+  return value.length > 24 ? `${value.slice(0, 16)}…${value.slice(-8)}` : value;
 }
 
 const CONTRACT_STATUS_LABELS: Record<HostingContractStatus, string> = {

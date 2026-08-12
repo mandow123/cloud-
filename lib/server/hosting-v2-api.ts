@@ -2,7 +2,7 @@ import { AccountAuthError, assertAccountAuthSameOrigin } from "./account-auth.ts
 import { mutationHash, prepareWrite, requireIdempotencyKey } from "./api-guard.ts";
 import { authorizeMarketplaceRequest, persistMarketplaceSession } from "./marketplace-auth.ts";
 import type { HostingMutationContext } from "./hosting-v2-store.ts";
-import type { HostingContract } from "../hosting-v2.ts";
+import type { HostingContract, HostingContractEvidence } from "../hosting-v2.ts";
 
 export { requireHostingV2Enabled, requireHostingV2SetupEnabled } from "./hosting-v2-feature.ts";
 
@@ -28,7 +28,7 @@ export function hostingBoolean(input: Record<string, unknown>, field: string) {
   return input[field];
 }
 
-export function hostingContractClientView(contract: HostingContract) {
+export function hostingContractClientView(contract: HostingContract, evidence?: HostingContractEvidence) {
   return {
     id: contract.id,
     offerId: contract.offerId,
@@ -46,10 +46,11 @@ export function hostingContractClientView(contract: HostingContract) {
     version: contract.version,
     createdAt: contract.createdAt,
     updatedAt: contract.updatedAt,
+    evidence,
   };
 }
 
-export function hostingSupplierContractClientView(contract: HostingContract) {
+export function hostingSupplierContractClientView(contract: HostingContract, evidence?: HostingContractEvidence) {
   return {
     id: contract.id,
     offerId: contract.offerId,
@@ -70,6 +71,7 @@ export function hostingSupplierContractClientView(contract: HostingContract) {
     version: contract.version,
     createdAt: contract.createdAt,
     updatedAt: contract.updatedAt,
+    evidence,
   };
 }
 

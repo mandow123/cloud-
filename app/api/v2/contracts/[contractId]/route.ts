@@ -14,10 +14,12 @@ export async function GET(request: Request, contextValue: { params: Promise<{ co
     const account = await requireTradingAccountSession(request);
     if (!account) throw new AccountAuthError("ACCOUNT_AUTH_REQUIRED", 401, "请先登录账户。 ");
     const { contractId } = await contextValue.params;
-    const contract = await (await getHostingV2Store()).contractForViewer(account.activeOrganization.id, contractId);
+    const store = await getHostingV2Store();
+    const contract = await store.contractForViewer(account.activeOrganization.id, contractId);
     if (!contract) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "租赁合同不存在。");
     if (contract.buyerOrganizationId !== account.activeOrganization.id) throw new ExchangeDomainError("EXCHANGE_OWNERSHIP_FORBIDDEN", 403, "采购合同只能由采购方查看。");
-    return jsonResponse({ record: hostingContractClientView(contract) }, 200, undefined, context);
+    const evidence = await store.contractEvidenceForViewer(account.activeOrganization.id, contractId);
+    return jsonResponse({ record: hostingContractClientView(contract, evidence ?? undefined) }, 200, undefined, context);
   } catch (error) {
     return apiErrorResponse(error, undefined, context);
   }

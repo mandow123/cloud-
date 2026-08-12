@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createIdempotencyKey, MarketplaceApiError, marketplaceErrorMessage, marketplaceGet, marketplacePost } from "@/lib/client/marketplace-client";
 import type { BuyerHostingContract } from "@/lib/hosting-v2-client";
-import { formatCardHours, formatHostingTime, hostingContractStatusLabel } from "@/lib/hosting-v2-client";
+import { formatCardHours, formatEvidenceDigest, formatHostingTime, hostingContractStatusLabel } from "@/lib/hosting-v2-client";
 import styles from "./hosting-marketplace.module.css";
 
 const POLLED_STATUSES = new Set(["PROVISIONING", "READY", "IN_SERVICE", "SETTLED", "CLEANING"]);
@@ -108,6 +108,12 @@ export function HostingContractWorkspace({ contractId }: { contractId: string })
             <div><dt>SSH 指纹</dt><dd>{contract.sshPublicKeyFingerprint ?? "尚未提交"}</dd></div><div><dt>条款</dt><dd>{contract.snapshot.termsVersion}</dd></div>
             <div><dt>开始</dt><dd>{formatHostingTime(contract.startedAt)}</dd></div><div><dt>停止</dt><dd>{formatHostingTime(contract.stoppedAt)}</dd></div>
           </dl>
+          {contract.evidence?.instance ? <><p className={styles.eyebrow}>DELIVERY EVIDENCE</p><h2>交付凭证</h2><dl className={styles.detailList}>
+            <div><dt>实例状态</dt><dd>{contract.evidence.instance.status}</dd></div><div><dt>容器身份</dt><dd title={contract.evidence.instance.containerDigest}>{formatEvidenceDigest(contract.evidence.instance.containerDigest)}</dd></div>
+            <div><dt>开通凭证</dt><dd title={contract.evidence.instance.provisionEvidenceDigest}>{formatEvidenceDigest(contract.evidence.instance.provisionEvidenceDigest)}</dd></div><div><dt>停止凭证</dt><dd title={contract.evidence.instance.stopEvidenceDigest ?? undefined}>{formatEvidenceDigest(contract.evidence.instance.stopEvidenceDigest)}</dd></div>
+            <div><dt>Agent 计量</dt><dd>{contract.evidence.metering ? `${contract.evidence.metering.agentRuntimeSeconds} 秒` : "—"}</dd></div><div><dt>平台计费</dt><dd>{contract.evidence.metering ? `${contract.evidence.metering.serverMeasuredSeconds} 秒` : "—"}</dd></div>
+            <div><dt>容器清理</dt><dd>{contract.evidence.cleanup?.containerRemoved ? "已验证" : "等待清理"}</dd></div><div><dt>公钥撤销</dt><dd>{contract.evidence.cleanup?.authorizedKeyRemoved ? "已验证" : "等待清理"}</dd></div>
+          </dl></> : null}
           <small>状态版本 v{contract.version} · 更新于 {formatHostingTime(contract.updatedAt)}</small>
         </aside>
       </div>

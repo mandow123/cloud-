@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { marketplaceErrorMessage, marketplaceGet } from "@/lib/client/marketplace-client";
 import type { SupplierHostingContract } from "@/lib/hosting-v2-client";
-import { formatCardHours, formatHostingTime, hostingContractStatusLabel } from "@/lib/hosting-v2-client";
+import { formatCardHours, formatEvidenceDigest, formatHostingTime, hostingContractStatusLabel } from "@/lib/hosting-v2-client";
 import styles from "./supply-console.module.css";
 
 const POLLED = new Set(["CARD_HOURS_HELD", "PROVISIONING", "READY", "IN_SERVICE", "AWAITING_ACCEPTANCE", "SETTLED", "CLEANING"]);
@@ -92,6 +92,9 @@ export function SupplyContractDetail({ contractId }: { contractId: string }) {
               <li><span>停止服务</span><strong>{formatHostingTime(contract.stoppedAt)}</strong></li>
               <li><span>买家验收</span><strong>{formatHostingTime(contract.acceptedAt)}</strong></li>
               <li><span>最后更新</span><strong>{formatHostingTime(contract.updatedAt)}</strong></li>
+              <li><span>容器身份</span><strong title={contract.evidence?.instance?.containerDigest}>{formatEvidenceDigest(contract.evidence?.instance?.containerDigest)}</strong></li>
+              <li><span>平台计费凭证</span><strong>{contract.evidence?.metering ? `${contract.evidence.metering.serverMeasuredSeconds} 秒 · ${formatEvidenceDigest(contract.evidence.metering.evidenceDigest)}` : "尚未生成"}</strong></li>
+              <li><span>撤权清理凭证</span><strong>{contract.evidence?.cleanup ? `三项已验证 · ${formatEvidenceDigest(contract.evidence.cleanup.evidenceDigest)}` : "尚未生成"}</strong></li>
             </ul>
           </section>
         </div>

@@ -48,7 +48,7 @@ function startDetails(endpointDisplay, observedAt) {
   return {
     protocolVersion: 1,
     contractId: "hctr_lifecycle",
-    containerDigest: `sha256:${"8".repeat(64)}`,
+    containerDigest: `sha256:${"6".repeat(64)}`,
     runtimeStateDigest: `sha256:${"9".repeat(64)}`,
     startedAt: observedAt,
     endpointDisplay,
@@ -62,7 +62,7 @@ function stopDetails(startedAt, stoppedAt, runtimeSeconds) {
   return {
     protocolVersion: 1,
     contractId: "hctr_lifecycle",
-    containerDigest: `sha256:${"b".repeat(64)}`,
+    containerDigest: `sha256:${"6".repeat(64)}`,
     runtimeStateDigest: `sha256:${"c".repeat(64)}`,
     startedAt,
     stoppedAt,
@@ -105,6 +105,7 @@ test("SSH provisioning, start and stop remain inside verified device boundaries"
     const ready = await store.completeCommand("had_lifecycle", provisionCommand.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"6".repeat(64)}`, details: provisionDetails("lifecycle-gpu.example.com:25000", now) }, mutation("lifecycle-provision-good", "lifecycle-provision-good-hash", now));
     assert.equal(ready.contract.status, "READY");
     assert.equal(ready.contract.endpointDisplay, "lifecycle-gpu.example.com:25000");
+    assert.equal((await store.contractEvidenceForViewer(buyer.activeOrganization.id, "hctr_lifecycle")).instance.status, "READY");
 
     const start = await store.requestContractStart(buyer.activeOrganization.id, "hctr_lifecycle", mutation("lifecycle-start", "lifecycle-start-hash", now));
     const duplicateStart = await store.requestContractStart(buyer.activeOrganization.id, "hctr_lifecycle", mutation("lifecycle-start-second-tab", "lifecycle-start-second-tab-hash", now));
@@ -113,6 +114,7 @@ test("SSH provisioning, start and stop remain inside verified device boundaries"
     assert.equal(startCommand.id, start.command.id);
     assert.deepEqual(startCommand.payload, { contractId: "hctr_lifecycle", endpointDisplay: "lifecycle-gpu.example.com:25000" });
     await assert.rejects(store.completeCommand("had_lifecycle", startCommand.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"7".repeat(64)}`, details: startDetails("attacker.example.com:25000", now) }, mutation("lifecycle-start-bad", "lifecycle-start-bad-hash", now)), (error) => error.name === "ExchangeInputError");
+    await assert.rejects(store.completeCommand("had_lifecycle", startCommand.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"7".repeat(64)}`, details: { ...startDetails("lifecycle-gpu.example.com:25000", now), containerDigest: `sha256:${"f".repeat(64)}` } }, mutation("lifecycle-start-wrong-container", "lifecycle-start-wrong-container-hash", now)), (error) => error.name === "ExchangeInputError");
     const running = await store.completeCommand("had_lifecycle", startCommand.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"7".repeat(64)}`, details: startDetails("lifecycle-gpu.example.com:25000", now) }, mutation("lifecycle-start-result", "lifecycle-start-result-hash", now));
     assert.equal(running.contract.status, "IN_SERVICE");
 
@@ -127,6 +129,11 @@ test("SSH provisioning, start and stop remain inside verified device boundaries"
     const stopped = await store.completeCommand("had_lifecycle", stopCommand.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"8".repeat(64)}`, details: stopDetails(agentStartedAt, stopRequestedAt, 800) }, mutation("lifecycle-stop-result", "lifecycle-stop-result-hash", stopRequestedAt));
     assert.equal(stopped.contract.status, "AWAITING_ACCEPTANCE");
     assert.equal(stopped.contract.measuredSeconds, 600, "supplier Agent cannot bill beyond server wall-clock time");
+    const evidence = await store.contractEvidenceForViewer(buyer.activeOrganization.id, "hctr_lifecycle");
+    assert.equal(evidence.instance.status, "STOPPED");
+    assert.equal(evidence.instance.containerDigest, `sha256:${"6".repeat(64)}`);
+    assert.deepEqual({ agent: evidence.metering.agentRuntimeSeconds, server: evidence.metering.serverMeasuredSeconds }, { agent: 800, server: 600 });
+    assert.equal(await store.contractEvidenceForViewer("org-not-owner", "hctr_lifecycle"), null);
   } finally {
     store.close();
     rmSync(directory, { recursive: true, force: true });

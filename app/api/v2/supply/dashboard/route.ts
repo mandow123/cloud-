@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     const dashboard = await (await getHostingV2Store()).dashboard(account.activeOrganization.id, new Date().toISOString());
     const supplierContracts = dashboard.contracts
       .filter((contract) => contract.supplierOrganizationId === account.activeOrganization.id)
-      .map(hostingSupplierContractClientView);
+      .map((contract) => hostingSupplierContractClientView(contract));
     return jsonResponse({ dashboard: { ...dashboard, offers: dashboard.offers.map(hostingSupplierOfferClientView), contracts: supplierContracts } }, 200, undefined, context);
   } catch (error) {
     return apiErrorResponse(error, undefined, context);
