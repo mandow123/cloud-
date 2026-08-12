@@ -5,8 +5,15 @@ const accountLinks = [
   { href: "https://account.kai.com/docs", label: "账户文档" },
 ] as const;
 
-export function AccountLogin({ returnTo, configured, authError }: { returnTo: string; configured: boolean; authError?: string }) {
+export function AccountLogin({ returnTo, configured, serviceAvailable, identityError, authError }: {
+  returnTo: string;
+  configured: boolean;
+  serviceAvailable: boolean;
+  identityError?: string;
+  authError?: string;
+}) {
   const loginHref = `/api/auth/kai/start?returnTo=${encodeURIComponent(returnTo)}`;
+  const retryHref = `/login?returnTo=${encodeURIComponent(returnTo)}`;
   return (
     <section className="mx-auto max-w-xl border-t-4 border-[var(--accent)] bg-[var(--surface)] p-6 ring-1 ring-[var(--border)] sm:p-9" aria-labelledby="account-login-title">
       <p className="kicker">KAI IDENTITY</p>
@@ -15,10 +22,16 @@ export function AccountLogin({ returnTo, configured, authError }: { returnTo: st
 
       {authError ? <div className="mt-5 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-4 text-[var(--error)]" role="alert">登录未完成或事务已过期，请重新发起登录。</div> : null}
       {!configured ? <div className="mt-5 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-4 text-[var(--error)]" role="alert">统一账户应用尚未完成生产登记，登录入口暂不可用。</div> : null}
+      {configured && !serviceAvailable ? <div className="mt-5 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-4 text-[var(--error)]" role="alert">
+        <strong className="block text-[var(--ink)]">账户中心当前不可用</strong>
+        <span className="mt-1 block">这不是您的账号或授权选择问题。平台已识别上游连接异常，请修复后重试。</span>
+        <span className="sr-only">故障代码：{identityError ?? "KAI_IDENTITY_UNAVAILABLE"}</span>
+      </div> : null}
 
-      <a aria-disabled={!configured} className={`button button-primary mt-7 min-h-12 w-full justify-center${configured ? "" : " pointer-events-none opacity-50"}`} href={configured ? loginHref : undefined}>
+      <a aria-disabled={!serviceAvailable} className={`button button-primary mt-7 min-h-12 w-full justify-center${serviceAvailable ? "" : " pointer-events-none opacity-50"}`} href={serviceAvailable ? loginHref : undefined}>
         使用 KAI Account 登录 / 注册
       </a>
+      {configured && !serviceAvailable ? <Link className="button mt-3 min-h-11 w-full justify-center" href={retryHref}>重新检查账户中心</Link> : null}
 
       <dl className="mt-7 grid gap-3 border-t border-[var(--border)] pt-6 text-sm sm:grid-cols-2">
         <div><dt className="font-semibold text-[var(--ink)]">注册与邮箱验证</dt><dd className="mt-1 text-[var(--muted)]">由 account.kai.com 安全完成</dd></div>
