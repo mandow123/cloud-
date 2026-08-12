@@ -23,7 +23,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "app/member/page.tsx": "c72c258a8266554e939f686f7f9e3b26539a37d174fbfb8ab6b5f7a7a6edb272",
   "app/partners/page.tsx": "93cd20f90ebf8f6271b1b69fd79521b00497b02975beab97019b7bce121f2b52",
   "components/account-login.tsx": "8096ca1e7921f2326038335df6000c693e23df03f6def5a9918ba90086dedd51",
-  "components/account-required.tsx": "20b2a1330e872904e8d6ba73442e24bd2c8bd53f47c8619448cd9cfacc77b755",
+  "components/account-required.tsx": "ac35e06defa7a5f1eeb1829d06e7349505d0c7a52dc6c02a0e3761572342a106",
   "components/buyer-order-list.tsx": "fa15cbb70d18d19074633efc5d9fe60acd276ae4a45ab9df1e99dc3f6092d31a",
   "components/catalog-purchase.module.css": "d9e451203cbbfcb4b13a1c8f91267309cfe4be895e7ee225afb52cdfbc99d0a7",
   "components/catalog-purchase.tsx": "8ac8b649b82789a0b7c12212c1e0a139f4c6c5f464c7897a974b5fc6730c7555",
@@ -36,7 +36,8 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "components/live-home-market-hero.tsx": "12b5174eb3b58c9bbcd37215876e47c08e37e782b216536cc344cdd8e2a5bc7a",
   "components/member-workspace.tsx": "0f6c0827d710e851ab9f7ca35760ce5b1df771b6741302d049d206a3c0bb8745",
   "components/nav-links.tsx": "46d599cfbac150452c764b9c4bbc073dbce6fa2d5ba52dc544f3c854b700d620",
-  "components/personal-center-overview.tsx": "c11de061d8efb74e3e86a1a5a555bdd1e19c30730cb73b56b3a65638bfff52f8",
+  "components/kai-standard-state.tsx": "9bdca04d4da3c14e68ced4915c0bc7af44cc8abf4c4a95c02eb2d4ed57bcabef",
+  "components/personal-center-overview.tsx": "554eb966c5faa367d3a62c53e0c9565018a765fc04414231910d4950f65a2043",
   "components/personal-menu.module.css": "0813b8a2fa3d164922add93de17daf66adc0dd9c1859427097c36975708f90f2",
   "components/personal-menu.tsx": "31a492a0fdfa2e9f972f4ca5fd9d52ea094d96fdb5c8b7e1b53f29352b128fbe",
   "components/resource-explorer.tsx": "aedd1b56606181b818b1a5c3b7bf123ba050c3333a56984d9c36778f524da7d0",
@@ -125,6 +126,11 @@ test("approved shared public files are pinned", () => {
   const buttonCss = readFileSync(join(ROOT, "components/resource-purchase.module.css"), "utf8");
   assert.match(buttonCss, /background:\s*#117f7b/u);
   assert.match(buttonCss, /justify-content:\s*space-between/u);
+  for (const path of ["components/account-required.tsx", "components/kai-standard-state.tsx", "components/personal-center-overview.tsx"]) {
+    const source = readFileSync(join(ROOT, path), "utf8");
+    assert.match(source, /统一账号登录/u);
+    assert.doesNotMatch(source, /邮箱验证码登录/u);
+  }
 });
 
 test("only approved Hosting V2 pages and gated supplier pages extend the public route tree", () => {
