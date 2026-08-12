@@ -22,7 +22,9 @@ RUN printf '%s\n' "$KAI_WORKLOAD_REVISION" | grep -Eq '^([0-9a-f]{40}|[0-9a-f]{6
 COPY --chown=root:root sshd_config /etc/ssh/sshd_config
 COPY --chown=root:root entrypoint.sh /usr/local/bin/kai-workload-entrypoint
 RUN chmod 0755 /usr/local/bin/kai-workload-entrypoint \
-    && sshd -t -f /etc/ssh/sshd_config -h /etc/ssh/ssh_host_ed25519_key 2>/dev/null || true
+    && ssh-keygen -q -t ed25519 -N '' -f /tmp/kai-build-host-key \
+    && sshd -t -f /etc/ssh/sshd_config -h /tmp/kai-build-host-key \
+    && rm -f /tmp/kai-build-host-key /tmp/kai-build-host-key.pub
 
 USER 1000:1000
 WORKDIR /workspace

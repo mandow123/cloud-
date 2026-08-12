@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { assertHostingV2ApprovedImage, hostingV2CurrentTermsVersion } from "../lib/server/hosting-v2-image-policy.ts";
+import { assertHostingV2ApprovedImage, hostingV2ApprovedImages, hostingV2CurrentTermsVersion } from "../lib/server/hosting-v2-image-policy.ts";
 import { createSqliteHostingV2Store } from "../lib/server/hosting-v2-store-sqlite.ts";
+
+const approvedImage = `ghcr.io/kai-cloud/cuda-pytorch@sha256:${"a".repeat(64)}`;
+const termsVersion = "KAI_HOSTING_TERMS_2026_08";
 
 const account = {
   account: { id: "acct-offer-supplier", displayName: "Offer Supplier", primaryEmail: "offer@example.com", status: "ACTIVE" },
@@ -33,7 +36,7 @@ test("only approved, verified and fee-backed GPU offers enter the public market"
     const clock = new Date();
     const now = clock.toISOString();
     await store.saveProfile(account, { supplierType: "INDIVIDUAL", legalDisplayName: "个人 4090 报价测试", contactEmail: "offer@example.com", expectedVersion: 0 }, mutation(account.account.id, "offer-profile-save", "offer-profile-save-hash", now));
-    await store.submitProfile(account.activeOrganization.id, 1, process.env.KAI_HOSTING_TERMS_VERSION, mutation(account.account.id, "offer-profile-submit", "offer-profile-submit-hash", now));
+    await store.submitProfile(account.activeOrganization.id, 1, termsVersion, mutation(account.account.id, "offer-profile-submit", "offer-profile-submit-hash", now));
     await store.reviewProfile(account.activeOrganization.id, { decision: "APPROVE", expectedVersion: 2, reviewNote: "允许内部挂牌测试" }, mutation("admin-offer-reviewer", "offer-profile-review", "offer-profile-review-hash", now));
     const challenge = await store.issueAgentChallenge(account, mutation(account.account.id, "offer-agent-challenge", "offer-agent-challenge-hash", now));
     const inventory = {
@@ -67,8 +70,8 @@ test("only approved, verified and fee-backed GPU offers enter the public market"
       maxRentalSeconds: 86_400,
       availableFrom: new Date(clock.getTime() - 60_000).toISOString(),
       availableUntil: new Date(clock.getTime() + 86_400_000).toISOString(),
-      approvedImage: process.env.KAI_HOSTING_APPROVED_IMAGES,
-      termsVersion: "KAI_HOSTING_TERMS_2026_08",
+      approvedImage,
+      termsVersion,
     };
     await assert.rejects(store.createOffer(account.activeOrganization.id, offerInput, mutation(account.account.id, "offer-before-fee", "offer-before-fee-hash", now)), (error) => error.code === "EXCHANGE_STATE_CONFLICT" && error.status === 503);
     await assert.rejects(store.createFeeSchedule({ platformFeeBps: 500, referralRewardBps: 600, activate: true, effectiveFrom: now }, mutation("admin-market", "fee-invalid", "fee-invalid-hash", now)), (error) => error.name === "ExchangeInputError");
@@ -101,8 +104,17 @@ test("only approved, verified and fee-backed GPU offers enter the public market"
 });
 
 test("hosting image policy fails closed when operations has not configured immutable images", () => {
-  assert.throws(() => assertHostingV2ApprovedImage(process.env.KAI_HOSTING_APPROVED_IMAGES, {}), (error) => error.code === "HOSTING_IMAGE_POLICY_UNAVAILABLE" && error.status === 503);
-  assert.throws(() => assertHostingV2ApprovedImage("ghcr.io/kai-cloud/cuda-pytorch:latest", { KAI_HOSTING_APPROVED_IMAGES: process.env.KAI_HOSTING_APPROVED_IMAGES }), (error) => error.name === "ExchangeInputError");
+  assert.throws(() => assertHostingV2ApprovedImage(approvedImage, {}), (error) => error.code === "HOSTING_IMAGE_POLICY_UNAVAILABLE" && error.status === 503);
+  assert.throws(() => assertHostingV2ApprovedImage("ghcr.io/kai-cloud/cuda-pytorch:latest", { KAI_HOSTING_APPROVED_IMAGES: approvedImage }), (error) => error.name === "ExchangeInputError");
+});
+
+test("hosting image policy permits only the two explicitly controlled repositories", () => {
+  const productionWorkloadImage = `ghcr.io/mandow123/kai-cloud-gpu-workload@sha256:${"b".repeat(64)}`;
+  assert.deepEqual([...hostingV2ApprovedImages({ KAI_HOSTING_APPROVED_IMAGES: productionWorkloadImage })], [productionWorkloadImage]);
+  assert.throws(
+    () => hostingV2ApprovedImages({ KAI_HOSTING_APPROVED_IMAGES: `ghcr.io/mandow123/other@sha256:${"b".repeat(64)}` }),
+    (error) => error.code === "HOSTING_IMAGE_POLICY_INVALID",
+  );
 });
 
 test("hosting terms policy is server-configured and fails closed", () => {

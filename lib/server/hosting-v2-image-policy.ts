@@ -1,6 +1,6 @@
 import { ExchangeDomainError, ExchangeInputError } from "./exchange-errors.ts";
 
-export const HOSTING_V2_OCI_IMAGE_PATTERN = /^ghcr\.io\/kai-cloud\/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$/u;
+export const HOSTING_V2_OCI_IMAGE_PATTERN = /^ghcr\.io\/(?:kai-cloud\/cuda-pytorch|mandow123\/kai-cloud-gpu-workload)@sha256:[a-f0-9]{64}$/u;
 
 export function hostingV2ApprovedImages(environment: Record<string, string | undefined> = process.env) {
   const raw = environment.KAI_HOSTING_APPROVED_IMAGES?.trim() ?? "";
@@ -21,7 +21,7 @@ export function hostingV2CurrentTermsVersion(environment: Record<string, string 
 }
 
 export function assertHostingV2ApprovedImage(image: string, environment: Record<string, string | undefined> = process.env) {
-  if (!HOSTING_V2_OCI_IMAGE_PATTERN.test(image)) throw new ExchangeInputError("OCI 镜像必须使用 KAI 仓库的不可变 sha256 引用。", "approvedImage");
+  if (!HOSTING_V2_OCI_IMAGE_PATTERN.test(image)) throw new ExchangeInputError("OCI 镜像必须使用平台受控仓库的不可变 sha256 引用。", "approvedImage");
   if (!hostingV2ApprovedImages(environment).has(image)) throw new ExchangeInputError("只能选择平台当前批准的 OCI 镜像。", "approvedImage");
   return image;
 }

@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { AgentError, digestJson } from "./protocol.mjs";
 
 const execFile = promisify(execFileCallback);
-const IMAGE_PATTERN = /^ghcr\.io\/kai-cloud\/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$/u;
+const IMAGE_PATTERN = /^ghcr\.io\/(?:kai-cloud\/cuda-pytorch|mandow123\/kai-cloud-gpu-workload)@sha256:[a-f0-9]{64}$/u;
 const ID_PATTERN = /^(?:hcmd|hctr)_[a-z0-9]{8,80}$/u;
 const PUBLIC_KEY_PATTERN = /^ssh-(?:ed25519|rsa) [A-Za-z0-9+/=]{40,8192}(?: [^\r\n]{1,120})?$/u;
 

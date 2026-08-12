@@ -12,6 +12,7 @@ import { AgentError, digestJson, generateDeviceIdentity } from "../host-agent/sr
 import { writeState } from "../host-agent/src/state.mjs";
 
 const image = `ghcr.io/kai-cloud/cuda-pytorch@sha256:${"a".repeat(64)}`;
+const productionWorkloadImage = `ghcr.io/mandow123/kai-cloud-gpu-workload@sha256:${"b".repeat(64)}`;
 const publicKey = `ssh-ed25519 ${Buffer.alloc(51, 7).toString("base64")} actuator-test`;
 
 function request(overrides = {}) {
@@ -37,6 +38,15 @@ test("root actuator accepts only immutable allowlisted KAI images and fixed prov
   assert.throws(() => parseProvisionRequest(request({ image: `ghcr.io/kai-cloud/other@sha256:${"b".repeat(64)}` }), environment), (error) => error.code === "IMAGE_NOT_APPROVED");
   assert.throws(() => parseProvisionRequest(request({ publicKey: `${publicKey}\ncommand=bad` }), environment), (error) => error.code === "PUBLIC_KEY_INVALID");
   assert.throws(() => parseProvisionRequest(request({ operation: "SHELL" }), environment), (error) => error.code === "PROVISION_REQUEST_INVALID");
+});
+
+test("root actuator accepts the exact production workload repository but not arbitrary owner images", () => {
+  const environment = { KAI_HOSTING_APPROVED_IMAGES: productionWorkloadImage };
+  assert.equal(parseProvisionRequest(request({ image: productionWorkloadImage }), environment).image, productionWorkloadImage);
+  assert.throws(
+    () => parseProvisionRequest(request({ image: `ghcr.io/mandow123/other@sha256:${"b".repeat(64)}` }), environment),
+    (error) => error.code === "IMAGE_NOT_APPROVED",
+  );
 });
 
 test("PROVISION creates one constrained stopped container and replays from a root-owned manifest", async () => {
