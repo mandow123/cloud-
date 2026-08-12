@@ -216,7 +216,7 @@ test("pairing and heartbeat persist a private 0600 identity and send server-veri
         registerEndpoint: "http://127.0.0.1:3014/api/v2/agent/register",
         challengeId: "hac_runtime_challenge_000001",
         nonce: "runtimeNonceValue000001",
-        minimumAgentVersion: "1.9.3",
+        minimumAgentVersion: "1.9.4",
         expiresAt: new Date(Date.now() + 300_000).toISOString(),
       },
       displayName: "4090 工作站 01",
@@ -314,9 +314,10 @@ test("installer is offline, non-root at runtime and systemd-hardened", async () 
   assert.doesNotMatch(verifier, /shell\s*:\s*true|\bexec(?:Sync)?\s*\(/u);
   assert.match(installer, /src\/verify\.mjs/u);
   assert.match(installer, /src\/doctor\.mjs/u);
+  assert.match(installer, /src\/preflight\.mjs/u);
   assert.match(installer, /kai-host-actuator\.service/u);
   assert.match(runtime, /check-connection/u);
   assert.match(runtime, /readPairingFile/u);
-  assert.equal(packageJson.version, "1.9.3");
+  assert.equal(packageJson.version, "1.9.4");
   assert.equal(packageJson.dependencies, undefined);
 });

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../guides.module.css";
 
-const HOST_AGENT_VERSION = "1.9.3";
+const HOST_AGENT_VERSION = "1.9.4";
 const AGENT_VERSION = HOST_AGENT_VERSION;
 const ARCHIVE = `kai-host-agent-${AGENT_VERSION}.tgz`;
 
@@ -48,10 +48,10 @@ export default function HostAgentGuidePage() {
         </section>
 
         <section>
-          <div className={styles.sectionLabel}>03 · DOCTOR & INSTALL</div>
-          <h2>先检查主机，再安装受限服务</h2>
-          <Command>{`sudo ./install.sh\nsudo -u kai-host-agent -- kai-host-agent doctor \\\n  --public-host "gpu.example.com" \\\n  --ssh-port-start "22000" \\\n  --ssh-port-end "22019"`}</Command>
-          <p>安装完成时，只有本机 root Actuator 会启动；联网的 Host Agent 仍保持停止。Actuator 只接受验真、创建受控容器、启动、停止和清理五类固定动作，不提供任意宿主机 Shell。</p>
+          <div className={styles.sectionLabel}>03 · PREFLIGHT & INSTALL</div>
+          <h2>先做只读体检，再安装受限服务</h2>
+          <Command>{`sudo node ./src/preflight.mjs \\\n  --public-host "gpu.example.com" \\\n  --ssh-port-start "22000" \\\n  --ssh-port-end "22019" \\\n  --storage-path "/var/lib"\nsudo ./install.sh\nsudo -u kai-host-agent -- kai-host-agent doctor \\\n  --public-host "gpu.example.com" \\\n  --ssh-port-start "22000" \\\n  --ssh-port-end "22019"`}</Command>
+          <p>体检不安装服务、不改配置，也不会启动容器；它只检查 Ubuntu、系统级 Node.js、单卡 GPU、Docker NVIDIA Runtime、可用容量和整段本机端口。输出中的 `controlPlaneReachability: PENDING` 是正常的，公网入口必须等配对后由 Cloud 发起一次性挑战复验。安装完成时，只有本机 root Actuator 会启动；联网的 Host Agent 仍保持停止。</p>
         </section>
 
         <section>

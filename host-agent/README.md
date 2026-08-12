@@ -1,6 +1,6 @@
 # KAI Host Agent
 
-KAI Host Agent is the supplier-side device identity and control service for KAI Hosting V2. Version `1.9.3` in this checkpoint implements:
+KAI Host Agent is the supplier-side device identity and control service for KAI Hosting V2. Version `1.9.4` in this checkpoint implements:
 
 - contract-bound cleanup for partially provisioned or SSH-unreachable workloads, so failed delivery can be refunded and proven clean before relisting;
 
@@ -30,6 +30,16 @@ This checkpoint executes `VERIFY`, `PROVISION`, `START`, `STOP` and `CLEANUP` th
 - Docker Engine with NVIDIA Container Toolkit and the local Docker Unix socket
 - exactly one supported GPU for the first production profile
 - stable public host and a reserved port range of at most 200 ports
+
+Before installation, run the packaged read-only preflight as root. It does not install services, edit configuration or start containers. Local port availability is not proof of public reachability; only the later one-time Cloud control-plane challenge can provide that evidence:
+
+```text
+sudo node ./src/preflight.mjs \
+  --public-host "gpu.example.com" \
+  --ssh-port-start "22000" \
+  --ssh-port-end "22019" \
+  --storage-path "/var/lib"
+```
 
 ## Install and pair
 

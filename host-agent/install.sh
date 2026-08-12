@@ -152,6 +152,7 @@ install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/release-manifest.json" "$STAG
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/protocol.mjs" "$STAGING_RELEASE/src/protocol.mjs"
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/state.mjs" "$STAGING_RELEASE/src/state.mjs"
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/inventory.mjs" "$STAGING_RELEASE/src/inventory.mjs"
+install -o root -g root -m 0755 "$AGENT_SOURCE_DIR/src/preflight.mjs" "$STAGING_RELEASE/src/preflight.mjs"
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/doctor.mjs" "$STAGING_RELEASE/src/doctor.mjs"
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/client.mjs" "$STAGING_RELEASE/src/client.mjs"
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/verify.mjs" "$STAGING_RELEASE/src/verify.mjs"
