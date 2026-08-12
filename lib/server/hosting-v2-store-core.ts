@@ -11,7 +11,7 @@ const number = (row: Row, key: string) => Number(row[key]);
 const json = <T>(row: Row, key: string) => JSON.parse(value(row, key)) as T;
 const id = (prefix: string) => `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
 const VERIFY_TEST_NAMES = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"] as const;
-const HOSTING_V2_MIN_AGENT_VERSION = "1.3.0";
+const HOSTING_V2_MIN_AGENT_VERSION = "1.4.0";
 
 function agentVersionAtLeast(valueToCheck: string, minimum: string) {
   const parse = (value: string) => {
@@ -28,7 +28,7 @@ function agentVersionAtLeast(valueToCheck: string, minimum: string) {
   return true;
 }
 
-function assertSuccessfulVerificationDetails(details: Record<string, unknown> | undefined, expectedInventoryDigest: string, now: string) {
+function assertSuccessfulVerificationDetails(details: Record<string, unknown> | undefined, expectedInventoryDigest: string, controlPlaneReachabilityDigest: string | undefined, now: string) {
   if (!details || details.protocolVersion !== 1 || details.inventoryDigest !== expectedInventoryDigest || typeof details.observedAt !== "string") {
     throw new ExchangeInputError("设备验真结果结构无效。", "details");
   }
@@ -36,15 +36,24 @@ function assertSuccessfulVerificationDetails(details: Record<string, unknown> | 
   if (!Number.isFinite(observedAt) || Math.abs(observedAt - Date.parse(now)) > 10 * 60_000) throw new ExchangeInputError("设备验真观测时间无效。", "details.observedAt");
   if (!Array.isArray(details.tests) || details.tests.length !== VERIFY_TEST_NAMES.length) throw new ExchangeInputError("设备验真测试数量无效。", "details.tests");
   const names = new Set<string>();
+  let portReachability: Record<string, unknown> | null = null;
   for (const item of details.tests) {
     if (!item || typeof item !== "object" || Array.isArray(item)) throw new ExchangeInputError("设备验真测试结构无效。", "details.tests");
     const result = item as Record<string, unknown>;
     if (!VERIFY_TEST_NAMES.includes(result.name as typeof VERIFY_TEST_NAMES[number]) || result.status !== "PASSED" || typeof result.evidenceDigest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(result.evidenceDigest)) {
       throw new ExchangeInputError("设备验真测试结果无效。", "details.tests");
     }
+    if (result.name === "PORT_REACHABILITY") portReachability = result;
     names.add(String(result.name));
   }
   if (names.size !== VERIFY_TEST_NAMES.length) throw new ExchangeInputError("设备验真测试存在重复或缺失。", "details.tests");
+  const summary = portReachability?.summary;
+  if (!summary || typeof summary !== "object" || Array.isArray(summary)
+    || (summary as Record<string, unknown>).scope !== "CONTROL_PLANE_CHALLENGE"
+    || (summary as Record<string, unknown>).challengeDigest !== controlPlaneReachabilityDigest
+    || !/^sha256:[a-f0-9]{64}$/u.test(controlPlaneReachabilityDigest ?? "")) {
+    throw new ExchangeInputError("设备公网入口未经 Cloud 控制面回连验证。", "details.tests.PORT_REACHABILITY");
+  }
 }
 
 function assertSuccessfulProvisionDetails(details: Record<string, unknown> | undefined, payload: Record<string, unknown>, inventory: HostingDeviceInventory, now: string) {
@@ -496,7 +505,7 @@ function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       if (!current || !["ONLINE", "VERIFIED"].includes(value(current, "status"))) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备需在线后才能验真。");
       const commandId = id("hcmd");
       await db.batch([
-        { sql: "INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at) VALUES(?,?,NULL,'VERIFY',?,'PENDING',0,?)", values: [commandId, deviceId, JSON.stringify({ expectedInventoryDigest: value(current, "inventory_digest"), tests: ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"] }), context.now] },
+        { sql: "INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at) VALUES(?,?,NULL,'VERIFY',?,'PENDING',0,?)", values: [commandId, deviceId, JSON.stringify({ expectedInventoryDigest: value(current, "inventory_digest"), tests: ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"], reachabilityChallenge: crypto.randomUUID().replaceAll("-", "") }), context.now] },
         { sql: "UPDATE hosting_v2_devices SET status='VERIFYING',verification_status='PENDING',version=version+1,updated_at=? WHERE id=?", values: [context.now, deviceId] },
         event(context, organizationId, "DEVICE", deviceId, "DEVICE_VERIFICATION_QUEUED", { commandId }),
         receipt(context, "QUEUE_VERIFICATION", "AGENT_COMMAND", commandId),
@@ -806,7 +815,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       const success = input.outcome === "SUCCEEDED";
       const commandPayload = json<Record<string, unknown>>(commandRow, "payload_json");
       const deviceInventory = json<HostingDeviceInventory>(deviceRow, "inventory_json");
-      if (type === "VERIFY" && success) assertSuccessfulVerificationDetails(input.details, value(deviceRow, "inventory_digest"), context.now);
+      if (type === "VERIFY" && success) assertSuccessfulVerificationDetails(input.details, value(deviceRow, "inventory_digest"), input.controlPlaneReachabilityDigest, context.now);
       const provisionEndpoint = type === "PROVISION" && success ? assertSuccessfulProvisionDetails(input.details, commandPayload, deviceInventory, context.now) : null;
       if (type === "START" && success) assertSuccessfulStartDetails(input.details, commandPayload, context.now);
       if (type === "STOP" && success) assertSuccessfulStopDetails(input.details, commandPayload, context.now);
@@ -818,6 +827,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       let organizationId = value(deviceRow, "organization_id");
       if (type === "VERIFY") {
         const verifiedUntil = new Date(Date.parse(context.now) + 24 * 60 * 60_000).toISOString();
+        if (success) statements.push({ sql: "INSERT INTO hosting_v2_verification_proofs(command_id,device_id,agent_evidence_digest,control_plane_reachability_digest,public_host,public_port,recorded_at) VALUES(?,?,?,?,?,?,?)", values: [commandId, deviceId, input.evidenceDigest, input.controlPlaneReachabilityDigest!, deviceInventory.publicHost, deviceInventory.sshPortStart, context.now] });
         statements.push({ sql: "UPDATE hosting_v2_devices SET status=?,verification_status=?,verification_evidence_digest=?,verified_until=?,version=version+1,updated_at=? WHERE id=?", values: [success ? "VERIFIED" : "ONLINE", success ? "PASSED" : "FAILED", input.evidenceDigest, success ? verifiedUntil : null, context.now, deviceId] });
         if (!success) statements.push({ sql: "UPDATE hosting_v2_offers SET status='SUSPENDED',version=version+1,updated_at=? WHERE device_id=? AND status IN ('PUBLISHED','PAUSED')", values: [context.now, deviceId] });
       } else if (contractId) {

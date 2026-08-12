@@ -8,6 +8,7 @@ import { cancelHostingContract, reserveHostingContract } from "../lib/server/hos
 import { createSqliteCardHourStore } from "../lib/server/card-hour-store-sqlite.ts";
 import { createSqliteHostingV2Store } from "../lib/server/hosting-v2-store-sqlite.ts";
 import { normalizeSshPublicKey } from "../lib/server/ssh-public-key.ts";
+import { hostingAgentDigest } from "../lib/server/hosting-agent-crypto.ts";
 
 function account(id) {
   return {
@@ -35,13 +36,13 @@ function testPublicKey() {
   return `ssh-ed25519 ${blob.toString("base64")} cancellation-boundary`;
 }
 
-function successfulVerificationDetails(inventoryDigest, observedAt) {
+function successfulVerificationDetails(inventoryDigest, observedAt, challengeDigest) {
   const tests = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"];
   return {
     protocolVersion: 1,
     inventoryDigest,
     observedAt,
-    tests: tests.map((name, index) => ({ name, status: "PASSED", evidenceDigest: `sha256:${String(index + 1).repeat(64)}` })),
+    tests: tests.map((name, index) => ({ name, status: "PASSED", evidenceDigest: `sha256:${String(index + 1).repeat(64)}`, ...(name === "PORT_REACHABILITY" ? { summary: { port: 24_000, scope: "CONTROL_PLANE_CHALLENGE", challengeDigest } } : {}) })),
   };
 }
 
@@ -56,14 +57,15 @@ async function publishedOffer(store, supplier, clock) {
     displayName: "预留测试 4090",
     deviceKeyId: `sha256:${"4".repeat(64)}`,
     devicePublicKey: "A".repeat(43),
-    agentVersion: "1.3.0",
+    agentVersion: "1.4.0",
     inventory: { hostnameDigest: `sha256:${"1".repeat(64)}`, gpuModel: "RTX_4090", gpuUuidDigest: `sha256:${"2".repeat(64)}`, gpuMemoryMiB: 24_576, driverVersion: "580.10", cudaVersion: "13.0", cpuModel: "AMD Ryzen 9 9950X", memoryMiB: 65_536, storageGiB: 2_048, publicHost: "reserve-gpu.example.com", sshPortStart: 24_000, sshPortEnd: 24_019 },
     inventoryDigest,
   }, mutation("agent-reserve", "reserve-device-register", "reserve-device-register-hash", now));
   await store.acceptHeartbeat(device.id, { sequence: 1, inventoryDigest, capacityState: "ONLINE", observedAt: now }, mutation(`agent:${device.id}`, "reserve-heartbeat", "reserve-heartbeat-hash", now));
   const verification = await store.queueVerification(supplier.activeOrganization.id, device.id, mutation(supplier.account.id, "reserve-verify", "reserve-verify-hash", now));
   await store.pollCommand(device.id, now);
-  await store.completeCommand(device.id, verification.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"5".repeat(64)}`, details: successfulVerificationDetails(inventoryDigest, now) }, mutation(`agent:${device.id}`, "reserve-verify-result", "reserve-verify-result-hash", now));
+  const challengeDigest = await hostingAgentDigest({ protocolVersion: 1, deviceId: device.id, commandId: verification.id, publicHost: device.inventory.publicHost, publicPort: device.inventory.sshPortStart, challenge: verification.payload.reachabilityChallenge });
+  await store.completeCommand(device.id, verification.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"5".repeat(64)}`, controlPlaneReachabilityDigest: challengeDigest, details: successfulVerificationDetails(inventoryDigest, now, challengeDigest) }, mutation(`agent:${device.id}`, "reserve-verify-result", "reserve-verify-result-hash", now));
   await store.createFeeSchedule({ platformFeeBps: 1_000, referralRewardBps: 300, activate: true, effectiveFrom: now }, mutation("admin-market", "reserve-fee", "reserve-fee-hash", now));
   const offer = await store.createOffer(supplier.activeOrganization.id, { deviceId: device.id, title: "北京 RTX 4090 三分钟起租", gpuModel: "RTX_4090", region: "中国·北京", cardHourMicrosPerGpuHour: 3_600_000, minRentalSeconds: 180, maxRentalSeconds: 3_600, availableFrom: new Date(clock.getTime() - 60_000).toISOString(), availableUntil: new Date(clock.getTime() + 86_400_000).toISOString(), approvedImage: process.env.KAI_HOSTING_APPROVED_IMAGES, termsVersion: "KAI_HOSTING_TERMS_2026_08" }, mutation(supplier.account.id, "reserve-offer-create", "reserve-offer-create-hash", now));
   return store.updateOfferStatus(supplier.activeOrganization.id, offer.id, { status: "PUBLISHED", expectedVersion: 1 }, mutation(supplier.account.id, "reserve-offer-publish", "reserve-offer-publish-hash", now));

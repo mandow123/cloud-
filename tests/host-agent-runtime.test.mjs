@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import { chmod, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { heartbeat, pairDevice, processOneCommand } from "../host-agent/src/client.mjs";
+import { runDoctor } from "../host-agent/src/doctor.mjs";
 import { parseNvidiaInventory } from "../host-agent/src/inventory.mjs";
 import { AgentError, assertHttpsEndpoint, canonicalJson, digestJson, generateDeviceIdentity, signPayload } from "../host-agent/src/protocol.mjs";
 import { readState } from "../host-agent/src/state.mjs";
-import { runVerification, VERIFY_TESTS } from "../host-agent/src/verify.mjs";
+import { defaultVerificationRunners, runVerification, VERIFY_TESTS } from "../host-agent/src/verify.mjs";
 import { hostingAgentCanonicalJson, hostingAgentDigest, verifyHostingAgentSignature } from "../lib/server/hosting-agent-crypto.ts";
 
 const inventory = {
@@ -52,6 +54,29 @@ test("NVIDIA inventory parser accepts one supported GPU and rejects ambiguous ho
   assert.throws(() => parseNvidiaInventory("GPU-a, RTX 3090, 24576, 580.10", "CUDA Version: 13.0"), (error) => error.code === "GPU_MODEL_UNSUPPORTED");
 });
 
+test("doctor fails closed unless Docker, NVIDIA runtime, capacity and the managed port are ready", async () => {
+  const calls = [];
+  const result = await runDoctor({ publicHost: inventory.publicHost }, {
+    inventoryCollector: async () => inventory,
+    runDocker: async () => ({ dockerVersion: "28.0.4", nvidiaRuntime: true }),
+    portChecker: async (port) => calls.push(port),
+  });
+  assert.equal(result.inventory.gpuModel, "RTX_4090");
+  assert.equal(result.runtime.nvidiaRuntime, true);
+  assert.deepEqual(calls, [22_000]);
+
+  await assert.rejects(runDoctor({}, {
+    inventoryCollector: async () => ({ ...inventory, storageGiB: 39 }),
+    runDocker: async () => ({ dockerVersion: "28.0.4", nvidiaRuntime: true }),
+    portChecker: async () => undefined,
+  }), (error) => error.code === "STORAGE_CAPACITY_LOW");
+  await assert.rejects(runDoctor({}, {
+    inventoryCollector: async () => ({ ...inventory, memoryMiB: 8_191 }),
+    runDocker: async () => ({ dockerVersion: "28.0.4", nvidiaRuntime: true }),
+    portChecker: async () => undefined,
+  }), (error) => error.code === "HOST_MEMORY_LOW");
+});
+
 test("VERIFY runs only the fixed six probes and binds every result to signed evidence", async () => {
   const state = { inventoryDigest: await hostingAgentDigest(inventory) };
   const command = { id: "cmd_runtime_verify_000001", type: "VERIFY", payload: { expectedInventoryDigest: state.inventoryDigest, tests: [...VERIFY_TESTS] } };
@@ -68,6 +93,41 @@ test("VERIFY runs only the fixed six probes and binds every result to signed evi
   assert.equal(failed.errorCode, "VERIFICATION_FAILED");
   assert.equal(failed.details.tests.find((item) => item.name === "NETWORK").errorCode, "NETWORK_PROBE_FAILED");
   await assert.rejects(runVerification({ ...command, payload: { ...command.payload, tests: [...VERIFY_TESTS, "SHELL"] } }, state, { runners }), (error) => error.code === "VERIFY_TEST_SET_INVALID");
+});
+
+test("reachability verification exposes only the one-time challenge window", async () => {
+  const port = await new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once("error", reject);
+    probe.listen({ host: "127.0.0.1", port: 0 }, () => {
+      const address = probe.address();
+      probe.close((error) => error ? reject(error) : resolve(address.port));
+    });
+  });
+  const challenge = "a".repeat(32);
+  const state = {
+    deviceId: "had_runtime_reachability_000001",
+    inventoryConfig: { publicHost: "gpu.example.com", sshPortStart: port },
+  };
+  const command = { id: "hcmd_runtime_reachability_000001", payload: { reachabilityChallenge: challenge } };
+  const probe = await defaultVerificationRunners(state).PORT_REACHABILITY(command);
+  const response = await new Promise((resolve, reject) => {
+    const socket = createConnection({ host: "127.0.0.1", port });
+    let body = "";
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk) => { body += chunk; });
+    socket.once("end", () => resolve(body));
+    socket.once("error", reject);
+  });
+  assert.equal(response, `KAI-HOST-VERIFY/1 ${challenge}\n`);
+  assert.equal(probe.summary.scope, "CONTROL_PLANE_CHALLENGE");
+  assert.match(probe.summary.challengeDigest, /^sha256:[a-f0-9]{64}$/u);
+  await probe.close();
+  await assert.rejects(new Promise((resolve, reject) => {
+    const socket = createConnection({ host: "127.0.0.1", port });
+    socket.once("connect", () => { socket.destroy(); resolve(); });
+    socket.once("error", reject);
+  }));
 });
 
 test("pairing and heartbeat persist a private 0600 identity and send server-verifiable proofs", async () => {
@@ -114,11 +174,11 @@ test("pairing and heartbeat persist a private 0600 identity and send server-veri
         registerEndpoint: "http://127.0.0.1:3014/api/v2/agent/register",
         challengeId: "hac_runtime_challenge_000001",
         nonce: "runtimeNonceValue000001",
-        minimumAgentVersion: "1.3.0",
+        minimumAgentVersion: "1.4.0",
         expiresAt: new Date(Date.now() + 300_000).toISOString(),
       },
       displayName: "4090 工作站 01",
-      publicHost: inventory.publicHost,
+      publicHost: inventory.publicHost.toUpperCase(),
       sshPortStart: inventory.sshPortStart,
       sshPortEnd: inventory.sshPortEnd,
       stateFile,
@@ -132,6 +192,7 @@ test("pairing and heartbeat persist a private 0600 identity and send server-veri
     const stored = await readState(stateFile);
     assert.equal(stored.status, "ACTIVE");
     assert.equal(stored.deviceId, registeredDeviceId);
+    assert.equal(stored.inventoryConfig.publicHost, inventory.publicHost);
     assert.equal("registrationBody" in stored, false);
     assert.equal("nonce" in stored, false);
 
@@ -190,7 +251,8 @@ test("installer is offline, non-root at runtime and systemd-hardened", async () 
   assert.doesNotMatch(runtime, /privateKeyPkcs8|registrationBody|nonce/u);
   assert.doesNotMatch(verifier, /shell\s*:\s*true|\bexec(?:Sync)?\s*\(/u);
   assert.match(installer, /src\/verify\.mjs/u);
+  assert.match(installer, /src\/doctor\.mjs/u);
   assert.match(installer, /kai-host-actuator\.service/u);
-  assert.equal(packageJson.version, "1.3.0");
+  assert.equal(packageJson.version, "1.4.0");
   assert.equal(packageJson.dependencies, undefined);
 });

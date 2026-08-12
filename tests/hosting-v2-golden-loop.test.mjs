@@ -8,6 +8,7 @@ import { createAccountSession } from "../lib/server/account-auth.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
 import { getCardHourStore } from "../lib/server/card-hour-store.ts";
 import { getHostingV2Store } from "../lib/server/hosting-v2-store.ts";
+import { hostingAgentDigest } from "../lib/server/hosting-agent-crypto.ts";
 
 import { GET as openMarketplaceSession } from "../app/api/session/route.ts";
 import { PUT as saveSupplierProfile } from "../app/api/v2/supply/profile/route.ts";
@@ -63,13 +64,13 @@ function inventory() {
   };
 }
 
-function verificationDetails(inventoryDigest, observedAt) {
+function verificationDetails(inventoryDigest, observedAt, challengeDigest) {
   return {
     protocolVersion: 1,
     inventoryDigest,
     observedAt,
     tests: ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"]
-      .map((name, index) => ({ name, status: "PASSED", evidenceDigest: `sha256:${String(index + 1).repeat(64)}` })),
+      .map((name, index) => ({ name, status: "PASSED", evidenceDigest: `sha256:${String(index + 1).repeat(64)}`, ...(name === "PORT_REACHABILITY" ? { summary: { port: 27_000, scope: "CONTROL_PLANE_CHALLENGE", challengeDigest } } : {}) })),
   };
 }
 
@@ -235,7 +236,7 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
       displayName: "黄金闭环 RTX 4090",
       deviceKeyId: `sha256:${"4".repeat(64)}`,
       devicePublicKey: "A".repeat(43),
-      agentVersion: "1.3.0",
+      agentVersion: "1.4.0",
       inventory: inventory(),
       inventoryDigest,
     }, mutation("agent:golden", "golden-device-register", now));
@@ -243,7 +244,8 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     const queuedVerification = await json(await queueDeviceVerification(browserRequest(supplier, `/api/v2/supply/devices/${device.id}/verify`, "POST", {}, "golden-device-verify"), { params: Promise.resolve({ deviceId: device.id }) }), 201);
     const verificationCommand = await hosting.pollCommand(device.id, now);
     assert.equal(verificationCommand.id, queuedVerification.record.id);
-    await hosting.completeCommand(device.id, verificationCommand.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"5".repeat(64)}`, details: verificationDetails(inventoryDigest, now) }, mutation(`agent:${device.id}`, "golden-verify-result", now));
+    const challengeDigest = await hostingAgentDigest({ protocolVersion: 1, deviceId: device.id, commandId: verificationCommand.id, publicHost: device.inventory.publicHost, publicPort: device.inventory.sshPortStart, challenge: verificationCommand.payload.reachabilityChallenge });
+    await hosting.completeCommand(device.id, verificationCommand.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"5".repeat(64)}`, controlPlaneReachabilityDigest: challengeDigest, details: verificationDetails(inventoryDigest, now, challengeDigest) }, mutation(`agent:${device.id}`, "golden-verify-result", now));
     await hosting.createFeeSchedule({ platformFeeBps: 1_000, referralRewardBps: 300, activate: true, effectiveFrom: now }, mutation("golden-admin-market", "golden-fee-schedule", now));
 
     const policy = await json(await getSupplyPolicy(browserRead(supplier, "/api/v2/supply/policy")), 200);
@@ -340,7 +342,7 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     const publicAfter = await json(await listPublicOffers(new Request(`${ORIGIN}/api/v2/offers`)), 200);
     assert.equal(publicAfter.records.length, 1, "cleaned and freshly verified inventory must become sellable again");
     const operations = await hosting.readiness(cleanedAt);
-    assert.equal(operations.schemaVersion, 3);
+    assert.equal(operations.schemaVersion, 4);
     assert.match(operations.activeFeeScheduleId, /^hfee_/u);
     assert.deepEqual({
       approvedSupplierCount: operations.approvedSupplierCount,

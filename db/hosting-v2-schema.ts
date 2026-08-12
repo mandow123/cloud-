@@ -1,4 +1,4 @@
-export const HOSTING_V2_SCHEMA_VERSION = 3;
+export const HOSTING_V2_SCHEMA_VERSION = 4;
 
 export const hostingV2SchemaStatements = [
   `CREATE TABLE IF NOT EXISTS hosting_v2_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`,
@@ -190,6 +190,17 @@ export const hostingV2SchemaStatements = [
     completed_at TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS hosting_v2_commands_device_idx ON hosting_v2_agent_commands(device_id, status, created_at)`,
+  `CREATE TABLE IF NOT EXISTS hosting_v2_verification_proofs (
+    command_id TEXT PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    agent_evidence_digest TEXT NOT NULL,
+    control_plane_reachability_digest TEXT NOT NULL,
+    public_host TEXT NOT NULL,
+    public_port INTEGER NOT NULL CHECK (public_port BETWEEN 1024 AND 65535),
+    recorded_at TEXT NOT NULL
+  )`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_verification_proofs_immutable_update BEFORE UPDATE ON hosting_v2_verification_proofs BEGIN SELECT RAISE(ABORT, 'hosting verification proof immutable'); END`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_verification_proofs_immutable_delete BEFORE DELETE ON hosting_v2_verification_proofs BEGIN SELECT RAISE(ABORT, 'hosting verification proof immutable'); END`,
   `CREATE TABLE IF NOT EXISTS hosting_v2_events (
     id TEXT PRIMARY KEY,
     organization_id TEXT,

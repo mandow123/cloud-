@@ -1,7 +1,7 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { lookup as lookupCallback } from "node:dns";
 import { open, statfs, unlink } from "node:fs/promises";
-import { createConnection } from "node:net";
+import { createServer } from "node:net";
 import { totalmem } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -33,21 +33,24 @@ async function storageProbe(storagePath) {
   }
 }
 
-async function portProbe(host, port) {
+async function controlPlaneChallenge(state, command) {
+  const challenge = command.payload.reachabilityChallenge;
+  if (typeof challenge !== "string" || !/^[a-f0-9]{32}$/u.test(challenge)) throw verificationError("REACHABILITY_CHALLENGE_INVALID", "Verification command is missing a valid control-plane challenge.");
+  const port = Number(state.inventoryConfig.sshPortStart);
+  const server = createServer((socket) => socket.end(`KAI-HOST-VERIFY/1 ${challenge}\n`));
   await new Promise((resolve, reject) => {
-    const socket = createConnection({ host: host.replace(/^\[|\]$/gu, ""), port });
-    let settled = false;
-    const finish = (error) => {
-      if (settled) return;
-      settled = true;
-      socket.destroy();
-      if (error) reject(error); else resolve();
-    };
-    socket.setTimeout(5_000, () => finish(verificationError("PORT_TIMEOUT", "Declared public port did not accept a connection.")));
-    socket.once("connect", () => finish());
-    socket.once("error", (error) => finish(new AgentError("PORT_UNREACHABLE", "Declared public port did not accept a connection.", { cause: error })));
+    server.once("error", (error) => reject(new AgentError("PORT_UNAVAILABLE", "The declared public port could not host the verification challenge.", { cause: error })));
+    server.listen({ port, exclusive: true }, resolve);
   });
-  return { port, scope: "HOST_ORIGIN" };
+  const close = () => new Promise((resolve) => server.close(() => resolve()));
+  return {
+    summary: {
+      port,
+      scope: "CONTROL_PLANE_CHALLENGE",
+      challengeDigest: digestJson({ protocolVersion: 1, deviceId: state.deviceId, commandId: command.id, publicHost: state.inventoryConfig.publicHost, publicPort: port, challenge }),
+    },
+    close,
+  };
 }
 
 export function defaultVerificationRunners(state, inventoryCollector = collectInventory) {
@@ -83,8 +86,8 @@ export function defaultVerificationRunners(state, inventoryCollector = collectIn
       const [apiAddress, publicAddress] = await Promise.all([lookup(apiHost), lookup(state.inventoryConfig.publicHost.replace(/^\[|\]$/gu, ""))]);
       return { apiFamily: apiAddress.family, publicHostFamily: publicAddress.family };
     },
-    async PORT_REACHABILITY() {
-      return portProbe(state.inventoryConfig.publicHost, Number(state.inventoryConfig.sshPortStart));
+    async PORT_REACHABILITY(command) {
+      return controlPlaneChallenge(state, command);
     },
   };
 }
@@ -108,9 +111,12 @@ function errorCode(error) {
 export async function runVerification(command, state, { runners = defaultVerificationRunners(state) } = {}) {
   validateCommand(command, state);
   const tests = [];
+  let closeReachability = null;
   for (const name of VERIFY_TESTS) {
     try {
-      const summary = await runners[name]();
+      const probed = await runners[name](command);
+      const summary = name === "PORT_REACHABILITY" && probed?.summary ? probed.summary : probed;
+      if (name === "PORT_REACHABILITY" && typeof probed?.close === "function") closeReachability = probed.close;
       tests.push({ name, status: "PASSED", evidenceDigest: digestJson({ name, summary }), summary });
     } catch (error) {
       const code = errorCode(error);
@@ -124,5 +130,6 @@ export async function runVerification(command, state, { runners = defaultVerific
     evidenceDigest: digestJson(details),
     errorCode: passed ? null : "VERIFICATION_FAILED",
     details,
+    closeReachability,
   };
 }

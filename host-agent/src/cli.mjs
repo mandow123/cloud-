@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { dirname } from "node:path";
-import { collectInventory } from "./inventory.mjs";
 import { AGENT_VERSION, heartbeat, pairDevice, processOneCommand, resumePairing } from "./client.mjs";
+import { runDoctor } from "./doctor.mjs";
 import { AgentError } from "./protocol.mjs";
 import { readState, stateFilePath } from "./state.mjs";
 
@@ -95,13 +95,23 @@ async function main() {
   }
   if (command === "doctor") {
     const input = options(args);
-    const inventory = await collectInventory({
+    const result = await runDoctor({
       publicHost: input["public-host"],
       sshPortStart: input["ssh-port-start"],
       sshPortEnd: input["ssh-port-end"],
       storagePath: dirname(stateFilePath()),
     });
-    log("doctor.passed", { gpuModel: inventory.gpuModel, gpuMemoryMiB: inventory.gpuMemoryMiB, driverVersion: inventory.driverVersion, cudaVersion: inventory.cudaVersion });
+    log("doctor.passed", {
+      gpuModel: result.inventory.gpuModel,
+      gpuMemoryMiB: result.inventory.gpuMemoryMiB,
+      driverVersion: result.inventory.driverVersion,
+      cudaVersion: result.inventory.cudaVersion,
+      dockerVersion: result.runtime.dockerVersion,
+      nvidiaRuntime: result.runtime.nvidiaRuntime,
+      managedPort: result.managedPort,
+      storageReady: result.storageReady,
+      memoryReady: result.memoryReady,
+    });
     return;
   }
   if (command === "run") {

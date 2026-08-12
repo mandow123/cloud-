@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { assertHostingV2ApprovedImage, hostingV2ApprovedImages, hostingV2CurrentTermsVersion } from "../lib/server/hosting-v2-image-policy.ts";
 import { createSqliteHostingV2Store } from "../lib/server/hosting-v2-store-sqlite.ts";
+import { hostingAgentDigest } from "../lib/server/hosting-agent-crypto.ts";
 
 const approvedImage = `ghcr.io/kai-cloud/cuda-pytorch@sha256:${"a".repeat(64)}`;
 const termsVersion = "KAI_HOSTING_TERMS_2026_08";
@@ -20,13 +21,13 @@ function mutation(actorId, key, hash, now) {
   return { actorId, idempotencyKey: key, payloadHash: hash, now };
 }
 
-function successfulVerificationDetails(inventoryDigest, observedAt) {
+function successfulVerificationDetails(inventoryDigest, observedAt, challengeDigest) {
   const tests = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"];
   return {
     protocolVersion: 1,
     inventoryDigest,
     observedAt,
-    tests: tests.map((name, index) => ({ name, status: "PASSED", evidenceDigest: `sha256:${String(index + 1).repeat(64)}` })),
+    tests: tests.map((name, index) => ({ name, status: "PASSED", evidenceDigest: `sha256:${String(index + 1).repeat(64)}`, ...(name === "PORT_REACHABILITY" ? { summary: { port: 23_000, scope: "CONTROL_PLANE_CHALLENGE", challengeDigest } } : {}) })),
   };
 }
 
@@ -54,11 +55,12 @@ test("only approved, verified and fee-backed GPU offers enter the public market"
       sshPortEnd: 23_019,
     };
     const inventoryDigest = `sha256:${"3".repeat(64)}`;
-    const device = await store.registerDevice(challenge.id, { displayName: "4090 报价机", deviceKeyId: `sha256:${"4".repeat(64)}`, devicePublicKey: "A".repeat(43), agentVersion: "1.3.0", inventory, inventoryDigest }, mutation("agent-offer", "offer-device-register", "offer-device-register-hash", now));
+    const device = await store.registerDevice(challenge.id, { displayName: "4090 报价机", deviceKeyId: `sha256:${"4".repeat(64)}`, devicePublicKey: "A".repeat(43), agentVersion: "1.4.0", inventory, inventoryDigest }, mutation("agent-offer", "offer-device-register", "offer-device-register-hash", now));
     await store.acceptHeartbeat(device.id, { sequence: 1, inventoryDigest, capacityState: "ONLINE", observedAt: now }, mutation(`agent:${device.id}`, "offer-heartbeat-1", "offer-heartbeat-hash", now));
     const verification = await store.queueVerification(account.activeOrganization.id, device.id, mutation(account.account.id, "offer-verify", "offer-verify-hash", now));
     await store.pollCommand(device.id, now);
-    await store.completeCommand(device.id, verification.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"5".repeat(64)}`, details: successfulVerificationDetails(inventoryDigest, now) }, mutation(`agent:${device.id}`, "offer-verify-result", "offer-verify-result-hash", now));
+    const challengeDigest = await hostingAgentDigest({ protocolVersion: 1, deviceId: device.id, commandId: verification.id, publicHost: inventory.publicHost, publicPort: inventory.sshPortStart, challenge: verification.payload.reachabilityChallenge });
+    await store.completeCommand(device.id, verification.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"5".repeat(64)}`, controlPlaneReachabilityDigest: challengeDigest, details: successfulVerificationDetails(inventoryDigest, now, challengeDigest) }, mutation(`agent:${device.id}`, "offer-verify-result", "offer-verify-result-hash", now));
 
     const offerInput = {
       deviceId: device.id,

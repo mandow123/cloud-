@@ -7,6 +7,7 @@ import test from "node:test";
 
 import { parseAgentProof, parseHostingDeviceInventory, verifyExistingDeviceProof } from "../lib/server/hosting-agent-api.ts";
 import { hostingAgentCanonicalJson, hostingAgentDigest, hostingAgentKeyId, verifyHostingAgentSignature } from "../lib/server/hosting-agent-crypto.ts";
+import { verifyControlPlaneReachability } from "../lib/server/hosting-agent-reachability.ts";
 import { createSqliteHostingV2Store } from "../lib/server/hosting-v2-store-sqlite.ts";
 
 const account = {
@@ -25,13 +26,18 @@ function base64url(value) {
   return Buffer.from(value).toString("base64url");
 }
 
-function successfulVerificationDetails(inventoryDigest, observedAt) {
+function successfulVerificationDetails(inventoryDigest, observedAt, challengeDigest) {
   const tests = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"];
   return {
     protocolVersion: 1,
     inventoryDigest,
     observedAt,
-    tests: tests.map((name, index) => ({ name, status: "PASSED", evidenceDigest: `sha256:${String(index + 1).repeat(64)}` })),
+    tests: tests.map((name, index) => ({
+      name,
+      status: "PASSED",
+      evidenceDigest: `sha256:${String(index + 1).repeat(64)}`,
+      ...(name === "PORT_REACHABILITY" ? { summary: { port: 22_000, scope: "CONTROL_PLANE_CHALLENGE", challengeDigest } } : {}),
+    })),
   };
 }
 
@@ -51,7 +57,7 @@ test("signed Host Agent registration, heartbeat and verification close without r
     const now = new Date();
     await approvedSupplier(store, now.toISOString());
     const challenge = await store.issueAgentChallenge(account, mutation(account.account.id, "agent-challenge-0001", "agent-challenge-hash", now.toISOString()));
-    assert.equal(challenge.minimumAgentVersion, "1.3.0");
+    assert.equal(challenge.minimumAgentVersion, "1.4.0");
     const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
     const devicePublicKey = base64url(await crypto.subtle.exportKey("raw", keys.publicKey));
     const inventory = parseHostingDeviceInventory({
@@ -71,7 +77,7 @@ test("signed Host Agent registration, heartbeat and verification close without r
     const inventoryDigest = await hostingAgentDigest(inventory);
     const issuedAt = now.toISOString();
     const expiresAt = new Date(now.getTime() + 60_000).toISOString();
-    const registration = { operation: "REGISTER_DEVICE", challengeId: challenge.id, nonce: challenge.nonce, displayName: "4090 工作站 01", devicePublicKey, agentVersion: "1.3.0", inventory, inventoryDigest, issuedAt, expiresAt };
+    const registration = { operation: "REGISTER_DEVICE", challengeId: challenge.id, nonce: challenge.nonce, displayName: "4090 工作站 01", devicePublicKey, agentVersion: "1.4.0", inventory, inventoryDigest, issuedAt, expiresAt };
     const registrationSignature = await sign(keys.privateKey, registration);
     await verifyHostingAgentSignature(devicePublicKey, registration, registrationSignature);
     await assert.rejects(verifyHostingAgentSignature(devicePublicKey, { ...registration, displayName: "tampered" }, registrationSignature), (error) => error.code === "AGENT_SIGNATURE_INVALID");
@@ -98,13 +104,29 @@ test("signed Host Agent registration, heartbeat and verification close without r
       store.completeCommand(device.id, command.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"3".repeat(64)}`, details: { tests: [] } }, mutation(`agent:${device.id}`, `command:${command.id}:invalid`, "verify-invalid-hash", new Date(now.getTime() + 61_000).toISOString())),
       (error) => error.name === "ExchangeInputError",
     );
-    const completed = await store.completeCommand(device.id, command.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"3".repeat(64)}`, details: successfulVerificationDetails(inventoryDigest, new Date(now.getTime() + 61_000).toISOString()) }, mutation(`agent:${device.id}`, `command:${command.id}:SUCCEEDED`, "verify-result-hash", new Date(now.getTime() + 61_000).toISOString()));
+    const challengeDigest = await hostingAgentDigest({ protocolVersion: 1, deviceId: device.id, commandId: command.id, publicHost: inventory.publicHost, publicPort: inventory.sshPortStart, challenge: command.payload.reachabilityChallenge });
+    const completed = await store.completeCommand(device.id, command.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"3".repeat(64)}`, controlPlaneReachabilityDigest: challengeDigest, details: successfulVerificationDetails(inventoryDigest, new Date(now.getTime() + 61_000).toISOString(), challengeDigest) }, mutation(`agent:${device.id}`, `command:${command.id}:SUCCEEDED`, "verify-result-hash", new Date(now.getTime() + 61_000).toISOString()));
     assert.equal(completed.device.status, "VERIFIED");
     assert.equal(completed.device.verificationStatus, "PASSED");
     assert.equal((await store.dashboard(account.activeOrganization.id, now.toISOString())).readiness.onlineVerifiedDevices, 1);
   } finally {
     store.close();
   }
+});
+
+test("control-plane reachability pins a public address and binds the one-time challenge", async () => {
+  const device = { id: "had_reachability", inventory: { publicHost: "gpu.example.com", sshPortStart: 22_000 } };
+  const command = { id: "hcmd_reachability", payload: { reachabilityChallenge: "a".repeat(32) } };
+  const reads = [];
+  const digest = await verifyControlPlaneReachability(device, command, {
+    resolveAddresses: async () => [{ address: "203.0.114.10", family: 4 }],
+    readResponse: async (...args) => reads.push(args),
+  });
+  assert.match(digest, /^sha256:[a-f0-9]{64}$/u);
+  assert.deepEqual(reads, [["203.0.114.10", 4, 22_000, `KAI-HOST-VERIFY/1 ${"a".repeat(32)}\n`]]);
+
+  await assert.rejects(verifyControlPlaneReachability({ ...device, inventory: { ...device.inventory, publicHost: "127.0.0.1" } }, command), (error) => error.code === "AGENT_PUBLIC_HOST_NOT_GLOBAL");
+  await assert.rejects(verifyControlPlaneReachability(device, { ...command, payload: { reachabilityChallenge: "invalid" } }), (error) => error.code === "AGENT_REACHABILITY_CHALLENGE_INVALID");
 });
 
 test("agent routes require signed device proofs and never accept workspace roles", () => {

@@ -15,7 +15,7 @@ import { readState, stateFilePath, writeState } from "./state.mjs";
 import { cleanupWorkload, provisionWorkload, startWorkload, stopWorkload } from "./actuator-client.mjs";
 import { runVerification } from "./verify.mjs";
 
-export const AGENT_VERSION = "1.3.0";
+export const AGENT_VERSION = "1.4.0";
 
 function validatePairingBundle(value, options = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new AgentError("PAIRING_INVALID", "Pairing bundle must be a JSON object.");
@@ -96,8 +96,14 @@ export async function pairDevice({
   if (name.length < 2 || name.length > 80) throw new AgentError("DISPLAY_NAME_INVALID", "Device display name must contain 2–80 characters.");
 
   const identity = await generateDeviceIdentity();
-  const inventoryConfig = { publicHost, sshPortStart, sshPortEnd, storagePath: dirname(stateFile) };
-  const inventory = await inventoryCollector(inventoryConfig);
+  const requestedInventoryConfig = { publicHost, sshPortStart, sshPortEnd, storagePath: dirname(stateFile) };
+  const inventory = await inventoryCollector(requestedInventoryConfig);
+  const inventoryConfig = {
+    publicHost: inventory.publicHost,
+    sshPortStart: inventory.sshPortStart,
+    sshPortEnd: inventory.sshPortEnd,
+    storagePath: requestedInventoryConfig.storagePath,
+  };
   const inventoryDigest = digestJson(inventory);
   const window = proofWindow();
   const signedPayload = {
@@ -248,6 +254,10 @@ export async function processOneCommand({ stateFile = stateFilePath(), allowInse
     const details = { protocolVersion: 1, commandType: polled.command.type ?? "UNKNOWN", observedAt: new Date().toISOString(), errorCode: code };
     result = { outcome: "FAILED", evidenceDigest: digestJson(details), errorCode: code, details };
   }
-  const response = await completeCommand(polled.command, result, { stateFile, allowInsecureLocal, post });
-  return { command: polled.command, result, response };
+  try {
+    const response = await completeCommand(polled.command, result, { stateFile, allowInsecureLocal, post });
+    return { command: polled.command, result, response };
+  } finally {
+    await result.closeReachability?.();
+  }
 }

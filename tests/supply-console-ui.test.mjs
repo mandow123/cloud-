@@ -44,7 +44,7 @@ test("resource registration issues a short-lived server challenge without client
   assert.match(source, /minimumAgentVersion: challenge\.minimumAgentVersion/u);
   assert.match(source, /expiresAt: challenge\.expiresAt/u);
   assert.match(source, /navigator\.clipboard\.writeText\(pairingBundle\)/u);
-  assert.match(source, /href="\/downloads\/kai-host-agent-1\.3\.0\.tgz"/u);
+  assert.match(source, /href="\/downloads\/kai-host-agent-1\.4\.0\.tgz"/u);
   assert.match(source, /href="\/guides\/host-agent"/u);
   assert.doesNotMatch(source, /organizationId|accountId|actorId|x-kai-workspace-role|localStorage|sessionStorage/u);
 });

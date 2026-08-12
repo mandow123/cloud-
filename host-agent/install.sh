@@ -49,6 +49,7 @@ install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/package.json" /opt/kai-host-a
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/protocol.mjs" /opt/kai-host-agent/src/protocol.mjs
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/state.mjs" /opt/kai-host-agent/src/state.mjs
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/inventory.mjs" /opt/kai-host-agent/src/inventory.mjs
+install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/doctor.mjs" /opt/kai-host-agent/src/doctor.mjs
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/client.mjs" /opt/kai-host-agent/src/client.mjs
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/verify.mjs" /opt/kai-host-agent/src/verify.mjs
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/actuator.mjs" /opt/kai-host-agent/src/actuator.mjs
