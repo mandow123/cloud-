@@ -35,4 +35,7 @@ jobs:
           test "$revision" = "$GITHUB_SHA"
           immutable=$(docker image inspect "$image:$GITHUB_SHA" --format '{{ range .RepoDigests }}{{ println . }}{{ end }}' | awk -v prefix="$image@sha256:" 'index($0,prefix)==1 {print $0}')
           test "$(printf '%s\n' "$immutable" | sed '/^$/d' | wc -l)" -eq 1
+          KAI_GPU_WORKLOAD_IMAGE="$immutable" \
+          KAI_GPU_WORKLOAD_REVISION="$GITHUB_SHA" \
+            node scripts/ops/validate-gpu-workload-image.mjs
           printf '### Approved workload\n\n- Commit: `%s`\n- Immutable image: `%s`\n' "$GITHUB_SHA" "$immutable" >> "$GITHUB_STEP_SUMMARY"
