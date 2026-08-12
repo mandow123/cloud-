@@ -14,8 +14,12 @@ RUN printf '%s\n' "$KAI_WORKLOAD_REVISION" | grep -Eq '^([0-9a-f]{40}|[0-9a-f]{6
     && apt-get update \
     && apt-get install --yes --no-install-recommends ca-certificates openssh-server tini \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd --gid 1000 kai \
-    && useradd --uid 1000 --gid 1000 --home-dir /workspace --no-create-home --shell /bin/bash kai \
+    && test "$(getent passwd 1000 | cut -d: -f1)" = ubuntu \
+    && test "$(getent group 1000 | cut -d: -f1)" = ubuntu \
+    && groupmod --new-name kai ubuntu \
+    && usermod --login kai --home /workspace --shell /bin/bash ubuntu \
+    && usermod --groups kai kai \
+    && test "$(id -u kai):$(id -g kai):$(id -Gn kai)" = "1000:1000:kai" \
     && install -d -o root -g root -m 0755 /run/sshd \
     && install -d -o kai -g kai -m 0700 /home/kai/.ssh /workspace
 

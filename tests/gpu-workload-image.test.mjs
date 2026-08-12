@@ -6,6 +6,10 @@ test("GPU workload uses a pinned CUDA base and the Host Agent runtime contract",
   const dockerfile = readFileSync("workload/Dockerfile", "utf8");
   assert.match(dockerfile, /^FROM nvidia\/cuda:12\.8\.1-runtime-ubuntu24\.04@sha256:[a-f0-9]{64}$/mu);
   assert.match(dockerfile, /USER 1000:1000/u);
+  assert.match(dockerfile, /groupmod --new-name kai ubuntu/u);
+  assert.match(dockerfile, /usermod --groups kai kai/u);
+  assert.match(dockerfile, /1000:1000:kai/u);
+  assert.doesNotMatch(dockerfile, /(?:groupadd|useradd)/u);
   assert.match(dockerfile, /install -d -o root -g root -m 0755 \/run\/sshd/u);
   assert.match(dockerfile, /sshd -t -f \/etc\/ssh\/sshd_config -h \/tmp\/kai-build-host-key/u);
   assert.doesNotMatch(dockerfile, /\|\| true/u);
