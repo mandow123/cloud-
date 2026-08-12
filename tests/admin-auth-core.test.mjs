@@ -104,6 +104,20 @@ test("LOCAL login is limited to same-origin localhost and roles come only from s
   await assert.rejects(createLocalTestAccountSession(new Request("http://evil.test/api/auth/local",{method:"POST",headers:{origin:"http://evil.test","sec-fetch-site":"same-origin"}}),{store,env}),(error)=>error instanceof AccountAuthError&&error.status===403);
 });
 
+test("LOCAL preview can isolate supplier and buyer organizations using server-only config", async () => {
+  const store=await createSqliteAccountAuthStore(":memory:");
+  try {
+    const request=new Request("http://localhost/api/auth/local",{method:"POST",headers:{origin:"http://localhost","sec-fetch-site":"same-origin"}});
+    const base={NODE_ENV:"development",KAI_ADMIN_LOCAL_AUTH:"1",KAI_ADMIN_LOCAL_ROLES:"SUPPORT_READONLY"};
+    const supplier=await createLocalTestAccountSession(request,{store,env:{...base,KAI_ADMIN_LOCAL_SUBJECT:"supplier",KAI_ADMIN_LOCAL_ORGANIZATION_KEY:"LOCAL:SUPPLIER",KAI_ADMIN_LOCAL_ORGANIZATION_NAME:"Local Supplier"}});
+    const buyer=await createLocalTestAccountSession(request,{store,env:{...base,KAI_ADMIN_LOCAL_SUBJECT:"buyer",KAI_ADMIN_LOCAL_ORGANIZATION_KEY:"LOCAL:BUYER",KAI_ADMIN_LOCAL_ORGANIZATION_NAME:"Local Buyer"}});
+    assert.notEqual(supplier.context.account.id,buyer.context.account.id);
+    assert.notEqual(supplier.context.activeOrganization.id,buyer.context.activeOrganization.id);
+    assert.equal(supplier.context.activeOrganization.externalKey,"LOCAL:SUPPLIER");
+    assert.equal(buyer.context.activeOrganization.externalKey,"LOCAL:BUYER");
+  } finally { store.close(); }
+});
+
 test("LOCAL preview can establish exactly one immutable Root account", async () => {
   const store=await createSqliteAccountAuthStore(":memory:");
   const request=new Request("http://localhost/api/auth/local",{method:"POST",headers:{origin:"http://localhost","sec-fetch-site":"same-origin"}});
