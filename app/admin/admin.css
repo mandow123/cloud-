@@ -648,6 +648,83 @@ body:has(.admin-app) #main-content {
   padding: 20px;
 }
 
+.admin-hosting-golden {
+  margin-bottom: 20px;
+}
+
+.admin-hosting-golden-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.admin-hosting-golden-form > .admin-button {
+  grid-column: auto;
+}
+
+.admin-hosting-golden-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 18px;
+  background: var(--admin-line);
+}
+
+.admin-hosting-golden-facts > div {
+  display: grid;
+  gap: 5px;
+  background: var(--info-bg);
+  padding: 13px 14px;
+}
+
+.admin-hosting-golden-facts span,
+.admin-hosting-audit-time {
+  color: var(--muted);
+  font-size: .7rem;
+}
+
+.admin-hosting-golden-facts strong {
+  color: var(--ink);
+  font-size: .82rem;
+}
+
+.admin-hosting-golden-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 1px;
+  background: var(--admin-line);
+}
+
+.admin-hosting-golden-checks article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  min-height: 86px;
+  background: var(--surface);
+  padding: 15px;
+}
+
+.admin-hosting-golden-checks article.fail {
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+}
+
+.admin-hosting-golden-checks strong {
+  color: var(--ink);
+  font-size: .78rem;
+}
+
+.admin-hosting-golden-checks p {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: .7rem;
+  line-height: 1.55;
+}
+
+.admin-hosting-audit-time {
+  margin: 14px 0 0;
+}
+
 .admin-panel-wide-column {
   grid-column: 1 / -1;
 }
@@ -1141,6 +1218,7 @@ body:has(.admin-app) #main-content {
   }
 
   .admin-hosting-summary,
+  .admin-hosting-golden-facts,
   .admin-hosting-form,
   .admin-hosting-grant-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1228,6 +1306,8 @@ body:has(.admin-app) #main-content {
 
   .admin-hosting-grid,
   .admin-hosting-summary,
+  .admin-hosting-golden-facts,
+  .admin-hosting-golden-checks,
   .admin-hosting-form,
   .admin-hosting-grant-form {
     grid-template-columns: 1fr;

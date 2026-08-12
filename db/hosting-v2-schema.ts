@@ -1,4 +1,4 @@
-export const HOSTING_V2_SCHEMA_VERSION = 10;
+export const HOSTING_V2_SCHEMA_VERSION = 11;
 
 export const hostingV2SchemaStatements = [
   `CREATE TABLE IF NOT EXISTS hosting_v2_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`,
@@ -205,6 +205,21 @@ export const hostingV2SchemaStatements = [
     WHEN OLD.status IN ('SUCCEEDED','FAILED')
     BEGIN SELECT RAISE(ABORT, 'hosting terminal command immutable'); END`,
   `CREATE TRIGGER IF NOT EXISTS hosting_v2_command_immutable_delete BEFORE DELETE ON hosting_v2_agent_commands BEGIN SELECT RAISE(ABORT, 'hosting command immutable'); END`,
+  `CREATE TABLE IF NOT EXISTS hosting_v2_agent_transport_attestations (
+    command_id TEXT PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    operation TEXT NOT NULL CHECK (operation = 'COMPLETE_COMMAND'),
+    signed_payload_json TEXT NOT NULL,
+    signature TEXT NOT NULL,
+    signed_payload_digest TEXT NOT NULL,
+    signature_digest TEXT NOT NULL,
+    issued_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    recorded_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS hosting_v2_agent_transport_attestations_device_idx ON hosting_v2_agent_transport_attestations(device_id,recorded_at DESC)`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_agent_transport_attestation_immutable_update BEFORE UPDATE ON hosting_v2_agent_transport_attestations BEGIN SELECT RAISE(ABORT, 'hosting agent transport attestation immutable'); END`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_agent_transport_attestation_immutable_delete BEFORE DELETE ON hosting_v2_agent_transport_attestations BEGIN SELECT RAISE(ABORT, 'hosting agent transport attestation immutable'); END`,
   `CREATE TABLE IF NOT EXISTS hosting_v2_delivery_failures (
     command_id TEXT PRIMARY KEY,
     contract_id TEXT NOT NULL UNIQUE,

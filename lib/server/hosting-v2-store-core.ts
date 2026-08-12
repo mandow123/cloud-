@@ -1,8 +1,8 @@
-import { HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDisputeCase, type HostingFeeSchedule, type HostingOffer, type HostingStopIncident, type HostingSupplierProfile } from "../hosting-v2.ts";
+import { HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, hostingCardHourMicrosForSeconds, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDisputeCase, type HostingFeeSchedule, type HostingGoldenLoopAudit, type HostingOffer, type HostingStopIncident, type HostingSupplierProfile } from "../hosting-v2.ts";
 import { HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
-import { hostingAgentDigest } from "./hosting-agent-crypto.ts";
-import { assertHostingV2ApprovedImage, hostingV2ApprovedImages } from "./hosting-v2-image-policy.ts";
+import { assertHostingAgentWindow, hostingAgentCanonicalJson, hostingAgentDigest, verifyHostingAgentSignature } from "./hosting-agent-crypto.ts";
+import { assertHostingV2ApprovedImage, HOSTING_V2_OCI_IMAGE_PATTERN, hostingV2ApprovedImages } from "./hosting-v2-image-policy.ts";
 import type { HostingMutationContext, HostingV2DatabaseAdapter, HostingV2Sql, HostingV2Store } from "./hosting-v2-store.ts";
 
 type Row = Record<string, unknown>;
@@ -12,7 +12,7 @@ const number = (row: Row, key: string) => Number(row[key]);
 const json = <T>(row: Row, key: string) => JSON.parse(value(row, key)) as T;
 const id = (prefix: string) => `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
 const VERIFY_TEST_NAMES = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "WORKLOAD_IMAGE", "PORT_REACHABILITY"] as const;
-const HOSTING_V2_MIN_AGENT_VERSION = "1.9.4";
+const HOSTING_V2_MIN_AGENT_VERSION = "1.9.5";
 const HOSTING_V2_AUTOMATED_STOP_ATTEMPTS = 4;
 
 function agentVersionAtLeast(valueToCheck: string, minimum: string) {
@@ -316,6 +316,31 @@ function stopIncident(row: Row): HostingStopIncident {
   };
 }
 
+function goldenCheck(key: string, label: string, passed: boolean, detail: string) {
+  return { key, label, status: passed ? "PASS" as const : "FAIL" as const, detail };
+}
+
+function rowNumberEquals(row: Row | null | undefined, key: string, expected: number | null) {
+  return Boolean(row) && expected != null && number(row!, key) === expected;
+}
+
+function rowValueEquals(row: Row | null | undefined, key: string, expected: unknown) {
+  return Boolean(row) && row![key] === expected;
+}
+
+async function hasValidAgentTransport(row: Row | undefined, devicePublicKey: string) {
+  if (!row || value(row, "status") !== "SUCCEEDED" || !nullable(row, "signed_payload_json") || !nullable(row, "signature")) return false;
+  try {
+    const signedPayload = json<Record<string, unknown>>(row, "signed_payload_json");
+    if (signedPayload.operation !== "COMPLETE_COMMAND" || signedPayload.deviceId !== row.device_id || signedPayload.commandId !== row.id
+      || signedPayload.outcome !== "SUCCEEDED" || signedPayload.evidenceDigest !== row.evidence_digest
+      || await hostingAgentDigest(signedPayload.details ?? {}) !== row.evidence_digest
+      || await hostingAgentDigest(signedPayload) !== row.signed_payload_digest || await hostingAgentDigest(row.signature) !== row.signature_digest) return false;
+    await verifyHostingAgentSignature(devicePublicKey, signedPayload, value(row, "signature"));
+    return true;
+  } catch { return false; }
+}
+
 function event(context: HostingMutationContext, organizationId: string | null, entityType: string, entityId: string, eventType: string, metadata: Record<string, unknown> = {}): HostingV2Sql {
   return { sql: "INSERT INTO hosting_v2_events(id,organization_id,entity_type,entity_id,event_type,actor_id,payload_digest,metadata_json,occurred_at) VALUES(?,?,?,?,?,?,?,?,?)", values: [id("hve"), organizationId, entityType, entityId, eventType, context.actorId, context.payloadHash, JSON.stringify(metadata), context.now] };
 }
@@ -414,6 +439,102 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
         WHERE c.status IN ('DISPUTED','SETTLED','CLEANING','REFUNDED','CLEANED')
         ORDER BY CASE WHEN p.status='REQUESTED' THEN 0 WHEN c.status='DISPUTED' THEN 1 ELSE 2 END,x.opened_at DESC LIMIT 200`);
       return rows.map(disputeCase);
+    },
+    async auditGoldenLoop(contractId, now) {
+      const main = await db.first<Row>(`SELECT c.*,
+          d.status device_status,d.verification_status,d.verification_evidence_digest,d.verified_until,d.last_seen_at,d.agent_version,d.device_public_key,d.inventory_json,
+          o.status offer_status,o.approved_image offer_approved_image,o.gpu_model offer_gpu_model,o.card_hour_micros_per_gpu_hour offer_rate,o.terms_version offer_terms_version,
+          p.status supplier_status,p.agreement_version supplier_agreement_version,p.evidence_digest supplier_evidence_digest,
+          f.platform_fee_bps fee_platform_bps,f.referral_reward_bps fee_referral_bps
+        FROM hosting_v2_contracts c
+        JOIN hosting_v2_devices d ON d.id=c.device_id
+        JOIN hosting_v2_offers o ON o.id=c.offer_id
+        LEFT JOIN hosting_v2_supplier_profiles p ON p.organization_id=c.supplier_organization_id
+        LEFT JOIN hosting_v2_fee_schedules f ON f.id=c.fee_schedule_id
+        WHERE c.id=?`, [contractId]);
+      if (!main) return null;
+      const [instance, metering, cleanup, acceptance, verification, commandRows, hold, holdEvents, ledgerBatches, incomeRows, attribution, dispute] = await Promise.all([
+        db.first<Row>("SELECT * FROM hosting_v2_instances WHERE contract_id=?", [contractId]),
+        db.first<Row>("SELECT * FROM hosting_v2_metering_proofs WHERE contract_id=?", [contractId]),
+        db.first<Row>("SELECT * FROM hosting_v2_cleanup_proofs WHERE contract_id=?", [contractId]),
+        db.first<Row>("SELECT * FROM hosting_v2_acceptance_proofs WHERE contract_id=?", [contractId]),
+        db.first<Row>(`SELECT cmd.*,proof.agent_evidence_digest,proof.control_plane_reachability_digest,proof.public_host,proof.public_port,
+            att.signed_payload_json,att.signature,att.signed_payload_digest,att.signature_digest
+          FROM hosting_v2_verification_proofs proof JOIN hosting_v2_agent_commands cmd ON cmd.id=proof.command_id
+          LEFT JOIN hosting_v2_agent_transport_attestations att ON att.command_id=cmd.id
+          WHERE proof.device_id=? AND proof.agent_evidence_digest=? ORDER BY proof.recorded_at DESC LIMIT 1`, [value(main, "device_id"), nullable(main, "verification_evidence_digest")]),
+        db.all<Row>(`SELECT cmd.*,att.signed_payload_json,att.signature,att.signed_payload_digest,att.signature_digest
+          FROM hosting_v2_agent_commands cmd LEFT JOIN hosting_v2_agent_transport_attestations att ON att.command_id=cmd.id
+          WHERE cmd.contract_id=? AND cmd.command_type IN ('PROVISION','START','STOP','CLEANUP') ORDER BY cmd.created_at`, [contractId]),
+        db.first<Row>("SELECT * FROM card_hour_order_holds WHERE source_system='HOSTING_V2' AND order_id=?", [contractId]).catch(() => null),
+        db.all<Row>(`SELECT e.* FROM card_hour_hold_events e JOIN card_hour_order_holds h ON h.id=e.hold_id
+          WHERE h.source_system='HOSTING_V2' AND h.order_id=? ORDER BY e.occurred_at`, [contractId]).catch(() => []),
+        db.all<Row>("SELECT * FROM card_hour_ledger_batches WHERE business_key IN (?,?,?)", [`order:HOSTING_V2:${contractId}`, `rental:HOSTING_V2:${contractId}`, `commission:HOSTING_V2:${contractId}`]).catch(() => []),
+        db.all<Row>("SELECT * FROM card_hour_income_accruals WHERE source_system='HOSTING_V2' AND source_id=?", [contractId]).catch(() => []),
+        db.first<Row>("SELECT referrer_organization_id FROM card_hour_referral_attributions WHERE invitee_organization_id=?", [value(main, "buyer_organization_id")]).catch(() => null),
+        db.first<Row>("SELECT contract_id FROM hosting_v2_disputes WHERE contract_id=?", [contractId]),
+      ]);
+      const snapshot = json<HostingContract["snapshot"]>(main, "snapshot_json");
+      const inventory = json<HostingDeviceInventory>(main, "inventory_json");
+      const measuredSeconds = main.measured_seconds == null ? null : number(main, "measured_seconds");
+      const settledMicros = main.settled_micros == null ? null : number(main, "settled_micros");
+      const supplierIncomeMicros = main.supplier_income_micros == null ? null : number(main, "supplier_income_micros");
+      const commissionMicros = main.commission_micros == null ? null : number(main, "commission_micros");
+      const expectedSettled = measuredSeconds == null ? null : hostingCardHourMicrosForSeconds(snapshot.cardHourMicrosPerGpuHour, measuredSeconds);
+      const expectedPlatformFee = expectedSettled == null ? null : Math.floor(expectedSettled * snapshot.platformFeeBps / 10_000);
+      const expectedSupplierIncome = expectedSettled == null || expectedPlatformFee == null ? null : expectedSettled - expectedPlatformFee;
+      const expectedCommission = expectedSettled == null || !attribution ? 0 : Math.floor(expectedSettled * snapshot.referralRewardBps / 10_000);
+      const commandsByType = new Map<string, Row>();
+      for (const row of commandRows) if (value(row, "status") === "SUCCEEDED") commandsByType.set(value(row, "command_type"), row);
+      const commandTransport = new Map<string, boolean>();
+      for (const [type, row] of commandsByType) commandTransport.set(type, await hasValidAgentTransport(row, value(main, "device_public_key")));
+      const verificationTransport = await hasValidAgentTransport(verification ?? undefined, value(main, "device_public_key"));
+      const holdEvent = (type: string) => holdEvents.find((row) => value(row, "event_type") === type);
+      const batch = (key: string) => ledgerBatches.find((row) => value(row, "business_key") === key);
+      const income = (type: string) => incomeRows.find((row) => value(row, "income_type") === type && value(row, "status") === "VESTED");
+      const agentFresh = Boolean(main.last_seen_at && Date.parse(value(main, "last_seen_at")) >= Date.parse(now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000);
+      const verificationFresh = Boolean(main.verified_until && Date.parse(value(main, "verified_until")) > Date.parse(now));
+      const commandsAuthentic = ["PROVISION", "START", "STOP", "CLEANUP"].every((type) => commandTransport.get(type) === true);
+      const pricingFrozen = snapshot.platformFeeBps === number(main, "fee_platform_bps") && snapshot.referralRewardBps === number(main, "fee_referral_bps")
+        && snapshot.cardHourMicrosPerGpuHour === number(main, "offer_rate") && snapshot.approvedImage === value(main, "offer_approved_image")
+        && snapshot.termsVersion === value(main, "offer_terms_version") && snapshot.gpuModel === value(main, "offer_gpu_model");
+      const checks = [
+        goldenCheck("supplier", "供应主体已签约并审核", value(main, "supplier_status") === "APPROVED" && Boolean(nullable(main, "supplier_agreement_version")) && Boolean(nullable(main, "supplier_evidence_digest")), `状态 ${nullable(main, "supplier_status") ?? "缺失"}`),
+        goldenCheck("gpu", "单张首期 GPU 规格真实登记", ["RTX_4090", "H100_80GB"].includes(inventory.gpuModel) && inventory.gpuModel === snapshot.gpuModel && Boolean(inventory.gpuUuidDigest), `${inventory.gpuModel} · ${inventory.gpuMemoryMiB} MiB`),
+        goldenCheck("verification", "验真与控制面回连有签名证明", value(main, "verification_status") === "PASSED" && Boolean(verification) && verificationTransport && verification?.public_host === inventory.publicHost && number(verification!, "public_port") === inventory.sshPortStart, verificationTransport ? "设备签名、验真摘要与公网回连一致" : "缺少由设备签名接口写入的验真证明"),
+        goldenCheck("agent", "Host Agent 版本与心跳有效", agentVersionAtLeast(value(main, "agent_version"), HOSTING_V2_MIN_AGENT_VERSION) && agentFresh && verificationFresh, `${value(main, "agent_version")} · 最后心跳 ${nullable(main, "last_seen_at") ?? "缺失"}`),
+        goldenCheck("pricing", "成交快照冻结费率、镜像与条款", pricingFrozen && HOSTING_V2_OCI_IMAGE_PATTERN.test(snapshot.approvedImage), pricingFrozen ? snapshot.approvedImage : "挂牌或费率已与合同快照不一致"),
+        goldenCheck("delivery", "开通、启动、停机、清理均由真实 Agent 签名", commandsAuthentic, commandsAuthentic ? "4 类任务传输签名全部有效" : "存在缺失签名或直接写入的任务结果"),
+        goldenCheck("instance", "实例身份与交付证据闭合", Boolean(instance) && value(instance!, "status") === "CLEANED" && value(instance!, "approved_image") === snapshot.approvedImage && rowValueEquals(instance, "provision_command_id", commandsByType.get("PROVISION")?.id) && rowValueEquals(instance, "start_evidence_digest", commandsByType.get("START")?.evidence_digest) && rowValueEquals(instance, "stop_evidence_digest", commandsByType.get("STOP")?.evidence_digest), instance ? `${value(instance, "container_digest")} · CLEANED` : "实例证明缺失"),
+        goldenCheck("metering", "服务端与 Agent 计量一致且不少于三分钟", Boolean(metering) && Boolean(instance) && measuredSeconds != null && measuredSeconds >= 180 && measuredSeconds <= number(main, "reserved_seconds") && rowNumberEquals(metering, "server_measured_seconds", measuredSeconds) && rowValueEquals(metering, "command_id", commandsByType.get("STOP")?.id) && rowValueEquals(metering, "container_digest", instance?.container_digest), metering ? `${number(metering, "server_measured_seconds")} 秒` : "计量证明缺失"),
+        goldenCheck("acceptance", "买家或超时验收证明已固化", Boolean(acceptance) && ["BUYER", "TIMEOUT"].includes(value(acceptance!, "decision_mode")), acceptance ? `${value(acceptance, "decision_mode")} · ${value(acceptance, "decided_at")}` : "验收证明缺失"),
+        goldenCheck("settlement", "卡时锁定、实际扣减与释放一致", Boolean(hold) && value(hold!, "status") === "SETTLED" && rowNumberEquals(hold, "amount_micros", number(main, "held_micros")) && rowNumberEquals(hold, "settled_micros", settledMicros) && rowNumberEquals(holdEvent("HELD"), "amount_micros", number(main, "held_micros")) && rowNumberEquals(holdEvent("SETTLED"), "amount_micros", settledMicros) && settledMicros === expectedSettled && rowNumberEquals(batch(`order:HOSTING_V2:${contractId}`), "amount_micros", settledMicros), `锁定 ${number(main, "held_micros")} · 结算 ${settledMicros ?? "缺失"} 微卡时`),
+        goldenCheck("earnings", "租金、佣金与版本化费率一致", supplierIncomeMicros === expectedSupplierIncome && commissionMicros === expectedCommission && rowNumberEquals(income("RENTAL"), "amount_micros", supplierIncomeMicros) && rowNumberEquals(batch(`rental:HOSTING_V2:${contractId}`), "amount_micros", supplierIncomeMicros) && (expectedCommission === 0 ? !income("COMMISSION") && !batch(`commission:HOSTING_V2:${contractId}`) : rowNumberEquals(income("COMMISSION"), "amount_micros", expectedCommission) && rowNumberEquals(batch(`commission:HOSTING_V2:${contractId}`), "amount_micros", expectedCommission)), `租金 ${supplierIncomeMicros ?? "缺失"} · 佣金 ${commissionMicros ?? "缺失"} 微卡时`),
+        goldenCheck("cleanup", "容器、密钥和工作区清理证明完整", Boolean(cleanup) && Boolean(instance) && rowValueEquals(cleanup, "command_id", commandsByType.get("CLEANUP")?.id) && rowNumberEquals(cleanup, "container_removed", 1) && rowNumberEquals(cleanup, "authorized_key_removed", 1) && rowNumberEquals(cleanup, "workspace_removed", 1) && rowValueEquals(cleanup, "container_digest", instance?.container_digest), cleanup ? value(cleanup, "cleanup_digest") : "清理证明缺失"),
+        goldenCheck("relist", "合同完成且设备自动恢复可售", value(main, "status") === "CLEANED" && value(main, "device_status") === "VERIFIED" && value(main, "offer_status") === "PUBLISHED" && !dispute, `${value(main, "status")} · 设备 ${value(main, "device_status")} · 挂牌 ${value(main, "offer_status")}`),
+      ];
+      const passedChecks = checks.filter((check) => check.status === "PASS").length;
+      return {
+        contractId,
+        verdict: passedChecks === checks.length ? "PASS" : "FAIL",
+        checkedAt: now,
+        passedChecks,
+        totalChecks: checks.length,
+        facts: {
+          gpuModel: snapshot.gpuModel,
+          deviceId: value(main, "device_id"),
+          deviceStatus: value(main, "device_status") as HostingGoldenLoopAudit["facts"]["deviceStatus"],
+          offerStatus: value(main, "offer_status") as HostingGoldenLoopAudit["facts"]["offerStatus"],
+          agentVersion: value(main, "agent_version"),
+          measuredSeconds,
+          heldMicros: number(main, "held_micros"),
+          settledMicros,
+          supplierIncomeMicros,
+          commissionMicros,
+          approvedImage: snapshot.approvedImage,
+        },
+        checks,
+      } satisfies HostingGoldenLoopAudit;
     },
   };
 }
@@ -1048,6 +1169,32 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       if (!success && (!input.errorCode || !/^[A-Z0-9_:-]{3,80}$/u.test(input.errorCode))) throw new ExchangeInputError("失败任务必须包含有效诊断码。", "errorCode");
       const commandPayload = json<Record<string, unknown>>(commandRow, "payload_json");
       const deviceInventory = json<HostingDeviceInventory>(deviceRow, "inventory_json");
+      let transportAttestation: HostingV2Sql | null = null;
+      if (input.transportAttestation) {
+        if (await hostingAgentDigest(input.details ?? {}) !== input.evidenceDigest) throw new ExchangeInputError("Agent 结果摘要与证据内容不一致。", "evidenceDigest");
+        const signedPayload = input.transportAttestation.signedPayload;
+        const issuedAt = typeof signedPayload.issuedAt === "string" ? signedPayload.issuedAt : "";
+        const expiresAt = typeof signedPayload.expiresAt === "string" ? signedPayload.expiresAt : "";
+        const expectedSignedPayload = {
+          operation: "COMPLETE_COMMAND",
+          deviceId,
+          commandId,
+          outcome: input.outcome,
+          evidenceDigest: input.evidenceDigest,
+          errorCode: input.errorCode ?? null,
+          details: input.details ?? {},
+          issuedAt,
+          expiresAt,
+        };
+        if (hostingAgentCanonicalJson(signedPayload) !== hostingAgentCanonicalJson(expectedSignedPayload)) throw new ExchangeInputError("Agent 传输证明与任务结果不一致。", "transportAttestation");
+        assertHostingAgentWindow(issuedAt, expiresAt, new Date(context.now));
+        await verifyHostingAgentSignature(value(deviceRow, "device_public_key"), signedPayload, input.transportAttestation.signature);
+        transportAttestation = {
+          sql: `INSERT INTO hosting_v2_agent_transport_attestations(command_id,device_id,operation,signed_payload_json,signature,signed_payload_digest,signature_digest,issued_at,expires_at,recorded_at)
+            VALUES(?,?,'COMPLETE_COMMAND',?,?,?,?,?,?,?)`,
+          values: [commandId, deviceId, hostingAgentCanonicalJson(signedPayload), input.transportAttestation.signature, await hostingAgentDigest(signedPayload), await hostingAgentDigest(input.transportAttestation.signature), issuedAt, expiresAt, context.now],
+        };
+      }
       const recoveredStopFailureRow = type === "STOP" ? await db.first<Row>("SELECT * FROM hosting_v2_stop_failures WHERE contract_id=? AND recovery_command_id=? AND status='RETRYING'", [nullable(commandRow, "contract_id"), commandId]) : null;
       if (type === "VERIFY" && success) assertSuccessfulVerificationDetails(input.details, commandPayload, value(deviceRow, "inventory_digest"), input.controlPlaneReachabilityDigest, context.now);
       const provisionEndpoint = type === "PROVISION" && success ? assertSuccessfulProvisionDetails(input.details, commandPayload, deviceInventory, context.now) : null;
@@ -1056,6 +1203,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       if (type === "CLEANUP" && success) assertSuccessfulCleanupDetails(input.details, commandPayload, context.now);
       const statements: HostingV2Sql[] = [
         { sql: "UPDATE hosting_v2_agent_commands SET status=?,evidence_digest=?,error_code=?,completed_at=? WHERE id=? AND status IN ('PENDING','DELIVERED')", values: [input.outcome, input.evidenceDigest, input.errorCode ?? null, context.now, commandId] },
+        ...(transportAttestation ? [transportAttestation] : []),
       ];
       const contractId = nullable(commandRow, "contract_id");
       let organizationId = value(deviceRow, "organization_id");

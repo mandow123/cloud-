@@ -9,7 +9,8 @@ import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.
 import { getCardHourStore } from "../lib/server/card-hour-store.ts";
 import { getHostingV2Store } from "../lib/server/hosting-v2-store.ts";
 import { hostingAgentDigest } from "../lib/server/hosting-agent-crypto.ts";
-import { checkConnection, heartbeat, pairDevice } from "../host-agent/src/client.mjs";
+import { checkConnection, completeCommand as completeHostAgentCommand, heartbeat, pairDevice } from "../host-agent/src/client.mjs";
+import { digestJson, signedProof } from "../host-agent/src/protocol.mjs";
 import { AgentError } from "../host-agent/src/protocol.mjs";
 
 import { GET as openMarketplaceSession } from "../app/api/session/route.ts";
@@ -19,6 +20,7 @@ import { POST as issueAgentChallenge } from "../app/api/v2/supply/agent-challeng
 import { GET as getAgentChallengeStatus } from "../app/api/v2/supply/agent-challenges/[challengeId]/route.ts";
 import { POST as registerHostAgent } from "../app/api/v2/agent/register/route.ts";
 import { POST as acceptHostAgentHeartbeat } from "../app/api/v2/agent/devices/[deviceId]/heartbeat/route.ts";
+import { POST as completeHostAgentCommandRoute } from "../app/api/v2/agent/devices/[deviceId]/commands/[commandId]/complete/route.ts";
 import { POST as queueDeviceVerification } from "../app/api/v2/supply/devices/[deviceId]/verify/route.ts";
 import { GET as getSupplyPolicy } from "../app/api/v2/supply/policy/route.ts";
 import { POST as createSupplyOffer } from "../app/api/v2/supply/offers/route.ts";
@@ -33,6 +35,7 @@ import { POST as acceptBuyerContract } from "../app/api/v2/contracts/[contractId
 import { GET as listSupplierContracts } from "../app/api/v2/supply/contracts/route.ts";
 import { GET as getSupplierContract } from "../app/api/v2/supply/contracts/[contractId]/route.ts";
 import { GET as getSupplierEarnings } from "../app/api/v2/supply/earnings/route.ts";
+import { GET as auditGoldenLoop } from "../app/api/v2/admin/hosting/golden-loop/[contractId]/route.ts";
 
 const ORIGIN = "http://localhost:3014";
 
@@ -187,7 +190,7 @@ async function hostAgentPost(url, body, options = {}) {
     headers: {
       accept: "application/json",
       "content-type": "application/json",
-      "user-agent": "KAI-Host-Agent/1.9.4",
+      "user-agent": "KAI-Host-Agent/1.9.5",
       ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
     },
     body: JSON.stringify(body),
@@ -196,9 +199,11 @@ async function hostAgentPost(url, body, options = {}) {
   if (endpoint.pathname === "/api/v2/agent/register") {
     response = await registerHostAgent(request);
   } else {
-    const match = /^\/api\/v2\/agent\/devices\/(had_[a-z0-9]+)\/heartbeat$/u.exec(endpoint.pathname);
-    if (!match) throw new Error(`Unexpected Host Agent endpoint: ${endpoint.pathname}`);
-    response = await acceptHostAgentHeartbeat(request, { params: Promise.resolve({ deviceId: match[1] }) });
+    const heartbeatMatch = /^\/api\/v2\/agent\/devices\/(had_[a-z0-9]+)\/heartbeat$/u.exec(endpoint.pathname);
+    const completionMatch = /^\/api\/v2\/agent\/devices\/(had_[a-z0-9]+)\/commands\/(hcmd_[a-z0-9]+)\/complete$/u.exec(endpoint.pathname);
+    if (heartbeatMatch) response = await acceptHostAgentHeartbeat(request, { params: Promise.resolve({ deviceId: heartbeatMatch[1] }) });
+    else if (completionMatch) response = await completeHostAgentCommandRoute(request, { params: Promise.resolve({ deviceId: completionMatch[1], commandId: completionMatch[2] }) });
+    else throw new Error(`Unexpected Host Agent endpoint: ${endpoint.pathname}`);
   }
   const payload = await response.json();
   if (!response.ok) throw new AgentError(payload?.error?.code ?? `HTTP_${response.status}`, payload?.error?.message ?? "Host Agent request failed.");
@@ -258,7 +263,7 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     assert.equal(saved.record.status, "DRAFT");
     const submitted = await json(await submitSupplierProfile(browserRequest(supplier, "/api/v2/supply/profile/submit", "POST", { expectedVersion: 1, agreementAccepted: true }, "golden-profile-submit")), 200);
     assert.equal(submitted.record.status, "SUBMITTED");
-    await hosting.reviewProfile(supplier.context.activeOrganization.id, { decision: "APPROVE", expectedVersion: 2, reviewNote: "内部真实 GPU 黄金闭环验收" }, mutation("golden-admin-reviewer", "golden-profile-approve", now));
+    await hosting.reviewProfile(supplier.context.activeOrganization.id, { decision: "APPROVE", expectedVersion: 2, reviewNote: "内部真实 GPU 黄金闭环验收", evidenceDigest: `sha256:${"c".repeat(64)}` }, mutation("golden-admin-reviewer", "golden-profile-approve", now));
 
     const challenge = await json(await issueAgentChallenge(browserRequest(supplier, "/api/v2/supply/agent-challenges", "POST", {}, "golden-agent-challenge")), 201);
     const agentStateFile = join(directory, "golden-host-agent", "identity.json");
@@ -307,7 +312,11 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     const verificationCommand = await hosting.pollCommand(device.id, now);
     assert.equal(verificationCommand.id, queuedVerification.record.id);
     const challengeDigest = await hostingAgentDigest({ protocolVersion: 1, deviceId: device.id, commandId: verificationCommand.id, publicHost: device.inventory.publicHost, publicPort: device.inventory.sshPortStart, challenge: verificationCommand.payload.reachabilityChallenge });
-    await hosting.completeCommand(device.id, verificationCommand.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"5".repeat(64)}`, controlPlaneReachabilityDigest: challengeDigest, details: verificationDetails(inventoryDigest, now, challengeDigest) }, mutation(`agent:${device.id}`, "golden-verify-result", now));
+    const verificationEvidence = verificationDetails(inventoryDigest, now, challengeDigest);
+    const verificationInput = { outcome: "SUCCEEDED", evidenceDigest: digestJson(verificationEvidence), errorCode: null, details: verificationEvidence };
+    const verificationProof = await signedProof(paired.state.privateKeyPkcs8, "COMPLETE_COMMAND", device.id, { commandId: verificationCommand.id, ...verificationInput }, new Date(now));
+    const verificationSignedPayload = { operation: "COMPLETE_COMMAND", deviceId: device.id, commandId: verificationCommand.id, ...verificationInput, issuedAt: verificationProof.issuedAt, expiresAt: verificationProof.expiresAt };
+    await hosting.completeCommand(device.id, verificationCommand.id, { ...verificationInput, controlPlaneReachabilityDigest: challengeDigest, transportAttestation: { signedPayload: verificationSignedPayload, signature: verificationProof.signature } }, mutation(`agent:${device.id}`, "golden-verify-result", now));
     await hosting.createFeeSchedule({ platformFeeBps: 1_000, referralRewardBps: 300, activate: true, effectiveFrom: now }, mutation("golden-admin-market", "golden-fee-schedule", now));
 
     const policy = await json(await getSupplyPolicy(browserRead(supplier, "/api/v2/supply/policy")), 200);
@@ -346,26 +355,33 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     assert.equal("deviceId" in buyerContracts.records[0], false);
 
     const contractId = reservation.record.id;
+    const incompleteAudit = await hosting.auditGoldenLoop(contractId, now);
+    assert.equal(incompleteAudit.verdict, "FAIL");
+    assert.equal(incompleteAudit.checks.find((check) => check.key === "delivery")?.status, "FAIL");
     const ssh = await json(await attachBuyerSshKey(browserRequest(buyer, `/api/v2/contracts/${contractId}/ssh-key`, "POST", { publicKey: publicKey() }, "golden-contract-ssh"), { params: Promise.resolve({ contractId }) }), 202);
     assert.equal(ssh.record.status, "PROVISIONING");
     const provisionCommand = await hosting.pollCommand(device.id, new Date().toISOString());
     assert.equal(provisionCommand.type, "PROVISION");
     const provisionedAt = new Date().toISOString();
-    await hosting.completeCommand(device.id, provisionCommand.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"6".repeat(64)}`, details: provisionDetails(contractId, process.env.KAI_HOSTING_APPROVED_IMAGES, provisionedAt) }, mutation(`agent:${device.id}`, "golden-provision-result", provisionedAt));
+    const provisionEvidence = provisionDetails(contractId, process.env.KAI_HOSTING_APPROVED_IMAGES, provisionedAt);
+    await completeHostAgentCommand(provisionCommand, { outcome: "SUCCEEDED", evidenceDigest: digestJson(provisionEvidence), details: provisionEvidence }, { stateFile: agentStateFile, allowInsecureLocal: true, post: hostAgentPost });
 
     const start = await json(await startBuyerContract(browserRequest(buyer, `/api/v2/contracts/${contractId}/start`, "POST", {}, "golden-contract-start"), { params: Promise.resolve({ contractId }) }), 202);
     const startCommand = await hosting.pollCommand(device.id, new Date().toISOString());
     assert.equal(startCommand.id, start.operation.commandId);
     const startedAt = new Date().toISOString();
-    await hosting.completeCommand(device.id, startCommand.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"7".repeat(64)}`, details: startDetails(contractId, startedAt) }, mutation(`agent:${device.id}`, "golden-start-result", startedAt));
+    const startEvidence = startDetails(contractId, startedAt);
+    await completeHostAgentCommand(startCommand, { outcome: "SUCCEEDED", evidenceDigest: digestJson(startEvidence), details: startEvidence }, { stateFile: agentStateFile, allowInsecureLocal: true, post: hostAgentPost });
 
     const stop = await json(await stopBuyerContract(browserRequest(buyer, `/api/v2/contracts/${contractId}/stop`, "POST", {}, "golden-contract-stop"), { params: Promise.resolve({ contractId }) }), 202);
     const stopCommand = await hosting.pollCommand(device.id, new Date().toISOString());
     assert.equal(stopCommand.id, stop.operation.commandId);
     const stoppedAt = new Date().toISOString();
-    const stopped = await hosting.completeCommand(device.id, stopCommand.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"8".repeat(64)}`, details: stopDetails(contractId, startedAt, stoppedAt) }, mutation(`agent:${device.id}`, "golden-stop-result", stoppedAt));
-    assert.equal(stopped.contract.status, "AWAITING_ACCEPTANCE");
-    assert.equal(stopped.contract.measuredSeconds, 180, "the platform enforces the published three-minute minimum");
+    const stopEvidence = stopDetails(contractId, startedAt, stoppedAt);
+    await completeHostAgentCommand(stopCommand, { outcome: "SUCCEEDED", evidenceDigest: digestJson(stopEvidence), details: stopEvidence }, { stateFile: agentStateFile, allowInsecureLocal: true, post: hostAgentPost });
+    const stopped = await hosting.contractForViewer(buyer.context.activeOrganization.id, contractId);
+    assert.equal(stopped.status, "AWAITING_ACCEPTANCE");
+    assert.equal(stopped.measuredSeconds, 180, "the platform enforces the published three-minute minimum");
 
     const accepted = await json(await acceptBuyerContract(browserRequest(buyer, `/api/v2/contracts/${contractId}/accept`, "POST", {}, "golden-contract-accept"), { params: Promise.resolve({ contractId }) }), 202);
     assert.equal(accepted.record.status, "CLEANING");
@@ -375,9 +391,12 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     const cleanupCommand = await hosting.pollCommand(device.id, heartbeatAt);
     assert.equal(cleanupCommand.type, "CLEANUP");
     const cleanedAt = new Date().toISOString();
-    const cleaned = await hosting.completeCommand(device.id, cleanupCommand.id, { outcome: "SUCCEEDED", evidenceDigest: `sha256:${"9".repeat(64)}`, details: cleanupDetails(contractId, cleanedAt) }, mutation(`agent:${device.id}`, "golden-cleanup-result", cleanedAt));
-    assert.equal(cleaned.contract.status, "CLEANED");
-    assert.equal(cleaned.device.status, "VERIFIED");
+    const cleanupEvidence = cleanupDetails(contractId, cleanedAt);
+    const cleanupEvidenceDigest = digestJson(cleanupEvidence);
+    await completeHostAgentCommand(cleanupCommand, { outcome: "SUCCEEDED", evidenceDigest: cleanupEvidenceDigest, details: cleanupEvidence }, { stateFile: agentStateFile, allowInsecureLocal: true, post: hostAgentPost });
+    const cleaned = await hosting.contractForViewer(supplier.context.activeOrganization.id, contractId);
+    assert.equal(cleaned.status, "CLEANED");
+    assert.equal((await hosting.getDevice(device.id)).status, "VERIFIED");
 
     const buyerDetail = await json(await getBuyerContract(browserRead(buyer, `/api/v2/contracts/${contractId}`), { params: Promise.resolve({ contractId }) }), 200);
     assert.equal(buyerDetail.record.evidence.instance.status, "CLEANED");
@@ -386,7 +405,7 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     assert.equal("supplierOrganizationId" in buyerDetail.record, false);
 
     const supplierDetail = await json(await getSupplierContract(browserRead(supplier, `/api/v2/supply/contracts/${contractId}`), { params: Promise.resolve({ contractId }) }), 200);
-    assert.equal(supplierDetail.record.evidence.cleanup.evidenceDigest, `sha256:${"9".repeat(64)}`);
+    assert.equal(supplierDetail.record.evidence.cleanup.evidenceDigest, cleanupEvidenceDigest);
     assert.equal("buyerOrganizationId" in supplierDetail.record, false);
     assert.equal("buyerAccountId" in supplierDetail.record, false);
 
@@ -404,7 +423,7 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     const publicAfter = await json(await listPublicOffers(new Request(`${ORIGIN}/api/v2/offers`)), 200);
     assert.equal(publicAfter.records.length, 1, "cleaned and freshly verified inventory must become sellable again");
     const operations = await hosting.readiness(cleanedAt);
-    assert.equal(operations.schemaVersion, 10);
+    assert.equal(operations.schemaVersion, 11);
     assert.match(operations.activeFeeScheduleId, /^hfee_/u);
     assert.deepEqual({
       approvedSupplierCount: operations.approvedSupplierCount,
@@ -413,6 +432,18 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
       failedCleanupCount: operations.failedCleanupCount,
       cleaningContractCount: operations.cleaningContractCount,
     }, { approvedSupplierCount: 1, activeAgentCount: 1, drainingDeviceCount: 0, failedCleanupCount: 0, cleaningContractCount: 0 });
+    const audit = await hosting.auditGoldenLoop(contractId, cleanedAt);
+    assert.equal(audit.verdict, "PASS", JSON.stringify(audit.checks.filter((check) => check.status === "FAIL")));
+    assert.equal(audit.passedChecks, audit.totalChecks);
+    assert.equal(audit.totalChecks, 13);
+
+    const rootSeed = await auth.resolveOrCreatePasswordAdministrator({ username: "golden-root", displayName: "黄金订单验收管理员", createdAt: cleanedAt });
+    await auth.activateMembership(rootSeed.membership.id, ["ROOT"], cleanedAt);
+    const root = await auth.resolveOrCreatePasswordAdministrator({ username: "golden-root", displayName: "黄金订单验收管理员", createdAt: cleanedAt });
+    const rootSession = await createAccountSession(new Request(`${ORIGIN}/api/auth/admin/password`), root, "ADMIN_PASSWORD", { store: auth, now: new Date(cleanedAt) });
+    const auditResponse = await json(await auditGoldenLoop(new Request(`${ORIGIN}/api/v2/admin/hosting/golden-loop/${contractId}`, { headers: { cookie: rootSession.cookie.split(";", 1)[0] } }), { params: Promise.resolve({ contractId }) }), 200);
+    assert.equal(auditResponse.record.verdict, "PASS");
+    assert.equal(auditResponse.record.checks.length, 13);
   } finally {
     globalThis.__kaiAccountAuthStorePromise = previousAccount;
     globalThis.__kaiCardHourStorePromise = previousCardHours;
@@ -456,4 +487,9 @@ test("buyer and supplier interfaces expose every API used by the golden loop", (
     "/api/v2/supply/earnings",
   ]) assert.ok(sources.includes(endpoint), `${endpoint} is not reachable from the interface`);
   assert.doesNotMatch(sources, /\/api\/v1\/lab\/gpu-loop|GpuMarketplaceLab|LOCAL_TEST/u);
+
+  const admin = readFileSync("components/admin-hosting-operations.tsx", "utf8");
+  assert.match(admin, /\/api\/v2\/admin\/hosting\/golden-loop\//u);
+  assert.match(admin, /真实 GPU 黄金订单验收/u);
+  assert.match(admin, /goldenAudit\.checks\.map/u);
 });

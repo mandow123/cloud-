@@ -21,6 +21,16 @@ type FeeSchedule = Readonly<{
   effectiveFrom: string;
 }>;
 
+type GoldenLoopAudit = Readonly<{
+  contractId: string;
+  verdict: "PASS" | "FAIL";
+  checkedAt: string;
+  passedChecks: number;
+  totalChecks: number;
+  facts: Readonly<Record<string, unknown>>;
+  checks: readonly Readonly<{ key: string; label: string; status: "PASS" | "FAIL"; detail: string }>[];
+}>;
+
 function object(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
@@ -118,6 +128,9 @@ export function AdminHostingOperations() {
   const [disputeRequestReason, setDisputeRequestReason] = useState("");
   const [disputeEvidenceDigest, setDisputeEvidenceDigest] = useState("");
   const [disputeDecisionReason, setDisputeDecisionReason] = useState("");
+  const [goldenContractId, setGoldenContractId] = useState("");
+  const [goldenAudit, setGoldenAudit] = useState<GoldenLoopAudit | null>(null);
+  const [goldenError, setGoldenError] = useState<unknown>(null);
 
   const roles = useMemo(() => rolesFromSession(session), [session]);
   const isRoot = roles.includes("ROOT");
@@ -265,6 +278,24 @@ export function AdminHostingOperations() {
     }), decision === "APPROVE" ? "裁决已执行：卡时账本已更新，受限清理任务已排队。" : "裁决方案已拒绝，卡时与隔离状态均未变化。 ");
   }
 
+  async function submitGoldenAudit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const contractId = goldenContractId.trim();
+    setBusy("golden-audit");
+    setGoldenError(null);
+    setGoldenAudit(null);
+    try {
+      const payload = await adminGetJson(`/api/v2/admin/hosting/golden-loop/${encodeURIComponent(contractId)}`);
+      const record = object(payload.record);
+      if (!record || !Array.isArray(record.checks) || (record.verdict !== "PASS" && record.verdict !== "FAIL")) throw new AdminApiError("黄金订单验收接口未返回完整证据。", 200, "INVALID_RESPONSE");
+      setGoldenAudit(record as GoldenLoopAudit);
+    } catch (auditError) {
+      setGoldenError(auditError);
+    } finally {
+      setBusy("");
+    }
+  }
+
   if (error instanceof AdminApiError && [401, 403].includes(error.status) && !session) return <AdminLoginRequired forbidden={error.status === 403} />;
 
   return (
@@ -286,6 +317,26 @@ export function AdminHostingOperations() {
         <div><span>公开支付</span><strong>关闭</strong></div>
         <div><span>当前费率</span><strong>{fee ? `${fee.platformFeeBps / 100}% / 推荐 ${fee.referralRewardBps / 100}%` : isRoot ? "未配置" : "职责外不可见"}</strong></div>
       </div> : null}
+
+      {session ? <section className="admin-panel admin-hosting-panel admin-hosting-golden" aria-labelledby="golden-loop-title">
+        <div className="admin-panel-head"><div><p className="admin-kicker">Real machine acceptance</p><h2 id="golden-loop-title">真实 GPU 黄金订单验收</h2></div>{goldenAudit ? <span className={`admin-status ${goldenAudit.verdict === "PASS" ? "success" : "danger"}`}>{goldenAudit.verdict === "PASS" ? "闭环通过" : `${goldenAudit.passedChecks}/${goldenAudit.totalChecks} 项通过`}</span> : <span className="admin-status warning">只读核验</span>}</div>
+        <p className="admin-panel-copy">输入真实合同号，服务端交叉核对设备签名、控制面回连、实例身份、三分钟以上计量、卡时账本、租金佣金、撤权清理与恢复可售。它不会修改订单，也不会把测试数据包装成通过。</p>
+        <form className="admin-hosting-form admin-hosting-golden-form" onSubmit={submitGoldenAudit}>
+          <label><span>GPU 租赁合同编号</span><input autoComplete="off" onChange={(event) => setGoldenContractId(event.target.value)} pattern="hctr_[a-f0-9]{32}" placeholder="hctr_…" required value={goldenContractId} /></label>
+          <button className="admin-button primary" disabled={busy === "golden-audit" || !/^hctr_[a-f0-9]{32}$/u.test(goldenContractId.trim())} type="submit">{busy === "golden-audit" ? "正在核验…" : "核验真实闭环"}</button>
+        </form>
+        {goldenError ? <AdminError message={adminErrorMessage(goldenError, "黄金订单证据核验未完成。")}/>: null}
+        {goldenAudit ? <>
+          <div className="admin-hosting-golden-facts" aria-label="黄金订单关键事实">
+            <div><span>GPU</span><strong>{String(goldenAudit.facts.gpuModel ?? "—")}</strong></div>
+            <div><span>真实计量</span><strong>{integer(goldenAudit.facts as AdminRow, "measuredSeconds")} 秒</strong></div>
+            <div><span>实际扣减</span><strong>{cardHours(goldenAudit.facts.settledMicros)} KAI</strong></div>
+            <div><span>Agent</span><strong>{String(goldenAudit.facts.agentVersion ?? "—")}</strong></div>
+          </div>
+          <div className="admin-hosting-golden-checks">{goldenAudit.checks.map((check) => <article className={check.status === "PASS" ? "pass" : "fail"} key={check.key}><span className={`admin-status ${check.status === "PASS" ? "success" : "danger"}`}>{check.status === "PASS" ? "通过" : "未通过"}</span><div><strong>{check.label}</strong><p>{check.detail}</p></div></article>)}</div>
+          <p className="admin-hosting-audit-time">合同 <span className="admin-mono">{goldenAudit.contractId}</span> · 服务端核验时间 {datetime(goldenAudit.checkedAt)}</p>
+        </> : null}
+      </section> : null}
 
       {session ? <section className="admin-panel admin-hosting-panel admin-hosting-grants" aria-labelledby="dispute-resolution-title">
         <div className="admin-panel-head"><div><p className="admin-kicker">Dual-control disputes</p><h2 id="dispute-resolution-title">GPU 租赁争议裁决</h2></div><span className={`admin-status ${disputes.some((item) => item.contractStatus === "DISPUTED") ? "danger" : "success"}`}>{disputes.filter((item) => item.contractStatus === "DISPUTED").length} 个处理中</span></div>

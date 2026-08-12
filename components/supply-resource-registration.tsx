@@ -7,7 +7,7 @@ import type { SupplierHostingDashboard, SupplierHostingPolicy } from "@/lib/host
 import { createIdempotencyKey, marketplaceErrorMessage, marketplaceGet, marketplacePost } from "@/lib/client/marketplace-client";
 import styles from "./supply-console.module.css";
 
-const HOST_AGENT_VERSION = "1.9.4";
+const HOST_AGENT_VERSION = "1.9.5";
 const HOST_AGENT_ARCHIVE = `kai-host-agent-${HOST_AGENT_VERSION}.tgz`;
 
 type PairingDevice = Pick<HostingDevice, "id" | "displayName" | "agentVersion" | "status" | "verificationStatus" | "lastSequence" | "lastSeenAt"> & Readonly<{ gpuModel: HostingDevice["inventory"]["gpuModel"] }>;

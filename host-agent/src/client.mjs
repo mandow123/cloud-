@@ -15,7 +15,7 @@ import { readState, stateFilePath, writeState } from "./state.mjs";
 import { cleanupWorkload, provisionWorkload, startWorkload, stopWorkload } from "./actuator-client.mjs";
 import { runVerification } from "./verify.mjs";
 
-export const AGENT_VERSION = "1.9.4";
+export const AGENT_VERSION = "1.9.5";
 
 function validatePairingBundle(value, options = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new AgentError("PAIRING_INVALID", "Pairing bundle must be a JSON object.");
@@ -227,10 +227,10 @@ export async function pollCommand({ stateFile = stateFilePath(), allowInsecureLo
 export async function completeCommand(command, result, { stateFile = stateFilePath(), allowInsecureLocal = false, post = apiPost } = {}) {
   const state = await readState(stateFile);
   if (state.status !== "ACTIVE" || !command || typeof command.id !== "string") throw new AgentError("COMMAND_INVALID", "Agent command is invalid.");
-  const fields = { commandId: command.id, outcome: result.outcome, evidenceDigest: result.evidenceDigest, errorCode: result.errorCode, details: result.details };
+  const fields = { commandId: command.id, outcome: result.outcome, evidenceDigest: result.evidenceDigest, errorCode: result.errorCode ?? null, details: result.details ?? {} };
   const proof = await signedProof(state.privateKeyPkcs8, "COMPLETE_COMMAND", state.deviceId, fields);
   const url = `${state.apiOrigin}/api/v2/agent/devices/${encodeURIComponent(state.deviceId)}/commands/${encodeURIComponent(command.id)}/complete`;
-  return post(url, { outcome: result.outcome, evidenceDigest: result.evidenceDigest, errorCode: result.errorCode, details: result.details, ...proof }, { allowInsecureLocal, timeoutMs: 30_000 });
+  return post(url, { outcome: fields.outcome, evidenceDigest: fields.evidenceDigest, errorCode: fields.errorCode, details: fields.details, ...proof }, { allowInsecureLocal, timeoutMs: 30_000 });
 }
 
 export async function processOneCommand({ stateFile = stateFilePath(), allowInsecureLocal = false, post = apiPost, verifier, provisioner, starter, stopper, cleaner } = {}) {

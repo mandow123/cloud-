@@ -10,6 +10,7 @@ import type {
   HostingDevice,
   HostingDeviceInventory,
   HostingFeeSchedule,
+  HostingGoldenLoopAudit,
   HostingGpuModel,
   HostingOffer,
   HostingSupplierProfile,
@@ -44,6 +45,7 @@ export interface HostingV2Store {
   listCleanupIncidents(): Promise<HostingCleanupIncident[]>;
   listStopIncidents(): Promise<HostingStopIncident[]>;
   listDisputeCases(): Promise<HostingDisputeCase[]>;
+  auditGoldenLoop(contractId: string, now: string): Promise<HostingGoldenLoopAudit | null>;
   dashboard(organizationId: string, now: string): Promise<HostingDashboard>;
   saveProfile(account: AccountSessionContext, input: { supplierType: HostingSupplierType; legalDisplayName: string; contactEmail: string; expectedVersion: number }, context: HostingMutationContext): Promise<HostingSupplierProfile>;
   submitProfile(organizationId: string, expectedVersion: number, agreementVersion: string, context: HostingMutationContext): Promise<HostingSupplierProfile>;
@@ -78,7 +80,7 @@ export interface HostingV2Store {
   failedStopForDevice(deviceId: string): Promise<HostingAgentCommand | null>;
   getCommand(deviceId: string, commandId: string): Promise<HostingAgentCommand | null>;
   pollCommand(deviceId: string, now: string, allowedTypes?: readonly HostingAgentCommand["type"][]): Promise<HostingAgentCommand | null>;
-  completeCommand(deviceId: string, commandId: string, input: { outcome: "SUCCEEDED" | "FAILED"; evidenceDigest: string; errorCode?: string | null; details?: Record<string, unknown>; controlPlaneReachabilityDigest?: string }, context: HostingMutationContext): Promise<{ command: HostingAgentCommand; contract: HostingContract | null; device: HostingDevice }>;
+  completeCommand(deviceId: string, commandId: string, input: { outcome: "SUCCEEDED" | "FAILED"; evidenceDigest: string; errorCode?: string | null; details?: Record<string, unknown>; controlPlaneReachabilityDigest?: string; transportAttestation?: { signedPayload: Record<string, unknown>; signature: string } }, context: HostingMutationContext): Promise<{ command: HostingAgentCommand; contract: HostingContract | null; device: HostingDevice }>;
   queueFailedDeliveryCleanup(commandId: string, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand }>;
   queueFailedStopRecovery(commandId: string, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand | null; exhausted: boolean }>;
   markContractSettled(contractId: string, input: { measuredSeconds: number; settledMicros: number; supplierIncomeMicros: number; commissionMicros: number }, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand }>;

@@ -80,10 +80,11 @@ export async function POST(request: Request, contextValue: { params: Promise<{ d
       }
     }
     const completedAt = new Date().toISOString();
-    const result = await store.completeCommand(deviceId, commandId, { outcome, evidenceDigest, errorCode, details, controlPlaneReachabilityDigest }, {
+    const signedPayload = { operation: "COMPLETE_COMMAND", deviceId, ...fields, issuedAt: proof.issuedAt, expiresAt: proof.expiresAt };
+    const result = await store.completeCommand(deviceId, commandId, { outcome, evidenceDigest, errorCode, details, controlPlaneReachabilityDigest, transportAttestation: { signedPayload, signature: proof.signature } }, {
       actorId: `agent:${deviceId}`,
       idempotencyKey: `command:${commandId}:${outcome}`,
-      payloadHash: await hostingAgentDigest({ operation: "COMPLETE_COMMAND", deviceId, ...fields, issuedAt: proof.issuedAt, expiresAt: proof.expiresAt }),
+      payloadHash: await hostingAgentDigest(signedPayload),
       now: completedAt,
     });
     const recovery = await reconcileFailedHostingDelivery(result.command, completedAt);

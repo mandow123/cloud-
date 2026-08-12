@@ -314,6 +314,35 @@ export type HostingStopIncident = Readonly<{
   failedAt: string;
 }>;
 
+export type HostingGoldenLoopAuditCheck = Readonly<{
+  key: string;
+  label: string;
+  status: "PASS" | "FAIL";
+  detail: string;
+}>;
+
+export type HostingGoldenLoopAudit = Readonly<{
+  contractId: string;
+  verdict: "PASS" | "FAIL";
+  checkedAt: string;
+  passedChecks: number;
+  totalChecks: number;
+  facts: Readonly<{
+    gpuModel: HostingGpuModel;
+    deviceId: string;
+    deviceStatus: HostingDevice["status"];
+    offerStatus: HostingOffer["status"];
+    agentVersion: string;
+    measuredSeconds: number | null;
+    heldMicros: number;
+    settledMicros: number | null;
+    supplierIncomeMicros: number | null;
+    commissionMicros: number | null;
+    approvedImage: string;
+  }>;
+  checks: readonly HostingGoldenLoopAuditCheck[];
+}>;
+
 export type HostingDashboard = Readonly<{
   profile: HostingSupplierProfile | null;
   devices: readonly HostingDevice[];

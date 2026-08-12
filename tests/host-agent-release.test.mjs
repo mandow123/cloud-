@@ -22,7 +22,7 @@ test("Host Agent release is deterministic, checksummed and contains only reviewe
     const secondArchive = await readFile(join(outputDirectory, second.archive));
 
     assert.deepEqual(second, first);
-    assert.equal(first.archive, "kai-host-agent-1.9.4.tgz");
+    assert.equal(first.archive, "kai-host-agent-1.9.5.tgz");
     assert.deepEqual(secondArchive, firstArchive);
     assert.ok(firstArchive.byteLength > 1_000 && firstArchive.byteLength < 1_000_000);
     assert.equal(createHash("sha256").update(firstArchive).digest("hex"), first.sha256);
@@ -31,17 +31,17 @@ test("Host Agent release is deterministic, checksummed and contains only reviewe
     const entries = execFileSync("tar", ["-tzf", join(outputDirectory, first.archive)], { encoding: "utf8" }).trim().split("\n");
     assert.equal(entries.length, 18);
     for (const entry of entries) {
-      assert.match(entry, /^kai-host-agent-1\.9\.4\/[A-Za-z0-9._/-]+$/u);
+      assert.match(entry, /^kai-host-agent-1\.9\.5\/[A-Za-z0-9._/-]+$/u);
       assert.doesNotMatch(entry, /(?:^|\/)\.\.?\/|identity\.json|pairing\.json|\.env$/u);
     }
-    assert.ok(entries.includes("kai-host-agent-1.9.4/release-manifest.json"));
-    assert.ok(entries.includes("kai-host-agent-1.9.4/src/doctor.mjs"));
-    assert.ok(entries.includes("kai-host-agent-1.9.4/src/preflight.mjs"));
+    assert.ok(entries.includes("kai-host-agent-1.9.5/release-manifest.json"));
+    assert.ok(entries.includes("kai-host-agent-1.9.5/src/doctor.mjs"));
+    assert.ok(entries.includes("kai-host-agent-1.9.5/src/preflight.mjs"));
 
     execFileSync("tar", ["-xzf", join(outputDirectory, first.archive), "-C", extractionDirectory]);
-    const manifest = JSON.parse(await readFile(join(extractionDirectory, "kai-host-agent-1.9.4", "release-manifest.json"), "utf8"));
+    const manifest = JSON.parse(await readFile(join(extractionDirectory, "kai-host-agent-1.9.5", "release-manifest.json"), "utf8"));
     assert.equal(manifest.schemaVersion, "kai-host-agent-release/1");
-    assert.equal(manifest.version, "1.9.4");
+    assert.equal(manifest.version, "1.9.5");
     assert.equal(manifest.revision, FIXED_REVISION);
     assert.equal(manifest.files.length, 17);
     assert.equal(manifest.files.some((file) => /identity|pairing/u.test(file.path)), false);
