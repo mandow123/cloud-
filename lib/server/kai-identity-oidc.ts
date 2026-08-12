@@ -7,6 +7,7 @@ export const KAI_IDENTITY_SCOPES = "openid kai:name email";
 const TRANSACTION_MAX_AGE_SECONDS = 10 * 60;
 const SECURE_TRANSACTION_COOKIE = "__Host-kai_oidc_transaction";
 const DEVELOPMENT_TRANSACTION_COOKIE = "kai_oidc_transaction_dev";
+const DISCOVERY_PROBE_CACHE_MS = 30_000;
 
 type Environment = Record<string, string | undefined>;
 type JsonObject = Record<string, unknown>;
@@ -33,6 +34,11 @@ export type KaiIdentityDiscoveryProbe = Readonly<{
   probe: "read-only";
   errorCode?: "KAI_IDENTITY_UNAVAILABLE" | "OIDC_DISCOVERY_REDIRECT" | "OIDC_DISCOVERY_INVALID";
 }>;
+
+let discoveryProbeCache: Readonly<{
+  expiresAt: number;
+  result: Promise<KaiIdentityDiscoveryProbe>;
+}> | null = null;
 
 function environment(): Environment {
   return typeof process === "undefined" ? {} : process.env;
@@ -178,15 +184,23 @@ async function readMetadata(fetcher: typeof fetch, timeoutMs = 4_000): Promise<O
 }
 
 export async function probeKaiIdentityDiscovery(options: { fetcher?: typeof fetch; timeoutMs?: number } = {}): Promise<KaiIdentityDiscoveryProbe> {
-  try {
-    await readMetadata(options.fetcher ?? fetch, options.timeoutMs ?? 2_500);
-    return { available: true, probe: "read-only" };
-  } catch (error) {
-    const errorCode = error instanceof AccountAuthError && ["KAI_IDENTITY_UNAVAILABLE", "OIDC_DISCOVERY_REDIRECT", "OIDC_DISCOVERY_INVALID"].includes(error.code)
-      ? error.code as KaiIdentityDiscoveryProbe["errorCode"]
-      : "KAI_IDENTITY_UNAVAILABLE";
-    return { available: false, probe: "read-only", errorCode };
-  }
+  const check = async (): Promise<KaiIdentityDiscoveryProbe> => {
+    try {
+      await readMetadata(options.fetcher ?? fetch, options.timeoutMs ?? 2_500);
+      return { available: true, probe: "read-only" };
+    } catch (error) {
+      const errorCode = error instanceof AccountAuthError && ["KAI_IDENTITY_UNAVAILABLE", "OIDC_DISCOVERY_REDIRECT", "OIDC_DISCOVERY_INVALID"].includes(error.code)
+        ? error.code as KaiIdentityDiscoveryProbe["errorCode"]
+        : "KAI_IDENTITY_UNAVAILABLE";
+      return { available: false, probe: "read-only", errorCode };
+    }
+  };
+  if (options.fetcher) return check();
+  const now = Date.now();
+  if (discoveryProbeCache && discoveryProbeCache.expiresAt > now) return discoveryProbeCache.result;
+  const result = check();
+  discoveryProbeCache = { expiresAt: now + DISCOVERY_PROBE_CACHE_MS, result };
+  return result;
 }
 
 function parseJwt(value: unknown) {
