@@ -651,9 +651,11 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         const current = await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [contractId]);
         if (!current) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "租赁合同不存在。");
         if (!/[\p{L}\p{N}]/u.test(reason) || reason.trim().length < 4) throw new ExchangeInputError("取消原因至少 4 个字符。", "reason");
-        if (!['RESERVED','CARD_HOURS_HELD','PAID','PROVISIONING','READY'].includes(value(current, "status"))) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同当前不能取消。");
+        if (!["RESERVED", "CARD_HOURS_HELD", "PAID"].includes(value(current, "status"))) {
+          throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "实例开通任务已经下发，必须先停止并完成撤权清理，不能直接取消或重新挂牌。");
+        }
         await db.batch([
-          { sql: "UPDATE hosting_v2_contracts SET status='CANCELLED',version=version+1,updated_at=? WHERE id=? AND status IN ('RESERVED','CARD_HOURS_HELD','PAID','PROVISIONING','READY')", values: [context.now, contractId] },
+          { sql: "UPDATE hosting_v2_contracts SET status='CANCELLED',version=version+1,updated_at=? WHERE id=? AND status IN ('RESERVED','CARD_HOURS_HELD','PAID')", values: [context.now, contractId] },
           { sql: "UPDATE hosting_v2_offers SET status='PUBLISHED',version=version+1,updated_at=? WHERE id=? AND status='RESERVED'", values: [context.now, value(current, "offer_id")] },
           event(context, value(current, "buyer_organization_id"), "CONTRACT", contractId, "CONTRACT_CANCELLED", { reason: reason.trim() }),
           receipt(context, "CANCEL_CONTRACT", "CONTRACT", contractId),

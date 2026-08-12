@@ -8,7 +8,7 @@ import { formatCardHours, formatHostingTime, hostingContractStatusLabel } from "
 import styles from "./hosting-marketplace.module.css";
 
 const POLLED_STATUSES = new Set(["PROVISIONING", "READY", "IN_SERVICE", "SETTLED", "CLEANING"]);
-const CANCELLABLE_STATUSES = new Set(["RESERVED", "CARD_HOURS_HELD", "PAID", "PROVISIONING", "READY"]);
+const CANCELLABLE_STATUSES = new Set(["RESERVED", "CARD_HOURS_HELD", "PAID"]);
 const WORKFLOW = ["CARD_HOURS_HELD", "PROVISIONING", "READY", "IN_SERVICE", "AWAITING_ACCEPTANCE", "CLEANING", "CLEANED"] as const;
 
 function workflowIndex(status: BuyerHostingContract["status"]) {
@@ -95,7 +95,7 @@ export function HostingContractWorkspace({ contractId }: { contractId: string })
           {contract.status === "CLEANED" ? <div className={styles.successBlock}><h3>租赁闭环已完成</h3><p>计量、结算、撤权和清理均已完成，临时访问权限已经失效。</p><Link className={styles.primary} href="/gpu">继续选择 GPU</Link></div> : null}
           {["CANCELLED", "FAILED", "DISPUTED", "REFUNDED"].includes(contract.status) ? <div className={styles.error} role="status"><strong>{hostingContractStatusLabel(contract.status)}</strong><span>该合同已退出正常交付流程，平台保留状态和审计记录。</span></div> : null}
 
-          {CANCELLABLE_STATUSES.has(contract.status) ? <div className={styles.cancelBar}><span>实例开始服务前可释放本次预留。</span><button disabled={Boolean(busyAction)} onClick={() => void mutate("cancel", `/api/v2/contracts/${encodeURIComponent(contract.id)}/cancel`, { reason: "采购方在开通前主动取消预留" })} type="button">取消并释放卡时</button></div> : null}
+          {CANCELLABLE_STATUSES.has(contract.status) ? <div className={styles.cancelBar}><span>尚未下发开通任务，可安全释放本次预留。</span><button disabled={Boolean(busyAction)} onClick={() => void mutate("cancel", `/api/v2/contracts/${encodeURIComponent(contract.id)}/cancel`, { reason: "采购方在开通任务下发前主动取消预留" })} type="button">取消并释放卡时</button></div> : null}
           {error ? <p className={styles.inlineError} role="alert">{error}</p> : null}
         </section>
 

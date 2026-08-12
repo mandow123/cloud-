@@ -7,6 +7,7 @@ import test from "node:test";
 import { cancelHostingContract, reserveHostingContract } from "../lib/server/hosting-contract-service.ts";
 import { createSqliteCardHourStore } from "../lib/server/card-hour-store-sqlite.ts";
 import { createSqliteHostingV2Store } from "../lib/server/hosting-v2-store-sqlite.ts";
+import { normalizeSshPublicKey } from "../lib/server/ssh-public-key.ts";
 
 function account(id) {
   return {
@@ -20,6 +21,18 @@ function account(id) {
 
 function mutation(actorId, key, hash, now) {
   return { actorId, idempotencyKey: key, payloadHash: hash, now };
+}
+
+function sshString(value) {
+  const bytes = Buffer.from(value);
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(bytes.length);
+  return Buffer.concat([length, bytes]);
+}
+
+function testPublicKey() {
+  const blob = Buffer.concat([sshString("ssh-ed25519"), sshString(Buffer.alloc(32, 11))]);
+  return `ssh-ed25519 ${blob.toString("base64")} cancellation-boundary`;
 }
 
 function successfulVerificationDetails(inventoryDigest, observedAt) {
@@ -94,6 +107,14 @@ test("GPU reservation locks exact card-hours once and cancellation releases them
     await assert.rejects(reserveHostingContract({ account: emptyBuyer, offerId: offer.id, reservedSeconds: 180, mutation: mutation(emptyBuyer.account.id, "empty-buyer-reserve", "empty-buyer-reserve-hash", now) }, stores), (error) => error.code === "CARD_HOUR_BALANCE_INSUFFICIENT");
     assert.equal((await cardHours.dashboard(emptyBuyer.activeOrganization.id, now)).balance.heldMicros, 0);
     assert.equal((await hosting.listPublicOffers(now)).length, 1, "failed card-hour hold must republish the GPU offer");
+
+    const provisionReservation = await reserveHostingContract({ account: buyer, offerId: offer.id, reservedSeconds: 180, mutation: mutation(buyer.account.id, "buyer-reserve-provision", "buyer-reserve-provision-hash", now) }, stores);
+    const key = await normalizeSshPublicKey(testPublicKey());
+    await hosting.attachSshKey(buyer.activeOrganization.id, provisionReservation.contract.id, key, mutation(buyer.account.id, "buyer-provision-key", "buyer-provision-key-hash", now));
+    await assert.rejects(cancelHostingContract({ account: buyer, contractId: provisionReservation.contract.id, reason: "开通以后不能绕过清理", mutation: mutation(buyer.account.id, "buyer-cancel-after-provision", "buyer-cancel-after-provision-hash", now) }, stores), (error) => error.code === "EXCHANGE_STATE_CONFLICT");
+    assert.equal((await hosting.contractForViewer(buyer.activeOrganization.id, provisionReservation.contract.id)).status, "PROVISIONING");
+    assert.equal((await cardHours.dashboard(buyer.activeOrganization.id, now)).balance.heldMicros, 180_000, "unsafe cancellation must not release held card-hours");
+    assert.equal((await hosting.listPublicOffers(now)).length, 0, "an instance awaiting cleanup must never return to the market");
   } finally {
     cardHours.close();
     hosting.close();
@@ -120,4 +141,10 @@ test("buyer contract APIs use formal ownership and hide supplier infrastructure 
   const view = apiHelpers.slice(apiHelpers.indexOf("export function hostingContractClientView"), apiHelpers.indexOf("export function hostingSupplierContractClientView"));
   assert.doesNotMatch(view, /deviceId|supplierOrganizationId|buyerAccountId|feeScheduleId/u);
   assert.match(view, /heldMicros/u);
+});
+
+test("buyer UI only offers direct cancellation before provisioning begins", () => {
+  const workspace = readFileSync("components/hosting-contract-workspace.tsx", "utf8");
+  assert.match(workspace, /new Set\(\["RESERVED", "CARD_HOURS_HELD", "PAID"\]\)/u);
+  assert.doesNotMatch(workspace, /CANCELLABLE_STATUSES[^\n]+PROVISIONING|CANCELLABLE_STATUSES[^\n]+READY/u);
 });
