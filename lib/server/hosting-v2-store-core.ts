@@ -12,7 +12,7 @@ const number = (row: Row, key: string) => Number(row[key]);
 const json = <T>(row: Row, key: string) => JSON.parse(value(row, key)) as T;
 const id = (prefix: string) => `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
 const VERIFY_TEST_NAMES = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "WORKLOAD_IMAGE", "PORT_REACHABILITY"] as const;
-const HOSTING_V2_MIN_AGENT_VERSION = "1.9.1";
+const HOSTING_V2_MIN_AGENT_VERSION = "1.9.2";
 const HOSTING_V2_AUTOMATED_STOP_ATTEMPTS = 4;
 
 function agentVersionAtLeast(valueToCheck: string, minimum: string) {

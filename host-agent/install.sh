@@ -7,6 +7,44 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 AGENT_SOURCE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+LOCK_DIR=/run/kai-host-agent-install.lock
+STAGING_RELEASE=
+SERVICES_STOPPED=0
+AGENT_WAS_ACTIVE=0
+AGENT_WAS_ENABLED=0
+PREVIOUS_RELEASE=
+CURRENT_SWITCHED=0
+
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "Another KAI Host Agent installation is already running." >&2
+  exit 1
+fi
+
+cleanup() {
+  STATUS=$?
+  trap - EXIT
+  if [ -n "$STAGING_RELEASE" ] && [ -d "$STAGING_RELEASE" ]; then
+    rm -rf -- "$STAGING_RELEASE"
+  fi
+  if [ "$STATUS" -ne 0 ] && [ "$SERVICES_STOPPED" -eq 1 ]; then
+    if [ "$CURRENT_SWITCHED" -eq 1 ]; then
+      if [ -n "$PREVIOUS_RELEASE" ] && [ -d "$PREVIOUS_RELEASE" ]; then
+        ln -s "$PREVIOUS_RELEASE" "/opt/kai-host-agent/.rollback-$$" || true
+        mv -Tf "/opt/kai-host-agent/.rollback-$$" /opt/kai-host-agent/current || true
+      else
+        rm -f -- /opt/kai-host-agent/current
+      fi
+    fi
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl start kai-host-actuator.service >/dev/null 2>&1 || true
+    if [ "$AGENT_WAS_ACTIVE" -eq 1 ]; then
+      systemctl start kai-host-agent.service >/dev/null 2>&1 || true
+    fi
+  fi
+  rmdir "$LOCK_DIR" >/dev/null 2>&1 || true
+  exit "$STATUS"
+}
+trap cleanup EXIT
 
 if [ ! -r /etc/os-release ] || ! grep -q '^ID=ubuntu$' /etc/os-release; then
   echo "KAI Host Agent version 1 requires Ubuntu." >&2
@@ -34,6 +72,34 @@ case "$NODE_BINARY" in
     ;;
 esac
 
+RELEASE_FACTS=$($NODE_BINARY --input-type=module - "$AGENT_SOURCE_DIR" <<'NODE'
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const root = process.argv[2];
+const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+const manifest = JSON.parse(readFileSync(join(root, "release-manifest.json"), "utf8"));
+if (manifest.schemaVersion !== "kai-host-agent-release/1" || manifest.version !== packageJson.version
+  || !/^\d+\.\d+\.\d+$/.test(packageJson.version) || !/^[a-f0-9]{40}$/.test(manifest.revision)
+  || !Array.isArray(manifest.files) || manifest.files.length < 1) throw new Error("Host Agent release manifest is invalid.");
+for (const file of manifest.files) {
+  if (!file || typeof file.path !== "string" || !/^[A-Za-z0-9._/-]{1,100}$/.test(file.path) || file.path.includes("..")
+    || !Number.isSafeInteger(file.bytes) || file.bytes < 1 || !/^[a-f0-9]{64}$/.test(file.sha256)) throw new Error("Host Agent release file entry is invalid.");
+  const content = readFileSync(join(root, file.path));
+  if (content.byteLength !== file.bytes || createHash("sha256").update(content).digest("hex") !== file.sha256) throw new Error(`Host Agent release file failed verification: ${file.path}`);
+}
+process.stdout.write(`${packageJson.version} ${manifest.revision}`);
+NODE
+)
+set -- $RELEASE_FACTS
+if [ "$#" -ne 2 ]; then
+  echo "KAI Host Agent release metadata is invalid." >&2
+  exit 1
+fi
+AGENT_VERSION=$1
+RELEASE_REVISION=$2
+
 if ! command -v nvidia-smi >/dev/null 2>&1; then
   echo "nvidia-smi is required before installing KAI Host Agent." >&2
   exit 1
@@ -53,30 +119,59 @@ if ! id kai-host-agent >/dev/null 2>&1; then
   useradd --system --home-dir /var/lib/kai-host-agent --shell /usr/sbin/nologin kai-host-agent
 fi
 
-install -d -o root -g root -m 0755 /opt/kai-host-agent /opt/kai-host-agent/src
-install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/package.json" /opt/kai-host-agent/package.json
-install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/protocol.mjs" /opt/kai-host-agent/src/protocol.mjs
-install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/state.mjs" /opt/kai-host-agent/src/state.mjs
-install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/inventory.mjs" /opt/kai-host-agent/src/inventory.mjs
-install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/doctor.mjs" /opt/kai-host-agent/src/doctor.mjs
-install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/client.mjs" /opt/kai-host-agent/src/client.mjs
-install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/verify.mjs" /opt/kai-host-agent/src/verify.mjs
-install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/actuator.mjs" /opt/kai-host-agent/src/actuator.mjs
-install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/actuator-client.mjs" /opt/kai-host-agent/src/actuator-client.mjs
-install -o root -g root -m 0755 "$AGENT_SOURCE_DIR/src/actuator-server.mjs" /opt/kai-host-agent/src/actuator-server.mjs
-install -o root -g root -m 0755 "$AGENT_SOURCE_DIR/src/cli.mjs" /opt/kai-host-agent/src/cli.mjs
-ln -sfn /opt/kai-host-agent/src/cli.mjs /usr/local/bin/kai-host-agent
+install -d -o root -g root -m 0755 /opt/kai-host-agent /opt/kai-host-agent/releases
+STAGING_RELEASE="/opt/kai-host-agent/releases/.install-${AGENT_VERSION}-${RELEASE_REVISION}-$$"
+FINAL_RELEASE="/opt/kai-host-agent/releases/${AGENT_VERSION}-${RELEASE_REVISION}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+install -d -o root -g root -m 0755 "$STAGING_RELEASE" "$STAGING_RELEASE/src"
+install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/package.json" "$STAGING_RELEASE/package.json"
+install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/release-manifest.json" "$STAGING_RELEASE/release-manifest.json"
+install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/protocol.mjs" "$STAGING_RELEASE/src/protocol.mjs"
+install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/state.mjs" "$STAGING_RELEASE/src/state.mjs"
+install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/inventory.mjs" "$STAGING_RELEASE/src/inventory.mjs"
+install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/doctor.mjs" "$STAGING_RELEASE/src/doctor.mjs"
+install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/client.mjs" "$STAGING_RELEASE/src/client.mjs"
+install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/verify.mjs" "$STAGING_RELEASE/src/verify.mjs"
+install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/actuator.mjs" "$STAGING_RELEASE/src/actuator.mjs"
+install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/actuator-client.mjs" "$STAGING_RELEASE/src/actuator-client.mjs"
+install -o root -g root -m 0755 "$AGENT_SOURCE_DIR/src/actuator-server.mjs" "$STAGING_RELEASE/src/actuator-server.mjs"
+install -o root -g root -m 0755 "$AGENT_SOURCE_DIR/src/cli.mjs" "$STAGING_RELEASE/src/cli.mjs"
 
 install -d -o kai-host-agent -g kai-host-agent -m 0700 /var/lib/kai-host-agent
 if [ ! -e /etc/kai-host-actuator.env ]; then
   install -o root -g root -m 0600 "$AGENT_SOURCE_DIR/kai-host-actuator.env.example" /etc/kai-host-actuator.env
 fi
+
+if systemctl is-active --quiet kai-host-agent.service 2>/dev/null; then AGENT_WAS_ACTIVE=1; fi
+if systemctl is-enabled --quiet kai-host-agent.service 2>/dev/null; then AGENT_WAS_ENABLED=1; fi
+if [ -L /opt/kai-host-agent/current ]; then PREVIOUS_RELEASE=$(readlink -f /opt/kai-host-agent/current); fi
+systemctl stop kai-host-agent.service >/dev/null 2>&1 || true
+systemctl stop kai-host-actuator.service >/dev/null 2>&1 || true
+SERVICES_STOPPED=1
+
+mv "$STAGING_RELEASE" "$FINAL_RELEASE"
+STAGING_RELEASE=
+ln -s "$FINAL_RELEASE" "/opt/kai-host-agent/.current-$$"
+mv -Tf "/opt/kai-host-agent/.current-$$" /opt/kai-host-agent/current
+CURRENT_SWITCHED=1
+ln -sfn /opt/kai-host-agent/current/src/cli.mjs /usr/local/bin/kai-host-agent
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/kai-host-actuator.service" /etc/systemd/system/kai-host-actuator.service
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/kai-host-agent.service" /etc/systemd/system/kai-host-agent.service
-sed -i "s|^ExecStart=.*src/actuator-server.mjs$|ExecStart=$NODE_BINARY /opt/kai-host-agent/src/actuator-server.mjs|" /etc/systemd/system/kai-host-actuator.service
+sed -i "s|^ExecStart=.*src/actuator-server.mjs$|ExecStart=$NODE_BINARY /opt/kai-host-agent/current/src/actuator-server.mjs|" /etc/systemd/system/kai-host-actuator.service
 systemctl daemon-reload
 systemctl enable --now kai-host-actuator.service
+if [ "$AGENT_WAS_ENABLED" -eq 1 ]; then
+  systemctl enable --now kai-host-agent.service
+elif [ "$AGENT_WAS_ACTIVE" -eq 1 ]; then
+  systemctl start kai-host-agent.service
+fi
+SERVICES_STOPPED=0
+CURRENT_SWITCHED=0
 
-echo "KAI Host Agent installed but not started."
+echo "KAI Host Agent $AGENT_VERSION installed from release $RELEASE_REVISION."
+if [ "$AGENT_WAS_ENABLED" -eq 1 ] || [ "$AGENT_WAS_ACTIVE" -eq 1 ]; then
+  echo "The previously running Host Agent service has been restored."
+else
+  echo "KAI Host Agent installed but not started."
+fi
 echo "Configure immutable images in /etc/kai-host-actuator.env before accepting rental commands."
 echo "Run the pairing command as kai-host-agent, then enable the service."

@@ -7,7 +7,7 @@ Requires=docker.service
 Type=simple
 User=root
 Group=kai-host-agent
-ExecStart=/usr/bin/node /opt/kai-host-agent/src/actuator-server.mjs
+ExecStart=/usr/bin/node /opt/kai-host-agent/current/src/actuator-server.mjs
 Restart=on-failure
 RestartSec=5s
 Environment=NODE_ENV=production
