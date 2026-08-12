@@ -82,3 +82,13 @@ test("hosting public styles use the shared light and dark design tokens", () => 
   assert.match(earnings, /¥31\.20/u);
   assert.match(earnings, /31\.137725 KAI 标准卡时/u);
 });
+
+test("the configured supplier agreement has an immutable public document", () => {
+  const terms = readFileSync("app/hosting/partners/terms/KAI_HOSTING_TERMS_2026_08/page.tsx", "utf8");
+  assert.match(terms, /const version = "KAI_HOSTING_TERMS_2026_08"/u);
+  assert.match(terms, /Host Agent 与最小权限/u);
+  assert.match(terms, /不是法定货币、存款、证券或无条件兑付承诺/u);
+  assert.match(terms, /清理失败时设备进入 DRAINING/u);
+  const onboarding = readFileSync("components/supplier-onboarding-form.tsx", "utf8");
+  assert.match(onboarding, /`\/hosting\/partners\/terms\/\$\{agreementVersion\}`/u);
+});

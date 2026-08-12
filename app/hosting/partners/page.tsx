@@ -27,7 +27,7 @@ export default function HostingPartnersPage() {
             <tbody>
               <tr><td>主体</td><td>企业身份、成员关系、负责人</td><td>创建供应主体和邀请成员</td></tr>
               <tr><td>权属</td><td>设备、云账户或库存运营授权</td><td>登记对应资源类型</td></tr>
-              <tr><td>协议</td><td>供应协议、服务边界、争议处理</td><td>安装 Agent 和提交验真</td></tr>
+              <tr><td>协议</td><td><Link href="/hosting/partners/terms/KAI_HOSTING_TERMS_2026_08">供应协议、服务边界、争议处理</Link></td><td>安装 Agent 和提交验真</td></tr>
               <tr><td>技术</td><td>连接器、网络、计量、撤权与清理</td><td>发布通过验收的库存</td></tr>
               <tr><td>财务</td><td>费率版本、结算主体、账单信息</td><td>查看租金与账本明细</td></tr>
             </tbody>

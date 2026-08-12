@@ -162,7 +162,7 @@ export function SupplierOnboardingForm() {
           {profile?.status === "DRAFT" ? (
             <label className={styles.agreement}>
               <input checked={agreementAccepted} disabled={busy !== null} onChange={(event) => setAgreementAccepted(event.target.checked)} type="checkbox" />
-              <span>我确认资料真实，并同意《KAI Hosting 算力供应协议》版本 <strong>{agreementVersion || "读取中"}</strong>。设备权属、网络许可和交付能力仍需进一步审核。</span>
+              <span>我确认资料真实，并同意 <Link href={agreementVersion ? `/hosting/partners/terms/${agreementVersion}` : "/hosting/partners"} target="_blank">《KAI Hosting 算力供应协议》版本 <strong>{agreementVersion || "读取中"}</strong></Link>。设备权属、网络许可和交付能力仍需进一步审核。</span>
             </label>
           ) : null}
 

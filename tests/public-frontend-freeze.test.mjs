@@ -54,6 +54,7 @@ const APPROVED_HOSTING_V2_ROUTES = new Set([
   "app/hosting/cloud/page.tsx",
   "app/hosting/earnings/page.tsx",
   "app/hosting/partners/page.tsx",
+  "app/hosting/partners/terms/KAI_HOSTING_TERMS_2026_08/page.tsx",
   "app/hosting/personal-gpu/page.tsx",
   "app/supply/layout.tsx",
   "app/supply/earnings/page.tsx",
