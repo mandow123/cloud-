@@ -4,7 +4,7 @@ import { authorizeMarketplaceRequest, persistMarketplaceSession } from "./market
 import type { HostingMutationContext } from "./hosting-v2-store.ts";
 import type { HostingContract } from "../hosting-v2.ts";
 
-export { requireHostingV2Enabled } from "./hosting-v2-feature.ts";
+export { requireHostingV2Enabled, requireHostingV2SetupEnabled } from "./hosting-v2-feature.ts";
 
 export function hostingObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new AccountAuthError("HOSTING_VALIDATION_ERROR", 400, "提交内容必须是对象。 ");

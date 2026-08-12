@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { parseAgentProof, parseHostingDeviceInventory, verifyExistingDeviceProof } from "../lib/server/hosting-agent-api.ts";
@@ -113,18 +116,41 @@ test("agent routes require signed device proofs and never accept workspace roles
   ];
   for (const path of agentRoutes) {
     const source = readFileSync(path, "utf8");
-    assert.match(source, /requireHostingV2Enabled\(\)/u);
+    assert.match(source, /requireHostingV2SetupEnabled\(\)/u);
     assert.match(source, /requireHostingAgentTransport\(request\)/u);
     assert.doesNotMatch(source, /x-kai-workspace-role/u);
   }
   assert.match(readFileSync(agentRoutes[0], "utf8"), /verifyHostingAgentSignature\(/u);
   for (const path of agentRoutes.slice(1)) assert.match(readFileSync(path, "utf8"), /verifyExistingDeviceProof\(/u);
   assert.match(readFileSync(agentRoutes[3], "utf8"), /AGENT_EVIDENCE_DIGEST_MISMATCH/u);
+  assert.match(readFileSync(agentRoutes[2], "utf8"), /\["VERIFY", "STOP", "CLEANUP"\]/u);
+  assert.match(readFileSync(agentRoutes[3], "utf8"), /HOSTING_V2_TRADING_DISABLED/u);
 
   for (const path of ["app/api/v2/supply/agent-challenges/route.ts", "app/api/v2/supply/devices/[deviceId]/verify/route.ts"]) {
     const source = readFileSync(path, "utf8");
     assert.match(source, /requireTradingAccountSession\(request\)/u);
     assert.ok(source.indexOf("assertAccountAuthSameOrigin(request)") < source.indexOf("requireTradingAccountSession(request)"));
     assert.doesNotMatch(source, /x-kai-workspace-role/u);
+  }
+});
+
+test("setup-mode Agent polling leases only verification and safe shutdown commands", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kai-hosting-setup-filter-"));
+  const path = join(directory, "hosting.sqlite");
+  const store = await createSqliteHostingV2Store(path);
+  try {
+    const db = new DatabaseSync(path, { enableForeignKeyConstraints: true });
+    const now = new Date().toISOString();
+    // Command filtering is performed inside the store transaction so a setup Agent cannot lease provisioning work.
+    db.prepare("INSERT INTO hosting_v2_devices(id,organization_id,account_id,display_name,device_key_id,device_public_key,agent_version,inventory_json,inventory_digest,status,verification_status,last_sequence,version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,'ONLINE','PENDING',0,1,?,?)").run("had_setup_filter", "org-setup", "acct-setup", "Setup Agent", `sha256:${"1".repeat(64)}`, "A".repeat(43), "1.3.0", JSON.stringify({}), `sha256:${"2".repeat(64)}`, now, now);
+    db.prepare("INSERT INTO hosting_v2_agent_commands(id,device_id,command_type,payload_json,status,attempt,created_at) VALUES(?,?, 'PROVISION','{}','PENDING',0,?)").run("hcmd_setup_provision", "had_setup_filter", now);
+    db.prepare("INSERT INTO hosting_v2_agent_commands(id,device_id,command_type,payload_json,status,attempt,created_at) VALUES(?,?, 'VERIFY','{}','PENDING',0,?)").run("hcmd_setup_verify", "had_setup_filter", now);
+    db.close();
+    const command = await store.pollCommand("had_setup_filter", now, ["VERIFY", "STOP", "CLEANUP"]);
+    assert.equal(command?.type, "VERIFY");
+    assert.equal((await store.getCommand("had_setup_filter", "hcmd_setup_provision"))?.status, "PENDING");
+  } finally {
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
   }
 });

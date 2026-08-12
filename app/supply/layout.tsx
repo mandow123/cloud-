@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AccountRequired } from "@/components/account-required";
 import { SupplyConsoleShell } from "@/components/supply-console-shell";
-import { isHostingV2Enabled } from "@/lib/server/hosting-v2-feature";
+import { isHostingV2Enabled, isHostingV2SetupEnabled } from "@/lib/server/hosting-v2-feature";
 
 export const dynamic = "force-dynamic";
 
@@ -12,11 +12,11 @@ export const metadata: Metadata = {
 };
 
 export default function SupplyLayout({ children }: { children: React.ReactNode }) {
-  if (!isHostingV2Enabled()) redirect("/hosting");
+  if (!isHostingV2SetupEnabled()) redirect("/hosting");
 
   return (
     <AccountRequired purpose="管理供应资源">
-      <SupplyConsoleShell>{children}</SupplyConsoleShell>
+      <SupplyConsoleShell configurationMode={!isHostingV2Enabled()}>{children}</SupplyConsoleShell>
     </AccountRequired>
   );
 }

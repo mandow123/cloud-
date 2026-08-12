@@ -10,7 +10,7 @@ import {
   requireHostingAgentTransport,
 } from "@/lib/server/hosting-agent-api";
 import { hostingAgentDigest, hostingAgentKeyId, verifyHostingAgentSignature } from "@/lib/server/hosting-agent-crypto";
-import { hostingObject, requireHostingV2Enabled } from "@/lib/server/hosting-v2-api";
+import { hostingObject, requireHostingV2SetupEnabled } from "@/lib/server/hosting-v2-api";
 import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const context = beginApiRequest(request);
   try {
-    requireHostingV2Enabled();
+    requireHostingV2SetupEnabled();
     requireHostingAgentTransport(request);
     const body = hostingObject(await readJsonBody(request));
     const challengeId = agentString(body, "challengeId", 20, 100);

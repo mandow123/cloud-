@@ -1,7 +1,7 @@
 import { AccountAuthError, assertAccountAuthSameOrigin } from "@/lib/server/account-auth";
 import { apiErrorResponse, beginApiRequest, jsonResponse, readJsonBody } from "@/lib/server/api-guard";
 import { requireTradingAccountSession } from "@/lib/server/entity-ownership";
-import { hostingInteger, hostingMutationContext, hostingObject, hostingString, hostingSupplierOfferClientView, requireHostingV2Enabled } from "@/lib/server/hosting-v2-api";
+import { hostingInteger, hostingMutationContext, hostingObject, hostingString, hostingSupplierOfferClientView, requireHostingV2SetupEnabled } from "@/lib/server/hosting-v2-api";
 import { hostingV2CurrentTermsVersion } from "@/lib/server/hosting-v2-image-policy";
 import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const context = beginApiRequest(request);
   try {
-    requireHostingV2Enabled();
+    requireHostingV2SetupEnabled();
     const account = await requireTradingAccountSession(request);
     if (!account) throw new AccountAuthError("ACCOUNT_AUTH_REQUIRED", 401, "请先登录账户。 ");
     const dashboard = await (await getHostingV2Store()).dashboard(account.activeOrganization.id, new Date().toISOString());
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const context = beginApiRequest(request);
   try {
-    requireHostingV2Enabled();
+    requireHostingV2SetupEnabled();
     assertAccountAuthSameOrigin(request);
     const account = await requireTradingAccountSession(request);
     if (!account) throw new AccountAuthError("ACCOUNT_AUTH_REQUIRED", 401, "请先登录账户。 ");

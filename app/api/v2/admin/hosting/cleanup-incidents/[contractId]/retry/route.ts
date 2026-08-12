@@ -1,7 +1,7 @@
 import { AccountAuthError, assertAccountAuthSameOrigin } from "@/lib/server/account-auth";
 import { requireAdminPermission } from "@/lib/server/admin-auth";
 import { apiErrorResponse, beginApiRequest, jsonResponse, readJsonBody } from "@/lib/server/api-guard";
-import { hostingInteger, hostingMutationContext, hostingObject, hostingString, requireHostingV2Enabled } from "@/lib/server/hosting-v2-api";
+import { hostingInteger, hostingMutationContext, hostingObject, hostingString, requireHostingV2SetupEnabled } from "@/lib/server/hosting-v2-api";
 import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request, contextValue: { params: Promise<{ contractId: string }> }) {
   const context = beginApiRequest(request);
   try {
-    requireHostingV2Enabled();
+    requireHostingV2SetupEnabled();
     assertAccountAuthSameOrigin(request);
     const admin = await requireAdminPermission(request, ["FULFILLMENT_OPERATE"]);
     const body = hostingObject(await readJsonBody(request));

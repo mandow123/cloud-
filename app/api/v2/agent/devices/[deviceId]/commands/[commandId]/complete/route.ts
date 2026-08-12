@@ -2,7 +2,8 @@ import { AccountAuthError } from "@/lib/server/account-auth";
 import { apiErrorResponse, beginApiRequest, jsonResponse, readJsonBody } from "@/lib/server/api-guard";
 import { agentDigest, agentString, hostingAgentHttpError, parseAgentProof, requireHostingAgentTransport, verifyExistingDeviceProof } from "@/lib/server/hosting-agent-api";
 import { hostingAgentDigest } from "@/lib/server/hosting-agent-crypto";
-import { hostingObject, requireHostingV2Enabled } from "@/lib/server/hosting-v2-api";
+import { hostingObject, requireHostingV2SetupEnabled } from "@/lib/server/hosting-v2-api";
+import { isHostingV2Enabled } from "@/lib/server/hosting-v2-feature";
 import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
 
 export const dynamic = "force-dynamic";
@@ -10,13 +11,18 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request, contextValue: { params: Promise<{ deviceId: string; commandId: string }> }) {
   const context = beginApiRequest(request);
   try {
-    requireHostingV2Enabled();
+    requireHostingV2SetupEnabled();
     requireHostingAgentTransport(request);
     const body = hostingObject(await readJsonBody(request));
     const { deviceId, commandId } = await contextValue.params;
     const store = await getHostingV2Store();
     const device = await store.getDevice(deviceId);
     if (!device) throw new AccountAuthError("AGENT_DEVICE_INVALID", 403, "设备凭据无效。 ");
+    const command = await store.getCommand(deviceId, commandId);
+    if (!command) throw new AccountAuthError("AGENT_COMMAND_INVALID", 404, "设备任务不存在。 ");
+    if (!isHostingV2Enabled() && command.type !== "VERIFY" && command.type !== "STOP" && command.type !== "CLEANUP") {
+      throw new AccountAuthError("HOSTING_V2_TRADING_DISABLED", 503, "预上线配置模式不能完成新的开通或启动任务。 ");
+    }
     const proof = parseAgentProof(body);
     const outcome = agentString(body, "outcome", 6, 9);
     if (outcome !== "SUCCEEDED" && outcome !== "FAILED") throw new AccountAuthError("AGENT_FIELD_INVALID", 400, "outcome 无效。 ");

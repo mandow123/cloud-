@@ -20,7 +20,7 @@ test("supplier console exposes the implemented resource, listing, order and earn
   }
 
   const layout = readFileSync("app/supply/layout.tsx", "utf8");
-  assert.match(layout, /isHostingV2Enabled\(\)/u);
+  assert.match(layout, /isHostingV2SetupEnabled\(\)/u);
   assert.match(layout, /redirect\("\/hosting"\)/u);
   assert.match(layout, /<AccountRequired purpose="管理供应资源">/u);
 
@@ -31,7 +31,9 @@ test("supplier console exposes the implemented resource, listing, order and earn
   assert.match(shell, /href: "\/supply\/listings"/u);
   assert.match(shell, /href: "\/supply\/orders"/u);
   assert.match(shell, /href: "\/supply\/earnings"/u);
-  assert.doesNotMatch(shell, /upcomingRoutes|aria-disabled="true"/u);
+  assert.match(shell, /configurationMode/u);
+  assert.match(shell, /预上线配置模式/u);
+  assert.match(shell, /aria-disabled="true"/u);
 });
 
 test("resource registration issues a short-lived server challenge without client identity fields", () => {

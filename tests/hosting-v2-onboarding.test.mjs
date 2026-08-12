@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { requireHostingV2Enabled } from "../lib/server/hosting-v2-feature.ts";
+import { isHostingV2SetupEnabled, requireHostingV2Enabled, requireHostingV2SetupEnabled } from "../lib/server/hosting-v2-feature.ts";
 import { createSqliteHostingV2Store } from "../lib/server/hosting-v2-store-sqlite.ts";
 
 const account = {
@@ -63,7 +63,7 @@ test("hosting v2 APIs use formal sessions and never trust a workspace-role heade
   ];
   for (const path of supplyRoutes) {
     const source = readFileSync(path, "utf8");
-    assert.match(source, /requireHostingV2Enabled\(\)/u);
+    assert.match(source, /requireHostingV2SetupEnabled\(\)/u);
     assert.match(source, /requireTradingAccountSession\(request\)/u);
     assert.doesNotMatch(source, /x-kai-workspace-role|authorizeSupplyWorkspaceRole/u);
   }
@@ -85,13 +85,22 @@ test("hosting v2 APIs use formal sessions and never trust a workspace-role heade
 
 test("hosting v2 feature switch fails closed", () => {
   const previous = process.env.KAI_HOSTING_V2;
+  const previousSetup = process.env.KAI_HOSTING_V2_SETUP;
   try {
     delete process.env.KAI_HOSTING_V2;
+    delete process.env.KAI_HOSTING_V2_SETUP;
     assert.throws(requireHostingV2Enabled, (error) => error.code === "HOSTING_V2_DISABLED" && error.status === 503);
+    assert.throws(requireHostingV2SetupEnabled, (error) => error.code === "HOSTING_V2_SETUP_DISABLED" && error.status === 503);
+    process.env.KAI_HOSTING_V2_SETUP = "1";
+    assert.equal(isHostingV2SetupEnabled(), true);
+    assert.doesNotThrow(requireHostingV2SetupEnabled);
+    assert.throws(requireHostingV2Enabled, (error) => error.code === "HOSTING_V2_DISABLED");
     process.env.KAI_HOSTING_V2 = "1";
     assert.doesNotThrow(requireHostingV2Enabled);
   } finally {
     if (previous === undefined) delete process.env.KAI_HOSTING_V2;
     else process.env.KAI_HOSTING_V2 = previous;
+    if (previousSetup === undefined) delete process.env.KAI_HOSTING_V2_SETUP;
+    else process.env.KAI_HOSTING_V2_SETUP = previousSetup;
   }
 });

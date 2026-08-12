@@ -1,7 +1,7 @@
 import { AccountAuthError, assertAccountAuthSameOrigin } from "@/lib/server/account-auth";
 import { apiErrorResponse, beginApiRequest, jsonResponse, readJsonBody } from "@/lib/server/api-guard";
 import { requireTradingAccountSession } from "@/lib/server/entity-ownership";
-import { hostingInteger, hostingMutationContext, hostingObject, requireHostingV2Enabled } from "@/lib/server/hosting-v2-api";
+import { hostingInteger, hostingMutationContext, hostingObject, requireHostingV2SetupEnabled } from "@/lib/server/hosting-v2-api";
 import { hostingV2CurrentTermsVersion } from "@/lib/server/hosting-v2-image-policy";
 import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const context = beginApiRequest(request);
   try {
-    requireHostingV2Enabled();
+    requireHostingV2SetupEnabled();
     assertAccountAuthSameOrigin(request);
     const account = await requireTradingAccountSession(request);
     if (!account) throw new AccountAuthError("ACCOUNT_AUTH_REQUIRED", 401, "请先登录账户。 ");

@@ -7,9 +7,10 @@ type CapabilityCheck = Readonly<{ ready: boolean; failClosed: true; reason?: str
 
 export type HostingV2CapabilityReadiness = Readonly<{
   enabled: boolean;
+  configurationEnabled: boolean;
   ready: boolean;
   failClosed: true;
-  rolloutMode: "DISABLED" | "INTERNAL_AGENT_TRIAL";
+  rolloutMode: "DISABLED" | "SETUP" | "INTERNAL_AGENT_TRIAL";
   fundingMode: "ADMIN_DUAL_CONTROL_TRIAL_GRANTS";
   checks: Readonly<{
     storage: CapabilityCheck;
@@ -54,6 +55,7 @@ export function evaluateHostingV2Capability(input: {
   alipay: AlipayReadiness;
 }): HostingV2CapabilityReadiness {
   const enabled = ["1", "true"].includes((input.environment.KAI_HOSTING_V2 ?? "").trim().toLowerCase());
+  const configurationEnabled = enabled || ["1", "true"].includes((input.environment.KAI_HOSTING_V2_SETUP ?? "").trim().toLowerCase());
   let approvedImageCount = 0;
   let imagesReady = false;
   let termsReady = false;
@@ -103,9 +105,10 @@ export function evaluateHostingV2Capability(input: {
   } as const : null;
   return {
     enabled,
+    configurationEnabled,
     ready,
     failClosed: true,
-    rolloutMode: enabled ? "INTERNAL_AGENT_TRIAL" : "DISABLED",
+    rolloutMode: enabled ? "INTERNAL_AGENT_TRIAL" : configurationEnabled ? "SETUP" : "DISABLED",
     fundingMode: "ADMIN_DUAL_CONTROL_TRIAL_GRANTS",
     checks,
     operations: publicOperations,

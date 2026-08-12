@@ -20,9 +20,19 @@ const alipayClosed = { enabled: false, configured: false, canCreatePayment: fals
 test("disabled Hosting V2 stays rollback-safe without pretending its dependencies are ready", () => {
   const result = evaluateHostingV2Capability({ environment: { KAI_HOSTING_V2: "0" }, hostingStorage: storage, cardHourStorage: storage, operations: null, kaiIdentityAvailable: false, adminPasswordAvailable: false, financeApprovalAvailable: false, alipay: alipayClosed });
   assert.equal(result.enabled, false);
+  assert.equal(result.configurationEnabled, false);
   assert.equal(result.ready, true);
   assert.equal(result.rolloutMode, "DISABLED");
   assert.equal(result.checks.agentDelivery.ready, false);
+});
+
+test("setup mode exposes configuration readiness without opening public trading", () => {
+  const result = evaluateHostingV2Capability({ environment: { KAI_HOSTING_V2: "0", KAI_HOSTING_V2_SETUP: "1" }, hostingStorage: storage, cardHourStorage: storage, operations: null, kaiIdentityAvailable: false, adminPasswordAvailable: false, financeApprovalAvailable: false, alipay: alipayClosed });
+  assert.equal(result.enabled, false);
+  assert.equal(result.configurationEnabled, true);
+  assert.equal(result.ready, true, "setup mode must not remove the healthy public app from service");
+  assert.equal(result.rolloutMode, "SETUP");
+  assert.equal(result.checks.supplierIdentity.ready, false);
 });
 
 test("enabled Hosting V2 fails closed until every trial dependency is present", () => {

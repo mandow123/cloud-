@@ -42,6 +42,7 @@ function productionEnvironment(overrides = {}) {
     KAI_ENABLE_HSTS: "0",
     KAI_ALIPAY_ENABLED: "0",
     KAI_HOSTING_V2: "0",
+    KAI_HOSTING_V2_SETUP: "0",
     KAI_DB_DIR: "/app/db",
     KAI_MARKET_DATA_DIR: "/app/market",
     ...overrides,
@@ -85,6 +86,8 @@ function validateNegativeEnvironmentCases() {
   assertEnvironmentRejected({ KAI_ENABLE_HSTS: "2" }, "KAI_ENABLE_HSTS");
   assertEnvironmentRejected({ KAI_ALIPAY_ENABLED: "1" }, "KAI_ALIPAY_ENABLED");
   assertEnvironmentRejected({ KAI_HOSTING_V2: "2" }, "KAI_HOSTING_V2");
+  assertEnvironmentRejected({ KAI_HOSTING_V2_SETUP: "2" }, "KAI_HOSTING_V2_SETUP");
+  assertEnvironmentRejected({ KAI_HOSTING_V2_SETUP: "1" }, "KAI_HOSTING_APPROVED_IMAGES");
   assertEnvironmentRejected({ KAI_HOSTING_V2: "1" }, "KAI_HOSTING_APPROVED_IMAGES");
   assertEnvironmentRejected({ KAI_DB_DIR: "/" }, "KAI_DB_DIR");
   assertStateRootRejected("/");
@@ -114,6 +117,7 @@ async function main() {
       KAI_ENABLE_HSTS: process.env.KAI_ENABLE_HSTS ?? "0",
       KAI_ALIPAY_ENABLED: process.env.KAI_ALIPAY_ENABLED ?? "0",
       KAI_HOSTING_V2: process.env.KAI_HOSTING_V2 ?? "0",
+      KAI_HOSTING_V2_SETUP: process.env.KAI_HOSTING_V2_SETUP ?? "0",
       KAI_HOSTING_APPROVED_IMAGES: process.env.KAI_HOSTING_APPROVED_IMAGES,
       KAI_HOSTING_TERMS_VERSION: process.env.KAI_HOSTING_TERMS_VERSION,
       KAI_ACCOUNT_OIDC_CLIENT_ID: process.env.KAI_ACCOUNT_OIDC_CLIENT_ID,
@@ -159,6 +163,7 @@ async function main() {
       KAI_ENABLE_HSTS: candidateEnvironment.KAI_ENABLE_HSTS,
       KAI_ALIPAY_ENABLED: candidateEnvironment.KAI_ALIPAY_ENABLED,
       KAI_HOSTING_V2: candidateEnvironment.KAI_HOSTING_V2,
+      KAI_HOSTING_V2_SETUP: candidateEnvironment.KAI_HOSTING_V2_SETUP,
       KAI_HOSTING_APPROVED_IMAGES: candidateEnvironment.KAI_HOSTING_APPROVED_IMAGES,
       KAI_HOSTING_TERMS_VERSION: candidateEnvironment.KAI_HOSTING_TERMS_VERSION,
       KAI_ACCOUNT_OIDC_CLIENT_ID: candidateEnvironment.KAI_ACCOUNT_OIDC_CLIENT_ID,
@@ -209,7 +214,7 @@ async function main() {
     "KAI_ADMIN_USERNAME", "KAI_ADMIN_PASSWORD_HASH", "KAI_ADMIN_DISPLAY_NAME",
     "KAI_ADMIN_APPROVER_USERNAME", "KAI_ADMIN_APPROVER_PASSWORD_HASH", "KAI_ADMIN_APPROVER_DISPLAY_NAME",
     "KAI_ACCOUNT_OIDC_CLIENT_ID", "KAI_ACCOUNT_OIDC_TRANSACTION_SECRET",
-    "KAI_HOSTING_V2", "KAI_HOSTING_APPROVED_IMAGES", "KAI_HOSTING_TERMS_VERSION", "KAI_ALIPAY_ENABLED",
+    "KAI_HOSTING_V2", "KAI_HOSTING_V2_SETUP", "KAI_HOSTING_APPROVED_IMAGES", "KAI_HOSTING_TERMS_VERSION", "KAI_ALIPAY_ENABLED",
     "KAI_ALIPAY_APP_ID", "KAI_ALIPAY_PRIVATE_KEY", "KAI_ALIPAY_PUBLIC_KEY", "KAI_ALIPAY_SELLER_ID",
     "KAI_SSH_PROVISIONER_URL", "KAI_SSH_PROVISIONER_TOKEN",
   ]) {

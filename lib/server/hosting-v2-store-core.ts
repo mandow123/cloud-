@@ -743,9 +743,16 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       return { contract: contract(current), command: command(commandRow) };
     },
 
-    async pollCommand(deviceId, now) {
+    async getCommand(deviceId, commandId) {
+      const row = await db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE id=? AND device_id=?", [commandId, deviceId]);
+      return row ? command(row) : null;
+    },
+
+    async pollCommand(deviceId, now, allowedTypes) {
+      if (allowedTypes && allowedTypes.length === 0) return null;
       const leaseCutoff = new Date(Date.parse(now) - 60_000).toISOString();
-      const current = await db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE device_id=? AND (status='PENDING' OR (status='DELIVERED' AND delivered_at<? AND attempt<5)) ORDER BY created_at LIMIT 1", [deviceId, leaseCutoff]);
+      const typeFilter = allowedTypes ? ` AND command_type IN (${allowedTypes.map(() => "?").join(",")})` : "";
+      const current = await db.first<Row>(`SELECT * FROM hosting_v2_agent_commands WHERE device_id=?${typeFilter} AND (status='PENDING' OR (status='DELIVERED' AND delivered_at<? AND attempt<5)) ORDER BY created_at LIMIT 1`, [deviceId, ...(allowedTypes ?? []), leaseCutoff]);
       if (!current) return null;
       await db.batch([{ sql: "UPDATE hosting_v2_agent_commands SET status='DELIVERED',attempt=attempt+1,delivered_at=? WHERE id=? AND (status='PENDING' OR (status='DELIVERED' AND delivered_at<? AND attempt<5))", values: [now, value(current, "id"), leaseCutoff] }]);
       const row = await db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE id=?", [value(current, "id")]);

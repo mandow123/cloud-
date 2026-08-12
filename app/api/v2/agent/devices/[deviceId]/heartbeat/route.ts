@@ -2,7 +2,7 @@ import { AccountAuthError } from "@/lib/server/account-auth";
 import { apiErrorResponse, beginApiRequest, jsonResponse, readJsonBody } from "@/lib/server/api-guard";
 import { agentDigest, agentInteger, agentString, hostingAgentHttpError, parseAgentProof, requireHostingAgentTransport, verifyExistingDeviceProof } from "@/lib/server/hosting-agent-api";
 import { hostingAgentDigest, hostingAgentTimestamp } from "@/lib/server/hosting-agent-crypto";
-import { hostingObject, requireHostingV2Enabled } from "@/lib/server/hosting-v2-api";
+import { hostingObject, requireHostingV2SetupEnabled } from "@/lib/server/hosting-v2-api";
 import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request, contextValue: { params: Promise<{ deviceId: string }> }) {
   const context = beginApiRequest(request);
   try {
-    requireHostingV2Enabled();
+    requireHostingV2SetupEnabled();
     requireHostingAgentTransport(request);
     const body = hostingObject(await readJsonBody(request));
     const { deviceId } = await contextValue.params;

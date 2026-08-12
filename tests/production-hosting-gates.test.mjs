@@ -16,6 +16,7 @@ const base = {
   KAI_MARKET_DATA_DIR: "/app/market",
   KAI_ALIPAY_ENABLED: "0",
   KAI_HOSTING_V2: "0",
+  KAI_HOSTING_V2_SETUP: "0",
 };
 const ROOT_HASH = `pbkdf2-sha256:310000:AAAAAAAAAAAAAAAAAAAAAA==:${"A".repeat(43)}=`;
 const APPROVER_HASH = `pbkdf2-sha256:310000:QkJCQkJCQkJCQkJCQkJCQg==:${"B".repeat(43)}=`;
@@ -47,20 +48,42 @@ test("Hosting V2 cannot start without identity, immutable image and terms policy
     KAI_ADMIN_APPROVER_PASSWORD_HASH: APPROVER_HASH,
   };
   assert.equal(validateProductionEnvironment(enabled).hostingV2Enabled, true);
+  assert.equal(validateProductionEnvironment(enabled).hostingV2SetupEnabled, true);
   rejection({ ...enabled, KAI_HOSTING_APPROVED_IMAGES: "ghcr.io/kai-cloud/cuda-pytorch:latest" }, "KAI_HOSTING_APPROVED_IMAGES");
   rejection({ ...enabled, KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: "replace-me-with-a-secret-that-is-long" }, "KAI_ACCOUNT_OIDC_TRANSACTION_SECRET");
   rejection({ ...enabled, KAI_ADMIN_APPROVER_USERNAME: "kai-root" }, "KAI_ADMIN_APPROVER_USERNAME");
   rejection({ ...enabled, KAI_ADMIN_APPROVER_PASSWORD_HASH: ROOT_HASH }, "different password");
 });
 
+test("Hosting V2 setup validates every production dependency without opening trading", () => {
+  const setup = {
+    ...base,
+    KAI_HOSTING_V2_SETUP: "1",
+    KAI_HOSTING_APPROVED_IMAGES: `ghcr.io/mandow123/kai-cloud-gpu-workload@sha256:${"a".repeat(64)}`,
+    KAI_HOSTING_TERMS_VERSION: "KAI_HOSTING_TERMS_2026_08",
+    KAI_ACCOUNT_OIDC_CLIENT_ID: "kaic_gqLnfmgdF_tmAc5Xcvg1J_F1UsCUDrGOM83ZigHh1MQ",
+    KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: "67fc59de0a8d976f89aa95f61e7c0d8944e9e5ad39f0cbdf5316aa8c3e4ab0fa",
+    KAI_ADMIN_USERNAME: "kai-root",
+    KAI_ADMIN_PASSWORD_HASH: ROOT_HASH,
+    KAI_ADMIN_APPROVER_USERNAME: "kai-finance-approver",
+    KAI_ADMIN_APPROVER_PASSWORD_HASH: APPROVER_HASH,
+  };
+  const validated = validateProductionEnvironment(setup);
+  assert.equal(validated.hostingV2Enabled, false);
+  assert.equal(validated.hostingV2SetupEnabled, true);
+  rejection({ ...base, KAI_HOSTING_V2_SETUP: "1" }, "KAI_HOSTING_APPROVED_IMAGES");
+});
+
 test("production templates carry the rollback and payment gates into the container", () => {
   const compose = readFileSync(new URL("../deploy/compose.production.yml", import.meta.url), "utf8");
   const environment = readFileSync(new URL("../deploy/kai-cloud-app.env.example", import.meta.url), "utf8");
   assert.match(compose, /KAI_HOSTING_V2: "\$\{KAI_HOSTING_V2:-0\}"/u);
+  assert.match(compose, /KAI_HOSTING_V2_SETUP: "\$\{KAI_HOSTING_V2_SETUP:-0\}"/u);
   assert.match(compose, /KAI_ALIPAY_ENABLED: "\$\{KAI_ALIPAY_ENABLED:-0\}"/u);
   assert.match(compose, /KAI_ADMIN_APPROVER_USERNAME/u);
   assert.match(compose, /KAI_ADMIN_APPROVER_PASSWORD_HASH/u);
   assert.match(environment, /^KAI_HOSTING_V2=0$/mu);
+  assert.match(environment, /^KAI_HOSTING_V2_SETUP=0$/mu);
   assert.match(environment, /^KAI_ALIPAY_ENABLED=0$/mu);
   assert.match(environment, /^KAI_ADMIN_APPROVER_USERNAME=/mu);
   assert.match(environment, /^KAI_ADMIN_APPROVER_PASSWORD_HASH=/mu);

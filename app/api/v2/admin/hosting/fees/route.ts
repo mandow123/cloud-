@@ -1,7 +1,7 @@
 import { AccountAuthError, assertAccountAuthSameOrigin } from "@/lib/server/account-auth";
 import { requireAdminPermission } from "@/lib/server/admin-auth";
 import { apiErrorResponse, beginApiRequest, jsonResponse, readJsonBody } from "@/lib/server/api-guard";
-import { hostingBoolean, hostingInteger, hostingMutationContext, hostingObject, hostingString, requireHostingV2Enabled } from "@/lib/server/hosting-v2-api";
+import { hostingBoolean, hostingInteger, hostingMutationContext, hostingObject, hostingString, requireHostingV2SetupEnabled } from "@/lib/server/hosting-v2-api";
 import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const context = beginApiRequest(request);
   try {
-    requireHostingV2Enabled();
+    requireHostingV2SetupEnabled();
     await requireAdminPermission(request, ["MARKET_READ", "PAYMENT_READ"]);
     return jsonResponse({ record: await (await getHostingV2Store()).activeFeeSchedule(new Date().toISOString()) }, 200, undefined, context);
   } catch (error) {
@@ -20,7 +20,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const context = beginApiRequest(request);
   try {
-    requireHostingV2Enabled();
+    requireHostingV2SetupEnabled();
     assertAccountAuthSameOrigin(request);
     const admin = await requireAdminPermission(request, ["MARKET_PUBLISH", "SETTLEMENT_OPERATE"]);
     const body = hostingObject(await readJsonBody(request));

@@ -162,7 +162,8 @@ test("the admin panel stays isolated, supplier pages stay gated and transaction 
 
   for (const path of APPROVED_HOSTING_V2_ROUTES) assert.equal(existsSync(join(ROOT, path)), true, `${path} is missing`);
   const supplyLayout = readFileSync(join(ROOT, "app/supply/layout.tsx"), "utf8");
-  assert.match(supplyLayout, /if \(!isHostingV2Enabled\(\)\) redirect\("\/hosting"\)/u);
+  assert.match(supplyLayout, /if \(!isHostingV2SetupEnabled\(\)\) redirect\("\/hosting"\)/u);
+  assert.match(supplyLayout, /configurationMode=\{!isHostingV2Enabled\(\)\}/u);
   assert.match(supplyLayout, /<AccountRequired purpose="管理供应资源">/u);
 
   for (const path of [
