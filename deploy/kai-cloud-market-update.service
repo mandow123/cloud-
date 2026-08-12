@@ -10,7 +10,6 @@ Type=oneshot
 EnvironmentFile=/etc/kai-cloud/kai-cloud-release.env
 ExecStart=/usr/bin/flock --nonblock /run/lock/kai-cloud-market-update.lock /usr/bin/timeout --signal=TERM --kill-after=15s 300s /bin/sh /usr/local/lib/kai-cloud/kai-cloud-market-update-run.sh
 TimeoutStartSec=330
-RuntimeMaxSec=330
 UMask=0027
 Nice=5
 IOSchedulingClass=best-effort

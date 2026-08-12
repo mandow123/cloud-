@@ -260,6 +260,8 @@ async function main() {
     assert(unit.includes("OnFailure=kai-cloud-ops-alert@%n.service"), `${name} must have a failure hook`);
     assert(unit.includes("/usr/bin/flock --nonblock"), `${name} must prevent concurrent runs`);
     assert(unit.includes("/usr/bin/timeout --signal=TERM --kill-after=15s 300s"), `${name} must have a 300 second runtime boundary`);
+    assert(unit.includes("TimeoutStartSec=330"), `${name} must give the bounded command time to terminate cleanly`);
+    assert(!unit.includes("RuntimeMaxSec="), `${name} must not use the ineffective RuntimeMaxSec setting with Type=oneshot`);
     assert(unit.includes("EnvironmentFile=/etc/kai-cloud/kai-cloud-release.env"), `${name} must read the immutable release environment`);
   }
   assert(updateTimer.includes("06:00:00 Asia/Shanghai") && updateTimer.includes("Persistent=true"), "market update timer must persist the 06:00 China schedule");
