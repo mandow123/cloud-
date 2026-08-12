@@ -12,8 +12,13 @@ STAGING_RELEASE=
 SERVICES_STOPPED=0
 AGENT_WAS_ACTIVE=0
 AGENT_WAS_ENABLED=0
+ACTUATOR_WAS_ACTIVE=0
+ACTUATOR_WAS_ENABLED=0
 PREVIOUS_RELEASE=
 CURRENT_SWITCHED=0
+ACTUATOR_UNIT_EXISTED=0
+AGENT_UNIT_EXISTED=0
+CLI_EXISTED=0
 
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   echo "Another KAI Host Agent installation is already running." >&2
@@ -27,6 +32,8 @@ cleanup() {
     rm -rf -- "$STAGING_RELEASE"
   fi
   if [ "$STATUS" -ne 0 ] && [ "$SERVICES_STOPPED" -eq 1 ]; then
+    systemctl stop kai-host-agent.service >/dev/null 2>&1 || true
+    systemctl stop kai-host-actuator.service >/dev/null 2>&1 || true
     if [ "$CURRENT_SWITCHED" -eq 1 ]; then
       if [ -n "$PREVIOUS_RELEASE" ] && [ -d "$PREVIOUS_RELEASE" ]; then
         ln -s "$PREVIOUS_RELEASE" "/opt/kai-host-agent/.rollback-$$" || true
@@ -35,12 +42,29 @@ cleanup() {
         rm -f -- /opt/kai-host-agent/current
       fi
     fi
+    if [ "$ACTUATOR_UNIT_EXISTED" -eq 1 ]; then
+      cp -a -- "$LOCK_DIR/kai-host-actuator.service" /etc/systemd/system/kai-host-actuator.service || true
+    else
+      rm -f -- /etc/systemd/system/kai-host-actuator.service
+    fi
+    if [ "$AGENT_UNIT_EXISTED" -eq 1 ]; then
+      cp -a -- "$LOCK_DIR/kai-host-agent.service" /etc/systemd/system/kai-host-agent.service || true
+    else
+      rm -f -- /etc/systemd/system/kai-host-agent.service
+    fi
+    rm -f -- /usr/local/bin/kai-host-agent
+    if [ "$CLI_EXISTED" -eq 1 ]; then
+      cp -a -- "$LOCK_DIR/kai-host-agent-cli" /usr/local/bin/kai-host-agent || true
+    fi
     systemctl daemon-reload >/dev/null 2>&1 || true
-    systemctl start kai-host-actuator.service >/dev/null 2>&1 || true
+    if [ "$ACTUATOR_WAS_ENABLED" -eq 1 ]; then systemctl enable kai-host-actuator.service >/dev/null 2>&1 || true; else systemctl disable kai-host-actuator.service >/dev/null 2>&1 || true; fi
+    if [ "$ACTUATOR_WAS_ACTIVE" -eq 1 ]; then systemctl start kai-host-actuator.service >/dev/null 2>&1 || true; fi
+    if [ "$AGENT_WAS_ENABLED" -eq 1 ]; then systemctl enable kai-host-agent.service >/dev/null 2>&1 || true; else systemctl disable kai-host-agent.service >/dev/null 2>&1 || true; fi
     if [ "$AGENT_WAS_ACTIVE" -eq 1 ]; then
       systemctl start kai-host-agent.service >/dev/null 2>&1 || true
     fi
   fi
+  rm -f -- "$LOCK_DIR/kai-host-actuator.service" "$LOCK_DIR/kai-host-agent.service" "$LOCK_DIR/kai-host-agent-cli"
   rmdir "$LOCK_DIR" >/dev/null 2>&1 || true
   exit "$STATUS"
 }
@@ -143,7 +167,21 @@ fi
 
 if systemctl is-active --quiet kai-host-agent.service 2>/dev/null; then AGENT_WAS_ACTIVE=1; fi
 if systemctl is-enabled --quiet kai-host-agent.service 2>/dev/null; then AGENT_WAS_ENABLED=1; fi
+if systemctl is-active --quiet kai-host-actuator.service 2>/dev/null; then ACTUATOR_WAS_ACTIVE=1; fi
+if systemctl is-enabled --quiet kai-host-actuator.service 2>/dev/null; then ACTUATOR_WAS_ENABLED=1; fi
 if [ -L /opt/kai-host-agent/current ]; then PREVIOUS_RELEASE=$(readlink -f /opt/kai-host-agent/current); fi
+if [ -e /etc/systemd/system/kai-host-actuator.service ]; then
+  cp -a -- /etc/systemd/system/kai-host-actuator.service "$LOCK_DIR/kai-host-actuator.service"
+  ACTUATOR_UNIT_EXISTED=1
+fi
+if [ -e /etc/systemd/system/kai-host-agent.service ]; then
+  cp -a -- /etc/systemd/system/kai-host-agent.service "$LOCK_DIR/kai-host-agent.service"
+  AGENT_UNIT_EXISTED=1
+fi
+if [ -e /usr/local/bin/kai-host-agent ] || [ -L /usr/local/bin/kai-host-agent ]; then
+  cp -a -- /usr/local/bin/kai-host-agent "$LOCK_DIR/kai-host-agent-cli"
+  CLI_EXISTED=1
+fi
 systemctl stop kai-host-agent.service >/dev/null 2>&1 || true
 systemctl stop kai-host-actuator.service >/dev/null 2>&1 || true
 SERVICES_STOPPED=1
@@ -160,16 +198,21 @@ sed -i "s|^ExecStart=.*src/actuator-server.mjs$|ExecStart=$NODE_BINARY /opt/kai-
 systemctl daemon-reload
 systemctl enable --now kai-host-actuator.service
 if [ "$AGENT_WAS_ENABLED" -eq 1 ]; then
-  systemctl enable --now kai-host-agent.service
-elif [ "$AGENT_WAS_ACTIVE" -eq 1 ]; then
+  systemctl enable kai-host-agent.service
+else
+  systemctl disable kai-host-agent.service >/dev/null 2>&1 || true
+fi
+if [ "$AGENT_WAS_ACTIVE" -eq 1 ]; then
   systemctl start kai-host-agent.service
 fi
 SERVICES_STOPPED=0
 CURRENT_SWITCHED=0
 
 echo "KAI Host Agent $AGENT_VERSION installed from release $RELEASE_REVISION."
-if [ "$AGENT_WAS_ENABLED" -eq 1 ] || [ "$AGENT_WAS_ACTIVE" -eq 1 ]; then
+if [ "$AGENT_WAS_ACTIVE" -eq 1 ]; then
   echo "The previously running Host Agent service has been restored."
+elif [ "$AGENT_WAS_ENABLED" -eq 1 ]; then
+  echo "The previously stopped Host Agent service remains enabled and stopped."
 else
   echo "KAI Host Agent installed but not started."
 fi

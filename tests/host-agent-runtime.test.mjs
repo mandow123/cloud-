@@ -216,7 +216,7 @@ test("pairing and heartbeat persist a private 0600 identity and send server-veri
         registerEndpoint: "http://127.0.0.1:3014/api/v2/agent/register",
         challengeId: "hac_runtime_challenge_000001",
         nonce: "runtimeNonceValue000001",
-        minimumAgentVersion: "1.9.2",
+        minimumAgentVersion: "1.9.3",
         expiresAt: new Date(Date.now() + 300_000).toISOString(),
       },
       displayName: "4090 工作站 01",
@@ -288,6 +288,10 @@ test("installer is offline, non-root at runtime and systemd-hardened", async () 
   assert.match(installer, /mv -Tf .*\/opt\/kai-host-agent\/current/u);
   assert.match(installer, /PREVIOUS_RELEASE/u);
   assert.match(installer, /AGENT_WAS_ENABLED/u);
+  assert.match(installer, /ACTUATOR_WAS_ACTIVE/u);
+  assert.match(installer, /kai-host-actuator\.service.*\/etc\/systemd\/system\/kai-host-actuator\.service/u);
+  assert.match(installer, /kai-host-agent-cli.*\/usr\/local\/bin\/kai-host-agent/u);
+  assert.match(installer, /rm -f -- "\$LOCK_DIR\/kai-host-actuator\.service"/u);
   assert.match(service, /^User=kai-host-agent$/mu);
   assert.match(service, /^NoNewPrivileges=true$/mu);
   assert.match(service, /^ProtectSystem=strict$/mu);
@@ -313,6 +317,6 @@ test("installer is offline, non-root at runtime and systemd-hardened", async () 
   assert.match(installer, /kai-host-actuator\.service/u);
   assert.match(runtime, /check-connection/u);
   assert.match(runtime, /readPairingFile/u);
-  assert.equal(packageJson.version, "1.9.2");
+  assert.equal(packageJson.version, "1.9.3");
   assert.equal(packageJson.dependencies, undefined);
 });

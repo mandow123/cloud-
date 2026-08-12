@@ -187,7 +187,7 @@ async function hostAgentPost(url, body, options = {}) {
     headers: {
       accept: "application/json",
       "content-type": "application/json",
-      "user-agent": "KAI-Host-Agent/1.9.2",
+      "user-agent": "KAI-Host-Agent/1.9.3",
       ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
     },
     body: JSON.stringify(body),
