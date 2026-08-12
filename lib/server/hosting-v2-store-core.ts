@@ -3,6 +3,7 @@ import { HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/h
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { assertHostingAgentWindow, hostingAgentCanonicalJson, hostingAgentDigest, verifyHostingAgentSignature } from "./hosting-agent-crypto.ts";
 import { assertHostingV2ApprovedImage, HOSTING_V2_OCI_IMAGE_PATTERN, hostingV2ApprovedImages } from "./hosting-v2-image-policy.ts";
+import { physicalGpuAudit } from "./hosting-v2-audit-policy.ts";
 import type { HostingMutationContext, HostingV2DatabaseAdapter, HostingV2Sql, HostingV2Store } from "./hosting-v2-store.ts";
 
 type Row = Record<string, unknown>;
@@ -498,9 +499,10 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
       const pricingFrozen = snapshot.platformFeeBps === number(main, "fee_platform_bps") && snapshot.referralRewardBps === number(main, "fee_referral_bps")
         && snapshot.cardHourMicrosPerGpuHour === number(main, "offer_rate") && snapshot.approvedImage === value(main, "offer_approved_image")
         && snapshot.termsVersion === value(main, "offer_terms_version") && snapshot.gpuModel === value(main, "offer_gpu_model");
+      const gpuAudit = physicalGpuAudit(inventory);
       const checks = [
         goldenCheck("supplier", "供应主体已签约并审核", value(main, "supplier_status") === "APPROVED" && Boolean(nullable(main, "supplier_agreement_version")) && Boolean(nullable(main, "supplier_evidence_digest")), `状态 ${nullable(main, "supplier_status") ?? "缺失"}`),
-        goldenCheck("gpu", "单张首期 GPU 规格真实登记", ["RTX_4090", "H100_80GB"].includes(inventory.gpuModel) && inventory.gpuModel === snapshot.gpuModel && Boolean(inventory.gpuUuidDigest), `${inventory.gpuModel} · ${inventory.gpuMemoryMiB} MiB`),
+        goldenCheck("gpu", "单张首期 GPU 规格真实登记", gpuAudit.passed && inventory.gpuModel === snapshot.gpuModel, gpuAudit.detail),
         goldenCheck("verification", "验真与控制面回连有签名证明", value(main, "verification_status") === "PASSED" && Boolean(verification) && verificationTransport && verification?.public_host === inventory.publicHost && number(verification!, "public_port") === inventory.sshPortStart, verificationTransport ? "设备签名、验真摘要与公网回连一致" : "缺少由设备签名接口写入的验真证明"),
         goldenCheck("agent", "Host Agent 版本与心跳有效", agentVersionAtLeast(value(main, "agent_version"), HOSTING_V2_MIN_AGENT_VERSION) && agentFresh && verificationFresh, `${value(main, "agent_version")} · 最后心跳 ${nullable(main, "last_seen_at") ?? "缺失"}`),
         goldenCheck("pricing", "成交快照冻结费率、镜像与条款", pricingFrozen && HOSTING_V2_OCI_IMAGE_PATTERN.test(snapshot.approvedImage), pricingFrozen ? snapshot.approvedImage : "挂牌或费率已与合同快照不一致"),
