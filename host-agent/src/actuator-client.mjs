@@ -38,6 +38,16 @@ export async function callActuator(request, { socketPath = process.env.KAI_HOST_
   });
 }
 
+export async function doctorActuator({ call = callActuator } = {}) {
+  const result = await call({ protocolVersion: 1, operation: "DOCTOR" });
+  if (result.protocolVersion !== 1 || typeof result.dockerVersion !== "string"
+    || !/^\d+\.\d+(?:\.\d+)?(?:[-+._A-Za-z0-9]*)?$/u.test(result.dockerVersion)
+    || result.nvidiaRuntime !== true) {
+    throw new AgentError("ACTUATOR_RESULT_INVALID", "The workload actuator returned an invalid host readiness result.");
+  }
+  return result;
+}
+
 export async function provisionWorkload(command, state, { call = callActuator } = {}) {
   const payload = command?.payload;
   const inventory = state?.inventory;

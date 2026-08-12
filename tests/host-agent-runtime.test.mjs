@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { heartbeat, pairDevice, processOneCommand } from "../host-agent/src/client.mjs";
+import { doctorActuator } from "../host-agent/src/actuator-client.mjs";
 import { runDoctor } from "../host-agent/src/doctor.mjs";
 import { parseNvidiaInventory } from "../host-agent/src/inventory.mjs";
 import { AgentError, assertHttpsEndpoint, canonicalJson, digestJson, generateDeviceIdentity, signPayload } from "../host-agent/src/protocol.mjs";
@@ -58,7 +59,7 @@ test("doctor fails closed unless Docker, NVIDIA runtime, capacity and the manage
   const calls = [];
   const result = await runDoctor({ publicHost: inventory.publicHost }, {
     inventoryCollector: async () => inventory,
-    runDocker: async () => ({ dockerVersion: "28.0.4", nvidiaRuntime: true }),
+    runtimeChecker: async () => ({ protocolVersion: 1, dockerVersion: "28.0.4", nvidiaRuntime: true }),
     portChecker: async (port) => calls.push(port),
   });
   assert.equal(result.inventory.gpuModel, "RTX_4090");
@@ -67,14 +68,25 @@ test("doctor fails closed unless Docker, NVIDIA runtime, capacity and the manage
 
   await assert.rejects(runDoctor({}, {
     inventoryCollector: async () => ({ ...inventory, storageGiB: 39 }),
-    runDocker: async () => ({ dockerVersion: "28.0.4", nvidiaRuntime: true }),
+    runtimeChecker: async () => ({ protocolVersion: 1, dockerVersion: "28.0.4", nvidiaRuntime: true }),
     portChecker: async () => undefined,
   }), (error) => error.code === "STORAGE_CAPACITY_LOW");
   await assert.rejects(runDoctor({}, {
     inventoryCollector: async () => ({ ...inventory, memoryMiB: 8_191 }),
-    runDocker: async () => ({ dockerVersion: "28.0.4", nvidiaRuntime: true }),
+    runtimeChecker: async () => ({ protocolVersion: 1, dockerVersion: "28.0.4", nvidiaRuntime: true }),
     portChecker: async () => undefined,
   }), (error) => error.code === "HOST_MEMORY_LOW");
+});
+
+test("doctor obtains Docker readiness only through the constrained root actuator", async () => {
+  let request = null;
+  const result = await doctorActuator({ call: async (value) => {
+    request = value;
+    return { protocolVersion: 1, dockerVersion: "28.0.4", nvidiaRuntime: true };
+  } });
+  assert.deepEqual(request, { protocolVersion: 1, operation: "DOCTOR" });
+  assert.equal(result.nvidiaRuntime, true);
+  await assert.rejects(doctorActuator({ call: async () => ({ protocolVersion: 1, dockerVersion: "28.0.4", nvidiaRuntime: false }) }), (error) => error.code === "ACTUATOR_RESULT_INVALID");
 });
 
 test("VERIFY runs only the fixed six probes and binds every result to signed evidence", async () => {
@@ -174,7 +186,7 @@ test("pairing and heartbeat persist a private 0600 identity and send server-veri
         registerEndpoint: "http://127.0.0.1:3014/api/v2/agent/register",
         challengeId: "hac_runtime_challenge_000001",
         nonce: "runtimeNonceValue000001",
-        minimumAgentVersion: "1.7.0",
+        minimumAgentVersion: "1.8.0",
         expiresAt: new Date(Date.now() + 300_000).toISOString(),
       },
       displayName: "4090 工作站 01",
@@ -227,6 +239,7 @@ test("installer is offline, non-root at runtime and systemd-hardened", async () 
   const actuatorClient = await readFile("host-agent/src/actuator-client.mjs", "utf8");
   const runtime = await readFile("host-agent/src/cli.mjs", "utf8");
   const verifier = await readFile("host-agent/src/verify.mjs", "utf8");
+  const doctor = await readFile("host-agent/src/doctor.mjs", "utf8");
   const packageJson = JSON.parse(await readFile("host-agent/package.json", "utf8"));
 
   assert.doesNotMatch(installer, /curl|wget|apt-get|npm install|docker group/u);
@@ -248,11 +261,13 @@ test("installer is offline, non-root at runtime and systemd-hardened", async () 
   assert.match(actuatorClient, /SSH-2\\\.0-/u);
   assert.doesNotMatch(actuator, /shell\s*:\s*true|\bexec(?:Sync)?\s*\(|--privileged/u);
   assert.doesNotMatch(actuatorClient, /node:child_process|\/usr\/bin\/docker|\/run\/docker\.sock/u);
+  assert.doesNotMatch(doctor, /node:child_process|\/usr\/bin\/docker|\/run\/docker\.sock/u);
+  assert.match(doctor, /doctorActuator/u);
   assert.doesNotMatch(runtime, /privateKeyPkcs8|registrationBody|nonce/u);
   assert.doesNotMatch(verifier, /shell\s*:\s*true|\bexec(?:Sync)?\s*\(/u);
   assert.match(installer, /src\/verify\.mjs/u);
   assert.match(installer, /src\/doctor\.mjs/u);
   assert.match(installer, /kai-host-actuator\.service/u);
-  assert.equal(packageJson.version, "1.7.0");
+  assert.equal(packageJson.version, "1.8.0");
   assert.equal(packageJson.dependencies, undefined);
 });

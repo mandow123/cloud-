@@ -236,7 +236,7 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
       displayName: "黄金闭环 RTX 4090",
       deviceKeyId: `sha256:${"4".repeat(64)}`,
       devicePublicKey: "A".repeat(43),
-      agentVersion: "1.7.0",
+      agentVersion: "1.8.0",
       inventory: inventory(),
       inventoryDigest,
     }, mutation("agent:golden", "golden-device-register", now));

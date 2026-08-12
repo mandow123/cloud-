@@ -3,7 +3,7 @@
 import { chmod, mkdir, unlink } from "node:fs/promises";
 import { createServer } from "node:net";
 import { dirname, isAbsolute } from "node:path";
-import { enforceExpiredWorkloads, executeCleanup, executeProvision, executeStart, executeStop } from "./actuator.mjs";
+import { enforceExpiredWorkloads, executeCleanup, executeDoctor, executeProvision, executeStart, executeStop } from "./actuator.mjs";
 import { AgentError } from "./protocol.mjs";
 
 const socketPath = process.env.KAI_HOST_ACTUATOR_SOCKET?.trim() || "/run/kai-host-actuator/actuator.sock";
@@ -29,8 +29,10 @@ const server = createServer({ allowHalfOpen: true }, (socket) => {
     queue = queue.then(async () => {
       try {
         const request = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-        const result = request?.operation === "PROVISION"
-          ? await executeProvision(request)
+        const result = request?.operation === "DOCTOR"
+          ? await executeDoctor(request)
+          : request?.operation === "PROVISION"
+            ? await executeProvision(request)
           : request?.operation === "START"
             ? await executeStart(request)
             : request?.operation === "STOP"

@@ -90,12 +90,41 @@ export function parseCleanupRequest(value) {
   return { protocolVersion: 1, operation: "CLEANUP", commandId: input.commandId, contractId: input.contractId };
 }
 
+export function parseDoctorRequest(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw fail("DOCTOR_REQUEST_INVALID", "Doctor request must be an object.");
+  assertExactKeys(value, ["protocolVersion", "operation"], "DOCTOR_REQUEST_INVALID");
+  if (value.protocolVersion !== 1 || value.operation !== "DOCTOR") throw fail("DOCTOR_REQUEST_INVALID", "Doctor protocol is unsupported.");
+  return { protocolVersion: 1, operation: "DOCTOR" };
+}
+
 async function docker(args) {
   try {
     return await execFile("/usr/bin/docker", args, { encoding: "utf8", timeout: 30_000, maxBuffer: 256 * 1024 });
   } catch (error) {
     throw fail("DOCKER_OPERATION_FAILED", "The isolated container operation failed.", error);
   }
+}
+
+export async function executeDoctor(value, { runDocker = docker } = {}) {
+  parseDoctorRequest(value);
+  let versionOutput;
+  let runtimesOutput;
+  try {
+    [versionOutput, runtimesOutput] = await Promise.all([
+      runDocker(["version", "--format", "{{.Server.Version}}"]),
+      runDocker(["info", "--format", "{{json .Runtimes}}"]),
+    ]);
+  } catch (error) {
+    if (error instanceof AgentError) throw error;
+    throw fail("DOCKER_UNAVAILABLE", "Docker Engine or the NVIDIA container runtime is unavailable.", error);
+  }
+  const dockerVersion = versionOutput.stdout.trim();
+  let runtimes;
+  try { runtimes = JSON.parse(runtimesOutput.stdout.trim()); }
+  catch (error) { throw fail("NVIDIA_RUNTIME_INVALID", "Docker returned an invalid runtime inventory.", error); }
+  if (!/^\d+\.\d+(?:\.\d+)?(?:[-+._A-Za-z0-9]*)?$/u.test(dockerVersion)) throw fail("DOCKER_VERSION_INVALID", "Docker returned an invalid server version.");
+  if (!runtimes || typeof runtimes !== "object" || Array.isArray(runtimes) || !("nvidia" in runtimes)) throw fail("NVIDIA_RUNTIME_MISSING", "Docker is not configured with the NVIDIA container runtime.");
+  return { protocolVersion: 1, dockerVersion, nvidiaRuntime: true };
 }
 
 async function writeJsonAtomic(path, value) {

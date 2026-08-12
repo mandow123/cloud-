@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { cleanupWorkload, probeSshReadiness, provisionWorkload, startWorkload, stopWorkload } from "../host-agent/src/actuator-client.mjs";
-import { enforceExpiredWorkloads, executeCleanup, executeProvision, executeStart, executeStop, parseCleanupRequest, parseProvisionRequest, parseStartRequest, parseStopRequest } from "../host-agent/src/actuator.mjs";
+import { enforceExpiredWorkloads, executeCleanup, executeDoctor, executeProvision, executeStart, executeStop, parseCleanupRequest, parseDoctorRequest, parseProvisionRequest, parseStartRequest, parseStopRequest } from "../host-agent/src/actuator.mjs";
 import { processOneCommand } from "../host-agent/src/client.mjs";
 import { AgentError, digestJson, generateDeviceIdentity } from "../host-agent/src/protocol.mjs";
 import { writeState } from "../host-agent/src/state.mjs";
@@ -39,6 +39,19 @@ test("root actuator accepts only immutable allowlisted KAI images and fixed prov
   assert.throws(() => parseProvisionRequest(request({ image: `ghcr.io/kai-cloud/other@sha256:${"b".repeat(64)}` }), environment), (error) => error.code === "IMAGE_NOT_APPROVED");
   assert.throws(() => parseProvisionRequest(request({ publicKey: `${publicKey}\ncommand=bad` }), environment), (error) => error.code === "PUBLIC_KEY_INVALID");
   assert.throws(() => parseProvisionRequest(request({ operation: "SHELL" }), environment), (error) => error.code === "PROVISION_REQUEST_INVALID");
+});
+
+test("root actuator exposes one exact Docker and NVIDIA Runtime readiness operation", async () => {
+  const calls = [];
+  assert.deepEqual(parseDoctorRequest({ protocolVersion: 1, operation: "DOCTOR" }), { protocolVersion: 1, operation: "DOCTOR" });
+  assert.throws(() => parseDoctorRequest({ protocolVersion: 1, operation: "DOCTOR", command: "SHELL" }), (error) => error.code === "DOCTOR_REQUEST_INVALID");
+  const result = await executeDoctor({ protocolVersion: 1, operation: "DOCTOR" }, { runDocker: async (args) => {
+    calls.push(args);
+    return args[0] === "version" ? { stdout: "28.0.4\n" } : { stdout: '{"io.containerd.runc.v2":{},"nvidia":{}}\n' };
+  } });
+  assert.deepEqual(calls, [["version", "--format", "{{.Server.Version}}"], ["info", "--format", "{{json .Runtimes}}"]]);
+  assert.deepEqual(result, { protocolVersion: 1, dockerVersion: "28.0.4", nvidiaRuntime: true });
+  await assert.rejects(executeDoctor({ protocolVersion: 1, operation: "DOCTOR" }, { runDocker: async (args) => args[0] === "version" ? { stdout: "28.0.4" } : { stdout: "{}" } }), (error) => error.code === "NVIDIA_RUNTIME_MISSING");
 });
 
 test("root actuator accepts the exact production workload repository but not arbitrary owner images", () => {
