@@ -77,14 +77,15 @@ async function hostingOperationsBundle() {
   const root = roles.includes("ROOT");
   const approver = roles.includes("FINANCE_APPROVER");
   if (!root && !approver) throw new AdminApiError("当前账号没有 Hosting 试运营权限。", 403, "ADMIN_ACCESS_FORBIDDEN");
-  const [grants, profiles, fee, cleanupIncidents, disputes] = await Promise.all([
+  const [grants, profiles, fee, cleanupIncidents, stopIncidents, disputes] = await Promise.all([
     adminGetRows({ path: "/api/v2/admin/card-hours/trial-grants" }),
     root ? adminGetRows({ path: "/api/v2/admin/supply/profiles" }) : Promise.resolve([]),
     root ? adminGetJson("/api/v2/admin/hosting/fees").then(feeFromPayload) : Promise.resolve(null),
     root ? adminGetRows({ path: "/api/v2/admin/hosting/cleanup-incidents" }) : Promise.resolve([]),
+    root ? adminGetRows({ path: "/api/v2/admin/hosting/stop-incidents" }) : Promise.resolve([]),
     adminGetRows({ path: "/api/v2/admin/hosting/disputes" }),
   ]);
-  return { session, grants, profiles, fee, cleanupIncidents, disputes };
+  return { session, grants, profiles, fee, cleanupIncidents, stopIncidents, disputes };
 }
 
 export function AdminHostingOperations() {
@@ -93,6 +94,7 @@ export function AdminHostingOperations() {
   const [grants, setGrants] = useState<AdminRow[]>([]);
   const [fee, setFee] = useState<FeeSchedule | null>(null);
   const [cleanupIncidents, setCleanupIncidents] = useState<AdminRow[]>([]);
+  const [stopIncidents, setStopIncidents] = useState<AdminRow[]>([]);
   const [disputes, setDisputes] = useState<AdminRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -109,6 +111,8 @@ export function AdminHostingOperations() {
   const [grantReason, setGrantReason] = useState("");
   const [cleanupTarget, setCleanupTarget] = useState("");
   const [cleanupReason, setCleanupReason] = useState("");
+  const [stopTarget, setStopTarget] = useState("");
+  const [stopReason, setStopReason] = useState("");
   const [disputeTarget, setDisputeTarget] = useState("");
   const [disputeResolution, setDisputeResolution] = useState<"REFUND" | "SETTLE">("REFUND");
   const [disputeRequestReason, setDisputeRequestReason] = useState("");
@@ -120,6 +124,7 @@ export function AdminHostingOperations() {
   const isApprover = roles.includes("FINANCE_APPROVER") && !isRoot;
   const selectedProfile = profiles.find((profile) => profile.organizationId === reviewTarget);
   const selectedCleanup = cleanupIncidents.find((incident) => incident.contractId === cleanupTarget);
+  const selectedStop = stopIncidents.find((incident) => incident.contractId === stopTarget);
   const selectedDispute = disputes.find((dispute) => dispute.contractId === disputeTarget);
 
   const load = useCallback(async () => {
@@ -132,9 +137,11 @@ export function AdminHostingOperations() {
       setProfiles(result.profiles);
       setFee(result.fee);
       setCleanupIncidents(result.cleanupIncidents);
+      setStopIncidents(result.stopIncidents);
       setDisputes(result.disputes);
       setReviewTarget((current) => current || String(result.profiles.find((profile) => profile.status === "SUBMITTED")?.organizationId ?? result.profiles[0]?.organizationId ?? ""));
       setCleanupTarget((current) => result.cleanupIncidents.some((incident) => incident.contractId === current) ? current : String(result.cleanupIncidents.find((incident) => incident.cleanupCommandStatus === "FAILED")?.contractId ?? ""));
+      setStopTarget((current) => result.stopIncidents.some((incident) => incident.contractId === current) ? current : String(result.stopIncidents.find((incident) => incident.failureStatus === "EXHAUSTED")?.contractId ?? ""));
       setDisputeTarget((current) => result.disputes.some((dispute) => dispute.contractId === current) ? current : String(result.disputes.find((dispute) => dispute.contractStatus === "DISPUTED" && !["REQUESTED", "APPROVED"].includes(String(dispute.proposalStatus ?? "")))?.contractId ?? ""));
     } catch (loadError) {
       setError(loadError);
@@ -153,9 +160,11 @@ export function AdminHostingOperations() {
         setProfiles(result.profiles);
         setFee(result.fee);
         setCleanupIncidents(result.cleanupIncidents);
+        setStopIncidents(result.stopIncidents);
         setDisputes(result.disputes);
         setReviewTarget(String(result.profiles.find((profile) => profile.status === "SUBMITTED")?.organizationId ?? result.profiles[0]?.organizationId ?? ""));
         setCleanupTarget(String(result.cleanupIncidents.find((incident) => incident.cleanupCommandStatus === "FAILED")?.contractId ?? ""));
+        setStopTarget(String(result.stopIncidents.find((incident) => incident.failureStatus === "EXHAUSTED")?.contractId ?? ""));
         setDisputeTarget(String(result.disputes.find((dispute) => dispute.contractStatus === "DISPUTED" && !["REQUESTED", "APPROVED"].includes(String(dispute.proposalStatus ?? "")))?.contractId ?? ""));
       })
       .catch((loadError: unknown) => { if (!cancelled) setError(loadError); })
@@ -222,6 +231,17 @@ export function AdminHostingOperations() {
       expectedDeviceVersion: integer(selectedCleanup, "deviceVersion"),
       reason: cleanupReason.trim(),
     }), "新的受限清理任务已排队；设备继续保持 DRAINING，只有 Agent 返回完整清理证据后才会恢复可售。 ");
+  }
+
+  function submitStopRetry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedStop || selectedStop.failureStatus !== "EXHAUSTED") return;
+    const contractId = text(selectedStop, "contractId");
+    void run("stop-recovery", () => adminPostAction(`/api/v2/admin/hosting/stop-incidents/${encodeURIComponent(contractId)}/retry`, {
+      expectedContractVersion: integer(selectedStop, "contractVersion"),
+      expectedDeviceVersion: integer(selectedStop, "deviceVersion"),
+      reason: stopReason.trim(),
+    }), "新的受控停机任务已排队；合同、设备、卡时与挂牌继续保持冻结，直到返回可信停机证据。 ");
   }
 
   function submitDisputeProposal(event: FormEvent<HTMLFormElement>) {
@@ -335,6 +355,19 @@ export function AdminHostingOperations() {
             </form>
             <p className="admin-hosting-warning">此操作不会改写合同、设备或挂牌状态。设备保持隔离；严禁用管理员按钮跳过容器、临时密钥和工作目录清理证明。</p>
           </> : <AdminEmpty description="没有处于 DRAINING 的设备或未完成的清理合同。" title="当前没有清理阻塞" />}
+        </section>
+
+        <section className="admin-panel admin-hosting-panel admin-panel-wide-column" aria-labelledby="stop-recovery-title">
+          <div className="admin-panel-head"><div><p className="admin-kicker">Runtime stop recovery</p><h2 id="stop-recovery-title">停机失败现场处置</h2></div><span className={`admin-status ${stopIncidents.length ? "danger" : "success"}`}>{stopIncidents.length ? `${stopIncidents.length} 个隔离事件` : "无阻塞"}</span></div>
+          {stopIncidents.length ? <>
+            <div className="admin-table-wrap"><table className="admin-table"><caption>运行实例停机失败与恢复证据</caption><thead><tr><th>合同</th><th>设备</th><th>Agent 最后在线</th><th>失败命令</th><th>轮次</th><th>状态</th><th>错误</th><th>证据摘要</th><th>失败时间</th></tr></thead><tbody>{stopIncidents.map((incident) => <tr key={text(incident, "contractId")}><td className="admin-mono">{text(incident, "contractId")}</td><td><strong>{text(incident, "deviceDisplayName")}</strong><br/><span className="admin-mono">{text(incident, "deviceId")}</span></td><td>{datetime(incident.deviceLastSeenAt)}</td><td className="admin-mono">{text(incident, "failedCommandId")}<br/>{text(incident, "recoveryCommandId")}</td><td>{integer(incident, "retrySequence")}</td><td><span className={`admin-status ${text(incident, "failureStatus") === "EXHAUSTED" ? "danger" : "warning"}`}>{text(incident, "failureStatus")}</span></td><td className="admin-mono">{text(incident, "errorCode")}</td><td className="admin-mono">{text(incident, "evidenceDigest")}</td><td>{datetime(incident.failedAt)}</td></tr>)}</tbody></table></div>
+            <form className="admin-hosting-form admin-hosting-recovery-form" onSubmit={submitStopRetry}>
+              <label><span>耗尽自动恢复的合同</span><select onChange={(event) => setStopTarget(event.target.value)} value={stopTarget}><option value="">选择需要现场处置的合同</option>{stopIncidents.filter((incident) => incident.failureStatus === "EXHAUSTED").map((incident) => <option key={text(incident, "contractId")} value={text(incident, "contractId")}>{text(incident, "contractId")} · {text(incident, "errorCode")}</option>)}</select></label>
+              <label><span>现场处置依据</span><textarea maxLength={500} minLength={8} onChange={(event) => setStopReason(event.target.value)} placeholder="说明容器运行状态、Actuator/Agent 故障已经排除的证据和本次责任人" required rows={3} value={stopReason} /></label>
+              <button className="admin-button danger" disabled={busy === "stop-recovery" || !selectedStop || selectedStop.failureStatus !== "EXHAUSTED" || stopReason.trim().length < 8} type="submit">{busy === "stop-recovery" ? "正在排队…" : "重新下发受控停机"}</button>
+            </form>
+            <p className="admin-hosting-warning">此入口不能直接填写计量、停止时间、退款或结算金额。它只会重发一条签名绑定合同的 STOP；平台仍要求 Host Agent 返回容器身份和停止证据，随后才进入验收、结算与清理。</p>
+          </> : <AdminEmpty description="没有自动停机恢复耗尽或正在恢复的运行实例。" title="当前没有停机阻塞" />}
         </section>
       </div> : null}
 

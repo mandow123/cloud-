@@ -92,7 +92,7 @@ function seedDisputeIncident(databasePath, buyer, now) {
   db.prepare("INSERT OR IGNORE INTO hosting_v2_fee_schedules(id,platform_fee_bps,referral_reward_bps,status,effective_from,created_by,created_at) VALUES(?,1000,300,'ACTIVE',?,'seed',?)").run(feeId, now, now);
   const activeFeeId = db.prepare("SELECT id FROM hosting_v2_fee_schedules WHERE status='ACTIVE'").get().id;
   db.prepare(`INSERT INTO hosting_v2_devices(id,organization_id,account_id,display_name,device_key_id,device_public_key,agent_version,inventory_json,inventory_digest,status,verification_status,verification_evidence_digest,verified_until,last_sequence,last_seen_at,version,created_at,updated_at)
-    VALUES(?,?,?,?,?,?,?,?,?,'DRAINING','PASSED',?,?,1,?,2,?,?)`).run(deviceId, "org-dispute-supplier", "acct-dispute-supplier", "争议中的 RTX 4090", `sha256:${"f".repeat(64)}`, "B".repeat(43), "1.6.0", JSON.stringify(inventory), `sha256:${"e".repeat(64)}`, `sha256:${"d".repeat(64)}`, new Date(Date.parse(now) + 86_400_000).toISOString(), now, now, now);
+    VALUES(?,?,?,?,?,?,?,?,?,'DRAINING','PASSED',?,?,1,?,2,?,?)`).run(deviceId, "org-dispute-supplier", "acct-dispute-supplier", "争议中的 RTX 4090", `sha256:${"f".repeat(64)}`, "B".repeat(43), "1.7.0", JSON.stringify(inventory), `sha256:${"e".repeat(64)}`, `sha256:${"d".repeat(64)}`, new Date(Date.parse(now) + 86_400_000).toISOString(), now, now, now);
   db.prepare(`INSERT INTO hosting_v2_offers(id,organization_id,device_id,fee_schedule_id,title,gpu_model,region,card_hour_micros_per_gpu_hour,min_rental_seconds,max_rental_seconds,available_from,available_until,approved_image,terms_version,status,version,created_at,updated_at)
     VALUES(?,?,?,?,?,'RTX_4090','中国·北京',3600000,180,3600,?,?,?,'KAI_HOSTING_TERMS_2026_08','SUSPENDED',3,?,?)`).run(offerId, "org-dispute-supplier", deviceId, activeFeeId, "争议中的 RTX 4090", new Date(Date.parse(now) - 60_000).toISOString(), new Date(Date.parse(now) + 86_400_000).toISOString(), process.env.KAI_HOSTING_APPROVED_IMAGES, now, now);
   const snapshot = { title: "争议中的 RTX 4090", gpuModel: "RTX_4090", region: "中国·北京", cardHourMicrosPerGpuHour: 3_600_000, approvedImage: process.env.KAI_HOSTING_APPROVED_IMAGES, termsVersion: "KAI_HOSTING_TERMS_2026_08", platformFeeBps: 1_000, referralRewardBps: 300, acceptanceWindowSeconds: 1_800 };
@@ -273,6 +273,8 @@ test("the Hosting admin page is wired to live approval APIs and has no fake clie
   assert.match(component, /\/api\/v2\/admin\/hosting\/fees/u);
   assert.match(component, /\/api\/v2\/admin\/card-hours\/trial-grants/u);
   assert.match(component, /\/api\/v2\/admin\/hosting\/cleanup-incidents/u);
+  assert.match(component, /\/api\/v2\/admin\/hosting\/stop-incidents/u);
+  assert.match(component, /重新下发受控停机/u);
   assert.match(component, /\/api\/v2\/admin\/hosting\/disputes/u);
   assert.match(component, /继续执行/u);
   assert.match(component, /FINANCE_APPROVER/u);
@@ -284,6 +286,11 @@ test("the Hosting admin page is wired to live approval APIs and has no fake clie
   assert.match(retryRoute, /requireAdminPermission\(request, \["FULFILLMENT_OPERATE"\]\)/u);
   assert.match(retryRoute, /retryCleanup/u);
   assert.doesNotMatch(retryRoute, /updateOfferStatus|completeCommand/u);
+
+  const stopRetryRoute = readFileSync(new URL("../app/api/v2/admin/hosting/stop-incidents/[contractId]/retry/route.ts", import.meta.url), "utf8");
+  assert.match(stopRetryRoute, /requireAdminPermission\(request, \["FULFILLMENT_OPERATE"\]\)/u);
+  assert.match(stopRetryRoute, /retryFailedStop/u);
+  assert.doesNotMatch(stopRetryRoute, /settledMicros|supplierIncomeMicros|commissionMicros|completeCommand/u);
 
   const disputeDecisionRoute = readFileSync(new URL("../app/api/v2/admin/hosting/disputes/proposals/[proposalId]/decision/route.ts", import.meta.url), "utf8");
   assert.match(disputeDecisionRoute, /FINANCE_APPROVER/u);

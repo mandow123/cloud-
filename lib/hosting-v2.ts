@@ -208,6 +208,23 @@ export type HostingContractEvidence = Readonly<{
     evidenceDigest: string;
     failedAt: string;
   }> | null;
+  stopFailure: Readonly<{
+    commandId: string;
+    errorCode: string;
+    evidenceDigest: string;
+    retrySequence: number;
+    status: "RECORDED" | "RETRYING" | "RETRY_FAILED" | "RECOVERED" | "EXHAUSTED";
+    recoveryCommandId: string | null;
+    failedAt: string;
+  }> | null;
+  runtimeControl: Readonly<{
+    agentLastSeenAt: string | null;
+    stopCommandId: string | null;
+    stopCommandStatus: "PENDING" | "DELIVERED" | "SUCCEEDED" | "FAILED" | null;
+    stopAttempt: number;
+    stopRequestedAt: string | null;
+    stopDeliveredAt: string | null;
+  }>;
 }>;
 
 export type HostingDisputeCase = Readonly<{
@@ -271,6 +288,25 @@ export type HostingCleanupIncident = Readonly<{
   errorCode: string | null;
   failedAt: string | null;
   updatedAt: string;
+}>;
+
+export type HostingStopIncident = Readonly<{
+  contractId: string;
+  contractVersion: number;
+  supplierOrganizationId: string;
+  deviceId: string;
+  deviceDisplayName: string;
+  deviceVersion: number;
+  deviceLastSeenAt: string | null;
+  offerId: string;
+  offerStatus: HostingOffer["status"];
+  failedCommandId: string;
+  retrySequence: number;
+  failureStatus: "RECORDED" | "RETRYING" | "RETRY_FAILED" | "EXHAUSTED";
+  errorCode: string;
+  evidenceDigest: string;
+  recoveryCommandId: string | null;
+  failedAt: string;
 }>;
 
 export type HostingDashboard = Readonly<{

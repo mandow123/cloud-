@@ -236,7 +236,7 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
       displayName: "黄金闭环 RTX 4090",
       deviceKeyId: `sha256:${"4".repeat(64)}`,
       devicePublicKey: "A".repeat(43),
-      agentVersion: "1.6.0",
+      agentVersion: "1.7.0",
       inventory: inventory(),
       inventoryDigest,
     }, mutation("agent:golden", "golden-device-register", now));
@@ -342,7 +342,7 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     const publicAfter = await json(await listPublicOffers(new Request(`${ORIGIN}/api/v2/offers`)), 200);
     assert.equal(publicAfter.records.length, 1, "cleaned and freshly verified inventory must become sellable again");
     const operations = await hosting.readiness(cleanedAt);
-    assert.equal(operations.schemaVersion, 8);
+    assert.equal(operations.schemaVersion, 9);
     assert.match(operations.activeFeeScheduleId, /^hfee_/u);
     assert.deepEqual({
       approvedSupplierCount: operations.approvedSupplierCount,

@@ -13,6 +13,7 @@ import type {
   HostingOffer,
   HostingSupplierProfile,
   HostingSupplierType,
+  HostingStopIncident,
 } from "../hosting-v2.ts";
 import type { AccountSessionContext } from "./account-auth.ts";
 
@@ -40,6 +41,7 @@ export type HostingV2OperationalSnapshot = Readonly<{
 export interface HostingV2Store {
   readiness(now: string): Promise<HostingV2OperationalSnapshot>;
   listCleanupIncidents(): Promise<HostingCleanupIncident[]>;
+  listStopIncidents(): Promise<HostingStopIncident[]>;
   listDisputeCases(): Promise<HostingDisputeCase[]>;
   dashboard(organizationId: string, now: string): Promise<HostingDashboard>;
   saveProfile(account: AccountSessionContext, input: { supplierType: HostingSupplierType; legalDisplayName: string; contactEmail: string; expectedVersion: number }, context: HostingMutationContext): Promise<HostingSupplierProfile>;
@@ -71,12 +73,15 @@ export interface HostingV2Store {
   contractEvidenceForViewer(organizationId: string, contractId: string): Promise<HostingContractEvidence | null>;
   expiredAcceptanceForDevice(deviceId: string, now: string): Promise<HostingContract | null>;
   failedDeliveryForDevice(deviceId: string): Promise<HostingAgentCommand | null>;
+  failedStopForDevice(deviceId: string): Promise<HostingAgentCommand | null>;
   getCommand(deviceId: string, commandId: string): Promise<HostingAgentCommand | null>;
   pollCommand(deviceId: string, now: string, allowedTypes?: readonly HostingAgentCommand["type"][]): Promise<HostingAgentCommand | null>;
   completeCommand(deviceId: string, commandId: string, input: { outcome: "SUCCEEDED" | "FAILED"; evidenceDigest: string; errorCode?: string | null; details?: Record<string, unknown>; controlPlaneReachabilityDigest?: string }, context: HostingMutationContext): Promise<{ command: HostingAgentCommand; contract: HostingContract | null; device: HostingDevice }>;
   queueFailedDeliveryCleanup(commandId: string, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand }>;
+  queueFailedStopRecovery(commandId: string, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand | null; exhausted: boolean }>;
   markContractSettled(contractId: string, input: { measuredSeconds: number; settledMicros: number; supplierIncomeMicros: number; commissionMicros: number }, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand }>;
   retryCleanup(contractId: string, input: { expectedContractVersion: number; expectedDeviceVersion: number; reason: string }, context: HostingMutationContext): Promise<{ contract: HostingContract; device: HostingDevice; command: HostingAgentCommand }>;
+  retryFailedStop(contractId: string, input: { expectedContractVersion: number; expectedDeviceVersion: number; reason: string }, context: HostingMutationContext): Promise<{ contract: HostingContract; device: HostingDevice; command: HostingAgentCommand }>;
   cancelContract(contractId: string, reason: string, context: HostingMutationContext): Promise<HostingContract>;
 }
 

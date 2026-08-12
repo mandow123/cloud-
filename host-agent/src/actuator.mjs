@@ -321,13 +321,18 @@ export async function executeStop(value, {
     throw fail("STOP_MANIFEST_INVALID", "Running workload evidence does not match the stop contract.");
   }
   if (manifest.status === "STOPPED") {
-    if (manifest.stopRequestDigest !== requestDigest || !manifest.stopResult) throw fail("STOP_REPLAY_CONFLICT", "The workload was stopped by a different command.");
+    if (!manifest.stopResult) throw fail("STOP_REPLAY_CONFLICT", "The stopped workload is missing its runtime evidence.");
     const current = await inspectManagedContainer(workloadName, manifest, runDocker);
-    if (!current.running) return manifest.stopResult;
+    if (!current.running) {
+      if (manifest.stopRequestDigest !== requestDigest) {
+        await writeJsonAtomic(manifestPath, { ...manifest, previousStopCommandId: manifest.stopCommandId, stopCommandId: request.commandId, stopRequestDigest: requestDigest, updatedAt: now() });
+      }
+      return manifest.stopResult;
+    }
     throw fail("STOP_STATE_CONFLICT", "A stopped workload unexpectedly returned to the running state.");
   }
   if (manifest.status !== "RUNNING" && manifest.status !== "STOPPING") throw fail("STOP_STATE_INVALID", "Workload is not running.");
-  if (manifest.status === "STOPPING" && manifest.stopRequestDigest !== requestDigest) throw fail("STOP_REPLAY_CONFLICT", "A different stop command is already in progress.");
+  if (manifest.status === "STOPPING" && manifest.stopRequestDigest !== requestDigest && typeof manifest.lastStopErrorCode !== "string") throw fail("STOP_REPLAY_CONFLICT", "A different stop command is already in progress.");
 
   const stopping = { ...manifest, status: "STOPPING", stopCommandId: request.commandId, stopRequestDigest: requestDigest, updatedAt: now() };
   await writeJsonAtomic(manifestPath, stopping);

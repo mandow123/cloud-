@@ -7,7 +7,7 @@ import type { SupplierHostingContract } from "@/lib/hosting-v2-client";
 import { formatCardHours, formatEvidenceDigest, formatHostingTime, hostingContractStatusLabel } from "@/lib/hosting-v2-client";
 import styles from "./supply-console.module.css";
 
-const POLLED = new Set(["CARD_HOURS_HELD", "PROVISIONING", "READY", "IN_SERVICE", "AWAITING_ACCEPTANCE", "SETTLED", "CLEANING", "DISPUTED"]);
+const POLLED = new Set(["CARD_HOURS_HELD", "PROVISIONING", "READY", "IN_SERVICE", "AWAITING_ACCEPTANCE", "SETTLED", "CLEANING", "DISPUTED", "FAILED"]);
 const STEPS = ["CARD_HOURS_HELD", "PROVISIONING", "READY", "IN_SERVICE", "AWAITING_ACCEPTANCE", "CLEANING", "CLEANED"] as const;
 
 function stepIndex(status: SupplierHostingContract["status"]) {
@@ -20,7 +20,7 @@ function deliveryMessage(contract: SupplierHostingContract) {
     case "CARD_HOURS_HELD": return "买家卡时已经锁定，等待买家提交 SSH 公钥。";
     case "PROVISIONING": return "Host Agent 正在创建受限容器、注入临时公钥并验证 SSH 入口。";
     case "READY": return "实例入口已验证，等待买家启动服务；尚未进入服务计量。";
-    case "IN_SERVICE": return "实例正在运行，服务端以 Agent 证据计算实际运行秒数。";
+    case "IN_SERVICE": return ["PENDING", "DELIVERED"].includes(contract.evidence?.runtimeControl?.stopCommandStatus ?? "") ? `停机任务已排队并投递 ${contract.evidence?.runtimeControl?.stopAttempt ?? 0} 次；设备保持占用，直到 Agent 或本机租期看门狗返回可信停止证据。` : "实例正在运行，服务端以 Agent 证据计算实际运行秒数。";
     case "AWAITING_ACCEPTANCE": return "实例已停止并生成计量结果，等待买家在冻结时限内验收或发起争议；无争议到期后平台自动结算。";
     case "SETTLED": return "租金已按冻结计量与合同费率归属，等待受限清理任务排队。";
     case "CLEANING": return contract.evidence?.deliveryFailure
@@ -29,7 +29,7 @@ function deliveryMessage(contract: SupplierHostingContract) {
       ? "卡时已全额退回，Host Agent 正在撤权并清理工作区；供应方不会获得本单租金。"
       : "租金已归属，Host Agent 正在撤权并清理工作区。";
     case "CLEANED": return "容器、公钥和工作目录已清理，设备通过复用检查后可重新挂牌。";
-    case "FAILED": return "交付失败事实已记录，系统正在全额释放买家卡时并隔离设备；清理凭证完成前不能重新挂牌。";
+    case "FAILED": return contract.evidence?.stopFailure ? `停机命令未确认，设备与卡时继续冻结；平台正在执行第 ${Math.min(contract.evidence.stopFailure.retrySequence + 1, 4)} 次受控停机，确认停止前不会结算或复售。` : "交付失败事实已记录，系统正在全额释放买家卡时并隔离设备；清理凭证完成前不能重新挂牌。";
     case "DISPUTED": return "买家已发起争议，卡时和机器均保持冻结；平台提案须经独立财务复核后才能退款或结算。";
     case "REFUNDED": return contract.evidence?.deliveryFailure ? "开通未成功，买家卡时已全额退回且残留访问权限已清理；供应方未获得本单租金。" : "争议已裁决为全额退回；临时权限已清理，供应方未获得本单租金。";
     default: return `订单当前为“${hostingContractStatusLabel(contract.status)}”。`;
@@ -102,6 +102,8 @@ export function SupplyContractDetail({ contractId }: { contractId: string }) {
               <li><span>平台计费凭证</span><strong>{contract.evidence?.metering ? `${contract.evidence.metering.serverMeasuredSeconds} 秒 · ${formatEvidenceDigest(contract.evidence.metering.evidenceDigest)}` : "尚未生成"}</strong></li>
               <li><span>撤权清理凭证</span><strong>{contract.evidence?.cleanup ? `三项已验证 · ${formatEvidenceDigest(contract.evidence.cleanup.evidenceDigest)}` : "尚未生成"}</strong></li>
               {contract.evidence?.deliveryFailure ? <li><span>失败交付证据</span><strong>{contract.evidence.deliveryFailure.stage} · {contract.evidence.deliveryFailure.errorCode} · {formatEvidenceDigest(contract.evidence.deliveryFailure.evidenceDigest)}</strong></li> : null}
+              {contract.evidence?.stopFailure ? <li><span>停机恢复证据</span><strong>第 {contract.evidence.stopFailure.retrySequence} 轮 · {contract.evidence.stopFailure.status} · {contract.evidence.stopFailure.errorCode}</strong></li> : null}
+              <li><span>Agent 最后在线</span><strong>{formatHostingTime(contract.evidence?.runtimeControl?.agentLastSeenAt ?? null)}</strong></li>
             </ul>
           </section>
         </div>

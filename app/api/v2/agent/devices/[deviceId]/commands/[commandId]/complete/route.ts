@@ -7,6 +7,7 @@ import { hostingObject, requireHostingV2SetupEnabled } from "@/lib/server/hostin
 import { isHostingV2Enabled } from "@/lib/server/hosting-v2-feature";
 import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
 import { reconcileFailedHostingDelivery } from "@/lib/server/hosting-delivery-failure-service";
+import { reconcileFailedHostingStop } from "@/lib/server/hosting-stop-recovery-service";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +57,8 @@ export async function POST(request: Request, contextValue: { params: Promise<{ d
       });
       const recoveredAt = new Date().toISOString();
       const recovery = await reconcileFailedHostingDelivery(result.command, recoveredAt);
-      return jsonResponse(recovery ? { ...result, contract: recovery.cleanup.contract, recovery: { billingStatus: String(recovery.refund.record.status), cleanupCommandId: recovery.cleanup.command.id } } : result, 200, undefined, context);
+      const stopRecovery = await reconcileFailedHostingStop(result.command, recoveredAt);
+      return jsonResponse(recovery ? { ...result, contract: recovery.cleanup.contract, recovery: { billingStatus: String(recovery.refund.record.status), cleanupCommandId: recovery.cleanup.command.id } } : stopRecovery ? { ...result, contract: stopRecovery.contract, stopRecovery: { commandId: stopRecovery.command?.id ?? null, exhausted: stopRecovery.exhausted } } : result, 200, undefined, context);
     }
     let controlPlaneReachabilityDigest: string | undefined;
     if (command.type === "VERIFY" && outcome === "SUCCEEDED") {
@@ -85,7 +87,8 @@ export async function POST(request: Request, contextValue: { params: Promise<{ d
       now: completedAt,
     });
     const recovery = await reconcileFailedHostingDelivery(result.command, completedAt);
-    return jsonResponse(recovery ? { ...result, contract: recovery.cleanup.contract, recovery: { billingStatus: String(recovery.refund.record.status), cleanupCommandId: recovery.cleanup.command.id } } : result, 200, undefined, context);
+    const stopRecovery = await reconcileFailedHostingStop(result.command, completedAt);
+    return jsonResponse(recovery ? { ...result, contract: recovery.cleanup.contract, recovery: { billingStatus: String(recovery.refund.record.status), cleanupCommandId: recovery.cleanup.command.id } } : stopRecovery ? { ...result, contract: stopRecovery.contract, stopRecovery: { commandId: stopRecovery.command?.id ?? null, exhausted: stopRecovery.exhausted } } : result, 200, undefined, context);
   } catch (error) {
     return apiErrorResponse(hostingAgentHttpError(error), undefined, context);
   }

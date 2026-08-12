@@ -1,6 +1,6 @@
 # KAI Host Agent
 
-KAI Host Agent is the supplier-side device identity and control service for KAI Hosting V2. Version `1.6.0` in this checkpoint implements:
+KAI Host Agent is the supplier-side device identity and control service for KAI Hosting V2. Version `1.7.0` in this checkpoint implements:
 
 - contract-bound cleanup for partially provisioned or SSH-unreachable workloads, so failed delivery can be refunded and proven clean before relisting;
 

@@ -1,4 +1,4 @@
-export const HOSTING_V2_SCHEMA_VERSION = 8;
+export const HOSTING_V2_SCHEMA_VERSION = 9;
 
 export const hostingV2SchemaStatements = [
   `CREATE TABLE IF NOT EXISTS hosting_v2_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`,
@@ -190,7 +190,8 @@ export const hostingV2SchemaStatements = [
     completed_at TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS hosting_v2_commands_device_idx ON hosting_v2_agent_commands(device_id, status, created_at)`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS hosting_v2_commands_contract_stop_unique ON hosting_v2_agent_commands(contract_id, command_type) WHERE contract_id IS NOT NULL AND command_type='STOP'`,
+  `DROP INDEX IF EXISTS hosting_v2_commands_contract_stop_unique`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS hosting_v2_commands_contract_stop_active_unique ON hosting_v2_agent_commands(contract_id, command_type) WHERE contract_id IS NOT NULL AND command_type='STOP' AND status IN ('PENDING','DELIVERED')`,
   `CREATE TRIGGER IF NOT EXISTS hosting_v2_terminal_command_immutable BEFORE UPDATE ON hosting_v2_agent_commands
     WHEN OLD.status IN ('SUCCEEDED','FAILED')
     BEGIN SELECT RAISE(ABORT, 'hosting terminal command immutable'); END`,
@@ -222,6 +223,33 @@ export const hostingV2SchemaStatements = [
     )
     BEGIN SELECT RAISE(ABORT, 'hosting delivery failure transition invalid'); END`,
   `CREATE TRIGGER IF NOT EXISTS hosting_v2_delivery_failure_immutable_delete BEFORE DELETE ON hosting_v2_delivery_failures BEGIN SELECT RAISE(ABORT, 'hosting delivery failure immutable'); END`,
+  `CREATE TABLE IF NOT EXISTS hosting_v2_stop_failures (
+    command_id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    retry_sequence INTEGER NOT NULL CHECK (retry_sequence >= 1),
+    error_code TEXT NOT NULL,
+    evidence_digest TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('RECORDED','RETRYING','RETRY_FAILED','RECOVERED','EXHAUSTED')),
+    recovery_command_id TEXT UNIQUE,
+    recovery_queued_at TEXT,
+    resolved_at TEXT,
+    failed_at TEXT NOT NULL,
+    UNIQUE(contract_id,retry_sequence)
+  )`,
+  `CREATE INDEX IF NOT EXISTS hosting_v2_stop_failures_status_idx ON hosting_v2_stop_failures(status,failed_at)`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_stop_failure_identity_immutable BEFORE UPDATE ON hosting_v2_stop_failures
+    WHEN OLD.command_id<>NEW.command_id OR OLD.contract_id<>NEW.contract_id OR OLD.retry_sequence<>NEW.retry_sequence
+      OR OLD.error_code<>NEW.error_code OR OLD.evidence_digest<>NEW.evidence_digest OR OLD.failed_at<>NEW.failed_at
+    BEGIN SELECT RAISE(ABORT, 'hosting stop failure identity immutable'); END`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_stop_failure_transition_guard BEFORE UPDATE ON hosting_v2_stop_failures
+    WHEN NOT (
+      (OLD.status='RECORDED' AND NEW.status='RETRYING' AND NEW.recovery_command_id IS NOT NULL AND NEW.recovery_queued_at IS NOT NULL)
+      OR (OLD.status='RECORDED' AND NEW.status='EXHAUSTED' AND NEW.resolved_at IS NOT NULL)
+      OR (OLD.status='RETRYING' AND NEW.status IN ('RETRY_FAILED','RECOVERED') AND NEW.resolved_at IS NOT NULL)
+      OR (OLD.status='EXHAUSTED' AND NEW.status='RETRYING' AND NEW.recovery_command_id IS NOT NULL AND NEW.recovery_queued_at IS NOT NULL AND NEW.resolved_at IS NULL)
+    )
+    BEGIN SELECT RAISE(ABORT, 'hosting stop failure transition invalid'); END`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_stop_failure_immutable_delete BEFORE DELETE ON hosting_v2_stop_failures BEGIN SELECT RAISE(ABORT, 'hosting stop failure immutable'); END`,
   `CREATE TABLE IF NOT EXISTS hosting_v2_verification_proofs (
     command_id TEXT PRIMARY KEY,
     device_id TEXT NOT NULL,

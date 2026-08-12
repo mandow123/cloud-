@@ -173,7 +173,8 @@ test("STOP gracefully halts only the running contract container and records boun
     assert.deepEqual(await executeStop(stopRequest, { environment, runDocker }), stopped);
     assert.equal(calls.length, callCount + 1, "a stop replay must re-inspect the container");
     assert.equal(calls.filter((args) => args[0] === "container" && args[1] === "stop").length, 1);
-    await assert.rejects(executeStop({ ...stopRequest, commandId: "hcmd_stop0002" }, { environment, runDocker }), (error) => error.code === "STOP_REPLAY_CONFLICT");
+    assert.deepEqual(await executeStop({ ...stopRequest, commandId: "hcmd_stop0002" }, { environment, runDocker }), stopped, "a new recovery command must acknowledge an already-stopped workload without restarting it");
+    assert.equal(calls.filter((args) => args[0] === "container" && args[1] === "stop").length, 1);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

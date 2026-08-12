@@ -6,6 +6,7 @@ import { isHostingV2Enabled } from "@/lib/server/hosting-v2-feature";
 import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
 import { advanceExpiredHostingAcceptance } from "@/lib/server/hosting-contract-service";
 import { reconcileFailedHostingDelivery } from "@/lib/server/hosting-delivery-failure-service";
+import { reconcileFailedHostingStop } from "@/lib/server/hosting-stop-recovery-service";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,13 @@ export async function POST(request: Request, contextValue: { params: Promise<{ d
         try { await reconcileFailedHostingDelivery(failedDelivery, now); }
         catch (error) {
           console.error(JSON.stringify({ level: "error", event: "hosting_failed_delivery_recovery_failed", deviceId, commandId: failedDelivery.id, errorCode: error instanceof Error && "code" in error ? String(error.code) : "UNKNOWN", occurredAt: now }));
+        }
+      }
+      const failedStop = await store.failedStopForDevice(deviceId);
+      if (failedStop) {
+        try { await reconcileFailedHostingStop(failedStop, now, store); }
+        catch (error) {
+          console.error(JSON.stringify({ level: "error", event: "hosting_failed_stop_recovery_failed", deviceId, commandId: failedStop.id, errorCode: error instanceof Error && "code" in error ? String(error.code) : "UNKNOWN", occurredAt: now }));
         }
       }
     }

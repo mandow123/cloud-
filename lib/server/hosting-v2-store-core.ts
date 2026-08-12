@@ -1,4 +1,4 @@
-import { HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDisputeCase, type HostingFeeSchedule, type HostingOffer, type HostingSupplierProfile } from "../hosting-v2.ts";
+import { HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDisputeCase, type HostingFeeSchedule, type HostingOffer, type HostingStopIncident, type HostingSupplierProfile } from "../hosting-v2.ts";
 import { HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { hostingAgentDigest } from "./hosting-agent-crypto.ts";
@@ -12,7 +12,8 @@ const number = (row: Row, key: string) => Number(row[key]);
 const json = <T>(row: Row, key: string) => JSON.parse(value(row, key)) as T;
 const id = (prefix: string) => `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
 const VERIFY_TEST_NAMES = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"] as const;
-const HOSTING_V2_MIN_AGENT_VERSION = "1.6.0";
+const HOSTING_V2_MIN_AGENT_VERSION = "1.7.0";
+const HOSTING_V2_AUTOMATED_STOP_ATTEMPTS = 4;
 
 function agentVersionAtLeast(valueToCheck: string, minimum: string) {
   const parse = (value: string) => {
@@ -93,7 +94,7 @@ function assertSuccessfulStartDetails(details: Record<string, unknown> | undefin
   }
 }
 
-function assertSuccessfulStopDetails(details: Record<string, unknown> | undefined, payload: Record<string, unknown>, now: string) {
+function assertSuccessfulStopDetails(details: Record<string, unknown> | undefined, payload: Record<string, unknown>, now: string, allowHistoricalStoppedAt = false) {
   const expectedKeys = ["containerDigest", "contractId", "observedAt", "protocolVersion", "runtimeSeconds", "runtimeStateDigest", "runtimeStatus", "startedAt", "stoppedAt"];
   if (!details || Object.keys(details).sort().join(",") !== expectedKeys.sort().join(",")
     || details.protocolVersion !== 1 || details.contractId !== payload.contractId || details.runtimeStatus !== "STOPPED"
@@ -114,7 +115,7 @@ function assertSuccessfulStopDetails(details: Record<string, unknown> | undefine
   const stoppedAtFollowsLeaseExpiry = Number.isFinite(maximumSeconds) && stoppedAt >= expectedStartedAt + maximumSeconds * 1_000;
   if (!Number.isFinite(observedAt) || !Number.isFinite(startedAt) || !Number.isFinite(stoppedAt) || !Number.isFinite(expectedStartedAt)
     || startedAt > stoppedAt || stoppedAt > observedAt || Math.abs(observedAt - serverNow) > 10 * 60_000
-    || (!stoppedAtIsFresh && !stoppedAtFollowsLeaseExpiry) || Math.abs(startedAt - expectedStartedAt) > 10 * 60_000
+    || (!allowHistoricalStoppedAt && !stoppedAtIsFresh && !stoppedAtFollowsLeaseExpiry) || Math.abs(startedAt - expectedStartedAt) > 10 * 60_000
     || !Number.isSafeInteger(details.runtimeSeconds) || details.runtimeSeconds !== calculatedSeconds) {
     throw new ExchangeInputError("实例停止计量时间无效。", "details.runtimeSeconds");
   }
@@ -199,7 +200,7 @@ function contract(row: Row): HostingContract {
   };
 }
 
-function contractEvidence(instanceRow: Row | null, meteringRow: Row | null, cleanupRow: Row | null, acceptanceRow: Row | null, disputeRow: Row | null, deliveryFailureRow: Row | null): HostingContractEvidence {
+function contractEvidence(instanceRow: Row | null, meteringRow: Row | null, cleanupRow: Row | null, acceptanceRow: Row | null, disputeRow: Row | null, deliveryFailureRow: Row | null, stopFailureRow: Row | null, runtimeControlRow: Row): HostingContractEvidence {
   return {
     instance: instanceRow ? {
       status: value(instanceRow, "status") as NonNullable<HostingContractEvidence["instance"]>["status"],
@@ -231,6 +232,17 @@ function contractEvidence(instanceRow: Row | null, meteringRow: Row | null, clea
       errorCode: value(deliveryFailureRow, "error_code"), evidenceDigest: value(deliveryFailureRow, "evidence_digest"),
       failedAt: value(deliveryFailureRow, "completed_at"),
     } : null,
+    stopFailure: stopFailureRow ? {
+      commandId: value(stopFailureRow, "command_id"), errorCode: value(stopFailureRow, "error_code"), evidenceDigest: value(stopFailureRow, "evidence_digest"),
+      retrySequence: number(stopFailureRow, "retry_sequence"), status: value(stopFailureRow, "status") as NonNullable<HostingContractEvidence["stopFailure"]>["status"],
+      recoveryCommandId: nullable(stopFailureRow, "recovery_command_id"), failedAt: value(stopFailureRow, "failed_at"),
+    } : null,
+    runtimeControl: {
+      agentLastSeenAt: nullable(runtimeControlRow, "agent_last_seen_at"), stopCommandId: nullable(runtimeControlRow, "stop_command_id"),
+      stopCommandStatus: nullable(runtimeControlRow, "stop_command_status") as HostingContractEvidence["runtimeControl"]["stopCommandStatus"],
+      stopAttempt: runtimeControlRow.stop_attempt == null ? 0 : number(runtimeControlRow, "stop_attempt"),
+      stopRequestedAt: nullable(runtimeControlRow, "stop_requested_at"), stopDeliveredAt: nullable(runtimeControlRow, "stop_delivered_at"),
+    },
   };
 }
 
@@ -274,6 +286,16 @@ function cleanupIncident(row: Row): HostingCleanupIncident {
     cleanupCommandId: value(row, "cleanup_command_id"), cleanupCommandStatus: value(row, "cleanup_command_status") as HostingCleanupIncident["cleanupCommandStatus"],
     cleanupAttempt: number(row, "cleanup_attempt"), evidenceDigest: nullable(row, "evidence_digest"), errorCode: nullable(row, "error_code"),
     failedAt: nullable(row, "failed_at"), updatedAt: value(row, "updated_at"),
+  };
+}
+
+function stopIncident(row: Row): HostingStopIncident {
+  return {
+    contractId: value(row, "contract_id"), contractVersion: number(row, "contract_version"), supplierOrganizationId: value(row, "supplier_organization_id"),
+    deviceId: value(row, "device_id"), deviceDisplayName: value(row, "device_display_name"), deviceVersion: number(row, "device_version"), deviceLastSeenAt: nullable(row, "device_last_seen_at"),
+    offerId: value(row, "offer_id"), offerStatus: value(row, "offer_status") as HostingOffer["status"], failedCommandId: value(row, "failed_command_id"),
+    retrySequence: number(row, "retry_sequence"), failureStatus: value(row, "failure_status") as HostingStopIncident["failureStatus"], errorCode: value(row, "error_code"),
+    evidenceDigest: value(row, "evidence_digest"), recoveryCommandId: nullable(row, "recovery_command_id"), failedAt: value(row, "failed_at"),
   };
 }
 
@@ -346,6 +368,19 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
         WHERE c.status='CLEANING' AND cmd.status IN ('PENDING','DELIVERED','FAILED')
         ORDER BY c.updated_at DESC,c.id DESC LIMIT 200`);
       return rows.map(cleanupIncident);
+    },
+    async listStopIncidents() {
+      const rows = await db.all<Row>(`SELECT
+          c.id contract_id,c.version contract_version,c.supplier_organization_id,c.offer_id,
+          d.id device_id,d.display_name device_display_name,d.version device_version,d.last_seen_at device_last_seen_at,
+          o.status offer_status,f.command_id failed_command_id,f.retry_sequence,f.status failure_status,f.error_code,f.evidence_digest,f.recovery_command_id,f.failed_at
+        FROM hosting_v2_contracts c
+        JOIN hosting_v2_devices d ON d.id=c.device_id AND d.status='DRAINING'
+        JOIN hosting_v2_offers o ON o.id=c.offer_id AND o.status='SUSPENDED'
+        JOIN hosting_v2_stop_failures f ON f.command_id=(SELECT latest.command_id FROM hosting_v2_stop_failures latest WHERE latest.contract_id=c.id ORDER BY latest.retry_sequence DESC LIMIT 1)
+        WHERE c.status='FAILED' AND f.status IN ('RECORDED','RETRYING','RETRY_FAILED','EXHAUSTED')
+        ORDER BY f.failed_at DESC,c.id DESC LIMIT 200`);
+      return rows.map(stopIncident);
     },
     async listDisputeCases() {
       const rows = await db.all<Row>(`SELECT
@@ -757,7 +792,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
     async contractEvidenceForViewer(organizationId, contractId) {
       const visible = await db.first<Row>("SELECT id FROM hosting_v2_contracts WHERE id=? AND (buyer_organization_id=? OR supplier_organization_id=?)", [contractId, organizationId, organizationId]);
       if (!visible) return null;
-      const [instanceRow, meteringRow, cleanupRow, acceptanceRow, disputeRow, deliveryFailureRow] = await Promise.all([
+      const [instanceRow, meteringRow, cleanupRow, acceptanceRow, disputeRow, deliveryFailureRow, stopFailureRow, runtimeControlRow] = await Promise.all([
         db.first<Row>("SELECT * FROM hosting_v2_instances WHERE contract_id=?", [contractId]),
         db.first<Row>("SELECT * FROM hosting_v2_metering_proofs WHERE contract_id=?", [contractId]),
         db.first<Row>("SELECT * FROM hosting_v2_cleanup_proofs WHERE contract_id=?", [contractId]),
@@ -769,8 +804,14 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         db.first<Row>(`SELECT id,command_type,error_code,evidence_digest,completed_at FROM hosting_v2_agent_commands
           WHERE contract_id=? AND command_type IN ('PROVISION','START') AND status='FAILED'
           ORDER BY completed_at DESC,id DESC LIMIT 1`, [contractId]),
+        db.first<Row>(`SELECT * FROM hosting_v2_stop_failures WHERE contract_id=? ORDER BY retry_sequence DESC LIMIT 1`, [contractId]),
+        db.first<Row>(`SELECT d.last_seen_at agent_last_seen_at,cmd.id stop_command_id,cmd.status stop_command_status,cmd.attempt stop_attempt,cmd.created_at stop_requested_at,cmd.delivered_at stop_delivered_at
+          FROM hosting_v2_contracts c JOIN hosting_v2_devices d ON d.id=c.device_id
+          LEFT JOIN hosting_v2_agent_commands cmd ON cmd.id=(SELECT latest.id FROM hosting_v2_agent_commands latest WHERE latest.contract_id=c.id AND latest.command_type='STOP' ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1)
+          WHERE c.id=?`, [contractId]),
       ]);
-      return contractEvidence(instanceRow, meteringRow, cleanupRow, acceptanceRow, disputeRow, deliveryFailureRow);
+      if (!runtimeControlRow) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "租赁运行控制事实不存在。");
+      return contractEvidence(instanceRow, meteringRow, cleanupRow, acceptanceRow, disputeRow, deliveryFailureRow, stopFailureRow, runtimeControlRow);
     },
 
     async expiredAcceptanceForDevice(deviceId, now) {
@@ -787,6 +828,16 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         WHERE cmd.device_id=? AND cmd.command_type IN ('PROVISION','START') AND cmd.status='FAILED'
           AND c.status IN ('FAILED','CLEANING')
         ORDER BY cmd.completed_at,cmd.id LIMIT 1`, [deviceId]);
+      return row ? command(row) : null;
+    },
+
+    async failedStopForDevice(deviceId) {
+      const row = await db.first<Row>(`SELECT cmd.* FROM hosting_v2_agent_commands cmd
+        JOIN hosting_v2_contracts c ON c.id=cmd.contract_id
+        JOIN hosting_v2_stop_failures f ON f.command_id=cmd.id
+        WHERE cmd.device_id=? AND cmd.command_type='STOP' AND cmd.status='FAILED'
+          AND c.status='FAILED' AND f.status='RECORDED'
+        ORDER BY f.retry_sequence DESC LIMIT 1`, [deviceId]);
       return row ? command(row) : null;
     },
 
@@ -923,9 +974,9 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       }
       const leaseCutoff = new Date(Date.parse(now) - 60_000).toISOString();
       const typeFilter = allowedTypes ? ` AND command_type IN (${allowedTypes.map(() => "?").join(",")})` : "";
-      const current = await db.first<Row>(`SELECT * FROM hosting_v2_agent_commands WHERE device_id=?${typeFilter} AND (status='PENDING' OR (status='DELIVERED' AND delivered_at<? AND attempt<5)) ORDER BY created_at LIMIT 1`, [deviceId, ...(allowedTypes ?? []), leaseCutoff]);
+      const current = await db.first<Row>(`SELECT * FROM hosting_v2_agent_commands WHERE device_id=?${typeFilter} AND (status='PENDING' OR (status='DELIVERED' AND delivered_at<?)) ORDER BY created_at LIMIT 1`, [deviceId, ...(allowedTypes ?? []), leaseCutoff]);
       if (!current) return null;
-      await db.batch([{ sql: "UPDATE hosting_v2_agent_commands SET status='DELIVERED',attempt=attempt+1,delivered_at=? WHERE id=? AND (status='PENDING' OR (status='DELIVERED' AND delivered_at<? AND attempt<5))", values: [now, value(current, "id"), leaseCutoff] }]);
+      await db.batch([{ sql: "UPDATE hosting_v2_agent_commands SET status='DELIVERED',attempt=attempt+1,delivered_at=? WHERE id=? AND (status='PENDING' OR (status='DELIVERED' AND delivered_at<?))", values: [now, value(current, "id"), leaseCutoff] }]);
       const row = await db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE id=?", [value(current, "id")]);
       return row ? command(row) : null;
     },
@@ -946,10 +997,11 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       if (!success && (!input.errorCode || !/^[A-Z0-9_:-]{3,80}$/u.test(input.errorCode))) throw new ExchangeInputError("失败任务必须包含有效诊断码。", "errorCode");
       const commandPayload = json<Record<string, unknown>>(commandRow, "payload_json");
       const deviceInventory = json<HostingDeviceInventory>(deviceRow, "inventory_json");
+      const recoveredStopFailureRow = type === "STOP" ? await db.first<Row>("SELECT * FROM hosting_v2_stop_failures WHERE contract_id=? AND recovery_command_id=? AND status='RETRYING'", [nullable(commandRow, "contract_id"), commandId]) : null;
       if (type === "VERIFY" && success) assertSuccessfulVerificationDetails(input.details, value(deviceRow, "inventory_digest"), input.controlPlaneReachabilityDigest, context.now);
       const provisionEndpoint = type === "PROVISION" && success ? assertSuccessfulProvisionDetails(input.details, commandPayload, deviceInventory, context.now) : null;
       if (type === "START" && success) assertSuccessfulStartDetails(input.details, commandPayload, context.now);
-      if (type === "STOP" && success) assertSuccessfulStopDetails(input.details, commandPayload, context.now);
+      if (type === "STOP" && success) assertSuccessfulStopDetails(input.details, commandPayload, context.now, Boolean(recoveredStopFailureRow));
       if (type === "CLEANUP" && success) assertSuccessfulCleanupDetails(input.details, commandPayload, context.now);
       const statements: HostingV2Sql[] = [
         { sql: "UPDATE hosting_v2_agent_commands SET status=?,evidence_digest=?,error_code=?,completed_at=? WHERE id=? AND status IN ('PENDING','DELIVERED')", values: [input.outcome, input.evidenceDigest, input.errorCode ?? null, context.now, commandId] },
@@ -971,7 +1023,8 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
           const requiredContractStatus: Partial<Record<HostingAgentCommand["type"], HostingContract["status"]>> = {
             PROVISION: "PROVISIONING", START: "READY", STOP: "IN_SERVICE", CLEANUP: "CLEANING",
           };
-          if (requiredContractStatus[type] && value(currentContract, "status") !== requiredContractStatus[type]) {
+          const recoveringStop = type === "STOP" && recoveredStopFailureRow && value(currentContract, "status") === "FAILED";
+          if (requiredContractStatus[type] && value(currentContract, "status") !== requiredContractStatus[type] && !recoveringStop) {
             throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同状态已经变化，Agent 结果未被采纳。");
           }
           if (type === "PROVISION" && instanceRow) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同已经存在实例记录。");
@@ -990,6 +1043,16 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
               VALUES(?,?,?,?,?,'RECORDED',?)`,
             values: [commandId, contractId, type, input.errorCode!, input.evidenceDigest, context.now],
           });
+          if (type === "STOP") {
+            const latestStopFailure = await db.first<Row>("SELECT * FROM hosting_v2_stop_failures WHERE contract_id=? ORDER BY retry_sequence DESC LIMIT 1", [contractId]);
+            const retrySequence = latestStopFailure ? number(latestStopFailure, "retry_sequence") + 1 : 1;
+            if (recoveredStopFailureRow) statements.push({ sql: "UPDATE hosting_v2_stop_failures SET status='RETRY_FAILED',resolved_at=? WHERE command_id=? AND status='RETRYING'", values: [context.now, value(recoveredStopFailureRow, "command_id")] });
+            statements.push({
+              sql: `INSERT INTO hosting_v2_stop_failures(command_id,contract_id,retry_sequence,error_code,evidence_digest,status,failed_at)
+                VALUES(?,?,?,?,?,'RECORDED',?)`,
+              values: [commandId, contractId, retrySequence, input.errorCode!, input.evidenceDigest, context.now],
+            });
+          }
           statements.push(
               { sql: "UPDATE hosting_v2_devices SET status='DRAINING',version=version+1,updated_at=? WHERE id=?", values: [context.now, deviceId] },
               { sql: "UPDATE hosting_v2_offers SET status='SUSPENDED',version=version+1,updated_at=? WHERE id=?", values: [context.now, value(currentContract, "offer_id")] },
@@ -1014,7 +1077,8 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
             { sql: "UPDATE hosting_v2_instances SET status='STOPPED',stop_evidence_digest=?,stopped_at=?,updated_at=? WHERE contract_id=? AND status='RUNNING'", values: [input.evidenceDigest, String(input.details?.stoppedAt), context.now, contractId] },
             { sql: `INSERT INTO hosting_v2_metering_proofs(id,contract_id,command_id,container_digest,runtime_state_digest,agent_started_at,agent_stopped_at,agent_runtime_seconds,server_measured_seconds,evidence_digest,recorded_at)
               VALUES(?,?,?,?,?,?,?,?,?,?,?)`, values: [id("hmp"), contractId, commandId, String(input.details?.containerDigest), String(input.details?.runtimeStateDigest), String(input.details?.startedAt), String(input.details?.stoppedAt), rawMeasured, measured, input.evidenceDigest, context.now] },
-            { sql: "UPDATE hosting_v2_contracts SET status='AWAITING_ACCEPTANCE',measured_seconds=?,stopped_at=?,version=version+1,updated_at=? WHERE id=? AND status='IN_SERVICE'", values: [measured, context.now, context.now, contractId] },
+            { sql: "UPDATE hosting_v2_contracts SET status='AWAITING_ACCEPTANCE',measured_seconds=?,stopped_at=?,version=version+1,updated_at=? WHERE id=? AND status IN ('IN_SERVICE','FAILED')", values: [measured, context.now, context.now, contractId] },
+            ...(recoveredStopFailureRow ? [{ sql: "UPDATE hosting_v2_stop_failures SET status='RECOVERED',resolved_at=? WHERE command_id=? AND status='RETRYING'", values: [context.now, value(recoveredStopFailureRow, "command_id")] } satisfies HostingV2Sql] : []),
           );
         } else if (type === "CLEANUP") {
           const verificationFresh = value(deviceRow, "verification_status") === "PASSED"
@@ -1103,6 +1167,53 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       ]);
       if (!contractRow || !cleanupRow) throw new Error("HOSTING_FAILED_DELIVERY_CLEANUP_QUEUE_FAILED");
       return { contract: contract(contractRow), command: command(cleanupRow) };
+    },
+
+    async queueFailedStopRecovery(commandId, context) {
+      const replayed = await replay(db, context, "QUEUE_FAILED_STOP_RECOVERY");
+      const failure = await db.first<Row>(`SELECT f.*,cmd.device_id,cmd.payload_json,c.status contract_status,c.supplier_organization_id,c.started_at,c.reserved_seconds
+        FROM hosting_v2_stop_failures f JOIN hosting_v2_agent_commands cmd ON cmd.id=f.command_id
+        JOIN hosting_v2_contracts c ON c.id=f.contract_id WHERE f.command_id=?`, [commandId]);
+      if (!failure) throw new ExchangeDomainError("HOSTING_STOP_FAILURE_INVALID", 409, "停止失败事实不存在，不能安排恢复。");
+      const contractId = value(failure, "contract_id");
+      if (replayed) {
+        const [contractRow, recoveryRow] = await Promise.all([
+          db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [contractId]),
+          failure.recovery_command_id ? db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE id=?", [value(failure, "recovery_command_id")]) : Promise.resolve(null),
+        ]);
+        if (!contractRow) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "停止恢复合同不存在。");
+        return { contract: contract(contractRow), command: recoveryRow ? command(recoveryRow) : null, exhausted: value(failure, "status") === "EXHAUSTED" };
+      }
+      if (value(failure, "contract_status") !== "FAILED" || value(failure, "status") !== "RECORDED") {
+        throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "停止恢复状态已变化。");
+      }
+      if (number(failure, "retry_sequence") >= HOSTING_V2_AUTOMATED_STOP_ATTEMPTS) {
+        await db.batch([
+          { sql: "UPDATE hosting_v2_stop_failures SET status='EXHAUSTED',resolved_at=? WHERE command_id=? AND status='RECORDED'", values: [context.now, commandId] },
+          { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+          event(context, value(failure, "supplier_organization_id"), "CONTRACT", contractId, "STOP_RECOVERY_EXHAUSTED", { failedCommandId: commandId, attempts: number(failure, "retry_sequence") }),
+          receipt(context, "QUEUE_FAILED_STOP_RECOVERY", "STOP_FAILURE", commandId),
+        ]);
+        const contractRow = await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [contractId]);
+        if (!contractRow) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "停止恢复合同不存在。");
+        return { contract: contract(contractRow), command: null, exhausted: true };
+      }
+      const recoveryCommandId = id("hcmd");
+      const payload = JSON.stringify({ contractId, startedAt: nullable(failure, "started_at"), maximumSeconds: number(failure, "reserved_seconds") });
+      const results = await db.batch([
+        { sql: "UPDATE hosting_v2_stop_failures SET status='RETRYING',recovery_command_id=?,recovery_queued_at=? WHERE command_id=? AND status='RECORDED'", values: [recoveryCommandId, context.now, commandId] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        { sql: "INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at) VALUES(?,?,?,'STOP',?,'PENDING',0,?)", values: [recoveryCommandId, value(failure, "device_id"), contractId, payload, context.now] },
+        event(context, value(failure, "supplier_organization_id"), "CONTRACT", contractId, "STOP_RECOVERY_QUEUED", { failedCommandId: commandId, recoveryCommandId, attempt: number(failure, "retry_sequence") + 1 }),
+        receipt(context, "QUEUE_FAILED_STOP_RECOVERY", "AGENT_COMMAND", recoveryCommandId),
+      ]);
+      if (results[0]?.changes !== 1 || results[2]?.changes !== 1) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "停止恢复任务已由其他进程安排。");
+      const [contractRow, recoveryRow] = await Promise.all([
+        db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [contractId]),
+        db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE id=?", [recoveryCommandId]),
+      ]);
+      if (!contractRow || !recoveryRow) throw new Error("HOSTING_STOP_RECOVERY_QUEUE_FAILED");
+      return { contract: contract(contractRow), command: command(recoveryRow), exhausted: false };
     },
 
     async markContractSettled(contractId, input, context) {
@@ -1308,6 +1419,48 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       ]);
       if (!finalContract || !finalDevice || !finalCommand) throw new Error("HOSTING_CLEANUP_RETRY_QUEUE_FAILED");
       return { contract: contract(finalContract), device: device(finalDevice), command: command(finalCommand) };
+    },
+
+    async retryFailedStop(contractId, input, context) {
+      const replayed = await replay(db, context, "RETRY_FAILED_STOP");
+      if (replayed) {
+        const [contractRow, commandRow] = await Promise.all([
+          db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [contractId]),
+          db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE id=? AND contract_id=?", [replayed.entityId, contractId]),
+        ]);
+        if (!contractRow || !commandRow) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "停机恢复任务不存在。");
+        const deviceRow = await db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=?", [value(contractRow, "device_id")]);
+        if (!deviceRow) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "停机恢复设备不存在。");
+        return { contract: contract(contractRow), device: device(deviceRow), command: command(commandRow) };
+      }
+      const reason = input.reason.trim();
+      if (reason.length < 8 || reason.length > 500) throw new ExchangeInputError("停机恢复理由应为 8–500 个字符。", "reason");
+      if (!Number.isSafeInteger(input.expectedContractVersion) || input.expectedContractVersion < 1 || !Number.isSafeInteger(input.expectedDeviceVersion) || input.expectedDeviceVersion < 1) throw new ExchangeInputError("停机恢复版本无效。", "expectedVersion");
+      const current = await db.first<Row>(`SELECT c.*,d.version device_version,d.status device_status,o.status offer_status,
+          f.command_id failed_command_id,f.status failure_status,f.retry_sequence
+        FROM hosting_v2_contracts c JOIN hosting_v2_devices d ON d.id=c.device_id JOIN hosting_v2_offers o ON o.id=c.offer_id
+        JOIN hosting_v2_stop_failures f ON f.command_id=(SELECT latest.command_id FROM hosting_v2_stop_failures latest WHERE latest.contract_id=c.id ORDER BY latest.retry_sequence DESC LIMIT 1)
+        WHERE c.id=?`, [contractId]);
+      if (!current || value(current, "status") !== "FAILED" || value(current, "device_status") !== "DRAINING" || value(current, "offer_status") !== "SUSPENDED" || value(current, "failure_status") !== "EXHAUSTED") {
+        throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "只有自动停机恢复耗尽且持续隔离的合同可以人工重试。");
+      }
+      if (number(current, "version") !== input.expectedContractVersion || number(current, "device_version") !== input.expectedDeviceVersion) throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT", 409, "合同或设备状态已变化，请刷新后重试。");
+      const commandId = id("hcmd");
+      const failedCommandId = value(current, "failed_command_id");
+      const payload = JSON.stringify({ contractId, startedAt: nullable(current, "started_at"), maximumSeconds: number(current, "reserved_seconds") });
+      const results = await db.batch([
+        { sql: "UPDATE hosting_v2_stop_failures SET status='RETRYING',recovery_command_id=?,recovery_queued_at=?,resolved_at=NULL WHERE command_id=? AND status='EXHAUSTED'", values: [commandId, context.now, failedCommandId] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        { sql: "INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at) VALUES(?,?,?,'STOP',?,'PENDING',0,?)", values: [commandId, value(current, "device_id"), contractId, payload, context.now] },
+        event(context, value(current, "supplier_organization_id"), "CONTRACT", contractId, "STOP_MANUAL_RECOVERY_QUEUED", { commandId, failedCommandId, previousAttempts: number(current, "retry_sequence"), reason }),
+        receipt(context, "RETRY_FAILED_STOP", "AGENT_COMMAND", commandId),
+      ]);
+      if (results[0]?.changes !== 1 || results[2]?.changes !== 1) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "停机恢复任务已由其他管理员安排。");
+      const [contractRow, deviceRow, commandRow] = await Promise.all([
+        db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [contractId]), db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=?", [value(current, "device_id")]), db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE id=?", [commandId]),
+      ]);
+      if (!contractRow || !deviceRow || !commandRow) throw new Error("HOSTING_STOP_MANUAL_RECOVERY_QUEUE_FAILED");
+      return { contract: contract(contractRow), device: device(deviceRow), command: command(commandRow) };
     },
   };
 }
