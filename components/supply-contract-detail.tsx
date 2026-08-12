@@ -21,7 +21,7 @@ function deliveryMessage(contract: SupplierHostingContract) {
     case "PROVISIONING": return "Host Agent 正在创建受限容器、注入临时公钥并验证 SSH 入口。";
     case "READY": return "实例入口已验证，等待买家启动服务；尚未进入服务计量。";
     case "IN_SERVICE": return "实例正在运行，服务端以 Agent 证据计算实际运行秒数。";
-    case "AWAITING_ACCEPTANCE": return "实例已停止并生成计量结果，等待买家验收结算。";
+    case "AWAITING_ACCEPTANCE": return "实例已停止并生成计量结果，等待买家在冻结时限内验收或发起争议；无争议到期后平台自动结算。";
     case "SETTLED":
     case "CLEANING": return "租金已归属或正在归属，Host Agent 正在撤权并清理工作区。";
     case "CLEANED": return "容器、公钥和工作目录已清理，设备通过复用检查后可重新挂牌。";

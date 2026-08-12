@@ -1,4 +1,4 @@
-import { HOSTING_V2_AGENT_STALE_SECONDS, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingFeeSchedule, type HostingOffer, type HostingSupplierProfile } from "../hosting-v2.ts";
+import { HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingFeeSchedule, type HostingOffer, type HostingSupplierProfile } from "../hosting-v2.ts";
 import { HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { hostingAgentDigest } from "./hosting-agent-crypto.ts";
@@ -185,14 +185,21 @@ function offer(row: Row): HostingOffer {
 }
 
 function contract(row: Row): HostingContract {
+  const rawSnapshot = json<HostingContract["snapshot"]>(row, "snapshot_json");
+  const snapshot = {
+    ...rawSnapshot,
+    acceptanceWindowSeconds: Number.isSafeInteger(rawSnapshot.acceptanceWindowSeconds) && rawSnapshot.acceptanceWindowSeconds >= 0
+      ? rawSnapshot.acceptanceWindowSeconds
+      : HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS,
+  };
   return {
     id: value(row, "id"), offerId: value(row, "offer_id"), deviceId: value(row, "device_id"), buyerOrganizationId: value(row, "buyer_organization_id"), buyerAccountId: value(row, "buyer_account_id"), supplierOrganizationId: value(row, "supplier_organization_id"), feeScheduleId: value(row, "fee_schedule_id"),
-    snapshot: json<HostingContract["snapshot"]>(row, "snapshot_json"), reservedSeconds: number(row, "reserved_seconds"), measuredSeconds: row.measured_seconds == null ? null : number(row, "measured_seconds"), heldMicros: number(row, "held_micros"), settledMicros: row.settled_micros == null ? null : number(row, "settled_micros"), supplierIncomeMicros: row.supplier_income_micros == null ? null : number(row, "supplier_income_micros"), commissionMicros: row.commission_micros == null ? null : number(row, "commission_micros"), status: value(row, "status") as HostingContract["status"],
+    snapshot, reservedSeconds: number(row, "reserved_seconds"), measuredSeconds: row.measured_seconds == null ? null : number(row, "measured_seconds"), heldMicros: number(row, "held_micros"), settledMicros: row.settled_micros == null ? null : number(row, "settled_micros"), supplierIncomeMicros: row.supplier_income_micros == null ? null : number(row, "supplier_income_micros"), commissionMicros: row.commission_micros == null ? null : number(row, "commission_micros"), status: value(row, "status") as HostingContract["status"],
     sshPublicKeyFingerprint: nullable(row, "ssh_public_key_fingerprint"), endpointDisplay: nullable(row, "endpoint_display"), startedAt: nullable(row, "started_at"), stoppedAt: nullable(row, "stopped_at"), acceptedAt: nullable(row, "accepted_at"), version: number(row, "version"), createdAt: value(row, "created_at"), updatedAt: value(row, "updated_at"),
   };
 }
 
-function contractEvidence(instanceRow: Row | null, meteringRow: Row | null, cleanupRow: Row | null): HostingContractEvidence {
+function contractEvidence(instanceRow: Row | null, meteringRow: Row | null, cleanupRow: Row | null, acceptanceRow: Row | null): HostingContractEvidence {
   return {
     instance: instanceRow ? {
       status: value(instanceRow, "status") as NonNullable<HostingContractEvidence["instance"]>["status"],
@@ -207,6 +214,10 @@ function contractEvidence(instanceRow: Row | null, meteringRow: Row | null, clea
     cleanup: cleanupRow ? {
       cleanupDigest: value(cleanupRow, "cleanup_digest"), containerRemoved: true, authorizedKeyRemoved: true, workspaceRemoved: true,
       evidenceDigest: value(cleanupRow, "evidence_digest"), cleanedAt: value(cleanupRow, "cleaned_at"), recordedAt: value(cleanupRow, "recorded_at"),
+    } : null,
+    acceptance: acceptanceRow ? {
+      mode: value(acceptanceRow, "decision_mode") as "BUYER" | "TIMEOUT",
+      acceptanceWindowSeconds: number(acceptanceRow, "acceptance_window_seconds"), deadlineAt: value(acceptanceRow, "deadline_at"), decidedAt: value(acceptanceRow, "decided_at"),
     } : null,
   };
 }
@@ -645,7 +656,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       const snapshot = {
         title: value(row, "title"), gpuModel: value(row, "gpu_model"), region: value(row, "region"),
         cardHourMicrosPerGpuHour: number(row, "card_hour_micros_per_gpu_hour"), approvedImage: value(row, "approved_image"), termsVersion: value(row, "terms_version"),
-        platformFeeBps: number(row, "platform_fee_bps"), referralRewardBps: number(row, "referral_reward_bps"),
+        platformFeeBps: number(row, "platform_fee_bps"), referralRewardBps: number(row, "referral_reward_bps"), acceptanceWindowSeconds: HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS,
       };
       await db.batch([
         { sql: `INSERT INTO hosting_v2_contracts(id,offer_id,device_id,buyer_organization_id,buyer_account_id,supplier_organization_id,fee_schedule_id,snapshot_json,reserved_seconds,held_micros,status,idempotency_key,payload_hash,version,created_at,updated_at)
@@ -680,12 +691,21 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
     async contractEvidenceForViewer(organizationId, contractId) {
       const visible = await db.first<Row>("SELECT id FROM hosting_v2_contracts WHERE id=? AND (buyer_organization_id=? OR supplier_organization_id=?)", [contractId, organizationId, organizationId]);
       if (!visible) return null;
-      const [instanceRow, meteringRow, cleanupRow] = await Promise.all([
+      const [instanceRow, meteringRow, cleanupRow, acceptanceRow] = await Promise.all([
         db.first<Row>("SELECT * FROM hosting_v2_instances WHERE contract_id=?", [contractId]),
         db.first<Row>("SELECT * FROM hosting_v2_metering_proofs WHERE contract_id=?", [contractId]),
         db.first<Row>("SELECT * FROM hosting_v2_cleanup_proofs WHERE contract_id=?", [contractId]),
+        db.first<Row>("SELECT * FROM hosting_v2_acceptance_proofs WHERE contract_id=?", [contractId]),
       ]);
-      return contractEvidence(instanceRow, meteringRow, cleanupRow);
+      return contractEvidence(instanceRow, meteringRow, cleanupRow, acceptanceRow);
+    },
+
+    async expiredAcceptanceForDevice(deviceId, now) {
+      const row = await db.first<Row>(`SELECT * FROM hosting_v2_contracts
+        WHERE device_id=? AND stopped_at IS NOT NULL AND (status='SETTLED' OR (status='AWAITING_ACCEPTANCE'
+          AND CAST(strftime('%s',stopped_at) AS INTEGER)+COALESCE(CAST(json_extract(snapshot_json,'$.acceptanceWindowSeconds') AS INTEGER),?)<=CAST(strftime('%s',?) AS INTEGER)))
+        ORDER BY CASE status WHEN 'SETTLED' THEN 0 ELSE 1 END,stopped_at,id LIMIT 1`, [deviceId, HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, now]);
+      return row ? contract(row) : null;
     },
 
     async cancelContract(contractId, reason, context) {
@@ -940,14 +960,17 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         return { contract: contract(contractRow), command: command(commandRow) };
       }
       const current = await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [contractId]);
-      if (!current || value(current, "status") !== "AWAITING_ACCEPTANCE") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同当前不能结算。");
+      if (!current || value(current, "status") !== "SETTLED") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同当前不能完成结算。");
       const meteringProof = await db.first<Row>("SELECT contract_id FROM hosting_v2_metering_proofs WHERE contract_id=?", [contractId]);
+      const acceptanceProof = await db.first<Row>("SELECT contract_id FROM hosting_v2_acceptance_proofs WHERE contract_id=?", [contractId]);
       if (!meteringProof) throw new ExchangeDomainError("HOSTING_INSTANCE_EVIDENCE_MISSING", 409, "平台计量凭证缺失，合同已停止自动结算，请人工核验。");
+      if (!acceptanceProof) throw new ExchangeDomainError("HOSTING_ACCEPTANCE_EVIDENCE_MISSING", 409, "验收决定凭证缺失，合同已停止结算，请人工核验。");
       if (!Number.isSafeInteger(input.measuredSeconds) || input.measuredSeconds < 180 || input.measuredSeconds > number(current, "reserved_seconds") || !Number.isSafeInteger(input.settledMicros) || input.settledMicros < 1 || input.settledMicros > number(current, "held_micros")) throw new ExchangeInputError("合同计量或结算金额无效。");
       if (input.supplierIncomeMicros < 0 || input.commissionMicros < 0 || input.supplierIncomeMicros + input.commissionMicros > input.settledMicros) throw new ExchangeInputError("收益拆分无效。");
       const commandId = id("hcmd");
       await db.batch([
-        { sql: "UPDATE hosting_v2_contracts SET status='CLEANING',measured_seconds=?,settled_micros=?,supplier_income_micros=?,commission_micros=?,accepted_at=?,version=version+1,updated_at=? WHERE id=? AND status='AWAITING_ACCEPTANCE'", values: [input.measuredSeconds, input.settledMicros, input.supplierIncomeMicros, input.commissionMicros, context.now, context.now, contractId] },
+        { sql: "UPDATE hosting_v2_contracts SET status='CLEANING',measured_seconds=?,settled_micros=?,supplier_income_micros=?,commission_micros=?,version=version+1,updated_at=? WHERE id=? AND status='SETTLED'", values: [input.measuredSeconds, input.settledMicros, input.supplierIncomeMicros, input.commissionMicros, context.now, contractId] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
         { sql: "INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at) VALUES(?,?,?,'CLEANUP',?,'PENDING',0,?)", values: [commandId, value(current, "device_id"), contractId, JSON.stringify({ contractId, removeAuthorizedKeys: true, removeContainer: true, removeWorkspace: true }), context.now] },
         event(context, value(current, "supplier_organization_id"), "CONTRACT", contractId, "CONTRACT_SETTLED", input),
         receipt(context, "SETTLE_CONTRACT", "AGENT_COMMAND", commandId),
@@ -955,6 +978,33 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       const [contractRow, commandRow] = await Promise.all([db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [contractId]), db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE id=?", [commandId])]);
       if (!contractRow || !commandRow) throw new Error("HOSTING_SETTLEMENT_CLEANUP_QUEUE_FAILED");
       return { contract: contract(contractRow), command: command(commandRow) };
+    },
+
+    async disputeContract(buyerOrganizationId, contractId, reason, context) {
+      const replayed = await replay(db, context, "DISPUTE_CONTRACT");
+      if (!replayed) {
+        const current = await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=? AND buyer_organization_id=?", [contractId, buyerOrganizationId]);
+        if (!current) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "租赁合同不存在。");
+        if (value(current, "status") !== "AWAITING_ACCEPTANCE") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同当前不能发起争议。");
+        const normalizedReason = reason.trim();
+        if (normalizedReason.length < 8 || normalizedReason.length > 500 || !/[\p{L}\p{N}]/u.test(normalizedReason)) throw new ExchangeInputError("争议说明应为 8 至 500 个字符。", "reason");
+        const snapshot = json<HostingContract["snapshot"]>(current, "snapshot_json");
+        const windowSeconds = Number.isSafeInteger(snapshot.acceptanceWindowSeconds) && snapshot.acceptanceWindowSeconds >= 0 ? snapshot.acceptanceWindowSeconds : HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS;
+        const deadlineAt = new Date(Date.parse(value(current, "stopped_at")) + windowSeconds * 1_000).toISOString();
+        if (Date.parse(context.now) >= Date.parse(deadlineAt)) throw new ExchangeDomainError("HOSTING_ACCEPTANCE_WINDOW_EXPIRED", 409, "验收时间已经结束，系统正在核对结算状态。");
+        await db.batch([
+          { sql: "UPDATE hosting_v2_contracts SET status='DISPUTED',version=version+1,updated_at=? WHERE id=? AND buyer_organization_id=? AND status='AWAITING_ACCEPTANCE'", values: [context.now, contractId, buyerOrganizationId] },
+          { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+          { sql: "UPDATE hosting_v2_devices SET status='DRAINING',version=version+1,updated_at=? WHERE id=?", values: [context.now, value(current, "device_id")] },
+          { sql: "UPDATE hosting_v2_offers SET status='SUSPENDED',version=version+1,updated_at=? WHERE id=? AND status='RESERVED'", values: [context.now, value(current, "offer_id")] },
+          event(context, buyerOrganizationId, "CONTRACT", contractId, "CONTRACT_DISPUTED", { reason: normalizedReason, deadlineAt }),
+          receipt(context, "DISPUTE_CONTRACT", "CONTRACT", contractId),
+        ]);
+      }
+      const row = await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=? AND buyer_organization_id=?", [contractId, buyerOrganizationId]);
+      if (!row) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "租赁合同不存在。");
+      if (value(row, "status") !== "DISPUTED") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "争议状态未能确认。");
+      return contract(row);
     },
 
     async retryCleanup(contractId, input, context) {

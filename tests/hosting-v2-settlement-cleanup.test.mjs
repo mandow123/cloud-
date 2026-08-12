@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
-import { acceptHostingContract } from "../lib/server/hosting-contract-service.ts";
+import { acceptHostingContract, advanceExpiredHostingAcceptance } from "../lib/server/hosting-contract-service.ts";
 import { createSqliteCardHourStore } from "../lib/server/card-hour-store-sqlite.ts";
 import { createSqliteHostingV2Store } from "../lib/server/hosting-v2-store-sqlite.ts";
 
@@ -51,7 +51,7 @@ function seedStoppedContract(path, suffix, buyer, supplier, now, withMeteringPro
     VALUES(?,?,?,?,?,?,?,?,?,'VERIFIED','PASSED',?,?,1,?,1,?,?)`).run(deviceId, supplier.activeOrganization.id, supplier.account.id, `Settlement GPU ${suffix}`, `sha256:${suffix.padEnd(64, "3").slice(0, 64)}`, "A".repeat(43), "1.3.0", JSON.stringify(inventory), `sha256:${suffix.padEnd(64, "4").slice(0, 64)}`, `sha256:${suffix.padEnd(64, "5").slice(0, 64)}`, new Date(Date.parse(now) + 86_400_000).toISOString(), now, now, now);
   db.prepare(`INSERT INTO hosting_v2_offers(id,organization_id,device_id,fee_schedule_id,title,gpu_model,region,card_hour_micros_per_gpu_hour,min_rental_seconds,max_rental_seconds,available_from,available_until,approved_image,terms_version,status,version,created_at,updated_at)
     VALUES(?,?,?,?,?,'RTX_4090','中国·北京',3600000,180,3600,?,?,?,'KAI_HOSTING_TERMS_2026_08','RESERVED',2,?,?)`).run(offerId, supplier.activeOrganization.id, deviceId, feeId, `Settlement RTX 4090 ${suffix}`, new Date(Date.parse(now) - 60_000).toISOString(), new Date(Date.parse(now) + 86_400_000).toISOString(), process.env.KAI_HOSTING_APPROVED_IMAGES, now, now);
-  const snapshot = { title: `Settlement RTX 4090 ${suffix}`, gpuModel: "RTX_4090", region: "中国·北京", cardHourMicrosPerGpuHour: 3_600_000, approvedImage: process.env.KAI_HOSTING_APPROVED_IMAGES, termsVersion: "KAI_HOSTING_TERMS_2026_08", platformFeeBps: 1_000, referralRewardBps: 300 };
+  const snapshot = { title: `Settlement RTX 4090 ${suffix}`, gpuModel: "RTX_4090", region: "中国·北京", cardHourMicrosPerGpuHour: 3_600_000, approvedImage: process.env.KAI_HOSTING_APPROVED_IMAGES, termsVersion: "KAI_HOSTING_TERMS_2026_08", platformFeeBps: 1_000, referralRewardBps: 300, acceptanceWindowSeconds: 1_800 };
   db.prepare(`INSERT INTO hosting_v2_contracts(id,offer_id,device_id,buyer_organization_id,buyer_account_id,supplier_organization_id,fee_schedule_id,snapshot_json,reserved_seconds,measured_seconds,held_micros,status,started_at,stopped_at,idempotency_key,payload_hash,version,created_at,updated_at)
     VALUES(?,?,?,?,?,?,?,?,3600,600,3600000,'AWAITING_ACCEPTANCE',?,?,?, ?,5,?,?)`).run(contractId, offerId, deviceId, buyer.activeOrganization.id, buyer.account.id, supplier.activeOrganization.id, feeId, JSON.stringify(snapshot), new Date(Date.parse(now) - 600_000).toISOString(), now, `seed-settlement-${suffix}`, `seed-settlement-hash-${suffix}`, now, now);
   db.prepare(`INSERT INTO hosting_v2_instances(contract_id,device_id,provision_command_id,approved_image,endpoint_display,container_digest,workspace_digest,status,provision_evidence_digest,start_evidence_digest,stop_evidence_digest,provisioned_at,started_at,stopped_at,updated_at)
@@ -60,6 +60,16 @@ function seedStoppedContract(path, suffix, buyer, supplier, now, withMeteringPro
     VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(`hmp_seed_${suffix}`, contractId, `hcmd_seed_stop_${suffix}`, `sha256:${"6".repeat(64)}`, `sha256:${suffix.padEnd(64, "c").slice(0, 64)}`, new Date(Date.parse(now) - 600_000).toISOString(), now, 600, 600, `sha256:${suffix.padEnd(64, "d").slice(0, 64)}`, now);
   db.close();
   return { contractId, deviceId, offerId };
+}
+
+function seedAcceptanceDecision(path, contractId, now, mode = "BUYER") {
+  const db = new DatabaseSync(path, { enableForeignKeyConstraints: true });
+  const row = db.prepare("SELECT stopped_at,snapshot_json FROM hosting_v2_contracts WHERE id=?").get(contractId);
+  const snapshot = JSON.parse(row.snapshot_json);
+  const deadlineAt = new Date(Date.parse(row.stopped_at) + snapshot.acceptanceWindowSeconds * 1_000).toISOString();
+  db.prepare("UPDATE hosting_v2_contracts SET status='SETTLED',accepted_at=?,version=version+1,updated_at=? WHERE id=? AND status='AWAITING_ACCEPTANCE'").run(now, now, contractId);
+  db.prepare("INSERT INTO hosting_v2_acceptance_proofs(contract_id,decision_mode,acceptance_window_seconds,deadline_at,decided_at,actor_id,payload_digest) VALUES(?,?,?,?,?,?,?)").run(contractId, mode, snapshot.acceptanceWindowSeconds, deadlineAt, now, "buyer-cleanup-test", `sha256:${"e".repeat(64)}`);
+  db.close();
 }
 
 test("buyer acceptance settles actual card-hours, vests income and relists only after cleanup", async () => {
@@ -113,6 +123,7 @@ test("buyer acceptance settles actual card-hours, vests income and relists only 
     assert.equal((await cardHours.dashboard(supplier.activeOrganization.id, now)).balance.availableMicros, 540_000, "replayed acceptance must not credit rent twice");
 
     const failedSeed = seedStoppedContract(path, "failure", buyer, supplier, now);
+    seedAcceptanceDecision(path, failedSeed.contractId, now);
     const cleanupQueued = await hosting.markContractSettled(failedSeed.contractId, { measuredSeconds: 600, settledMicros: 600_000, supplierIncomeMicros: 540_000, commissionMicros: 0 }, mutation("admin-failure-test", "cleanup-failure-queue", "cleanup-failure-queue-hash", now));
     const failedCleanup = await hosting.pollCommand(failedSeed.deviceId, now);
     assert.equal(failedCleanup.id, cleanupQueued.command.id);
@@ -175,6 +186,7 @@ test("buyer acceptance settles actual card-hours, vests income and relists only 
     assert.deepEqual({ draining: recoveredReadiness.drainingDeviceCount, failed: recoveredReadiness.failedCleanupCount, cleaning: recoveredReadiness.cleaningContractCount }, { draining: 0, failed: 0, cleaning: 0 });
 
     const expiredSeed = seedStoppedContract(path, "expired", buyer, supplier, now);
+    seedAcceptanceDecision(path, expiredSeed.contractId, now);
     const raw = new DatabaseSync(path, { enableForeignKeyConstraints: true });
     raw.prepare("UPDATE hosting_v2_devices SET verified_until=? WHERE id=?").run(new Date(Date.parse(now) - 1_000).toISOString(), expiredSeed.deviceId);
     raw.close();
@@ -192,6 +204,51 @@ test("buyer acceptance settles actual card-hours, vests income and relists only 
   }
 });
 
+test("acceptance timeout settles once while a timely dispute freezes money and reuse", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kai-hosting-auto-acceptance-"));
+  const path = join(directory, "auto-acceptance.sqlite");
+  const hosting = await createSqliteHostingV2Store(path);
+  const cardHours = await createSqliteCardHourStore(path);
+  const buyer = account("timeout-buyer");
+  const supplier = account("timeout-supplier");
+  const stores = { hosting, cardHours };
+  try {
+    const stoppedAt = "2026-08-11T08:00:00.000Z";
+    const beforeDeadline = "2026-08-11T08:29:59.000Z";
+    const deadline = "2026-08-11T08:30:00.000Z";
+    const timed = seedStoppedContract(path, "timeout", buyer, supplier, stoppedAt);
+    const grant = await cardHours.requestTrialGrant({ organizationId: buyer.activeOrganization.id, amountMicros: 5_000_000, reason: "超时验收真实账本测试", requestedBy: "timeout-requester", idempotencyKey: "timeout-grant", payloadHash: "timeout-grant-hash", now: stoppedAt });
+    await cardHours.decideTrialGrant({ grantId: grant.id, decision: "APPROVE", approvedBy: "timeout-approver", payloadHash: "timeout-approval-hash", now: stoppedAt });
+    await cardHours.holdHostingOrder({ account: buyer, orderId: timed.contractId, amountMicros: 3_600_000, idempotencyKey: `hosting-hold:${timed.contractId}`, payloadHash: "timeout-hold-hash", now: stoppedAt });
+    assert.equal(await advanceExpiredHostingAcceptance(timed.deviceId, beforeDeadline, stores), null);
+    assert.deepEqual((await cardHours.dashboard(buyer.activeOrganization.id, beforeDeadline)).balance, { availableMicros: 1_400_000, heldMicros: 3_600_000, lifetimeTopupMicros: 5_000_000, lifetimeSpentMicros: 0 });
+    const settled = await advanceExpiredHostingAcceptance(timed.deviceId, deadline, stores);
+    assert.equal(settled.contract.status, "CLEANING");
+    assert.equal(settled.settlement.settledMicros, 600_000);
+    assert.equal((await hosting.contractEvidenceForViewer(buyer.activeOrganization.id, timed.contractId)).acceptance.mode, "TIMEOUT");
+    assert.equal((await advanceExpiredHostingAcceptance(timed.deviceId, "2026-08-11T08:31:00.000Z", stores)), null);
+    assert.deepEqual((await cardHours.dashboard(buyer.activeOrganization.id, deadline)).balance, { availableMicros: 4_400_000, heldMicros: 0, lifetimeTopupMicros: 5_000_000, lifetimeSpentMicros: 600_000 });
+    assert.equal((await cardHours.dashboard(supplier.activeOrganization.id, deadline)).balance.availableMicros, 540_000);
+
+    const disputed = seedStoppedContract(path, "disputed", buyer, supplier, stoppedAt);
+    const disputedGrant = await cardHours.requestTrialGrant({ organizationId: buyer.activeOrganization.id, amountMicros: 3_600_000, reason: "争议冻结真实账本测试", requestedBy: "dispute-requester", idempotencyKey: "dispute-grant", payloadHash: "dispute-grant-hash", now: stoppedAt });
+    await cardHours.decideTrialGrant({ grantId: disputedGrant.id, decision: "APPROVE", approvedBy: "dispute-approver", payloadHash: "dispute-approval-hash", now: stoppedAt });
+    await cardHours.holdHostingOrder({ account: buyer, orderId: disputed.contractId, amountMicros: 3_600_000, idempotencyKey: `hosting-hold:${disputed.contractId}`, payloadHash: "dispute-hold-hash", now: stoppedAt });
+    const beforeDispute = await cardHours.dashboard(buyer.activeOrganization.id, beforeDeadline);
+    const frozen = await hosting.disputeContract(buyer.activeOrganization.id, disputed.contractId, "SSH 连接持续失败，无法完成约定的算力服务", mutation(buyer.account.id, "dispute-timeout-contract", "dispute-timeout-hash", beforeDeadline));
+    assert.equal(frozen.status, "DISPUTED");
+    assert.equal((await hosting.getDevice(disputed.deviceId)).status, "DRAINING");
+    assert.equal((await hosting.getOffer(disputed.offerId)).status, "SUSPENDED");
+    assert.equal(await advanceExpiredHostingAcceptance(disputed.deviceId, deadline, stores), null);
+    assert.deepEqual((await cardHours.dashboard(buyer.activeOrganization.id, deadline)).balance, beforeDispute.balance);
+    assert.equal(await hosting.pollCommand(disputed.deviceId, deadline), null, "a disputed machine must not receive cleanup or relist automatically");
+  } finally {
+    cardHours.close();
+    hosting.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("acceptance API never accepts client settlement or supplier identity fields", () => {
   const source = readFileSync("app/api/v2/contracts/[contractId]/accept/route.ts", "utf8");
   assert.match(source, /requireTradingAccountSession\(request\)/u);
@@ -199,4 +256,12 @@ test("acceptance API never accepts client settlement or supplier identity fields
   assert.match(source, /Object\.keys\(body\)\.length/u);
   assert.doesNotMatch(source, /x-kai-workspace-role/u);
   assert.doesNotMatch(source, /body\.(?:measuredSeconds|settledMicros|supplierIncomeMicros|commissionMicros|supplierOrganizationId)/u);
+});
+
+test("dispute API is buyer-scoped and accepts only a bounded reason", () => {
+  const source = readFileSync("app/api/v2/contracts/[contractId]/dispute/route.ts", "utf8");
+  assert.match(source, /requireTradingAccountSession\(request\)/u);
+  assert.ok(source.indexOf("assertAccountAuthSameOrigin(request)") < source.indexOf("requireTradingAccountSession(request)"));
+  assert.match(source, /Object\.keys\(body\)\.sort\(\)\.join\(","\) !== "reason"/u);
+  assert.doesNotMatch(source, /x-kai-workspace-role|measuredSeconds|settledMicros|supplierOrganizationId/u);
 });

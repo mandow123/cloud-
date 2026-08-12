@@ -33,12 +33,13 @@ test("checkout only submits the selected offer and requested duration", () => {
 
 test("buyer workspace drives every lifecycle action through its server endpoint", () => {
   const workspace = read("components/hosting-contract-workspace.tsx");
-  for (const action of ["ssh-key", "start", "stop", "accept", "cancel"]) {
+  for (const action of ["ssh-key", "start", "stop", "accept", "dispute", "cancel"]) {
     assert.match(workspace, new RegExp(`/api/v2/contracts/\\$\\{encodeURIComponent\\(contract\\.id\\)\\}/${action}`, "u"));
   }
   assert.match(workspace, /marketplaceGet<\{ record: BuyerHostingContract \}>\(`\/api\/v2\/contracts\/\$\{encodeURIComponent\(contractId\)\}`\)/u);
   assert.match(workspace, /浏览器不能提交运行时长或金额/u);
   assert.match(workspace, /DELIVERY EVIDENCE/u);
+  assert.match(workspace, /逾期且未发起争议/u);
   assert.match(workspace, /containerRemoved/u);
   assert.doesNotMatch(workspace, /marketplacePost[^\n]+(?:measuredSeconds|settledMicros|heldMicros|supplierIncomeMicros)/u);
   assert.match(workspace, /window\.setInterval\(\(\) => \{ void load\(true\); \}, 5_000\)/u);

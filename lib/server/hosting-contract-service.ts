@@ -1,4 +1,4 @@
-import { hostingCardHourMicrosForSeconds, type HostingContract } from "../hosting-v2.ts";
+import { HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, hostingCardHourMicrosForSeconds, type HostingContract } from "../hosting-v2.ts";
 import { accountAuthDigest, type AccountSessionContext } from "./account-auth.ts";
 import type { CardHourStore } from "./card-hour-store.ts";
 import { getCardHourStore } from "./card-hour-store.ts";
@@ -85,11 +85,26 @@ export async function acceptHostingContract(input: {
   const current = await stores.hosting.contractForViewer(input.account.activeOrganization.id, input.contractId);
   if (!current) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "租赁合同不存在。");
   if (current.buyerOrganizationId !== input.account.activeOrganization.id) throw new ExchangeDomainError("EXCHANGE_OWNERSHIP_FORBIDDEN", 403, "只有采购方可以验收本次服务。");
+  return settleAcceptedContract(current, "BUYER", input.mutation, stores);
+}
+
+function acceptanceDeadline(contract: HostingContract) {
+  const seconds = Number.isSafeInteger(contract.snapshot.acceptanceWindowSeconds) && contract.snapshot.acceptanceWindowSeconds >= 0
+    ? contract.snapshot.acceptanceWindowSeconds
+    : HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS;
+  if (!contract.stoppedAt || !Number.isFinite(Date.parse(contract.stoppedAt))) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同缺少有效的停止时间。");
+  return new Date(Date.parse(contract.stoppedAt) + seconds * 1_000).toISOString();
+}
+
+async function settleAcceptedContract(current: HostingContract, acceptanceMode: "BUYER" | "TIMEOUT", mutation: HostingMutationContext, stores: Dependencies) {
   const replayed = current.status === "CLEANING" || current.status === "CLEANED";
-  if (!replayed && current.status !== "AWAITING_ACCEPTANCE") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同当前不能验收结算。");
+  const acceptanceClaimed = current.status === "SETTLED";
+  if (!replayed && !acceptanceClaimed && current.status !== "AWAITING_ACCEPTANCE") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同当前不能验收结算。");
+  const acceptanceDeadlineAt = acceptanceDeadline(current);
+  if (acceptanceMode === "TIMEOUT" && Date.parse(mutation.now) < Date.parse(acceptanceDeadlineAt)) throw new ExchangeDomainError("HOSTING_ACCEPTANCE_WINDOW_ACTIVE", 409, "买家验收时间尚未结束。");
   const measuredSeconds = current.measuredSeconds;
   if (!measuredSeconds || measuredSeconds < 180) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同缺少有效的服务端计量结果。");
-  const evidence = await stores.hosting.contractEvidenceForViewer(input.account.activeOrganization.id, current.id);
+  const evidence = await stores.hosting.contractEvidenceForViewer(current.buyerOrganizationId, current.id);
   if (!evidence?.metering || evidence.metering.serverMeasuredSeconds !== measuredSeconds || !["STOPPED", "CLEANED"].includes(evidence.instance?.status ?? "")) {
     throw new ExchangeDomainError("HOSTING_INSTANCE_EVIDENCE_MISSING", 409, "平台计量凭证不完整，卡时尚未扣减，请人工核验。");
   }
@@ -98,19 +113,43 @@ export async function acceptHostingContract(input: {
   const platformFeeMicros = Math.floor(settledMicros * current.snapshot.platformFeeBps / 10_000);
   const requestedCommissionMicros = Math.floor(settledMicros * current.snapshot.referralRewardBps / 10_000);
   const supplierIncomeMicros = settledMicros - platformFeeMicros;
+  const acceptancePayloadHash = await internalHash({ operation: "CLAIM_HOSTING_ACCEPTANCE", contractId: current.id, acceptanceMode, acceptanceDeadlineAt });
   const settlementPayloadHash = await internalHash({ operation: "SETTLE_HOSTING_ORDER", contractId: current.id, measuredSeconds, settledMicros, supplierIncomeMicros, requestedCommissionMicros, feeScheduleId: current.feeScheduleId });
-  const cardSettlement = await stores.cardHours.settleHostingOrder({
-    account: input.account,
+  const settlementInput = {
+    buyerOrganizationId: current.buyerOrganizationId,
     orderId: current.id,
+    measuredSeconds,
     settledMicros,
     supplierOrganizationId: current.supplierOrganizationId,
     supplierIncomeMicros,
     commissionMicros: requestedCommissionMicros,
+    acceptanceMode,
+    acceptanceDeadlineAt,
+    acceptanceActorId: mutation.actorId,
+    acceptancePayloadHash,
     payloadHash: settlementPayloadHash,
-    now: input.mutation.now,
-  });
+    now: mutation.now,
+  } as const;
+  let cardSettlement;
+  try {
+    cardSettlement = await stores.cardHours.settleHostingOrder(settlementInput);
+  } catch (error) {
+    const conflict = error instanceof Error && "code" in error && error.code === "HOSTING_ACCEPTANCE_CONFLICT";
+    const converged = conflict ? await stores.hosting.contractForViewer(current.buyerOrganizationId, current.id) : null;
+    if (!converged || !["SETTLED", "CLEANING", "CLEANED"].includes(converged.status)) throw error;
+    cardSettlement = await stores.cardHours.settleHostingOrder(settlementInput);
+  }
   const commissionMicros = cardSettlement.referrerOrganizationId ? requestedCommissionMicros : 0;
-  const contract = replayed ? current : (await stores.hosting.markContractSettled(current.id, { measuredSeconds, settledMicros, supplierIncomeMicros, commissionMicros }, input.mutation)).contract;
+  let contract = current;
+  if (!replayed) {
+    try {
+      contract = (await stores.hosting.markContractSettled(current.id, { measuredSeconds, settledMicros, supplierIncomeMicros, commissionMicros }, mutation)).contract;
+    } catch (error) {
+      const converged = await stores.hosting.contractForViewer(current.buyerOrganizationId, current.id);
+      if (!converged || !["CLEANING", "CLEANED"].includes(converged.status) || converged.settledMicros !== settledMicros || converged.supplierIncomeMicros !== supplierIncomeMicros || converged.commissionMicros !== commissionMicros) throw error;
+      contract = converged;
+    }
+  }
   return {
     contract,
     settlement: {
@@ -123,4 +162,13 @@ export async function acceptHostingContract(input: {
     },
     replayed: replayed || !cardSettlement.applied,
   };
+}
+
+export async function advanceExpiredHostingAcceptance(deviceId: string, now: string, injected?: Dependencies) {
+  const stores = await dependencies(injected);
+  const current = await stores.hosting.expiredAcceptanceForDevice(deviceId, now);
+  if (!current) return null;
+  const payloadHash = await internalHash({ operation: "AUTO_ACCEPT_HOSTING_CONTRACT", contractId: current.id, stoppedAt: current.stoppedAt, acceptanceDeadlineAt: acceptanceDeadline(current) });
+  const mutation = internalMutation("system:hosting-acceptance", `auto-accept:${current.id}`, payloadHash, now);
+  return settleAcceptedContract(current, "TIMEOUT", mutation, stores);
 }

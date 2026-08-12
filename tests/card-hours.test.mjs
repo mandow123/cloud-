@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { cnyCentsToCardHourMicros, formatCardHourMicros, parseTopupCardHours, topupAmountCents } from "../lib/card-hours.ts";
 import { createSqliteCardHourStore } from "../lib/server/card-hour-store-sqlite.ts";
+import { createSqliteHostingV2Store } from "../lib/server/hosting-v2-store-sqlite.ts";
 
 const account = {
   account: { id: "acct-buyer", displayName: "Buyer", primaryEmail: null, status: "ACTIVE" },
@@ -62,7 +66,10 @@ test("a closed topup cannot be credited by a later conflicting capture event", a
 });
 
 test("hosting order hold settles actual usage once and vests rental and referral income", async () => {
-  const store = await createSqliteCardHourStore(":memory:");
+  const directory = mkdtempSync(join(tmpdir(), "kai-card-hour-hosting-"));
+  const path = join(directory, "hosting.sqlite");
+  const hosting = await createSqliteHostingV2Store(path);
+  const store = await createSqliteCardHourStore(path);
   const buyer = organizationAccount("hosting-buyer");
   const supplier = organizationAccount("hosting-supplier");
   const referrer = organizationAccount("hosting-referrer");
@@ -77,7 +84,13 @@ test("hosting order hold settles actual usage once and vests rental and referral
     assert.equal(held.replayed, false);
     assert.deepEqual((await store.dashboard(buyer.activeOrganization.id, "2026-08-11T01:01:01Z")).balance, { availableMicros: 2_000_000, heldMicros: 8_000_000, lifetimeTopupMicros: 10_000_000, lifetimeSpentMicros: 0 });
 
-    const settlement = { account: buyer, orderId: "hosting-contract-1", settledMicros: 6_000_000, supplierOrganizationId: supplier.activeOrganization.id, supplierIncomeMicros: 5_000_000, commissionMicros: 300_000, payloadHash: "hosting-settlement-hash", now: "2026-08-11T01:04:00Z" };
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(path, { enableForeignKeyConstraints: true });
+    const snapshot = { title: "Card hour settlement", gpuModel: "RTX_4090", region: "Test", cardHourMicrosPerGpuHour: 3_600_000, approvedImage: process.env.KAI_HOSTING_APPROVED_IMAGES, termsVersion: "KAI_HOSTING_TERMS_2026_08", platformFeeBps: 1_000, referralRewardBps: 300, acceptanceWindowSeconds: 1_800 };
+    db.prepare("INSERT INTO hosting_v2_contracts(id,offer_id,device_id,buyer_organization_id,buyer_account_id,supplier_organization_id,fee_schedule_id,snapshot_json,reserved_seconds,measured_seconds,held_micros,status,stopped_at,idempotency_key,payload_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run("hosting-contract-1", "offer-card-hours", "device-card-hours", buyer.activeOrganization.id, buyer.account.id, supplier.activeOrganization.id, "fee-card-hours", JSON.stringify(snapshot), 8_000, 6_000, 8_000_000, "AWAITING_ACCEPTANCE", "2026-08-11T00:34:00Z", "seed-card-hours", "seed-card-hours-hash", "2026-08-11T00:00:00Z", "2026-08-11T01:04:00Z");
+    db.prepare("INSERT INTO hosting_v2_metering_proofs(id,contract_id,command_id,container_digest,runtime_state_digest,agent_started_at,agent_stopped_at,agent_runtime_seconds,server_measured_seconds,evidence_digest,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run("proof-card-hours", "hosting-contract-1", "command-card-hours", `sha256:${"1".repeat(64)}`, `sha256:${"2".repeat(64)}`, "2026-08-10T22:54:00Z", "2026-08-11T00:34:00Z", 6_000, 6_000, `sha256:${"3".repeat(64)}`, "2026-08-11T00:34:00Z");
+    db.close();
+    const settlement = { buyerOrganizationId: buyer.activeOrganization.id, orderId: "hosting-contract-1", measuredSeconds: 6_000, settledMicros: 6_000_000, supplierOrganizationId: supplier.activeOrganization.id, supplierIncomeMicros: 5_000_000, commissionMicros: 300_000, acceptanceMode: "BUYER", acceptanceDeadlineAt: "2026-08-11T01:04:00.000Z", acceptanceActorId: buyer.account.id, acceptancePayloadHash: "hosting-acceptance-hash", payloadHash: "hosting-settlement-hash", now: "2026-08-11T01:04:00Z" };
     assert.equal((await store.settleHostingOrder(settlement)).applied, true);
     assert.equal((await store.settleHostingOrder(settlement)).applied, false);
 
@@ -89,5 +102,5 @@ test("hosting order hold settles actual usage once and vests rental and referral
     assert.equal(supplierDashboard.income.rentalVestedMicros, 5_000_000);
     assert.equal(referrerDashboard.balance.availableMicros, 300_000);
     assert.equal(referrerDashboard.income.commissionVestedMicros, 300_000);
-  } finally { store.close(); }
+  } finally { store.close(); hosting.close(); rmSync(directory, { recursive: true, force: true }); }
 });

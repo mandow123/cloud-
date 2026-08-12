@@ -193,7 +193,7 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
     },
 
     async settleHostingOrder(input) {
-      const organizationId = input.account.activeOrganization.id;
+      const organizationId = input.buyerOrganizationId;
       const current = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE source_system='HOSTING_V2' AND order_id=? AND organization_id=?", [input.orderId, organizationId]);
       if (!current) throw new AccountAuthError("CARD_HOUR_HOLD_NOT_FOUND", 409, "订单卡时预留不存在。 ");
       if (text(current, "status") === "SETTLED") {
@@ -208,6 +208,7 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       if (!Number.isSafeInteger(input.supplierIncomeMicros) || input.supplierIncomeMicros < 1 || input.supplierIncomeMicros > input.settledMicros) throw new AccountAuthError("CARD_HOUR_SETTLEMENT_INVALID", 400, "供应方租金收益金额无效。 ");
       if (!Number.isSafeInteger(input.commissionMicros) || input.commissionMicros < 0 || input.supplierIncomeMicros + input.commissionMicros > input.settledMicros) throw new AccountAuthError("CARD_HOUR_SETTLEMENT_INVALID", 400, "佣金金额与本单结算金额不匹配。 ");
       if (input.supplierOrganizationId === organizationId) throw new AccountAuthError("CARD_HOUR_SETTLEMENT_INVALID", 400, "买方不能向自己的供应主体结算。 ");
+      if (!Number.isSafeInteger(input.measuredSeconds) || input.measuredSeconds < 180 || !["BUYER", "TIMEOUT"].includes(input.acceptanceMode) || !Number.isFinite(Date.parse(input.acceptanceDeadlineAt)) || !input.acceptanceActorId.trim() || !input.acceptancePayloadHash.trim()) throw new AccountAuthError("CARD_HOUR_SETTLEMENT_INVALID", 400, "验收决定参数无效。 ");
 
       const attribution = await db.first<Row>("SELECT referrer_organization_id FROM card_hour_referral_attributions WHERE invitee_organization_id=?", [organizationId]);
       const referrerOrganizationId = attribution ? text(attribution, "referrer_organization_id") : null;
@@ -219,9 +220,18 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       const commissionBatchId = `chb_${crypto.randomUUID()}`;
       const releaseMicros = heldMicros - input.settledMicros;
       const statements: CardHourSql[] = [
-        { sql: "INSERT OR IGNORE INTO card_hour_hold_events(id,hold_id,event_type,amount_micros,payload_hash,occurred_at) SELECT ?,?,'SETTLED',?,?,? WHERE EXISTS(SELECT 1 FROM card_hour_order_holds WHERE id=? AND status='HELD')", values: [eventId, holdId, input.settledMicros, input.payloadHash, input.now, holdId] },
-        { sql: "UPDATE card_hour_order_holds SET settled_micros=?,status='SETTLED',updated_at=? WHERE id=? AND status='HELD' AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [input.settledMicros, input.now, holdId, eventId] },
-        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,lifetime_spent_micros=lifetime_spent_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [releaseMicros, heldMicros, input.settledMicros, input.now, organizationId, eventId] },
+        { sql: `INSERT INTO hosting_v2_acceptance_proofs(contract_id,decision_mode,acceptance_window_seconds,deadline_at,decided_at,actor_id,payload_digest)
+          SELECT c.id,?,COALESCE(CAST(json_extract(c.snapshot_json,'$.acceptanceWindowSeconds') AS INTEGER),1800),?,?,?,?
+          FROM hosting_v2_contracts c JOIN hosting_v2_metering_proofs m ON m.contract_id=c.id
+          WHERE c.id=? AND c.buyer_organization_id=? AND c.supplier_organization_id=? AND c.status='AWAITING_ACCEPTANCE'
+            AND c.measured_seconds=? AND m.server_measured_seconds=? AND c.stopped_at IS NOT NULL
+            AND CAST(strftime('%s',?) AS INTEGER)=CAST(strftime('%s',c.stopped_at) AS INTEGER)+COALESCE(CAST(json_extract(c.snapshot_json,'$.acceptanceWindowSeconds') AS INTEGER),1800)
+            AND (?='BUYER' OR (?='TIMEOUT' AND CAST(strftime('%s',?) AS INTEGER)>=CAST(strftime('%s',?) AS INTEGER)))`, values: [input.acceptanceMode, input.acceptanceDeadlineAt, input.now, input.acceptanceActorId, input.acceptancePayloadHash, input.orderId, organizationId, input.supplierOrganizationId, input.measuredSeconds, input.measuredSeconds, input.acceptanceDeadlineAt, input.acceptanceMode, input.acceptanceMode, input.now, input.acceptanceDeadlineAt] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        { sql: "UPDATE hosting_v2_contracts SET status='SETTLED',accepted_at=?,version=version+1,updated_at=? WHERE id=? AND status='AWAITING_ACCEPTANCE' AND EXISTS(SELECT 1 FROM hosting_v2_acceptance_proofs WHERE contract_id=?)", values: [input.now, input.now, input.orderId, input.orderId] },
+        { sql: "INSERT OR IGNORE INTO card_hour_hold_events(id,hold_id,event_type,amount_micros,payload_hash,occurred_at) SELECT ?,?,'SETTLED',?,?,? WHERE EXISTS(SELECT 1 FROM card_hour_order_holds WHERE id=? AND status='HELD') AND EXISTS(SELECT 1 FROM hosting_v2_acceptance_proofs WHERE contract_id=?)", values: [eventId, holdId, input.settledMicros, input.payloadHash, input.now, holdId, input.orderId] },
+        { sql: "UPDATE card_hour_order_holds SET settled_micros=?,status='SETTLED',updated_at=? WHERE id=? AND status='HELD' AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?) AND EXISTS(SELECT 1 FROM hosting_v2_contracts WHERE id=? AND status='SETTLED')", values: [input.settledMicros, input.now, holdId, eventId, input.orderId] },
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,lifetime_spent_micros=lifetime_spent_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?) AND EXISTS(SELECT 1 FROM hosting_v2_contracts WHERE id=? AND status='SETTLED')", values: [releaseMicros, heldMicros, input.settledMicros, input.now, organizationId, eventId, input.orderId] },
         { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) SELECT ?,?,'ORDER_CAPTURE',?,?,'POSTED',?,? WHERE EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [captureBatchId, organizationId, `order:HOSTING_V2:${input.orderId}`, input.settledMicros, JSON.stringify({ sourceSystem: "HOSTING_V2", orderId: input.orderId, heldMicros, releasedMicros: releaseMicros }), input.now, eventId] },
         { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_HELD','DEBIT',?,held_micros,? FROM card_hour_wallets WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, captureBatchId, organizationId, input.settledMicros, input.now, organizationId, captureBatchId] },
         { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,NULL,'PLATFORM_ORDER_CLEARING','CREDIT',?,NULL,? WHERE EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, captureBatchId, input.settledMicros, input.now, captureBatchId] },
@@ -243,7 +253,8 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       const results = await db.batch(statements);
       const updated = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE id=?", [holdId]);
       if (!updated) throw new Error("CARD_HOUR_HOLD_SETTLEMENT_FAILED");
-      return { record: holdRecord(updated), referrerOrganizationId, applied: results[0]?.changes === 1 };
+      if (results[0]?.changes !== 1) throw new AccountAuthError("HOSTING_ACCEPTANCE_CONFLICT", 409, "验收窗口、计量凭证或合同状态已经变化。 ");
+      return { record: holdRecord(updated), referrerOrganizationId, applied: results[3]?.changes === 1 };
     },
 
     async releaseHostingOrder(input) {

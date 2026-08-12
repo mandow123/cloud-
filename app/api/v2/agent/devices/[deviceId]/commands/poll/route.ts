@@ -4,6 +4,7 @@ import { agentString, hostingAgentHttpError, parseAgentProof, requireHostingAgen
 import { hostingObject, requireHostingV2SetupEnabled } from "@/lib/server/hosting-v2-api";
 import { isHostingV2Enabled } from "@/lib/server/hosting-v2-feature";
 import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
+import { advanceExpiredHostingAcceptance } from "@/lib/server/hosting-contract-service";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +22,15 @@ export async function POST(request: Request, contextValue: { params: Promise<{ d
     const requestNonce = agentString(body, "requestNonce", 16, 128);
     if (!/^[A-Za-z0-9_-]+$/u.test(requestNonce)) throw new AccountAuthError("AGENT_FIELD_INVALID", 400, "requestNonce 格式无效。 ");
     await verifyExistingDeviceProof(device, "POLL_COMMAND", { requestNonce }, proof);
+    const now = new Date().toISOString();
+    if (isHostingV2Enabled()) {
+      try { await advanceExpiredHostingAcceptance(deviceId, now); }
+      catch (error) {
+        console.error(JSON.stringify({ level: "error", event: "hosting_auto_accept_failed", deviceId, errorCode: error instanceof Error && "code" in error ? String(error.code) : "UNKNOWN", occurredAt: now }));
+      }
+    }
     const allowedTypes = isHostingV2Enabled() ? undefined : ["VERIFY", "STOP", "CLEANUP"] as const;
-    return jsonResponse({ command: await store.pollCommand(deviceId, new Date().toISOString(), allowedTypes) }, 200, undefined, context);
+    return jsonResponse({ command: await store.pollCommand(deviceId, now, allowedTypes) }, 200, undefined, context);
   } catch (error) {
     return apiErrorResponse(hostingAgentHttpError(error), undefined, context);
   }

@@ -61,8 +61,10 @@ export interface HostingV2Store {
   attachSshKey(buyerOrganizationId: string, contractId: string, input: { publicKey: string; fingerprint: string }, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand }>;
   requestContractStart(buyerOrganizationId: string, contractId: string, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand }>;
   requestContractStop(organizationId: string, contractId: string, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand }>;
+  disputeContract(buyerOrganizationId: string, contractId: string, reason: string, context: HostingMutationContext): Promise<HostingContract>;
   contractForViewer(organizationId: string, contractId: string): Promise<HostingContract | null>;
   contractEvidenceForViewer(organizationId: string, contractId: string): Promise<HostingContractEvidence | null>;
+  expiredAcceptanceForDevice(deviceId: string, now: string): Promise<HostingContract | null>;
   getCommand(deviceId: string, commandId: string): Promise<HostingAgentCommand | null>;
   pollCommand(deviceId: string, now: string, allowedTypes?: readonly HostingAgentCommand["type"][]): Promise<HostingAgentCommand | null>;
   completeCommand(deviceId: string, commandId: string, input: { outcome: "SUCCEEDED" | "FAILED"; evidenceDigest: string; errorCode?: string | null; details?: Record<string, unknown>; controlPlaneReachabilityDigest?: string }, context: HostingMutationContext): Promise<{ command: HostingAgentCommand; contract: HostingContract | null; device: HostingDevice }>;

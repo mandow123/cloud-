@@ -1,4 +1,4 @@
-export const HOSTING_V2_SCHEMA_VERSION = 5;
+export const HOSTING_V2_SCHEMA_VERSION = 6;
 
 export const hostingV2SchemaStatements = [
   `CREATE TABLE IF NOT EXISTS hosting_v2_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`,
@@ -214,6 +214,17 @@ export const hostingV2SchemaStatements = [
     occurred_at TEXT NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS hosting_v2_events_entity_idx ON hosting_v2_events(entity_type, entity_id, occurred_at)`,
+  `CREATE TABLE IF NOT EXISTS hosting_v2_acceptance_proofs (
+    contract_id TEXT PRIMARY KEY,
+    decision_mode TEXT NOT NULL CHECK (decision_mode IN ('BUYER','TIMEOUT')),
+    acceptance_window_seconds INTEGER NOT NULL CHECK (acceptance_window_seconds >= 0),
+    deadline_at TEXT NOT NULL,
+    decided_at TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    payload_digest TEXT NOT NULL
+  )`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_acceptance_proofs_immutable_update BEFORE UPDATE ON hosting_v2_acceptance_proofs BEGIN SELECT RAISE(ABORT, 'hosting acceptance proof immutable'); END`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_acceptance_proofs_immutable_delete BEFORE DELETE ON hosting_v2_acceptance_proofs BEGIN SELECT RAISE(ABORT, 'hosting acceptance proof immutable'); END`,
   `CREATE TABLE IF NOT EXISTS hosting_v2_command_receipts (
     actor_id TEXT NOT NULL,
     idempotency_key TEXT NOT NULL,

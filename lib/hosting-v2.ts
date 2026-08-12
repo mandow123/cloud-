@@ -1,5 +1,6 @@
 export const HOSTING_V2_MIN_RENTAL_SECONDS = 180;
 export const HOSTING_V2_AGENT_STALE_SECONDS = 90;
+export const HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS = 30 * 60;
 export const HOSTING_V2_CARD_HOUR_MICROS = 1_000_000;
 
 export const HOSTING_SUPPLIER_TYPES = ["INDIVIDUAL", "COMPANY", "IDC", "CLOUD_VENDOR"] as const;
@@ -134,6 +135,7 @@ export type HostingContract = Readonly<{
     termsVersion: string;
     platformFeeBps: number;
     referralRewardBps: number;
+    acceptanceWindowSeconds: number;
   }>;
   reservedSeconds: number;
   measuredSeconds: number | null;
@@ -182,6 +184,12 @@ export type HostingContractEvidence = Readonly<{
     evidenceDigest: string;
     cleanedAt: string;
     recordedAt: string;
+  }> | null;
+  acceptance: Readonly<{
+    mode: "BUYER" | "TIMEOUT";
+    acceptanceWindowSeconds: number;
+    deadlineAt: string;
+    decidedAt: string;
   }> | null;
 }>;
 

@@ -30,6 +30,7 @@ export type BuyerHostingContract = Readonly<{
     termsVersion: string;
     platformFeeBps: number;
     referralRewardBps: number;
+    acceptanceWindowSeconds: number;
   }>;
   reservedSeconds: number;
   measuredSeconds: number | null;
