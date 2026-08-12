@@ -221,4 +221,7 @@ test("the Hosting admin page is wired to live approval APIs and has no fake clie
   assert.match(retryRoute, /requireAdminPermission\(request, \["FULFILLMENT_OPERATE"\]\)/u);
   assert.match(retryRoute, /retryCleanup/u);
   assert.doesNotMatch(retryRoute, /updateOfferStatus|completeCommand/u);
+
+  const marketplaceAuth = readFileSync(new URL("../lib/server/marketplace-auth.ts", import.meta.url), "utf8");
+  assert.match(marketplaceAuth, /kai-cloud-account-session:v1/u);
 });

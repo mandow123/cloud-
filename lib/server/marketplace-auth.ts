@@ -24,9 +24,9 @@ export async function authorizeMarketplaceRequest(request: Request): Promise<Mar
   const sessionActor = account
     ? {
         ...browserActor,
-        id: `acctsess_${(await hashText(`${browserActor.sessionHash}:${account.activeOrganization.id}`)).slice(0, 40)}`,
+        id: `acctsess_${(await hashText(`kai-cloud-account-session:v1:${browserActor.sessionHash}:${account.activeOrganization.id}`)).slice(0, 40)}`,
         source: "account-session" as const,
-        sessionHash: await hashText(`${browserActor.sessionHash}:${account.activeOrganization.id}`),
+        sessionHash: await hashText(`kai-cloud-account-session:v1:${browserActor.sessionHash}:${account.activeOrganization.id}`),
       }
     : browserActor;
   return { actor, sessionActor, store };
