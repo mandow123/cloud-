@@ -11,6 +11,7 @@ import { getAdminOperationsStore } from "./admin-store.ts";
 import { getExchangeStore } from "./exchange-store.ts";
 import { getCardHourStore } from "./card-hour-store.ts";
 import { evaluateHostingV2Capability } from "./hosting-v2-readiness.ts";
+import { isHostingV2ConfigurationEnabled } from "./hosting-v2-feature.ts";
 import { getHostingV2Store } from "./hosting-v2-store.ts";
 import { readMarketSnapshot } from "./market-snapshot.ts";
 import { assertMarketplaceSecurityConfiguration, createMarketplaceReadinessStore } from "./marketplace-store.ts";
@@ -19,7 +20,7 @@ import { getSupplyStore } from "./supply-store.ts";
 import { getStandardizationStore } from "./standardization-store.ts";
 
 type Environment = Record<string,string|undefined>;
-type CheckResult = Readonly<{ready:boolean;schemaVersion:number;probe:"read-only";errorCode?:string}>;
+type CheckResult = Readonly<{ready:boolean;schemaVersion:number;probe:"read-only"|"deferred";errorCode?:string}>;
 
 function errorCode(error:unknown){
   const message=error instanceof Error?error.message:"UNKNOWN";
@@ -64,6 +65,17 @@ function capabilityReadiness(environment:Environment){
 export async function evaluateReadiness(){
   const environment=await runtimeEnvironment();
   const checkedAt=new Date().toISOString();
+  const hostingV2StoragePromise=isHostingV2ConfigurationEnabled(environment)?(async()=>{
+    try{
+      const snapshot=await (await getHostingV2Store()).readiness(checkedAt);
+      return{ready:true,schemaVersion:HOSTING_V2_SCHEMA_VERSION,probe:"read-only" as const,snapshot};
+    }catch(error){return{ready:false,schemaVersion:HOSTING_V2_SCHEMA_VERSION,probe:"read-only" as const,errorCode:errorCode(error),snapshot:null};}
+  })():Promise.resolve({
+    ready:true,
+    schemaVersion:HOSTING_V2_SCHEMA_VERSION,
+    probe:"deferred" as const,
+    snapshot:null,
+  });
   const marketplacePromise=(async()=>{
     try{
       await assertMarketplaceSecurityConfiguration();
@@ -80,12 +92,7 @@ export async function evaluateReadiness(){
     storeCheck(ADMIN_IDENTITY_SCHEMA_VERSION,async()=>{await (await getAccountAuthStore()).listMemberships("__readiness_probe__");}),
     storeCheck(STANDARDIZATION_SCHEMA_VERSION,async()=>{await (await getStandardizationStore()).getQuotes();}),
     storeCheck(CARD_HOUR_SCHEMA_VERSION,async()=>{await (await getCardHourStore()).health();}),
-    (async()=>{
-      try{
-        const snapshot=await (await getHostingV2Store()).readiness(checkedAt);
-        return{ready:true,schemaVersion:HOSTING_V2_SCHEMA_VERSION,probe:"read-only" as const,snapshot};
-      }catch(error){return{ready:false,schemaVersion:HOSTING_V2_SCHEMA_VERSION,probe:"read-only" as const,errorCode:errorCode(error),snapshot:null};}
-    })(),
+    hostingV2StoragePromise,
     readMarketSnapshot().then((value)=>({ok:true as const,value})).catch((error)=>({ok:false as const,error})),
   ]);
   let market:{source:string;publishedAt:string|null;ageHours:number|null;stale:boolean;ready:boolean;errorCode?:string};

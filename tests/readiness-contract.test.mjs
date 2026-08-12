@@ -16,4 +16,6 @@ test("readiness probes every storage domain without creating identities or grant
   for(const dependency of ["createMarketplaceReadinessStore","getExchangeStore","getSupplyStore","getAdminOperationsStore","getAccountAuthStore","getStandardizationStore","getCardHourStore","getHostingV2Store","evaluateHostingV2Capability"])assert.match(readiness,new RegExp(dependency));
   assert.doesNotMatch(readiness,/resolveOrCreateIdentity|activateMembership|invitePrincipal|createOffer|createResource|createCheckout/);
   assert.match(readiness,/failClosed:true/);
+  assert.match(readiness,/isHostingV2ConfigurationEnabled\(environment\)/);
+  assert.match(readiness,/probe:"deferred"/);
 });

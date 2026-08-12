@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { evaluateHostingV2Capability } from "../lib/server/hosting-v2-readiness.ts";
+import { isHostingV2ConfigurationEnabled } from "../lib/server/hosting-v2-feature.ts";
 
 const image = `ghcr.io/kai-cloud/cuda-pytorch@sha256:${"a".repeat(64)}`;
 const storage = { ready: true };
@@ -16,6 +17,13 @@ const operations = {
   cleaningContractCount: 0,
 };
 const alipayClosed = { enabled: false, configured: false, canCreatePayment: false, missing: ["KAI_ALIPAY_APP_ID"], gateway: "https://openapi.alipay.com/gateway.do", merchantAccountRef: null };
+
+test("disabled Hosting V2 defers schema initialization so the previous image remains a direct rollback", () => {
+  assert.equal(isHostingV2ConfigurationEnabled({}), false);
+  assert.equal(isHostingV2ConfigurationEnabled({ KAI_HOSTING_V2: "0", KAI_HOSTING_V2_SETUP: "0" }), false);
+  assert.equal(isHostingV2ConfigurationEnabled({ KAI_HOSTING_V2_SETUP: "true" }), true);
+  assert.equal(isHostingV2ConfigurationEnabled({ KAI_HOSTING_V2: "1" }), true);
+});
 
 test("disabled Hosting V2 stays rollback-safe without pretending its dependencies are ready", () => {
   const result = evaluateHostingV2Capability({ environment: { KAI_HOSTING_V2: "0" }, hostingStorage: storage, cardHourStorage: storage, operations: null, kaiIdentityAvailable: false, adminPasswordAvailable: false, financeApprovalAvailable: false, alipay: alipayClosed });

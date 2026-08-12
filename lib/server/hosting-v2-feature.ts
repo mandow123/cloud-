@@ -1,13 +1,21 @@
 import { AccountAuthError } from "./account-auth.ts";
 
+type HostingFeatureEnvironment = Record<string, string | undefined>;
+
+function enabled(value: string | undefined) {
+  return ["1", "true"].includes((value ?? "").trim().toLowerCase());
+}
+
+export function isHostingV2ConfigurationEnabled(environment: HostingFeatureEnvironment) {
+  return enabled(environment.KAI_HOSTING_V2) || enabled(environment.KAI_HOSTING_V2_SETUP);
+}
+
 export function isHostingV2Enabled() {
-  return typeof process !== "undefined"
-    && ["1", "true"].includes((process.env.KAI_HOSTING_V2 ?? "").trim().toLowerCase());
+  return typeof process !== "undefined" && enabled(process.env.KAI_HOSTING_V2);
 }
 
 export function isHostingV2SetupEnabled() {
-  return isHostingV2Enabled() || (typeof process !== "undefined"
-    && ["1", "true"].includes((process.env.KAI_HOSTING_V2_SETUP ?? "").trim().toLowerCase()));
+  return typeof process !== "undefined" && isHostingV2ConfigurationEnabled(process.env);
 }
 
 export function requireHostingV2Enabled() {
