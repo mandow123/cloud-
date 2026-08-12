@@ -37,7 +37,8 @@ test("hosting v2 menu is a vertical list of real routes without page anchors", (
 
 test("legacy entry points route into the independent hosting pages", () => {
   const partnerSource = readFileSync("app/partners/page.tsx", "utf8");
-  assert.match(partnerSource, /permanentRedirect\("\/hosting\/partners"\)/u);
+  assert.match(partnerSource, /KAI_PUBLIC_ORIGIN/u);
+  assert.match(partnerSource, /permanentRedirect\(new URL\("\/hosting\/partners", origin\)\.toString\(\)\)/u);
   assert.doesNotMatch(partnerSource, /isHostingV2Enabled|PartnerForm/u);
 
   const guides = readFileSync("app/guides/page.tsx", "utf8");

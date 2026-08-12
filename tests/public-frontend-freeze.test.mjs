@@ -20,7 +20,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "app/checkout/[resourceId]/page.tsx": "3bebbc74d265d24dd67a2d1c54816fbae604188ed57d1eeabe27bc6669c3693c",
   "app/login/page.tsx": "17e80a16d3d45df1843ffc54f0b824b63c7e8f0ed344f9fb571304dd04103f22",
   "app/member/page.tsx": "c72c258a8266554e939f686f7f9e3b26539a37d174fbfb8ab6b5f7a7a6edb272",
-  "app/partners/page.tsx": "03bd0cc49e180a664dd4f24fa94c94d3a364821e8cc12ad4a503b1f3f8ff211b",
+  "app/partners/page.tsx": "93cd20f90ebf8f6271b1b69fd79521b00497b02975beab97019b7bce121f2b52",
   "components/account-login.tsx": "8096ca1e7921f2326038335df6000c693e23df03f6def5a9918ba90086dedd51",
   "components/account-required.tsx": "20b2a1330e872904e8d6ba73442e24bd2c8bd53f47c8619448cd9cfacc77b755",
   "components/buyer-order-list.tsx": "fa15cbb70d18d19074633efc5d9fe60acd276ae4a45ab9df1e99dc3f6092d31a",
