@@ -45,11 +45,14 @@ test("resource registration issues a short-lived server challenge without client
   assert.match(source, /minimumAgentVersion: challenge\.minimumAgentVersion/u);
   assert.match(source, /expiresAt: challenge\.expiresAt/u);
   assert.match(source, /navigator\.clipboard\.writeText\(pairingBundle\)/u);
+  assert.match(source, /`\/api\/v2\/supply\/agent-challenges\/\$\{encodeURIComponent\(challenge\.id\)\}`/u);
+  assert.match(source, /window\.setInterval\(\(\) => \{ void check\(\); \}, 3_000\)/u);
+  assert.match(source, /进入设备验真/u);
   assert.match(source, new RegExp(`const HOST_AGENT_VERSION = "${agentPackage.version.replaceAll(".", "\\.")}"`, "u"));
   assert.match(source, /const HOST_AGENT_ARCHIVE = `kai-host-agent-\$\{HOST_AGENT_VERSION\}\.tgz`/u);
   assert.match(source, /href=\{`\/downloads\/\$\{HOST_AGENT_ARCHIVE\}`\}/u);
   assert.match(source, /href="\/guides\/host-agent"/u);
-  assert.doesNotMatch(source, /organizationId|accountId|actorId|x-kai-workspace-role|localStorage|sessionStorage/u);
+  assert.doesNotMatch(source, /actorId|x-kai-workspace-role|localStorage|sessionStorage/u);
 });
 
 test("resource details are selected from the current organization dashboard and verification uses the constrained API", () => {

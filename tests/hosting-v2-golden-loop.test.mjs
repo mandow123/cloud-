@@ -14,6 +14,7 @@ import { GET as openMarketplaceSession } from "../app/api/session/route.ts";
 import { PUT as saveSupplierProfile } from "../app/api/v2/supply/profile/route.ts";
 import { POST as submitSupplierProfile } from "../app/api/v2/supply/profile/submit/route.ts";
 import { POST as issueAgentChallenge } from "../app/api/v2/supply/agent-challenges/route.ts";
+import { GET as getAgentChallengeStatus } from "../app/api/v2/supply/agent-challenges/[challengeId]/route.ts";
 import { POST as queueDeviceVerification } from "../app/api/v2/supply/devices/[deviceId]/verify/route.ts";
 import { GET as getSupplyPolicy } from "../app/api/v2/supply/policy/route.ts";
 import { POST as createSupplyOffer } from "../app/api/v2/supply/offers/route.ts";
@@ -240,7 +241,19 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
       inventory: inventory(),
       inventoryDigest,
     }, mutation("agent:golden", "golden-device-register", now));
+    assert.equal((await hosting.getAgentRegistration(supplier.context.activeOrganization.id, challenge.record.id))?.device?.id, device.id);
+    const registeredStatus = await json(await getAgentChallengeStatus(browserRead(supplier, `/api/v2/supply/agent-challenges/${challenge.record.id}`), { params: Promise.resolve({ challengeId: challenge.record.id }) }), 200);
+    assert.equal(registeredStatus.record.device.id, device.id);
+    assert.equal(registeredStatus.record.device.lastSequence, 0);
+    assert.equal(registeredStatus.record.device.lastSeenAt, null);
+    assert.equal("nonce" in registeredStatus.record, false);
+    assert.equal("organizationId" in registeredStatus.record.device, false);
+    const crossOrganizationStatus = await json(await getAgentChallengeStatus(browserRead(buyer, `/api/v2/supply/agent-challenges/${challenge.record.id}`), { params: Promise.resolve({ challengeId: challenge.record.id }) }), 404);
+    assert.equal(crossOrganizationStatus.error.code, "HOSTING_AGENT_CHALLENGE_NOT_FOUND");
     await hosting.acceptHeartbeat(device.id, { sequence: 1, inventoryDigest, capacityState: "ONLINE", observedAt: now }, mutation(`agent:${device.id}`, "golden-heartbeat-1", now));
+    const onlineStatus = await json(await getAgentChallengeStatus(browserRead(supplier, `/api/v2/supply/agent-challenges/${challenge.record.id}`), { params: Promise.resolve({ challengeId: challenge.record.id }) }), 200);
+    assert.equal(onlineStatus.record.device.lastSequence, 1);
+    assert.equal(onlineStatus.record.device.lastSeenAt, now);
     const queuedVerification = await json(await queueDeviceVerification(browserRequest(supplier, `/api/v2/supply/devices/${device.id}/verify`, "POST", {}, "golden-device-verify"), { params: Promise.resolve({ deviceId: device.id }) }), 201);
     const verificationCommand = await hosting.pollCommand(device.id, now);
     assert.equal(verificationCommand.id, queuedVerification.record.id);
@@ -342,7 +355,7 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     const publicAfter = await json(await listPublicOffers(new Request(`${ORIGIN}/api/v2/offers`)), 200);
     assert.equal(publicAfter.records.length, 1, "cleaned and freshly verified inventory must become sellable again");
     const operations = await hosting.readiness(cleanedAt);
-    assert.equal(operations.schemaVersion, 9);
+    assert.equal(operations.schemaVersion, 10);
     assert.match(operations.activeFeeScheduleId, /^hfee_/u);
     assert.deepEqual({
       approvedSupplierCount: operations.approvedSupplierCount,

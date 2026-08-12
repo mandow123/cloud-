@@ -2,13 +2,16 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { HostingAgentChallenge } from "@/lib/hosting-v2";
+import type { HostingAgentChallenge, HostingDevice } from "@/lib/hosting-v2";
 import type { SupplierHostingDashboard } from "@/lib/hosting-v2-client";
 import { createIdempotencyKey, marketplaceErrorMessage, marketplaceGet, marketplacePost } from "@/lib/client/marketplace-client";
 import styles from "./supply-console.module.css";
 
 const HOST_AGENT_VERSION = "1.9.0";
 const HOST_AGENT_ARCHIVE = `kai-host-agent-${HOST_AGENT_VERSION}.tgz`;
+
+type PairingDevice = Pick<HostingDevice, "id" | "displayName" | "agentVersion" | "status" | "verificationStatus" | "lastSequence" | "lastSeenAt"> & Readonly<{ gpuModel: HostingDevice["inventory"]["gpuModel"] }>;
+type PairingStatus = Readonly<{ challengeId: string; expiresAt: string; consumedAt: string | null; device: PairingDevice | null }>;
 
 const templates = [
   { id: "personal-gpu", code: "01", title: "个人 GPU", description: "单台 Ubuntu 主机，首期支持 1× RTX 4090 或 H100。", enabled: true },
@@ -22,8 +25,11 @@ export function SupplyResourceRegistration() {
   const [challenge, setChallenge] = useState<HostingAgentChallenge | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [pairedDevice, setPairedDevice] = useState<PairingDevice | null>(null);
+  const [pairingExpired, setPairingExpired] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const issueKey = useRef<string | null>(null);
+  const agentOnline = Boolean(pairedDevice && pairedDevice.lastSequence > 0 && ["ONLINE", "VERIFIED"].includes(pairedDevice.status));
 
   const load = useCallback(async () => {
     try {
@@ -39,6 +45,27 @@ export function SupplyResourceRegistration() {
     return () => window.cancelAnimationFrame(frame);
   }, [load]);
 
+  useEffect(() => {
+    if (!challenge || agentOnline || pairingExpired) return;
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const result = await marketplaceGet<{ record: PairingStatus }>(`/api/v2/supply/agent-challenges/${encodeURIComponent(challenge.id)}`);
+        if (!cancelled && result.record.device) {
+          setPairedDevice(result.record.device);
+          setError(null);
+        } else if (!cancelled && Date.parse(result.record.expiresAt) <= Date.now()) {
+          setPairingExpired(true);
+        }
+      } catch (cause) {
+        if (!cancelled) setError(marketplaceErrorMessage(cause, "设备连接状态暂时无法确认。"));
+      }
+    };
+    void check();
+    const interval = window.setInterval(() => { void check(); }, 3_000);
+    return () => { cancelled = true; window.clearInterval(interval); };
+  }, [agentOnline, challenge, pairingExpired]);
+
   const pairingBundle = useMemo(() => challenge ? JSON.stringify({
     version: 1,
     registerEndpoint: typeof window === "undefined" ? "/api/v2/agent/register" : `${window.location.origin}/api/v2/agent/register`,
@@ -49,7 +76,7 @@ export function SupplyResourceRegistration() {
   }, null, 2) : "", [challenge]);
 
   async function issueChallenge() {
-    setBusy(true); setError(null); setCopied(false);
+    setBusy(true); setError(null); setCopied(false); setPairedDevice(null); setPairingExpired(false);
     try {
       issueKey.current ??= createIdempotencyKey("agent-pairing");
       const result = await marketplacePost<HostingAgentChallenge>("/api/v2/supply/agent-challenges", {}, issueKey.current);
@@ -87,7 +114,7 @@ export function SupplyResourceRegistration() {
       <div className={styles.resourceCards} aria-label="资源接入模板">
         {templates.map((template) => (
           <article className={`${styles.resourceCard} ${selected === template.id ? styles.resourceCardSelected : ""}`} key={template.id}>
-            <button aria-pressed={selected === template.id} disabled={!template.enabled} onClick={() => { setSelected(template.id); setChallenge(null); issueKey.current = null; }} type="button">
+            <button aria-pressed={selected === template.id} disabled={!template.enabled} onClick={() => { setSelected(template.id); setChallenge(null); setPairedDevice(null); setPairingExpired(false); issueKey.current = null; }} type="button">
               <span>{template.code}</span><h2>{template.title}</h2><p>{template.description}</p>
             </button>
           </article>
@@ -124,8 +151,20 @@ export function SupplyResourceRegistration() {
               <pre className={styles.credentialBlock} tabIndex={0}>{pairingBundle}</pre>
               <div className={styles.actionRow}>
                 <button className={styles.actionButton} onClick={() => void copyBundle()} type="button">{copied ? "已复制" : "复制配对内容"}</button>
-                <button className={styles.secondaryAction} onClick={() => { setChallenge(null); issueKey.current = null; }} type="button">废弃页面中的凭证</button>
+                {!pairedDevice ? <button className={styles.secondaryAction} onClick={() => { setChallenge(null); setPairedDevice(null); setPairingExpired(false); issueKey.current = null; }} type="button">废弃页面中的凭证</button> : null}
               </div>
+              {agentOnline && pairedDevice ? (
+                <div className={styles.connectionSuccess} role="status">
+                  <div><span>HOST ONLINE</span><strong>{pairedDevice.displayName}</strong><p>{pairedDevice.gpuModel.replace("_", " ")} · Agent {pairedDevice.agentVersion} · 服务端已收到第 {pairedDevice.lastSequence} 次签名心跳</p></div>
+                  <Link className={styles.actionButton} href={`/supply/resources/${encodeURIComponent(pairedDevice.id)}`}>进入设备验真</Link>
+                </div>
+              ) : pairedDevice ? (
+                <div className={styles.connectionWaiting} role="status"><span aria-hidden="true" /><div><strong>{pairedDevice.displayName} 已完成签名注册</strong><p>请在主机启动 Host Agent 服务；收到第一条签名心跳后会自动开放验真入口。</p></div></div>
+              ) : pairingExpired ? (
+                <div className={styles.connectionExpired} role="alert"><div><strong>这份一次性凭证已过期</strong><p>主机尚未完成注册。请废弃旧内容并重新签发，不要继续使用已过期凭证。</p></div><button className={styles.secondaryAction} onClick={() => { setChallenge(null); setPairingExpired(false); issueKey.current = null; }} type="button">重新签发</button></div>
+              ) : (
+                <div className={styles.connectionWaiting} role="status"><span aria-hidden="true" /><div><strong>正在等待这台主机完成配对</strong><p>主机成功注册后，本页面会自动显示设备名称并开放验真入口。</p></div></div>
+              )}
               <p className="m-0 text-xs text-[var(--muted)]">本页面不会把凭证写入浏览器存储。刷新后无法恢复；凭证会在服务端到期，或被一台成功注册的 Agent 消费。</p>
             </>
           )}

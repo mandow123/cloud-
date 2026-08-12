@@ -35,6 +35,11 @@ export type HostingAgentChallenge = Readonly<{
   createdAt: string;
 }>;
 
+export type HostingAgentRegistration = Readonly<{
+  challenge: HostingAgentChallenge;
+  device: HostingDevice | null;
+}>;
+
 export type HostingDeviceInventory = Readonly<{
   hostnameDigest: string;
   gpuModel: HostingGpuModel;

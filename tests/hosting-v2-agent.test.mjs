@@ -89,6 +89,11 @@ test("signed Host Agent registration, heartbeat and verification close without r
 
     const device = await store.registerDevice(challenge.id, { displayName: registration.displayName, deviceKeyId: await hostingAgentKeyId(devicePublicKey), devicePublicKey, agentVersion: registration.agentVersion, inventory, inventoryDigest }, mutation(`agent:${await hostingAgentKeyId(devicePublicKey)}`, "agent-register-0001", await hostingAgentDigest(registration), now.toISOString()));
     assert.equal(device.verificationStatus, "NOT_RUN");
+    const registrationStatus = await store.getAgentRegistration(account.activeOrganization.id, challenge.id);
+    assert.equal(registrationStatus?.device?.id, device.id);
+    assert.equal(registrationStatus?.device?.lastSeenAt, null);
+    assert.equal((await store.getAgentRegistration("org-other", challenge.id)), null);
+    await assert.rejects(store.queueVerification(account.activeOrganization.id, device.id, mutation(account.account.id, "verify-before-heartbeat", "verify-before-heartbeat-hash", now.toISOString())), (error) => error.code === "EXCHANGE_STATE_CONFLICT");
     await assert.rejects(store.registerDevice(challenge.id, { displayName: registration.displayName, deviceKeyId: await hostingAgentKeyId(devicePublicKey), devicePublicKey, agentVersion: registration.agentVersion, inventory, inventoryDigest }, mutation("other-agent", "agent-register-replay", "other-registration", now.toISOString())), (error) => error.code === "EXCHANGE_STATE_CONFLICT");
 
     const heartbeatFields = { sequence: 1, inventoryDigest, capacityState: "ONLINE", observedAt: now.toISOString() };
@@ -122,6 +127,56 @@ test("signed Host Agent registration, heartbeat and verification close without r
     assert.equal((await store.dashboard(account.activeOrganization.id, now.toISOString())).readiness.onlineVerifiedDevices, 1);
   } finally {
     store.close();
+  }
+});
+
+test("one pairing challenge can register exactly one device without a phantom replay receipt", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kai-hosting-agent-race-"));
+  const store = await createSqliteHostingV2Store(join(directory, "hosting.sqlite"));
+  try {
+    const now = new Date().toISOString();
+    await approvedSupplier(store, now);
+    const challenge = await store.issueAgentChallenge(account, mutation(account.account.id, "race-challenge", "race-challenge", now));
+    const raceInventory = parseHostingDeviceInventory({
+      hostnameDigest: `sha256:${"6".repeat(64)}`,
+      gpuModel: "RTX_4090",
+      gpuUuidDigest: `sha256:${"7".repeat(64)}`,
+      gpuMemoryMiB: 24_576,
+      driverVersion: "580.10",
+      cudaVersion: "13.0",
+      cpuModel: "AMD Ryzen 9 9950X",
+      memoryMiB: 65_536,
+      storageGiB: 2_048,
+      publicHost: "race.example.com",
+      sshPortStart: 22_000,
+      sshPortEnd: 22_019,
+    });
+    const registrations = ["a", "b"].map((suffix) => store.registerDevice(challenge.id, {
+      displayName: `竞争设备 ${suffix}`,
+      deviceKeyId: `sha256:${suffix.repeat(64)}`,
+      devicePublicKey: suffix.toUpperCase().repeat(43),
+      agentVersion: "1.9.0",
+      inventory: raceInventory,
+      inventoryDigest: `sha256:${"9".repeat(64)}`,
+    }, mutation(`agent:${suffix}`, `race-register-${suffix}`, `race-register-${suffix}`, now)));
+    const results = await Promise.allSettled(registrations);
+    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+    const rejectedIndex = results.findIndex((result) => result.status === "rejected");
+    assert.notEqual(rejectedIndex, -1);
+    const rejectedSuffix = ["a", "b"][rejectedIndex];
+    await assert.rejects(store.registerDevice(challenge.id, {
+      displayName: `竞争设备 ${rejectedSuffix}`,
+      deviceKeyId: `sha256:${rejectedSuffix.repeat(64)}`,
+      devicePublicKey: rejectedSuffix.toUpperCase().repeat(43),
+      agentVersion: "1.9.0",
+      inventory: raceInventory,
+      inventoryDigest: `sha256:${"9".repeat(64)}`,
+    }, mutation(`agent:${rejectedSuffix}`, `race-register-${rejectedSuffix}`, `race-register-${rejectedSuffix}`, now)), (error) => error.code === "EXCHANGE_STATE_CONFLICT");
+    const registration = await store.getAgentRegistration(account.activeOrganization.id, challenge.id);
+    assert.ok(registration?.device);
+  } finally {
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
   }
 });
 
@@ -165,6 +220,10 @@ test("agent routes require signed device proofs and never accept workspace roles
     assert.ok(source.indexOf("assertAccountAuthSameOrigin(request)") < source.indexOf("requireTradingAccountSession(request)"));
     assert.doesNotMatch(source, /x-kai-workspace-role/u);
   }
+  const challengeStatus = readFileSync("app/api/v2/supply/agent-challenges/[challengeId]/route.ts", "utf8");
+  assert.match(challengeStatus, /requireTradingAccountSession\(request\)/u);
+  assert.match(challengeStatus, /getAgentRegistration\(account\.activeOrganization\.id, challengeId\)/u);
+  assert.doesNotMatch(challengeStatus, /x-kai-workspace-role/u);
 });
 
 test("setup-mode Agent polling leases only verification and safe shutdown commands", async () => {

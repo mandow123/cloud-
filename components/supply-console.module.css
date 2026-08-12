@@ -674,6 +674,76 @@
   font-size: 0.78rem;
 }
 
+.connectionWaiting,
+.connectionSuccess,
+.connectionExpired {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-muted);
+  padding: 16px;
+}
+
+.connectionWaiting > span {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--warning);
+  box-shadow: 0 0 0 5px var(--warning-bg);
+}
+
+.connectionWaiting > div {
+  flex: 1;
+}
+
+.connectionWaiting strong,
+.connectionSuccess strong {
+  display: block;
+  color: var(--ink);
+  font-size: 0.86rem;
+}
+
+.connectionWaiting p,
+.connectionSuccess p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.connectionSuccess {
+  border-color: var(--success);
+  background: var(--accent-soft);
+}
+
+.connectionSuccess span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--success);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.66rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+}
+
+.connectionExpired {
+  border-color: var(--error);
+  background: var(--error-bg);
+}
+
+.connectionExpired strong {
+  color: var(--error);
+  font-size: 0.86rem;
+}
+
+.connectionExpired p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
 .actionRow {
   display: flex;
   flex-wrap: wrap;

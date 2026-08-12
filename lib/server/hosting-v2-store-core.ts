@@ -567,6 +567,15 @@ function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       return row ? challenge(row) : null;
     },
 
+    async getAgentRegistration(organizationId, challengeId) {
+      const challengeRow = await db.first<Row>("SELECT * FROM hosting_v2_agent_challenges WHERE id=? AND organization_id=?", [challengeId, organizationId]);
+      if (!challengeRow) return null;
+      const deviceRow = await db.first<Row>(`SELECT d.* FROM hosting_v2_agent_registrations r
+        JOIN hosting_v2_devices d ON d.id=r.device_id
+        WHERE r.challenge_id=? AND r.organization_id=?`, [challengeId, organizationId]);
+      return { challenge: challenge(challengeRow), device: deviceRow ? device(deviceRow) : null };
+    },
+
     async registerDevice(challengeId, input, context) {
       const replayed = await replay(db, context, "REGISTER_DEVICE");
       if (replayed) {
@@ -586,7 +595,9 @@ function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       const recordId = id("had");
       await db.batch([
         { sql: `INSERT INTO hosting_v2_devices(id,organization_id,account_id,display_name,device_key_id,device_public_key,agent_version,inventory_json,inventory_digest,status,verification_status,last_sequence,last_seen_at,version,created_at,updated_at)
-          SELECT ?,organization_id,account_id,?,?,?,?,?,?,'ONLINE','NOT_RUN',0,?,1,?,? FROM hosting_v2_agent_challenges WHERE id=? AND consumed_at IS NULL AND expires_at>=?`, values: [recordId, input.displayName, input.deviceKeyId, input.devicePublicKey, input.agentVersion, JSON.stringify(input.inventory), input.inventoryDigest, context.now, context.now, context.now, challengeId, context.now] },
+          SELECT ?,organization_id,account_id,?,?,?,?,?,?,'ONLINE','NOT_RUN',0,NULL,1,?,? FROM hosting_v2_agent_challenges WHERE id=? AND consumed_at IS NULL AND expires_at>=?`, values: [recordId, input.displayName, input.deviceKeyId, input.devicePublicKey, input.agentVersion, JSON.stringify(input.inventory), input.inventoryDigest, context.now, context.now, challengeId, context.now] },
+        { sql: `INSERT INTO hosting_v2_agent_registrations(challenge_id,device_id,organization_id,registered_at)
+          VALUES(?,?,(SELECT organization_id FROM hosting_v2_devices WHERE id=?),?)`, values: [challengeId, recordId, recordId, context.now] },
         { sql: "UPDATE hosting_v2_agent_challenges SET consumed_at=? WHERE id=? AND consumed_at IS NULL", values: [context.now, challengeId] },
         event(context, value(challengeRow, "organization_id"), "DEVICE", recordId, "DEVICE_REGISTERED", { deviceKeyId: input.deviceKeyId }),
         receipt(context, "REGISTER_DEVICE", "DEVICE", recordId),
@@ -628,6 +639,7 @@ function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       }
       const current = await db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=? AND organization_id=?", [deviceId, organizationId]);
       if (!current || !["ONLINE", "VERIFIED"].includes(value(current, "status"))) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备需在线后才能验真。");
+      if (!nullable(current, "last_seen_at") || Date.parse(value(current, "last_seen_at")) < Date.parse(context.now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备尚未发送有效心跳，不能开始验真。");
       const commandId = id("hcmd");
       const approvedImages = [...hostingV2ApprovedImages()].sort();
       await db.batch([

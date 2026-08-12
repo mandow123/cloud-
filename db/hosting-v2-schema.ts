@@ -1,4 +1,4 @@
-export const HOSTING_V2_SCHEMA_VERSION = 9;
+export const HOSTING_V2_SCHEMA_VERSION = 10;
 
 export const hostingV2SchemaStatements = [
   `CREATE TABLE IF NOT EXISTS hosting_v2_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`,
@@ -27,6 +27,15 @@ export const hostingV2SchemaStatements = [
     created_at TEXT NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS hosting_v2_challenge_org_idx ON hosting_v2_agent_challenges(organization_id, created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS hosting_v2_agent_registrations (
+    challenge_id TEXT PRIMARY KEY,
+    device_id TEXT NOT NULL UNIQUE,
+    organization_id TEXT NOT NULL,
+    registered_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS hosting_v2_agent_registrations_org_idx ON hosting_v2_agent_registrations(organization_id, registered_at DESC)`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_agent_registration_immutable_update BEFORE UPDATE ON hosting_v2_agent_registrations BEGIN SELECT RAISE(ABORT, 'hosting agent registration immutable'); END`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_agent_registration_immutable_delete BEFORE DELETE ON hosting_v2_agent_registrations BEGIN SELECT RAISE(ABORT, 'hosting agent registration immutable'); END`,
   `CREATE TABLE IF NOT EXISTS hosting_v2_devices (
     id TEXT PRIMARY KEY,
     organization_id TEXT NOT NULL,
