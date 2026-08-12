@@ -29,7 +29,7 @@ This checkpoint executes `VERIFY`, `PROVISION`, `START`, `STOP` and `CLEANUP` th
 
 ## Install and pair
 
-Run `install.sh` from an inspected release bundle as root. The installer never downloads code and starts only the constrained actuator; the networked Host Agent remains stopped.
+Download the versioned archive and its SHA-256 file from [the KAI Cloud Host Agent guide](https://cloud.kai.com/guides/host-agent). Verify the archive before extraction, inspect `release-manifest.json` and `install.sh`, then run `install.sh` as root. Never pipe a network download into a root shell. The installer never downloads code and starts only the constrained actuator; the networked Host Agent remains stopped.
 
 Before accepting any rental, put the exact KAI-approved `repository@sha256` image references in `/etc/kai-host-actuator.env` and restart `kai-host-actuator`. Tags are rejected. The approved image contract runs as UID/GID `1000:1000`, listens for SSH on container port `2222`, reads `/home/kai/.ssh/authorized_keys`, and uses `/workspace` for writable data.
 

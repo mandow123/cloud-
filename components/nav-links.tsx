@@ -33,7 +33,7 @@ const commonGroups: NavGroup[] = [
     items: [
       { href: "/guides", label: "教程首页", description: "从第一次租用到第一次上架" },
       { href: "/guides#rent-gpu", label: "租用 GPU", description: "模板、筛选、租用与连接" },
-      { href: "/guides#list-4090", label: "上架 4090", description: "个人显卡完整上架步骤" },
+      { href: "/guides/host-agent", label: "上架 4090", description: "个人显卡完整上架步骤" },
       { href: "/guides#delivery", label: "交付与验收", description: "连接检查、计量和验收" },
       { href: "/methodology", label: "计价方法", description: "KAI 标准卡时与价格口径" },
     ],

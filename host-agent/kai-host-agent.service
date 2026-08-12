@@ -1,6 +1,6 @@
 [Unit]
 Description=KAI Cloud Host Agent
-Documentation=https://cloud.kai.com/guides#list-4090
+Documentation=https://cloud.kai.com/guides/host-agent
 After=network-online.target kai-host-actuator.service
 Wants=network-online.target kai-host-actuator.service
 

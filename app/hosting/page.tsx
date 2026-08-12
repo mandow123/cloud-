@@ -92,7 +92,7 @@ export default function HostingPage() {
         </div>
         <div className={styles.actions}>
           <Link className={styles.actionPrimary} href="/login?returnTo=%2Fsupply%2Fonboarding">开始供应商审核</Link>
-          <Link className={styles.actionSecondary} href="/guides#list-4090">阅读上架教程</Link>
+          <Link className={styles.actionSecondary} href="/guides/host-agent">阅读上架教程</Link>
         </div>
       </aside>
     </HostingPublicShell>

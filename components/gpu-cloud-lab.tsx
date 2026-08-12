@@ -403,7 +403,7 @@ export function GpuHostingLab() {
             <div><dt>Capacity Lot</dt><dd>{shortId(proof?.capacityLotId)}</dd></div>
             <div><dt>Listing Version</dt><dd>{shortId(proof?.listingVersionId)}</dd></div>
           </dl>
-          {proof ? <Link className={styles.primaryButton} href="/gpu">去市场租用这条资源</Link> : <Link className={styles.guideLink} href="/guides#list-4090">先看个人 4090 教程 →</Link>}
+          {proof ? <Link className={styles.primaryButton} href="/gpu">去市场租用这条资源</Link> : <Link className={styles.guideLink} href="/guides/host-agent">先看个人 4090 教程 →</Link>}
         </aside>
       </div>
 

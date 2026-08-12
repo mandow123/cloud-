@@ -11,9 +11,9 @@ const EXTRA_FROZEN_FILES = ["data/model-market.snapshot.json", "lib/catalog.mjs"
 const APPROVED_PUBLIC_FILES = Object.freeze({
   "app/globals.css": "ec7a571de1736342b040373ae9c612cf1d1bd31a2850b7de060868b5513daca1",
   "app/gpu/page.tsx": "c9e67a55dee7a2b08458871420f2c6f7dabec6c8a837da22fd637eb0150e75f9",
-  "app/guides/guides.module.css": "d3320f7eb17ca8e79f0e6d6a9bf1858ddf61b680bcb0d10cea96ddf820de7daf",
+  "app/guides/guides.module.css": "5e12ca1ab83f648e5ea59508f851f739f6a16bc1734bdc23bf60d83cf8cca88b",
   "app/guides/page.tsx": "7953719256414cacfb75e38f12707a67e511fbcb94aa19ef8ae9c9e5e03391db",
-  "app/hosting/page.tsx": "d7ec17cc41d4a89f12c676a01b07a75b739ae327605c9d33aec2bebaa60a6871",
+  "app/hosting/page.tsx": "652b933ed9feeebaeeeb31115843763a3f4f8df1209be49e597c2cee7b48336f",
   "app/hosting/partners/terms/KAI_HOSTING_TERMS_2026_08/page.tsx": "ca6dc0a0e7044815a3bc1ced810ce6e32064dd0b55d37056f970846274c72966",
   "app/kai-cloud.css": "8628368856b22f036f57cc5b9cc8cc80c91b39309b4be7115109562ac0ffddd0",
   "app/layout.tsx": "1b6ea3757ed0b4da7d7838356b1aeb3c529244e2ec2c4e7aa1057bc4e921394c",
@@ -32,10 +32,10 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "components/card-hour-account-panel.tsx": "b46e420489f7d023c26b640446a28150be0a68b91a340e238f5f0eddf81497d9",
   "components/email-login.tsx": "43f6a8f1edc18b23ec099ba476c51d45b79e165bcd0f4a7778b5b78151874cb6",
   "components/gpu-cloud-lab.module.css": "379628eb1340717c0cefcc515cc281f7564b37870c5e8c89776fe9e3df9013c9",
-  "components/gpu-cloud-lab.tsx": "c772136928bbddea80d12f10cb9c928429b7422110578f9d3eb13127bc310899",
+  "components/gpu-cloud-lab.tsx": "ef509a40a37285eb1e73d620074caa8636777d50cec242561ca117bce9e02953",
   "components/live-home-market-hero.tsx": "12b5174eb3b58c9bbcd37215876e47c08e37e782b216536cc344cdd8e2a5bc7a",
   "components/member-workspace.tsx": "0f6c0827d710e851ab9f7ca35760ce5b1df771b6741302d049d206a3c0bb8745",
-  "components/nav-links.tsx": "289714aa4a7a54ebe92988f7c3f417d1de7af386915eece4dea18ee5cac98ece",
+  "components/nav-links.tsx": "46d599cfbac150452c764b9c4bbc073dbce6fa2d5ba52dc544f3c854b700d620",
   "components/personal-center-overview.tsx": "c11de061d8efb74e3e86a1a5a555bdd1e19c30730cb73b56b3a65638bfff52f8",
   "components/personal-menu.module.css": "0813b8a2fa3d164922add93de17daf66adc0dd9c1859427097c36975708f90f2",
   "components/personal-menu.tsx": "31a492a0fdfa2e9f972f4ca5fd9d52ea094d96fdb5c8b7e1b53f29352b128fbe",
@@ -49,6 +49,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "public/og-home-v2.png": "9ab58389125a32bbe84a29a6f73f7f7f75cdb04c717c58c82233f7ec09d63d5d",
 });
 const APPROVED_HOSTING_V2_ROUTES = new Set([
+  "app/guides/host-agent/page.tsx",
   "app/gpu/contracts/[contractId]/page.tsx",
   "app/gpu/contracts/page.tsx",
   "app/gpu/offers/[offerId]/page.tsx",

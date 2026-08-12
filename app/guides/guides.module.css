@@ -23,6 +23,7 @@
 .onThisPage a { color: var(--docs-muted); font-size: 0.66rem; text-decoration: none; }
 .onThisPage a:hover { color: var(--docs-accent); }
 .article { min-width: 0; padding-bottom: 80px; }
+.articleStandalone { width: min(calc(100% - 56px), 920px); margin-inline: auto; }
 .articleHero { padding: 74px 0 60px; }
 .articleHero > p:first-child { color: var(--docs-accent); font-size: 0.72rem; font-weight: 800; }
 .articleHero h1 { margin: 12px 0 20px; font-size: clamp(2.3rem, 4vw, 4.5rem); line-height: 1.03; letter-spacing: -0.05em; }
@@ -71,6 +72,13 @@
 .codeLike span,
 .codeLike b { background: #0d181c; color: #b5c8c8; padding: 12px; font-family: ui-monospace, monospace; font-size: 0.68rem; }
 .codeLike b { color: #70d1c8; text-align: center; }
+.commandBlock { overflow-x: auto; margin: 26px 0; border: 1px solid #294247; background: #0d181c; color: #bce2df; padding: 18px 20px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.72rem; line-height: 1.75; white-space: pre; }
+.commandBlock:focus-visible { outline: 2px solid var(--docs-accent); outline-offset: 3px; }
+.agentGuide { --docs-ink: var(--ink); --docs-muted: var(--muted); --docs-line: var(--border); --docs-soft: var(--surface-strong); --docs-accent: var(--accent); background: var(--canvas); }
+.agentGuide .docsTopbar { background: color-mix(in srgb, var(--surface) 96%, transparent); }
+.agentGuide .choiceGrid a,
+.agentGuide .steps li > span { background: var(--surface); }
+.agentGuide .choiceGrid a:hover { background: var(--surface-strong); }
 .settlementCard { display: grid; gap: 0; margin: 26px 0; border: 1px solid var(--docs-line); }
 .settlementCard div { display: flex; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--docs-line); padding: 13px 16px; }
 .settlementCard span { color: var(--docs-muted); font-size: 0.72rem; }
@@ -92,6 +100,7 @@
   .docsTopbar { top: 118px; padding-inline: 16px; }
   .docsTopbar b { display: none; }
   .docsLayout { display: block; padding-inline: 18px; }
+  .articleStandalone { width: min(calc(100% - 36px), 920px); }
   .sidebar { position: static; max-height: none; overflow: visible; border-bottom: 1px solid var(--docs-line); padding: 22px 0; }
   .sidebar nav { display: flex; overflow-x: auto; }
   .sidebar nav a { border-left: 0; border-bottom: 1px solid var(--docs-line); white-space: nowrap; }

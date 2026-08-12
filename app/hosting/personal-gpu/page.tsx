@@ -105,7 +105,7 @@ export default function PersonalGpuHostingPage() {
         <div><h2>准备验证你的第一台机器</h2><p>审核通过后，控制台才会生成一次性安装凭证；不要从聊天或第三方脚本安装 Agent。</p></div>
         <div className={styles.actions}>
           <Link className={styles.actionPrimary} href="/login?returnTo=%2Fsupply%2Fonboarding">开始审核</Link>
-          <Link className={styles.actionSecondary} href="/guides#list-4090">查看安装教程</Link>
+          <Link className={styles.actionSecondary} href="/guides/host-agent">下载 Agent 与查看教程</Link>
         </div>
       </aside>
     </HostingPublicShell>

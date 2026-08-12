@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "vinext dev",
-    "build": "vinext build && node scripts/ops/finalize-standalone.mjs",
+    "build": "node scripts/ops/build-host-agent-release.mjs && vinext build && node scripts/ops/finalize-standalone.mjs",
     "start": "node dist/standalone/server.js",
     "test": "npm run build && node --experimental-transform-types --import ./tests/setup.mjs --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",

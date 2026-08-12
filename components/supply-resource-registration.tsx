@@ -94,6 +94,10 @@ export function SupplyResourceRegistration() {
       <section className={styles.pairingPanel} aria-labelledby="pairing-title">
         <header className={styles.panelHeader}><h2 id="pairing-title">Host Agent 配对</h2><span>{selected === "personal-gpu" ? "个人 GPU" : "GPU 服务器"}</span></header>
         <div className={styles.pairingBody}>
+          <div className={styles.actionRow}>
+            <a className={styles.secondaryAction} download href="/downloads/kai-host-agent-1.3.0.tgz">下载 Host Agent 1.3.0</a>
+            <Link className={styles.secondaryAction} href="/guides/host-agent">打开安装与校验教程</Link>
+          </div>
           <div className={styles.warningBox}>配对凭证包含一次性随机数，只能交给你控制的主机。不要发送到聊天群、工单或公开日志；过期或使用后必须重新签发。</div>
           <ul className={styles.readinessList}>
             <li><span>Ubuntu 与 NVIDIA 驱动已就绪</span><strong className={styles.ready}>REQUIRED</strong></li>
