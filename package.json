@@ -18,6 +18,7 @@
     "ops:restore:verify": "node scripts/ops/verify-restore.mjs",
     "ops:self-test": "node scripts/ops/self-test.mjs",
     "ops:deploy:validate": "node scripts/ops/validate-deployment.mjs",
+    "ops:admin:configure-finance": "node scripts/ops/configure-finance-approver.mjs",
     "ops:image:promote": "node scripts/ops/promote-release.mjs",
     "ops:image:validate": "node scripts/ops/validate-local-image.mjs"
   },
