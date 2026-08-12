@@ -13,7 +13,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "app/gpu/page.tsx": "c9e67a55dee7a2b08458871420f2c6f7dabec6c8a837da22fd637eb0150e75f9",
   "app/guides/guides.module.css": "5e12ca1ab83f648e5ea59508f851f739f6a16bc1734bdc23bf60d83cf8cca88b",
   "app/guides/page.tsx": "7953719256414cacfb75e38f12707a67e511fbcb94aa19ef8ae9c9e5e03391db",
-  "app/hosting/page.tsx": "652b933ed9feeebaeeeb31115843763a3f4f8df1209be49e597c2cee7b48336f",
+  "app/hosting/page.tsx": "51b617a2488fd884dbbf680dbed7b1a7f585da16a2f3897bc39ae4054e1e065a",
   "app/hosting/partners/terms/KAI_HOSTING_TERMS_2026_08/page.tsx": "ca6dc0a0e7044815a3bc1ced810ce6e32064dd0b55d37056f970846274c72966",
   "app/kai-cloud.css": "8628368856b22f036f57cc5b9cc8cc80c91b39309b4be7115109562ac0ffddd0",
   "app/layout.tsx": "1b6ea3757ed0b4da7d7838356b1aeb3c529244e2ec2c4e7aa1057bc4e921394c",
@@ -70,6 +70,9 @@ const APPROVED_HOSTING_V2_ROUTES = new Set([
   "app/supply/resources/[deviceId]/page.tsx",
   "app/supply/resources/new/page.tsx",
   "app/supply/resources/page.tsx",
+]);
+const APPROVED_HOSTING_V2_COMPONENTS = new Set([
+  "components/hosting-launchpad.tsx",
 ]);
 
 function git(args, encoding = "utf8") {
@@ -146,6 +149,10 @@ test("only approved Hosting V2 pages and gated supplier pages extend the public 
     .filter((path) => !APPROVED_HOSTING_V2_ROUTES.has(path))
     .filter((path) => !baseline.has(path));
   assert.deepEqual(unexpected, []);
+});
+
+test("approved Hosting V2 components stay narrowly scoped to the additive product", () => {
+  for (const path of APPROVED_HOSTING_V2_COMPONENTS) assert.equal(existsSync(join(ROOT, path)), true, `${path} is missing`);
 });
 
 test("the admin panel stays isolated, supplier pages stay gated and transaction entry points remain implemented", () => {

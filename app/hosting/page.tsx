@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { HostingLegacyHashRedirect } from "@/components/hosting-legacy-hash-redirect";
+import { HostingLaunchpad } from "@/components/hosting-launchpad";
 import {
   HostingPublicShell,
   SectionHeader,
@@ -16,38 +17,27 @@ export default function HostingPage() {
   return (
     <HostingPublicShell
       activePath="/hosting"
-      eyebrow="Hosting · Supply control plane"
-      title="把一台真实机器，变成可验证、可交付、可再售的算力。"
-      summary="KAI Hosting 把资源登记、设备验真、报价、租用、计量、结算与清理拆成可追踪状态。首期从单张 RTX 4090 与 H100 开始。"
+      eyebrow="KAI Hosting · Real compute network"
+      title="让算力抵达需要它的时刻。"
+      summary="Rent verified compute. Host real machines. Settle every second in KAI 标准卡时。"
     >
       <HostingLegacyHashRedirect />
-      <div className={styles.statusStrip} aria-label="首期边界">
-        {[
-          ["首期硬件", "1× RTX 4090 / H100"],
-          ["隔离方式", "单租户 OCI 容器"],
-          ["计量规则", "按秒 · 最低 3 分钟"],
-          ["结算单位", "KAI 标准卡时"],
-        ].map(([label, value]) => (
-          <div className={styles.statusCell} key={label}>
-            <span>{label}</span>
-            <strong>{value}</strong>
-          </div>
-        ))}
-      </div>
+      <HostingLaunchpad />
 
       <section className={styles.section}>
         <SectionHeader
-          index="01 / ENTRY"
-          title="每一种供给，都有自己的入口"
-          lead="公共页面只解释接入要求和状态；登录后才进入资源、挂牌、订单和收益控制台。"
+          index="01 / WORKSPACES"
+          title="每一步都有独立工作面"
+          lead="不是页内锚点，也不是静态介绍。每个入口都连接到对应状态和下一步操作。"
         />
         <div className={styles.cardGrid}>
           {[
-            ["01", "个人 GPU", "从网络检查、Agent 安装到第一笔三分钟租单。", "/hosting/personal-gpu", "查看个人 GPU 要求"],
-            ["02", "云资源接入", "用统一连接器接入云主机、IDC 或数据中心库存。", "/hosting/cloud", "查看连接器状态"],
-            ["03", "收益与结算", "查看卡时计量、租金、平台费与推荐佣金口径。", "/hosting/earnings", "查看计价规则"],
-            ["04", "供应商合作", "企业协议、权属审核、资源边界与接入进度。", "/hosting/partners", "查看企业流程"],
-            ["05", "供应商控制台", "集中管理设备、报价、订单、异常和账本明细。", "/login?returnTo=%2Fsupply", "登录控制台"],
+            ["01", "个人 GPU", "网络预检、Agent 安装、验真与第一笔订单。", "/hosting/personal-gpu", "打开接入页"],
+            ["02", "云资源接入", "云主机、IDC 与集群库存连接器及开放状态。", "/hosting/cloud", "打开连接器页"],
+            ["03", "收益与结算", "卡时计量、租金、佣金和不可变账本口径。", "/hosting/earnings", "打开收益页"],
+            ["04", "供应商合作", "企业协议、权属审核和邀请制接入进度。", "/hosting/partners", "打开合作页"],
+            ["05", "供应控制台", "资源、挂牌、订单、异常和收益的操作中心。", "/login?returnTo=%2Fsupply", "进入控制台"],
+            ["06", "Host Agent 教程", "从预检到配对、连接验证与安全清理。", "/guides/host-agent", "打开操作手册"],
           ].map(([code, title, description, href, linkLabel]) => (
             <article className={styles.card} key={code}>
               <span className={styles.cardCode}>{code}</span>
@@ -61,9 +51,9 @@ export default function HostingPage() {
 
       <section className={styles.section}>
         <SectionHeader
-          index="02 / CLOSED LOOP"
-          title="成交不是终点，清理后重新可售才是闭环"
-          lead="订单只能按固定状态推进；规格变化、心跳超时或清理失败都会暂停资源。"
+          index="02 / STATE MACHINE"
+          title="一条订单，只能按证据向前走"
+          lead="成交时冻结规格与费率；交付、计量、验收和清理都由后端状态机约束。"
         />
         <ol className={styles.process}>
           {[
@@ -87,8 +77,8 @@ export default function HostingPage() {
 
       <aside className={styles.notice}>
         <div>
-          <h2>先验证一台真实机器</h2>
-          <p>首期采用邀请制。公开支付宝充值、卡时回购和未通过生产验收的资源连接器仍保持关闭。</p>
+          <h2>从一台真实机器开始</h2>
+          <p>首期只接受单张 RTX 4090 / H100。公开充值、卡时回购和未经生产验收的连接器继续保持关闭。</p>
         </div>
         <div className={styles.actions}>
           <Link className={styles.actionPrimary} href="/login?returnTo=%2Fsupply%2Fonboarding">开始供应商审核</Link>

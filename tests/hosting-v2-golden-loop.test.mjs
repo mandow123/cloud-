@@ -215,12 +215,16 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
   const databasePath = join(directory, "kai-cloud.sqlite");
   const previousDirectory = process.env.KAI_DB_DIR;
   const previousFlag = process.env.KAI_HOSTING_V2;
+  const previousEnvironment = process.env.KAI_ENVIRONMENT;
+  const previousLocalAcceptance = process.env.KAI_HOSTING_LOCAL_ACCEPTANCE;
   const previousLegacyWrites = process.env.KAI_ALLOW_LEGACY_ANON_WRITES;
   const previousAccount = globalThis.__kaiAccountAuthStorePromise;
   const previousCardHours = globalThis.__kaiCardHourStorePromise;
   const previousMarketplace = globalThis.__kaiMarketplaceStorePromise;
   process.env.KAI_DB_DIR = directory;
   process.env.KAI_HOSTING_V2 = "1";
+  process.env.KAI_ENVIRONMENT = "LOCAL";
+  process.env.KAI_HOSTING_LOCAL_ACCEPTANCE = "1";
   delete process.env.KAI_ALLOW_LEGACY_ANON_WRITES;
   globalThis.__kaiCardHourStorePromise = undefined;
   globalThis.__kaiMarketplaceStorePromise = undefined;
@@ -453,6 +457,8 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     auth.close();
     if (previousDirectory === undefined) delete process.env.KAI_DB_DIR; else process.env.KAI_DB_DIR = previousDirectory;
     if (previousFlag === undefined) delete process.env.KAI_HOSTING_V2; else process.env.KAI_HOSTING_V2 = previousFlag;
+    if (previousEnvironment === undefined) delete process.env.KAI_ENVIRONMENT; else process.env.KAI_ENVIRONMENT = previousEnvironment;
+    if (previousLocalAcceptance === undefined) delete process.env.KAI_HOSTING_LOCAL_ACCEPTANCE; else process.env.KAI_HOSTING_LOCAL_ACCEPTANCE = previousLocalAcceptance;
     if (previousLegacyWrites === undefined) delete process.env.KAI_ALLOW_LEGACY_ANON_WRITES; else process.env.KAI_ALLOW_LEGACY_ANON_WRITES = previousLegacyWrites;
     rmSync(directory, { recursive: true, force: true });
   }

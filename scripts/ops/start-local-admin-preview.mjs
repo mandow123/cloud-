@@ -13,5 +13,6 @@ process.env.HOST = "127.0.0.1";
 process.env.PORT = rawPort;
 process.env.KAI_PUBLIC_ORIGIN = `http://127.0.0.1:${rawPort}`;
 process.env.KAI_ENVIRONMENT = "LOCAL";
+process.env.KAI_HOSTING_LOCAL_ACCEPTANCE ??= "1";
 
 await import("../../dist/standalone/server.js");

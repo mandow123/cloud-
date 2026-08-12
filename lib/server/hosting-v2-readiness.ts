@@ -1,4 +1,5 @@
 import type { AlipayReadiness } from "./alipay-live.ts";
+import { AccountAuthError } from "./account-auth.ts";
 import { hostingV2ApprovedImages, hostingV2CurrentTermsVersion } from "./hosting-v2-image-policy.ts";
 import type { HostingV2OperationalSnapshot } from "./hosting-v2-store.ts";
 
@@ -113,4 +114,21 @@ export function evaluateHostingV2Capability(input: {
     checks,
     operations: publicOperations,
   };
+}
+
+export function requireHostingV2TransactionReady(readiness: HostingV2CapabilityReadiness) {
+  if (!readiness.enabled) {
+    throw new AccountAuthError("HOSTING_V2_DISABLED", 503, "新版算力上架功能尚未在当前环境开放。 ");
+  }
+  if (!readiness.ready) {
+    const missing = Object.entries(readiness.checks)
+      .filter(([, item]) => !item.ready)
+      .map(([key, item]) => item.reason ?? key)
+      .slice(0, 8);
+    throw new AccountAuthError(
+      "HOSTING_V2_NOT_READY",
+      503,
+      `算力交易关键能力尚未全部就绪${missing.length ? `：${missing.join("、")}` : ""}。 `,
+    );
+  }
 }

@@ -3,6 +3,7 @@ import { apiErrorResponse, beginApiRequest, jsonResponse, readJsonBody } from "@
 import { requireTradingAccountSession } from "@/lib/server/entity-ownership";
 import { hostingInteger, hostingMutationContext, hostingObject, hostingString, hostingSupplierOfferClientView, requireHostingV2Enabled } from "@/lib/server/hosting-v2-api";
 import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
+import { requireHostingV2TransactionCapability } from "@/lib/server/hosting-v2-transaction-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,7 @@ export async function POST(request: Request, contextValue: { params: Promise<{ o
     }
     const status = hostingString(body, "status", 6, 9);
     if (status !== "PUBLISHED" && status !== "PAUSED" && status !== "UNLISTED") throw new AccountAuthError("HOSTING_VALIDATION_ERROR", 400, "挂牌状态操作不受支持。 ");
+    if (status === "PUBLISHED") await requireHostingV2TransactionCapability();
     const { offerId } = await contextValue.params;
     const mutation = await hostingMutationContext(request, account.account.id, body);
     const record = await (await getHostingV2Store()).updateOfferStatus(account.activeOrganization.id, offerId, { status, expectedVersion: hostingInteger(body, "expectedVersion", 1) }, mutation);
