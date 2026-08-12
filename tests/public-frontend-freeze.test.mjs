@@ -14,6 +14,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "app/guides/guides.module.css": "d3320f7eb17ca8e79f0e6d6a9bf1858ddf61b680bcb0d10cea96ddf820de7daf",
   "app/guides/page.tsx": "7953719256414cacfb75e38f12707a67e511fbcb94aa19ef8ae9c9e5e03391db",
   "app/hosting/page.tsx": "d7ec17cc41d4a89f12c676a01b07a75b739ae327605c9d33aec2bebaa60a6871",
+  "app/hosting/partners/terms/KAI_HOSTING_TERMS_2026_08/page.tsx": "ca6dc0a0e7044815a3bc1ced810ce6e32064dd0b55d37056f970846274c72966",
   "app/kai-cloud.css": "8628368856b22f036f57cc5b9cc8cc80c91b39309b4be7115109562ac0ffddd0",
   "app/layout.tsx": "1b6ea3757ed0b4da7d7838356b1aeb3c529244e2ec2c4e7aa1057bc4e921394c",
   "app/page.tsx": "f45d9ccae1045825e60883945c3ab8b1090f2aae719866a24db51c3eb320851a",
