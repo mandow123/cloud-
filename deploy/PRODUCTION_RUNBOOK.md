@@ -84,7 +84,7 @@ npm run ops:image:promote -- \
 
 5. 在目标 Ubuntu 主机执行 `systemd-analyze verify`。首次安装和升级的任务顺序不同，必须按下方对应流程操作；恢复演练通过前不得启用 timer。
 
-`flock` 防止同一任务重入，`timeout` 将总运行时间限制为 300 秒。两个任务都使用只读根文件系统、非 root 用户、能力全移除、资源上限和日志轮转。行情更新容器完全看不到业务数据库目录。
+`flock` 防止同一任务重入，`timeout` 将总运行时间限制为 300 秒。备份脚本还必须在 `${KAI_STATE_ROOT}/backups/.kai-cloud-backup.lock` 取得共享锁；因此即使升级时残留了不同名称的旧 unit，也不能同时清理同一状态目录。迁移到带端口后缀的 unit 时，应先执行 `systemctl disable --now` 停用旧 backup timer，确认只有一个 timer 指向该 `KAI_STATE_ROOT`，再启用新 timer。两个任务都使用只读根文件系统、非 root 用户、能力全移除、资源上限和日志轮转。行情更新容器完全看不到业务数据库目录。
 
 ## 声明式应用启动
 

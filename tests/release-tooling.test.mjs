@@ -111,6 +111,8 @@ test("registry, application, and systemd templates enforce bounded immutable ope
   const strictRunnerPattern = /\^\[a-z0-9\]\+\(\[\._-\]\[a-z0-9\]\+\)\*\(:\[0-9\]\+\)\?\(\/\[a-z0-9\]\+\(\[\._-\]\[a-z0-9\]\+\)\*\)\*@sha256:\[0-9a-f\]\{64\}\$/;
   assert.match(updater, strictRunnerPattern);
   assert.match(backup, strictRunnerPattern);
+  assert.match(backup, /KAI_BACKUP_SHARED_LOCK="\$KAI_STATE_ROOT\/backups\/\.kai-cloud-backup\.lock"/);
+  assert.match(backup, /\/usr\/bin\/flock --nonblock 9/);
   assert.match(promotion, /git", \["archive", "--format=tar", "HEAD"\]/);
   assert.match(promotion, /"image", "push", sourceTag/);
   assert.match(promotion, /selectRepositoryDigest/);

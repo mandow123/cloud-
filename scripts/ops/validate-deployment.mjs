@@ -273,6 +273,7 @@ async function main() {
   assert(updateRunner.includes("/opt/kai-cloud-3051") && updateRunner.includes("kai-cloud-market-update-3051"), "market update runner must default to the isolated 3051 release paths");
   assert(backupRunner.includes("/opt/kai-cloud-3051") && backupRunner.includes("kai-cloud-backup-3051"), "backup runner must default to the isolated 3051 release paths");
   assert(backupRunner.includes("KAI_BACKUP_RETENTION_MAX_AGE_DAYS"), "backup runner must pass the hard maximum backup age");
+  assert(backupRunner.includes('KAI_BACKUP_SHARED_LOCK="$KAI_STATE_ROOT/backups/.kai-cloud-backup.lock"') && backupRunner.includes("/usr/bin/flock --nonblock 9"), "backup runner must serialize every unit that targets the same state root");
   assert(appEnvironmentExample.includes("KAI_APP_PORT=3051") && appEnvironmentExample.includes("KAI_ENABLE_HSTS=0"), "application environment example must use port 3051 and keep HSTS off by default");
   assert(releaseEnvironmentExample.includes("KAI_STATE_ROOT=/opt/kai-cloud-3051") && releaseEnvironmentExample.includes("KAI_BACKUP_RETENTION_MAX_AGE_DAYS=30") && releaseEnvironmentExample.includes("KAI_IMAGE_PLATFORM=linux/amd64"), "release environment example must use the 3051 state root, validated platform, and 30-day backup limit");
   assert(registryCompose.includes("registry:3.1.1@sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33"), "private registry must use the verified Docker Official Image digest");
@@ -294,6 +295,7 @@ async function main() {
   assert(runbook.includes("API 守卫会为 API 请求输出结构化日志") && runbook.includes("不记录表单正文、Cookie、会话令牌、CSRF 值或供应商原始报价"), "runbook must accurately describe structured API logs and their redaction boundary");
   assert(runbook.includes("首次安装时数据库尚不存在") && runbook.indexOf("请求 `/api/ready`") < runbook.indexOf("第一次备份"), "runbook must initialize the database before the first-install backup");
   assert(runbook.includes("升级已有实例时顺序相反") && runbook.includes("替换应用前创建并异地同步一致性备份"), "runbook must back up existing production data before an upgrade");
+  assert(runbook.includes(".kai-cloud-backup.lock") && runbook.includes("只有一个 timer 指向该 `KAI_STATE_ROOT`"), "runbook must prevent differently named timers from racing on one backup root");
   assert(runbook.includes("127.0.0.1:3051") && runbook.includes("KAI_ENABLE_HSTS=1"), "runbook must document the new loopback port and the gated HSTS enablement step");
   assert(runbook.includes("任何恢复包都不得超过 30 天") && runbook.includes("异地存储也必须配置不超过 30 天的生命周期"), "runbook must align local and off-host backups with the 30-day data boundary");
 
