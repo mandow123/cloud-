@@ -19,6 +19,15 @@ function error(code: string, message: string) {
   return new AccountAuthError(code, 409, message);
 }
 
+type ReachabilityEnvironment = Record<string, string | undefined>;
+
+function localSimulationEnabled(environment: ReachabilityEnvironment, device: HostingDevice) {
+  return environment.NODE_ENV !== "production"
+    && environment.KAI_ENVIRONMENT === "LOCAL"
+    && environment.KAI_HOSTING_LOCAL_REACHABILITY_SIMULATION === "1"
+    && device.inventory.publicHost === "local-qa.invalid";
+}
+
 async function publicAddresses(host: string) {
   const literal = host.replace(/^\[|\]$/gu, "");
   let records;
@@ -60,10 +69,14 @@ async function readChallenge(address: string, family: number, port: number, expe
 export async function verifyControlPlaneReachability(device: HostingDevice, command: HostingAgentCommand, {
   resolveAddresses = publicAddresses,
   readResponse = readChallenge,
+  environment = typeof process === "undefined" ? {} : process.env,
 } = {}) {
   const challenge = typeof command.payload.reachabilityChallenge === "string" ? command.payload.reachabilityChallenge : "";
   if (!/^[a-f0-9]{32}$/u.test(challenge)) throw error("AGENT_REACHABILITY_CHALLENGE_INVALID", "验真任务缺少有效的一次性公网挑战。 ");
   const port = device.inventory.sshPortStart;
+  if (localSimulationEnabled(environment, device)) {
+    return hostingAgentDigest({ protocolVersion: 1, deviceId: device.id, commandId: command.id, publicHost: device.inventory.publicHost, publicPort: port, challenge });
+  }
   const expected = `KAI-HOST-VERIFY/1 ${challenge}\n`;
   const addresses = await resolveAddresses(device.inventory.publicHost);
   let lastError: unknown;

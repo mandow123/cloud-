@@ -34,6 +34,10 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    // Miniflare advertises console.createTask but throws when React 19 calls
+    // it. Compile React's optional owner-task hook away in local development;
+    // production React does not use this debug-only API.
+    define: { "console.createTask": "undefined" },
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,

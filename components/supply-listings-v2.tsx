@@ -3,18 +3,27 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createIdempotencyKey, marketplaceErrorMessage, marketplaceGet, marketplacePost } from "@/lib/client/marketplace-client";
+import { HOSTING_V2_AGENT_STALE_SECONDS, type HostingDevice } from "@/lib/hosting-v2";
 import type { SupplierHostingDashboard, SupplierHostingOffer } from "@/lib/hosting-v2-client";
 import { formatCardHours, formatHostingTime } from "@/lib/hosting-v2-client";
 import styles from "./supply-console.module.css";
 
 const STATUS_LABELS: Record<SupplierHostingOffer["status"], string> = {
   DRAFT: "草稿",
-  PUBLISHED: "公开可租",
+  PUBLISHED: "当前可租",
   RESERVED: "已被预留",
   PAUSED: "已暂停",
   UNLISTED: "已下架",
   SUSPENDED: "风控暂停",
 };
+
+function offerStatusLabel(offer: SupplierHostingOffer, device: HostingDevice | undefined, now = Date.now()) {
+  if (offer.status === "PUBLISHED" && Date.parse(offer.availableFrom) > now) return "已发布 · 等待开售";
+  if (offer.status === "PUBLISHED" && Date.parse(offer.availableUntil) <= now) return "已发布 · 时间窗结束";
+  if (offer.status === "PUBLISHED" && (!device || device.verificationStatus !== "PASSED" || Date.parse(device.verifiedUntil ?? "") <= now)) return "已发布 · 验真失效";
+  if (offer.status === "PUBLISHED" && Date.parse(device?.lastSeenAt ?? "") < now - HOSTING_V2_AGENT_STALE_SECONDS * 1_000) return "已发布 · Agent 离线";
+  return STATUS_LABELS[offer.status];
+}
 
 export function SupplyListingsV2() {
   const [offers, setOffers] = useState<SupplierHostingOffer[] | null>(null);
@@ -39,7 +48,8 @@ export function SupplyListingsV2() {
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => { void load(); });
-    return () => window.cancelAnimationFrame(frame);
+    const timer = window.setInterval(() => { void load(); }, 30_000);
+    return () => { window.cancelAnimationFrame(frame); window.clearInterval(timer); };
   }, [load]);
 
   const devices = useMemo(() => new Map((dashboard?.devices ?? []).map((device) => [device.id, device])), [dashboard]);
@@ -71,7 +81,7 @@ export function SupplyListingsV2() {
           <header className={styles.panelHeader}><h2 id="listings-title">GPU 报价</h2><span>{offers.length} 条</span></header>
           <div className={styles.tableWrap}>
             <table className={`${styles.table} ${styles.wideTable}`}>
-              <thead><tr><th>报价</th><th>设备</th><th>卡时价格</th><th>租用范围</th><th>可用截止</th><th>状态</th><th>操作</th></tr></thead>
+              <thead><tr><th>报价</th><th>设备</th><th>卡时价格</th><th>租用范围</th><th>可用时间</th><th>状态</th><th>操作</th></tr></thead>
               <tbody>
                 {offers.length ? offers.map((offer) => {
                   const device = devices.get(offer.deviceId);
@@ -82,8 +92,8 @@ export function SupplyListingsV2() {
                       <td>{device?.displayName ?? offer.deviceId}<br /><small>{device ? `${device.status} / ${device.verificationStatus}` : "设备记录不可见"}</small></td>
                       <td><strong>{formatCardHours(offer.cardHourMicrosPerGpuHour)}</strong><br /><small>KAI / GPU 小时</small></td>
                       <td>{Math.ceil(offer.minRentalSeconds / 60)}–{Math.floor(offer.maxRentalSeconds / 60)} 分钟</td>
-                      <td>{formatHostingTime(offer.availableUntil)}</td>
-                      <td><span className={styles.statusBadge}>{STATUS_LABELS[offer.status]}</span></td>
+                      <td>{formatHostingTime(offer.availableFrom)}<br /><small>至 {formatHostingTime(offer.availableUntil)}</small></td>
+                      <td><span className={styles.statusBadge}>{offerStatusLabel(offer, device)}</span></td>
                       <td>
                         <div className={styles.tableActions}>
                           {offer.status === "DRAFT" || offer.status === "PAUSED" ? <button disabled={actionBusy} onClick={() => void changeStatus(offer, "PUBLISHED")} type="button">发布</button> : null}

@@ -122,9 +122,45 @@ test("LOCAL preview can establish exactly one immutable Root account", async () 
   const store=await createSqliteAccountAuthStore(":memory:");
   const request=new Request("http://localhost/api/auth/local",{method:"POST",headers:{origin:"http://localhost","sec-fetch-site":"same-origin"}});
   const env={NODE_ENV:"development",KAI_ADMIN_LOCAL_AUTH:"1",KAI_ADMIN_LOCAL_ROLES:"ROOT",KAI_ADMIN_LOCAL_SUBJECT:"root-one"};
-  const issued=await createLocalTestAccountSession(request,{store,env,now:new Date("2026-08-08T00:00:00Z")});
+  const now=new Date();
+  const issued=await createLocalTestAccountSession(request,{store,env,now});
   assert.deepEqual(issued.context.membership.roles,["ROOT"]);
+  assert.equal(issued.context.authMethod,"ADMIN_PASSWORD");
   assert.deepEqual(adminPermissionsForRoles(issued.context.membership.roles),ADMIN_PERMISSIONS);
-  await assert.rejects(createLocalTestAccountSession(request,{store,env:{...env,KAI_ADMIN_LOCAL_SUBJECT:"root-two"},now:new Date("2026-08-08T00:01:00Z")}));
+  const previous=globalThis.__kaiAccountAuthStorePromise;
+  globalThis.__kaiAccountAuthStorePromise=Promise.resolve(store);
+  try {
+    const admin=await requireAdminPermission(new Request("http://localhost/api/admin/hosting",{headers:{cookie:issued.cookie.split(";")[0]}}),["SUPPLY_INTAKE_REVIEW"]);
+    assert.deepEqual(admin.principal.roles,["ROOT"]);
+  } finally { globalThis.__kaiAccountAuthStorePromise=previous; }
+  await assert.rejects(createLocalTestAccountSession(request,{store,env:{...env,KAI_ADMIN_LOCAL_SUBJECT:"root-two"},now:new Date(now.getTime()+60_000)}));
+  store.close();
+});
+
+test("LOCAL supplier preview remains a non-administrator account session", async () => {
+  const store=await createSqliteAccountAuthStore(":memory:");
+  const request=new Request("http://localhost/api/auth/local",{method:"POST",headers:{origin:"http://localhost","sec-fetch-site":"same-origin"}});
+  const issued=await createLocalTestAccountSession(request,{store,env:{NODE_ENV:"development",KAI_ADMIN_LOCAL_AUTH:"1",KAI_ADMIN_LOCAL_ROLES:"SUPPORT_READONLY",KAI_ADMIN_LOCAL_SUBJECT:"supplier"}});
+  assert.equal(issued.context.authMethod,"LOCAL_TEST");
+  const previous=globalThis.__kaiAccountAuthStorePromise;
+  globalThis.__kaiAccountAuthStorePromise=Promise.resolve(store);
+  try {
+    await assert.rejects(requireAdminPermission(new Request("http://localhost/api/admin/hosting",{headers:{cookie:issued.cookie.split(";")[0]}}),["SUPPLY_INTAKE_REVIEW"]),(error)=>error instanceof AccountAuthError&&error.status===403);
+  } finally { globalThis.__kaiAccountAuthStorePromise=previous; }
+  store.close();
+});
+
+test("LOCAL multi-role QA uses host-only identities while production rejects the mode", async () => {
+  const store=await createSqliteAccountAuthStore(":memory:");
+  const env={NODE_ENV:"development",KAI_ADMIN_LOCAL_AUTH:"1",KAI_ADMIN_LOCAL_MULTI_ROLE_QA:"1"};
+  const login=async(host)=>createLocalTestAccountSession(new Request(`http://${host}/api/auth/local`,{method:"POST",headers:{origin:`http://${host}`,"sec-fetch-site":"same-origin"}}),{store,env});
+  const buyer=await login("buyer.localhost");
+  const supplier=await login("supplier.localhost");
+  const finance=await login("finance.localhost");
+  assert.equal(buyer.context.activeOrganization.externalKey,"LOCAL:BUYER");
+  assert.equal(supplier.context.activeOrganization.externalKey,"LOCAL:SUPPLIER");
+  assert.equal(finance.context.authMethod,"ADMIN_PASSWORD");
+  assert.deepEqual(finance.context.membership.roles,["FINANCE_APPROVER"]);
+  await assert.rejects(createLocalTestAccountSession(new Request("http://buyer.localhost/api/auth/local",{method:"POST",headers:{origin:"http://buyer.localhost","sec-fetch-site":"same-origin"}}),{store,env:{...env,NODE_ENV:"production"}}),(error)=>error instanceof AccountAuthError&&error.status===403);
   store.close();
 });

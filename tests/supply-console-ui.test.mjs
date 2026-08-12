@@ -91,6 +91,10 @@ test("listing UI uses only authenticated Hosting V2 offer APIs and server-owned 
   const list = readFileSync("components/supply-listings-v2.tsx", "utf8");
   const create = readFileSync("components/supply-offer-create.tsx", "utf8");
   assert.match(list, /marketplaceGet<\{ records: SupplierHostingOffer\[\] \}>\("\/api\/v2\/supply\/offers"\)/u);
+  assert.match(list, /Date\.parse\(offer\.availableFrom\) > now[^\n]+已发布 · 等待开售/u);
+  assert.match(list, /HOSTING_V2_AGENT_STALE_SECONDS/u);
+  assert.match(list, /已发布 · Agent 离线/u);
+  assert.match(list, /window\.setInterval\(\(\) => \{ void load\(\); \}, 30_000\)/u);
   assert.match(list, /`\/api\/v2\/supply\/offers\/\$\{encodeURIComponent\(offer\.id\)\}\/status`/u);
   assert.match(list, /\{ status, expectedVersion: offer\.version \}/u);
   assert.match(create, /marketplaceGet<\{ policy: SupplierHostingPolicy \}>\("\/api\/v2\/supply\/policy"\)/u);
