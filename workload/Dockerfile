@@ -16,6 +16,7 @@ RUN printf '%s\n' "$KAI_WORKLOAD_REVISION" | grep -Eq '^([0-9a-f]{40}|[0-9a-f]{6
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 1000 kai \
     && useradd --uid 1000 --gid 1000 --home-dir /workspace --no-create-home --shell /bin/bash kai \
+    && install -d -o root -g root -m 0755 /run/sshd \
     && install -d -o kai -g kai -m 0700 /home/kai/.ssh /workspace
 
 COPY --chown=root:root sshd_config /etc/ssh/sshd_config
