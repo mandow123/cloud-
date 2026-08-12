@@ -3,7 +3,7 @@
 import { chmod, mkdir, unlink } from "node:fs/promises";
 import { createServer } from "node:net";
 import { dirname, isAbsolute } from "node:path";
-import { executeCleanup, executeProvision, executeStart, executeStop } from "./actuator.mjs";
+import { enforceExpiredWorkloads, executeCleanup, executeProvision, executeStart, executeStop } from "./actuator.mjs";
 import { AgentError } from "./protocol.mjs";
 
 const socketPath = process.env.KAI_HOST_ACTUATOR_SOCKET?.trim() || "/run/kai-host-actuator/actuator.sock";
@@ -54,8 +54,20 @@ await new Promise((resolve, reject) => {
   server.listen(socketPath, resolve);
 });
 await chmod(socketPath, 0o660);
+const runWatchdog = async () => {
+  try { await enforceExpiredWorkloads(); }
+  catch (error) {
+    const code = error instanceof AgentError ? error.code : "WATCHDOG_FAILED";
+    process.stderr.write(`${JSON.stringify({ timestamp: new Date().toISOString(), event: "actuator.watchdog_failed", code })}\n`);
+  }
+};
+const watchdog = setInterval(() => {
+  queue = queue.then(runWatchdog);
+}, 5_000);
+watchdog.unref();
+queue = queue.then(runWatchdog);
 process.stdout.write(`${JSON.stringify({ timestamp: new Date().toISOString(), event: "actuator.started" })}\n`);
 
-const shutdown = () => server.close(() => process.exit(0));
+const shutdown = () => { clearInterval(watchdog); server.close(() => process.exit(0)); };
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);

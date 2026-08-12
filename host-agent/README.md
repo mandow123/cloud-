@@ -1,6 +1,6 @@
 # KAI Host Agent
 
-KAI Host Agent is the supplier-side device identity and control service for KAI Hosting V2. Version `1.4.0` in this checkpoint implements:
+KAI Host Agent is the supplier-side device identity and control service for KAI Hosting V2. Version `1.5.0` in this checkpoint implements:
 
 - Ed25519 device identity generated on the host;
 - five-minute, single-use pairing challenge consumption;
@@ -13,6 +13,7 @@ KAI Host Agent is the supplier-side device identity and control service for KAI 
 - immutable-image `PROVISION` through a separate root actuator that accepts one fixed operation over a local Unix socket;
 - contract-bound `START` followed by a public-endpoint SSH protocol readiness check;
 - contract-bound `STOP` with fixed graceful shutdown and runtime-duration evidence;
+- a persistent local lease watchdog that stops expired workloads even while Cloud is unreachable;
 - fail-closed `CLEANUP` that removes the stopped container, temporary SSH key and per-contract workspace before reuse;
 - a hardened, non-root Host Agent without Docker access or an arbitrary shell.
 

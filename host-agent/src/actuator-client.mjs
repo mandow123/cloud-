@@ -62,6 +62,7 @@ export async function provisionWorkload(command, state, { call = callActuator } 
     sshPort: inventory.sshPortStart,
     memoryMiB: inventory.memoryMiB,
     gpuCount: 1,
+    reservedSeconds: payload.reservedSeconds,
   });
   if (result.protocolVersion !== 1 || result.contractId !== command.contractId || result.image !== payload.image || result.endpointDisplay !== `${inventory.publicHost}:${inventory.sshPortStart}` || !/^sha256:[a-f0-9]{64}$/u.test(result.containerDigest) || !/^sha256:[a-f0-9]{64}$/u.test(result.workspaceDigest)) {
     throw new AgentError("ACTUATOR_RESULT_INVALID", "The workload actuator result did not match the signed command.");

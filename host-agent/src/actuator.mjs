@@ -1,5 +1,5 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { chmod, chown, lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, chown, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import { AgentError, digestJson } from "./protocol.mjs";
@@ -38,7 +38,7 @@ function stateRoot(environment) {
 export function parseProvisionRequest(value, environment = process.env) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail("PROVISION_REQUEST_INVALID", "Provision request must be an object.");
   const input = value;
-  assertExactKeys(input, ["protocolVersion", "operation", "commandId", "contractId", "image", "publicKey", "publicHost", "sshPort", "memoryMiB", "gpuCount"], "PROVISION_REQUEST_INVALID");
+  assertExactKeys(input, ["protocolVersion", "operation", "commandId", "contractId", "image", "publicKey", "publicHost", "sshPort", "memoryMiB", "gpuCount", "reservedSeconds"], "PROVISION_REQUEST_INVALID");
   if (input.protocolVersion !== 1 || input.operation !== "PROVISION") throw fail("PROVISION_REQUEST_INVALID", "Provision protocol is unsupported.");
   if (typeof input.commandId !== "string" || !ID_PATTERN.test(input.commandId) || typeof input.contractId !== "string" || !ID_PATTERN.test(input.contractId)) throw fail("PROVISION_ID_INVALID", "Provision identifiers are invalid.");
   if (typeof input.image !== "string" || !IMAGE_PATTERN.test(input.image) || !approvedImages(environment).has(input.image)) throw fail("IMAGE_NOT_APPROVED", "Provision image is not in the root-owned allowlist.");
@@ -47,6 +47,7 @@ export function parseProvisionRequest(value, environment = process.env) {
   if (!Number.isSafeInteger(input.sshPort) || input.sshPort < 1024 || input.sshPort > 65535) throw fail("SSH_PORT_INVALID", "Provision SSH port is invalid.");
   if (!Number.isSafeInteger(input.memoryMiB) || input.memoryMiB < 8_192 || input.memoryMiB > 4_194_304) throw fail("MEMORY_LIMIT_INVALID", "Provision memory limit is invalid.");
   if (input.gpuCount !== 1) throw fail("GPU_COUNT_UNSUPPORTED", "Provisioning supports exactly one GPU.");
+  if (!Number.isSafeInteger(input.reservedSeconds) || input.reservedSeconds < 180 || input.reservedSeconds > 31 * 24 * 60 * 60) throw fail("LEASE_DURATION_INVALID", "Provision lease duration is invalid.");
   return {
     protocolVersion: 1,
     operation: "PROVISION",
@@ -58,6 +59,7 @@ export function parseProvisionRequest(value, environment = process.env) {
     sshPort: input.sshPort,
     memoryMiB: input.memoryMiB,
     gpuCount: 1,
+    reservedSeconds: input.reservedSeconds,
   };
 }
 
@@ -196,7 +198,7 @@ export async function executeProvision(value, {
       workspaceDigest: digestJson({ workloadName, requestDigest }),
       observedAt,
     };
-    await writeJsonAtomic(manifestPath, { protocolVersion: 1, status: "READY", requestDigest, result, createdAt: observedAt, updatedAt: observedAt });
+    await writeJsonAtomic(manifestPath, { protocolVersion: 1, status: "READY", requestDigest, reservedSeconds: request.reservedSeconds, result, createdAt: observedAt, updatedAt: observedAt });
     return result;
   } catch (error) {
     const code = error instanceof AgentError ? error.code : "PROVISION_FAILED";
@@ -246,11 +248,13 @@ export async function executeStart(value, {
   const { workloadName, manifestPath } = workloadIdentity(request.contractId, environment);
   let manifest = await readManifest(manifestPath, "START_WORKLOAD_NOT_PROVISIONED");
   if (manifest.result?.contractId !== request.contractId || manifest.result?.protocolVersion !== 1
-    || typeof manifest.result?.image !== "string" || typeof manifest.result?.containerDigest !== "string") {
+    || typeof manifest.result?.image !== "string" || typeof manifest.result?.containerDigest !== "string"
+    || !Number.isSafeInteger(manifest.reservedSeconds) || manifest.reservedSeconds < 180 || manifest.reservedSeconds > 31 * 24 * 60 * 60) {
     throw fail("START_MANIFEST_INVALID", "Provision evidence does not match the start contract.");
   }
   if (manifest.status === "RUNNING") {
     if (manifest.startRequestDigest !== requestDigest || !manifest.startResult) throw fail("START_REPLAY_CONFLICT", "The workload was started by a different command.");
+    if (manifest.watchdogStoppedAt) throw fail("START_LEASE_EXPIRED", "The workload lease already expired and cannot be restarted.");
     const current = await inspectManagedContainer(workloadName, manifest, runDocker);
     if (current.running) return manifest.startResult;
     manifest = { ...manifest, status: "STARTING" };
@@ -266,6 +270,7 @@ export async function executeStart(value, {
     inspection = await inspectManagedContainer(workloadName, starting, runDocker);
     if (!inspection.running) throw fail("CONTAINER_NOT_RUNNING", "Container runtime did not enter the running state.");
     const startedAt = now();
+    const stopDeadlineAt = new Date(Date.parse(startedAt) + starting.reservedSeconds * 1_000).toISOString();
     const result = {
       protocolVersion: 1,
       contractId: request.contractId,
@@ -273,7 +278,7 @@ export async function executeStart(value, {
       runtimeStateDigest: digestJson({ workloadName, running: true, startedAt }),
       startedAt,
     };
-    await writeJsonAtomic(manifestPath, { ...starting, status: "RUNNING", startResult: result, updatedAt: startedAt });
+    await writeJsonAtomic(manifestPath, { ...starting, status: "RUNNING", startResult: result, stopDeadlineAt, updatedAt: startedAt });
     return result;
   } catch (error) {
     const code = error instanceof AgentError ? error.code : "START_FAILED";
@@ -312,7 +317,8 @@ export async function executeStop(value, {
     if (inspection.running) await runDocker(["container", "stop", "--time", "30", workloadName]);
     inspection = await inspectManagedContainer(workloadName, stopping, runDocker);
     if (inspection.running) throw fail("CONTAINER_STILL_RUNNING", "Container runtime did not enter the stopped state.");
-    const stoppedAt = now();
+    const observedAt = now();
+    const stoppedAt = typeof stopping.watchdogStoppedAt === "string" ? stopping.watchdogStoppedAt : observedAt;
     const startedAt = stopping.startResult.startedAt;
     const runtimeSeconds = Math.max(0, Math.ceil((Date.parse(stoppedAt) - Date.parse(startedAt)) / 1_000));
     if (!Number.isSafeInteger(runtimeSeconds)) throw fail("RUNTIME_EVIDENCE_INVALID", "Container runtime duration is invalid.");
@@ -325,7 +331,7 @@ export async function executeStop(value, {
       stoppedAt,
       runtimeSeconds,
     };
-    await writeJsonAtomic(manifestPath, { ...stopping, status: "STOPPED", stopResult: result, updatedAt: stoppedAt });
+    await writeJsonAtomic(manifestPath, { ...stopping, status: "STOPPED", stopResult: result, updatedAt: observedAt });
     return result;
   } catch (error) {
     const code = error instanceof AgentError ? error.code : "STOP_FAILED";
@@ -333,6 +339,48 @@ export async function executeStop(value, {
     if (error instanceof AgentError) throw error;
     throw fail("STOP_FAILED", "The isolated workload could not be stopped.", error);
   }
+}
+
+export async function enforceExpiredWorkloads({
+  environment = process.env,
+  runDocker = docker,
+  now = () => new Date().toISOString(),
+} = {}) {
+  const root = stateRoot(environment);
+  const workloadsRoot = join(root, "workloads");
+  let entries;
+  try { entries = await readdir(workloadsRoot, { withFileTypes: true }); }
+  catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw fail("WATCHDOG_INVENTORY_FAILED", "Actuator workload inventory could not be read.", error);
+  }
+  const enforced = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.isSymbolicLink() || !/^kai-[a-f0-9]{24}$/u.test(entry.name)) continue;
+    const workloadRoot = join(workloadsRoot, entry.name);
+    const manifestPath = join(workloadRoot, "manifest.json");
+    const [directoryMetadata, manifestMetadata] = await Promise.all([lstat(workloadRoot), lstat(manifestPath).catch((error) => error?.code === "ENOENT" ? null : Promise.reject(error))]);
+    if (!directoryMetadata.isDirectory() || directoryMetadata.isSymbolicLink() || !manifestMetadata?.isFile() || manifestMetadata.isSymbolicLink()) continue;
+    const manifest = await readManifest(manifestPath, "WATCHDOG_MANIFEST_INVALID");
+    if (manifest.status !== "RUNNING" || manifest.watchdogStoppedAt) continue;
+    if (typeof manifest.stopDeadlineAt !== "string" || !Number.isFinite(Date.parse(manifest.stopDeadlineAt))) throw fail("WATCHDOG_DEADLINE_INVALID", "Running workload lease deadline is invalid.");
+    const observedAt = now();
+    if (Date.parse(manifest.stopDeadlineAt) > Date.parse(observedAt)) continue;
+    try {
+      let inspection = await inspectManagedContainer(entry.name, manifest, runDocker);
+      if (inspection.running) await runDocker(["container", "stop", "--time", "30", entry.name]);
+      inspection = await inspectManagedContainer(entry.name, manifest, runDocker);
+      if (inspection.running) throw fail("CONTAINER_STILL_RUNNING", "Expired workload did not enter the stopped state.");
+      await writeJsonAtomic(manifestPath, { ...manifest, watchdogStoppedAt: observedAt, watchdogContainerDigest: inspection.containerDigest, updatedAt: observedAt });
+      enforced.push({ contractId: manifest.result.contractId, stoppedAt: observedAt, containerDigest: inspection.containerDigest });
+    } catch (error) {
+      const code = error instanceof AgentError ? error.code : "WATCHDOG_STOP_FAILED";
+      await writeJsonAtomic(manifestPath, { ...manifest, lastWatchdogErrorCode: code, lastWatchdogAttemptAt: observedAt, updatedAt: observedAt }).catch(() => undefined);
+      if (error instanceof AgentError) throw error;
+      throw fail("WATCHDOG_STOP_FAILED", "Expired workload could not be stopped.", error);
+    }
+  }
+  return enforced;
 }
 
 async function namedContainerId(workloadName, runDocker) {

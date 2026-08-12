@@ -1,6 +1,7 @@
 import { HOSTING_V2_AGENT_STALE_SECONDS, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingFeeSchedule, type HostingOffer, type HostingSupplierProfile } from "../hosting-v2.ts";
 import { HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
+import { hostingAgentDigest } from "./hosting-agent-crypto.ts";
 import { assertHostingV2ApprovedImage } from "./hosting-v2-image-policy.ts";
 import type { HostingMutationContext, HostingV2DatabaseAdapter, HostingV2Sql, HostingV2Store } from "./hosting-v2-store.ts";
 
@@ -11,7 +12,7 @@ const number = (row: Row, key: string) => Number(row[key]);
 const json = <T>(row: Row, key: string) => JSON.parse(value(row, key)) as T;
 const id = (prefix: string) => `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
 const VERIFY_TEST_NAMES = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "PORT_REACHABILITY"] as const;
-const HOSTING_V2_MIN_AGENT_VERSION = "1.4.0";
+const HOSTING_V2_MIN_AGENT_VERSION = "1.5.0";
 
 function agentVersionAtLeast(valueToCheck: string, minimum: string) {
   const parse = (value: string) => {
@@ -106,11 +107,14 @@ function assertSuccessfulStopDetails(details: Record<string, unknown> | undefine
   const startedAt = Date.parse(details.startedAt);
   const stoppedAt = Date.parse(details.stoppedAt);
   const expectedStartedAt = typeof payload.startedAt === "string" ? Date.parse(payload.startedAt) : Number.NaN;
+  const maximumSeconds = typeof payload.maximumSeconds === "number" ? payload.maximumSeconds : Number.NaN;
   const serverNow = Date.parse(now);
   const calculatedSeconds = Math.max(0, Math.ceil((stoppedAt - startedAt) / 1_000));
+  const stoppedAtIsFresh = Math.abs(stoppedAt - serverNow) <= 10 * 60_000;
+  const stoppedAtFollowsLeaseExpiry = Number.isFinite(maximumSeconds) && stoppedAt >= expectedStartedAt + maximumSeconds * 1_000;
   if (!Number.isFinite(observedAt) || !Number.isFinite(startedAt) || !Number.isFinite(stoppedAt) || !Number.isFinite(expectedStartedAt)
     || startedAt > stoppedAt || stoppedAt > observedAt || Math.abs(observedAt - serverNow) > 10 * 60_000
-    || Math.abs(stoppedAt - serverNow) > 10 * 60_000 || Math.abs(startedAt - expectedStartedAt) > 10 * 60_000
+    || (!stoppedAtIsFresh && !stoppedAtFollowsLeaseExpiry) || Math.abs(startedAt - expectedStartedAt) > 10 * 60_000
     || !Number.isSafeInteger(details.runtimeSeconds) || details.runtimeSeconds !== calculatedSeconds) {
     throw new ExchangeInputError("实例停止计量时间无效。", "details.runtimeSeconds");
   }
@@ -791,6 +795,30 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
 
     async pollCommand(deviceId, now, allowedTypes) {
       if (allowedTypes && allowedTypes.length === 0) return null;
+      if (!allowedTypes || allowedTypes.includes("STOP")) {
+        const expired = await db.first<Row>(`SELECT id,supplier_organization_id,started_at,reserved_seconds
+          FROM hosting_v2_contracts
+          WHERE device_id=? AND status='IN_SERVICE' AND started_at IS NOT NULL
+            AND CAST(strftime('%s',started_at) AS INTEGER)+reserved_seconds<=CAST(strftime('%s',?) AS INTEGER)
+            AND NOT EXISTS (SELECT 1 FROM hosting_v2_agent_commands WHERE contract_id=hosting_v2_contracts.id AND command_type='STOP')
+          ORDER BY started_at,id LIMIT 1`, [deviceId, now]);
+        if (expired) {
+          const commandId = id("hcmd");
+          const contractId = value(expired, "id");
+          const payload = { contractId, startedAt: value(expired, "started_at"), maximumSeconds: number(expired, "reserved_seconds") };
+          const payloadDigest = await hostingAgentDigest({ operation: "LEASE_EXPIRED_STOP", deviceId, ...payload });
+          await db.batch([
+            { sql: `INSERT OR IGNORE INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at)
+              SELECT ?,device_id,id,'STOP',?,'PENDING',0,? FROM hosting_v2_contracts
+              WHERE id=? AND device_id=? AND status='IN_SERVICE' AND started_at=?
+                AND CAST(strftime('%s',started_at) AS INTEGER)+reserved_seconds<=CAST(strftime('%s',?) AS INTEGER)
+                AND NOT EXISTS (SELECT 1 FROM hosting_v2_agent_commands WHERE contract_id=? AND command_type='STOP')`, values: [commandId, JSON.stringify(payload), now, contractId, deviceId, value(expired, "started_at"), now, contractId] },
+            { sql: `INSERT INTO hosting_v2_events(id,organization_id,entity_type,entity_id,event_type,actor_id,payload_digest,metadata_json,occurred_at)
+              SELECT ?,?,'CONTRACT',?,'LEASE_EXPIRED_STOP_QUEUED','system:hosting-expiry',?,?,?
+              WHERE EXISTS (SELECT 1 FROM hosting_v2_agent_commands WHERE id=?)`, values: [id("hve"), value(expired, "supplier_organization_id"), contractId, payloadDigest, JSON.stringify({ commandId, maximumSeconds: payload.maximumSeconds }), now, commandId] },
+          ]);
+        }
+      }
       const leaseCutoff = new Date(Date.parse(now) - 60_000).toISOString();
       const typeFilter = allowedTypes ? ` AND command_type IN (${allowedTypes.map(() => "?").join(",")})` : "";
       const current = await db.first<Row>(`SELECT * FROM hosting_v2_agent_commands WHERE device_id=?${typeFilter} AND (status='PENDING' OR (status='DELIVERED' AND delivered_at<? AND attempt<5)) ORDER BY created_at LIMIT 1`, [deviceId, ...(allowedTypes ?? []), leaseCutoff]);

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../guides.module.css";
 
-const AGENT_VERSION = "1.4.0";
+const AGENT_VERSION = "1.5.0";
 const ARCHIVE = `kai-host-agent-${AGENT_VERSION}.tgz`;
 
 export const metadata: Metadata = {

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { cleanupWorkload, probeSshReadiness, provisionWorkload, startWorkload, stopWorkload } from "../host-agent/src/actuator-client.mjs";
-import { executeCleanup, executeProvision, executeStart, executeStop, parseCleanupRequest, parseProvisionRequest, parseStartRequest, parseStopRequest } from "../host-agent/src/actuator.mjs";
+import { enforceExpiredWorkloads, executeCleanup, executeProvision, executeStart, executeStop, parseCleanupRequest, parseProvisionRequest, parseStartRequest, parseStopRequest } from "../host-agent/src/actuator.mjs";
 import { processOneCommand } from "../host-agent/src/client.mjs";
 import { AgentError, digestJson, generateDeviceIdentity } from "../host-agent/src/protocol.mjs";
 import { writeState } from "../host-agent/src/state.mjs";
@@ -27,6 +27,7 @@ function request(overrides = {}) {
     sshPort: 22_000,
     memoryMiB: 65_536,
     gpuCount: 1,
+    reservedSeconds: 3_600,
     ...overrides,
   };
 }
@@ -178,6 +179,46 @@ test("STOP gracefully halts only the running contract container and records boun
   }
 });
 
+test("local watchdog persists lease expiry, stops offline workloads once and preserves exact runtime evidence", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "kai-actuator-watchdog-"));
+  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_ACTUATOR_STATE_DIR: directory };
+  const containerId = "b".repeat(64);
+  let workloadName = "";
+  let running = false;
+  const calls = [];
+  const runDocker = async (args) => {
+    calls.push(args);
+    if (args[0] === "image") return { stdout: JSON.stringify([image]) };
+    if (args[0] === "container" && args[1] === "create") {
+      workloadName = args[args.indexOf("--name") + 1];
+      return { stdout: `${containerId}\n` };
+    }
+    if (args[0] === "container" && args[1] === "inspect") return {
+      stdout: JSON.stringify({ id: containerId, image, labels: { "kai.cloud.managed": "true", "kai.cloud.contract-digest": digestJson({ contractId: request().contractId }) }, running }),
+    };
+    if (args[0] === "container" && args[1] === "start") { running = true; return { stdout: `${workloadName}\n` }; }
+    if (args[0] === "container" && args[1] === "stop") { running = false; return { stdout: `${workloadName}\n` }; }
+    throw new Error(`unexpected docker operation: ${args.join(" ")}`);
+  };
+  try {
+    await executeProvision(request({ reservedSeconds: 180 }), { environment, runDocker, changeOwner: async () => undefined, now: () => "2026-08-11T08:00:00.000Z" });
+    await executeStart({ protocolVersion: 1, operation: "START", commandId: "hcmd_start0001", contractId: request().contractId }, { environment, runDocker, now: () => "2026-08-11T08:01:00.000Z" });
+    assert.deepEqual(await enforceExpiredWorkloads({ environment, runDocker, now: () => "2026-08-11T08:03:59.000Z" }), []);
+    assert.equal(running, true);
+    const enforced = await enforceExpiredWorkloads({ environment, runDocker, now: () => "2026-08-11T08:04:00.000Z" });
+    assert.deepEqual(enforced.map(({ contractId, stoppedAt }) => ({ contractId, stoppedAt })), [{ contractId: request().contractId, stoppedAt: "2026-08-11T08:04:00.000Z" }]);
+    assert.equal(running, false);
+    assert.equal(calls.filter((args) => args[0] === "container" && args[1] === "stop").length, 1);
+    assert.deepEqual(await enforceExpiredWorkloads({ environment, runDocker, now: () => "2026-08-11T09:04:00.000Z" }), []);
+    const stopped = await executeStop({ protocolVersion: 1, operation: "STOP", commandId: "hcmd_stop0001", contractId: request().contractId }, { environment, runDocker, now: () => "2026-08-11T09:04:00.000Z" });
+    assert.equal(stopped.stoppedAt, "2026-08-11T08:04:00.000Z");
+    assert.equal(stopped.runtimeSeconds, 180);
+    assert.equal(calls.filter((args) => args[0] === "container" && args[1] === "stop").length, 1, "Cloud STOP after recovery must reuse the watchdog stop");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("CLEANUP removes the stopped container, temporary key and workspace before reuse", async () => {
   const directory = await mkdtemp(join(tmpdir(), "kai-actuator-cleanup-"));
   const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_ACTUATOR_STATE_DIR: directory };
@@ -252,7 +293,7 @@ test("non-root Host Agent passes PROVISION to the actuator without gaining conta
   };
   const result = await provisionWorkload(command, state, { call: async (value) => { sent = value; return details; } });
   assert.equal(sent.operation, "PROVISION");
-  assert.deepEqual(Object.keys(sent).sort(), ["commandId", "contractId", "gpuCount", "image", "memoryMiB", "operation", "protocolVersion", "publicHost", "publicKey", "sshPort"].sort());
+  assert.deepEqual(Object.keys(sent).sort(), ["commandId", "contractId", "gpuCount", "image", "memoryMiB", "operation", "protocolVersion", "publicHost", "publicKey", "reservedSeconds", "sshPort"].sort());
   assert.equal(result.outcome, "SUCCEEDED");
   assert.equal(result.evidenceDigest, digestJson(details));
   await assert.rejects(provisionWorkload({ ...command, type: "SHELL" }, state, { call: async () => details }), (error) => error.code === "PROVISION_COMMAND_INVALID");

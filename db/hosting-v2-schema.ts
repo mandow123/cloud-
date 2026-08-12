@@ -1,4 +1,4 @@
-export const HOSTING_V2_SCHEMA_VERSION = 4;
+export const HOSTING_V2_SCHEMA_VERSION = 5;
 
 export const hostingV2SchemaStatements = [
   `CREATE TABLE IF NOT EXISTS hosting_v2_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`,
@@ -190,6 +190,7 @@ export const hostingV2SchemaStatements = [
     completed_at TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS hosting_v2_commands_device_idx ON hosting_v2_agent_commands(device_id, status, created_at)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS hosting_v2_commands_contract_stop_unique ON hosting_v2_agent_commands(contract_id, command_type) WHERE contract_id IS NOT NULL AND command_type='STOP'`,
   `CREATE TABLE IF NOT EXISTS hosting_v2_verification_proofs (
     command_id TEXT PRIMARY KEY,
     device_id TEXT NOT NULL,
