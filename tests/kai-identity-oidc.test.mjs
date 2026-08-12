@@ -4,6 +4,7 @@ import test from "node:test";
 import { AccountAuthError, resolveAccountSession } from "../lib/server/account-auth.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
 import { beginKaiIdentityLogin, clearKaiIdentityTransactionCookie, completeKaiIdentityLogin, KAI_IDENTITY_DISCOVERY, KAI_IDENTITY_ISSUER, probeKaiIdentityDiscovery } from "../lib/server/kai-identity-oidc.ts";
+import { readFileSync } from "node:fs";
 
 const encoder = new TextEncoder();
 const encode = (value) => Buffer.from(typeof value === "string" ? value : JSON.stringify(value)).toString("base64url");
@@ -118,6 +119,14 @@ test("KAI Identity login fails closed when Discovery redirects to itself", async
     env,
     fetcher: async () => new Response(null, { status: 308, headers: { location: KAI_IDENTITY_DISCOVERY } }),
   }), (error) => error instanceof AccountAuthError && error.code === "OIDC_DISCOVERY_REDIRECT" && error.status === 503);
+});
+
+test("the browser login entry returns safely to the login page instead of exposing a JSON error", () => {
+  const route = readFileSync(new URL("../app/api/auth/kai/start/route.ts", import.meta.url), "utf8");
+  assert.match(route, /status:\s*303/u);
+  assert.match(route, /new URLSearchParams\(\{ returnTo: safeReturnTo\(request\), authError: code \}\)/u);
+  assert.match(route, /clearKaiIdentityTransactionCookie\(request\)/u);
+  assert.doesNotMatch(route, /accountAuthErrorResponse/u);
 });
 
 test("KAI Identity rejects a callback whose state does not match the sealed transaction", async () => {
