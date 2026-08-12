@@ -38,13 +38,16 @@ test("supplier console exposes the implemented resource, listing, order and earn
 
 test("resource registration issues a short-lived server challenge without client identity fields", () => {
   const source = readFileSync("components/supply-resource-registration.tsx", "utf8");
+  const agentPackage = JSON.parse(readFileSync("host-agent/package.json", "utf8"));
   assert.match(source, /marketplacePost<HostingAgentChallenge>\("\/api\/v2\/supply\/agent-challenges", \{\}/u);
   assert.match(source, /challengeId: challenge\.id/u);
   assert.match(source, /nonce: challenge\.nonce/u);
   assert.match(source, /minimumAgentVersion: challenge\.minimumAgentVersion/u);
   assert.match(source, /expiresAt: challenge\.expiresAt/u);
   assert.match(source, /navigator\.clipboard\.writeText\(pairingBundle\)/u);
-  assert.match(source, /href="\/downloads\/kai-host-agent-1\.4\.0\.tgz"/u);
+  assert.match(source, new RegExp(`const HOST_AGENT_VERSION = "${agentPackage.version.replaceAll(".", "\\.")}"`, "u"));
+  assert.match(source, /const HOST_AGENT_ARCHIVE = `kai-host-agent-\$\{HOST_AGENT_VERSION\}\.tgz`/u);
+  assert.match(source, /href=\{`\/downloads\/\$\{HOST_AGENT_ARCHIVE\}`\}/u);
   assert.match(source, /href="\/guides\/host-agent"/u);
   assert.doesNotMatch(source, /organizationId|accountId|actorId|x-kai-workspace-role|localStorage|sessionStorage/u);
 });

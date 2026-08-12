@@ -7,6 +7,9 @@ import type { SupplierHostingDashboard } from "@/lib/hosting-v2-client";
 import { createIdempotencyKey, marketplaceErrorMessage, marketplaceGet, marketplacePost } from "@/lib/client/marketplace-client";
 import styles from "./supply-console.module.css";
 
+const HOST_AGENT_VERSION = "1.7.0";
+const HOST_AGENT_ARCHIVE = `kai-host-agent-${HOST_AGENT_VERSION}.tgz`;
+
 const templates = [
   { id: "personal-gpu", code: "01", title: "个人 GPU", description: "单台 Ubuntu 主机，首期支持 1× RTX 4090 或 H100。", enabled: true },
   { id: "gpu-server", code: "02", title: "GPU 服务器", description: "企业或 IDC 整机资源；首期仍按单卡非切片验收。", enabled: true },
@@ -95,7 +98,7 @@ export function SupplyResourceRegistration() {
         <header className={styles.panelHeader}><h2 id="pairing-title">Host Agent 配对</h2><span>{selected === "personal-gpu" ? "个人 GPU" : "GPU 服务器"}</span></header>
         <div className={styles.pairingBody}>
           <div className={styles.actionRow}>
-            <a className={styles.secondaryAction} download href="/downloads/kai-host-agent-1.4.0.tgz">下载 Host Agent 1.4.0</a>
+            <a className={styles.secondaryAction} download href={`/downloads/${HOST_AGENT_ARCHIVE}`}>下载 Host Agent {HOST_AGENT_VERSION}</a>
             <Link className={styles.secondaryAction} href="/guides/host-agent">打开安装与校验教程</Link>
           </div>
           <div className={styles.warningBox}>配对凭证包含一次性随机数，只能交给你控制的主机。不要发送到聊天群、工单或公开日志；过期或使用后必须重新签发。</div>

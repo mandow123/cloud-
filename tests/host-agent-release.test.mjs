@@ -51,3 +51,14 @@ test("Host Agent release is deterministic, checksummed and contains only reviewe
     await rm(extractionDirectory, { recursive: true, force: true });
   }
 });
+
+test("every public install surface requires the exact release version", async () => {
+  const packageJson = JSON.parse(await readFile("host-agent/package.json", "utf8"));
+  const client = await readFile("host-agent/src/client.mjs", "utf8");
+  const server = await readFile("lib/server/hosting-v2-store-core.ts", "utf8");
+  const guide = await readFile("app/guides/host-agent/page.tsx", "utf8");
+  const registration = await readFile("components/supply-resource-registration.tsx", "utf8");
+  for (const [name, source] of Object.entries({ client, server, guide, registration })) {
+    assert.match(source, new RegExp(`(?:AGENT_VERSION|HOSTING_V2_MIN_AGENT_VERSION|HOST_AGENT_VERSION) = "${packageJson.version.replaceAll(".", "\\.")}"`, "u"), `${name} must use Host Agent ${packageJson.version}`);
+  }
+});
