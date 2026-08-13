@@ -50,7 +50,7 @@ async function publishedOffer(store, supplier, clock) {
   const now = clock.toISOString();
   await store.saveProfile(supplier, { supplierType: "INDIVIDUAL", legalDisplayName: "预留测试 4090 供应方", contactEmail: supplier.account.primaryEmail, expectedVersion: 0 }, mutation(supplier.account.id, "reserve-profile-save", "reserve-profile-save-hash", now));
   await store.submitProfile(supplier.activeOrganization.id, 1, process.env.KAI_HOSTING_TERMS_VERSION, mutation(supplier.account.id, "reserve-profile-submit", "reserve-profile-submit-hash", now));
-  await store.reviewProfile(supplier.activeOrganization.id, { decision: "APPROVE", expectedVersion: 2, reviewNote: "允许内部预留闭环测试" }, mutation("admin-reserve-reviewer", "reserve-profile-review", "reserve-profile-review-hash", now));
+  await store.reviewProfile(supplier.activeOrganization.id, { decision: "APPROVE", expectedVersion: 2, reviewNote: "允许内部预留闭环测试", evidenceDigest: "b".repeat(64) }, mutation("admin-reserve-reviewer", "reserve-profile-review", "reserve-profile-review-hash", now));
   const challenge = await store.issueAgentChallenge(supplier, mutation(supplier.account.id, "reserve-agent-challenge", "reserve-agent-challenge-hash", now));
   const inventoryDigest = `sha256:${"3".repeat(64)}`;
   const device = await store.registerDevice(challenge.id, {

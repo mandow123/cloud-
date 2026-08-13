@@ -267,7 +267,7 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     assert.equal(saved.record.status, "DRAFT");
     const submitted = await json(await submitSupplierProfile(browserRequest(supplier, "/api/v2/supply/profile/submit", "POST", { expectedVersion: 1, agreementAccepted: true }, "golden-profile-submit")), 200);
     assert.equal(submitted.record.status, "SUBMITTED");
-    await hosting.reviewProfile(supplier.context.activeOrganization.id, { decision: "APPROVE", expectedVersion: 2, reviewNote: "内部真实 GPU 黄金闭环验收", evidenceDigest: `sha256:${"c".repeat(64)}` }, mutation("golden-admin-reviewer", "golden-profile-approve", now));
+    await hosting.reviewProfile(supplier.context.activeOrganization.id, { decision: "APPROVE", expectedVersion: 2, reviewNote: "内部真实 GPU 黄金闭环验收", evidenceDigest: "c".repeat(64) }, mutation("golden-admin-reviewer", "golden-profile-approve", now));
 
     const challenge = await json(await issueAgentChallenge(browserRequest(supplier, "/api/v2/supply/agent-challenges", "POST", {}, "golden-agent-challenge")), 201);
     const agentStateFile = join(directory, "golden-host-agent", "identity.json");

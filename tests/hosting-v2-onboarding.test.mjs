@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { isHostingV2SetupEnabled, requireHostingV2Enabled, requireHostingV2SetupEnabled } from "../lib/server/hosting-v2-feature.ts";
@@ -33,6 +36,7 @@ test("supplier onboarding stays draft until an independent administrator approve
     assert.equal(submitted.status, "SUBMITTED");
     assert.equal(submitted.agreementVersion, process.env.KAI_HOSTING_TERMS_VERSION);
     await assert.rejects(store.reviewProfile(account.activeOrganization.id, { decision: "APPROVE", expectedVersion: 1, reviewNote: "材料完整，允许内部试运营" }, mutation("admin-reviewer", "profile-review-wrong", "profile-review-wrong-hash", "2026-08-11T03:00:05Z")), (error) => error.code === "EXCHANGE_VERSION_CONFLICT");
+    await assert.rejects(store.reviewProfile(account.activeOrganization.id, { decision: "APPROVE", expectedVersion: 2, reviewNote: "材料完整，允许内部试运营" }, mutation("admin-reviewer", "profile-review-no-evidence", "profile-review-no-evidence-hash", "2026-08-11T03:00:05Z")), /必须保存审核证据/u);
 
     const approved = await store.reviewProfile(account.activeOrganization.id, { decision: "APPROVE", expectedVersion: 2, reviewNote: "材料完整，允许内部试运营", evidenceDigest: "a".repeat(64) }, mutation("admin-reviewer", "profile-review-000001", "profile-review-hash", "2026-08-11T03:00:06Z"));
     assert.equal(approved.status, "APPROVED");
@@ -52,6 +56,27 @@ test("supplier agreement snapshot comes from the configured immutable server pol
     assert.equal(submitted.agreementVersion, "KAI_HOSTING_TERMS_2026_09");
   } finally {
     store.close();
+  }
+});
+
+test("legacy approved profiles without an evidence digest remain fail-closed", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kai-hosting-profile-gate-"));
+  const path = join(directory, "hosting.sqlite");
+  const store = await createSqliteHostingV2Store(path);
+  try {
+    await store.saveProfile(account, { supplierType: "INDIVIDUAL", legalDisplayName: "历史供应主体", contactEmail: "supplier@example.com", expectedVersion: 0 }, mutation(account.account.id, "legacy-profile-save", "legacy-profile-save-hash", "2026-08-11T03:20:01Z"));
+    await store.submitProfile(account.activeOrganization.id, 1, process.env.KAI_HOSTING_TERMS_VERSION, mutation(account.account.id, "legacy-profile-submit", "legacy-profile-submit-hash", "2026-08-11T03:20:02Z"));
+    await store.reviewProfile(account.activeOrganization.id, { decision: "APPROVE", expectedVersion: 2, reviewNote: "材料完整，批准接入", evidenceDigest: "d".repeat(64) }, mutation("admin-reviewer", "legacy-profile-approve", "legacy-profile-approve-hash", "2026-08-11T03:20:03Z"));
+
+    const db = new DatabaseSync(path);
+    db.prepare("UPDATE hosting_v2_supplier_profiles SET evidence_digest=NULL WHERE organization_id=?").run(account.activeOrganization.id);
+    db.close();
+
+    assert.equal((await store.dashboard(account.activeOrganization.id, "2026-08-11T03:20:04Z")).readiness.supplierApproved, false);
+    await assert.rejects(store.issueAgentChallenge(account, mutation(account.account.id, "legacy-challenge", "legacy-challenge-hash", "2026-08-11T03:20:05Z")), /协议签署和有证据审核/u);
+  } finally {
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
   }
 });
 

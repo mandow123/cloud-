@@ -380,7 +380,7 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
       const [migration, feeRow, suppliers, activeAgents, drainingDevices, failedCleanups, cleaningContracts] = await Promise.all([
         db.first<{ version: number | null }>("SELECT MAX(version) AS version FROM hosting_v2_schema_migrations"),
         db.first<Row>("SELECT id FROM hosting_v2_fee_schedules WHERE status='ACTIVE' AND effective_from<=? ORDER BY effective_from DESC LIMIT 1", [now]),
-        db.first<{ count: number }>("SELECT COUNT(*) AS count FROM hosting_v2_supplier_profiles WHERE status='APPROVED'"),
+        db.first<{ count: number }>("SELECT COUNT(*) AS count FROM hosting_v2_supplier_profiles WHERE status='APPROVED' AND agreement_version IS NOT NULL AND evidence_digest IS NOT NULL"),
         db.all<Row>("SELECT agent_version,inventory_json FROM hosting_v2_devices WHERE status IN ('VERIFIED','BUSY') AND verification_status='PASSED' AND verified_until>? AND last_seen_at>=?", [now, staleCutoff]),
         db.first<{ count: number }>("SELECT COUNT(*) AS count FROM hosting_v2_devices WHERE status='DRAINING'"),
         db.first<{ count: number }>(`SELECT COUNT(*) AS count FROM hosting_v2_contracts c
@@ -578,7 +578,7 @@ function createProfileMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2St
         contracts: contractRows.map(contract),
         earnings,
         readiness: {
-          supplierApproved: profileRow?.status === "APPROVED",
+          supplierApproved: profileRow?.status === "APPROVED" && Boolean(profileRow.agreement_version) && Boolean(profileRow.evidence_digest),
           onlineVerifiedDevices: devices.filter((item) => item.status === "VERIFIED" && item.verificationStatus === "PASSED" && Boolean(item.verifiedUntil && Date.parse(item.verifiedUntil) > Date.parse(now)) && Boolean(item.lastSeenAt && Date.parse(item.lastSeenAt) >= cutoff)).length,
           activeFeeSchedule: Boolean(activeFee),
           cardHourSettlement: true,
@@ -650,6 +650,8 @@ function createProfileMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2St
         if (!current) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "供应主体不存在。");
         if (!["SUBMITTED", "APPROVED"].includes(value(current, "status"))) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "供应主体当前不能执行该审核决定。");
         if (number(current, "version") !== input.expectedVersion) throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT", 409, "供应主体资料已变化，请刷新。");
+        if (input.evidenceDigest != null && !/^[a-f0-9]{64}$/u.test(input.evidenceDigest)) throw new ExchangeInputError("审核证据仅接受 64 位 SHA-256 摘要。", "evidenceDigest");
+        if (status === "APPROVED" && !input.evidenceDigest) throw new ExchangeInputError("批准供应主体前必须保存审核证据的 SHA-256 摘要。", "evidenceDigest");
         const statements: HostingV2Sql[] = [
           { sql: "UPDATE hosting_v2_supplier_profiles SET status=?,review_note=?,evidence_digest=?,version=version+1,updated_at=? WHERE organization_id=? AND version=? AND status IN ('SUBMITTED','APPROVED')", values: [status, input.reviewNote.trim(), input.evidenceDigest ?? null, context.now, organizationId, input.expectedVersion] },
         ];
@@ -675,7 +677,7 @@ function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
   return {
     async issueAgentChallenge(account, context) {
       const profileRow = await db.first<Row>("SELECT * FROM hosting_v2_supplier_profiles WHERE organization_id=?", [account.activeOrganization.id]);
-      if (!profileRow || value(profileRow, "status") !== "APPROVED") throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "供应主体审核通过后才能登记设备。");
+      if (!profileRow || value(profileRow, "status") !== "APPROVED" || !nullable(profileRow, "agreement_version") || !nullable(profileRow, "evidence_digest")) throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "供应主体完成协议签署和有证据审核后才能登记设备。");
       const replayed = await replay(db, context, "ISSUE_AGENT_CHALLENGE");
       if (replayed) {
         const row = await db.first<Row>("SELECT * FROM hosting_v2_agent_challenges WHERE id=?", [replayed.entityId]);
@@ -722,8 +724,8 @@ function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       if (!challengeRow || challengeRow.consumed_at != null || Date.parse(value(challengeRow, "expires_at")) < Date.parse(context.now)) {
         throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 410, "设备登记挑战已过期或已使用。");
       }
-      const profileRow = await db.first<Row>("SELECT status FROM hosting_v2_supplier_profiles WHERE organization_id=?", [value(challengeRow, "organization_id")]);
-      if (!profileRow || value(profileRow, "status") !== "APPROVED") throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "供应主体当前不能登记设备。");
+      const profileRow = await db.first<Row>("SELECT status,agreement_version,evidence_digest FROM hosting_v2_supplier_profiles WHERE organization_id=?", [value(challengeRow, "organization_id")]);
+      if (!profileRow || value(profileRow, "status") !== "APPROVED" || !nullable(profileRow, "agreement_version") || !nullable(profileRow, "evidence_digest")) throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "供应主体当前缺少有效协议或审核证据，不能登记设备。");
       const recordId = id("had");
       await db.batch([
         { sql: `INSERT INTO hosting_v2_devices(id,organization_id,account_id,display_name,device_key_id,device_public_key,agent_version,inventory_json,inventory_digest,status,verification_status,last_sequence,last_seen_at,version,created_at,updated_at)
@@ -834,7 +836,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
           FROM hosting_v2_devices d WHERE d.id=? AND d.organization_id=?`, [input.deviceId, organizationId]),
         db.first<Row>("SELECT * FROM hosting_v2_fee_schedules WHERE status='ACTIVE' AND effective_from<=? ORDER BY effective_from DESC LIMIT 1", [context.now]),
       ]);
-      if (!profileRow || value(profileRow, "status") !== "APPROVED") throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "供应主体未通过审核。");
+      if (!profileRow || value(profileRow, "status") !== "APPROVED" || !nullable(profileRow, "agreement_version") || !nullable(profileRow, "evidence_digest")) throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "供应主体未完成有证据审核。");
       if (!deviceRow || value(deviceRow, "status") !== "VERIFIED" || value(deviceRow, "verification_status") !== "PASSED" || !deviceRow.verified_until || Date.parse(value(deviceRow, "verified_until")) <= Date.parse(context.now) || !deviceRow.last_seen_at || Date.parse(value(deviceRow, "last_seen_at")) < Date.parse(context.now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000) {
         throw new ExchangeDomainError("EXCHANGE_VERIFICATION_REQUIRED", 409, "设备需保持在线且验真有效后才能挂牌。");
       }
@@ -870,13 +872,13 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
     async updateOfferStatus(organizationId, offerId, input, context) {
       const replayed = await replay(db, context, "UPDATE_OFFER_STATUS");
       if (!replayed) {
-        const current = await db.first<Row>(`SELECT o.*,d.status device_status,d.verification_status device_verification,d.verification_evidence_digest,d.verified_until,d.last_seen_at,d.agent_version device_agent_version,d.inventory_json,p.status supplier_status,
+        const current = await db.first<Row>(`SELECT o.*,d.status device_status,d.verification_status device_verification,d.verification_evidence_digest,d.verified_until,d.last_seen_at,d.agent_version device_agent_version,d.inventory_json,p.status supplier_status,p.agreement_version supplier_agreement_version,p.evidence_digest supplier_evidence_digest,
           (SELECT cmd.payload_json FROM hosting_v2_verification_proofs proof JOIN hosting_v2_agent_commands cmd ON cmd.id=proof.command_id
            WHERE proof.device_id=d.id AND proof.agent_evidence_digest=d.verification_evidence_digest ORDER BY proof.recorded_at DESC LIMIT 1) AS verification_payload_json
           FROM hosting_v2_offers o JOIN hosting_v2_devices d ON d.id=o.device_id JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id WHERE o.id=? AND o.organization_id=?`, [offerId, organizationId]);
         if (!current) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "挂牌不存在。");
         if (number(current, "version") !== input.expectedVersion) throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT", 409, "挂牌版本已变化。");
-        if (input.status === "PUBLISHED" && value(current, "supplier_status") !== "APPROVED") throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "供应主体当前未获准发布挂牌。");
+        if (input.status === "PUBLISHED" && (value(current, "supplier_status") !== "APPROVED" || !nullable(current, "supplier_agreement_version") || !nullable(current, "supplier_evidence_digest"))) throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "供应主体缺少有效协议或审核证据，不能发布挂牌。");
         if (input.status === "PUBLISHED" && (value(current, "device_status") !== "VERIFIED" || value(current, "device_verification") !== "PASSED" || Date.parse(value(current, "verified_until")) <= Date.parse(context.now) || Date.parse(value(current, "last_seen_at")) < Date.parse(context.now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000)) throw new ExchangeDomainError("EXCHANGE_VERIFICATION_EXPIRED", 409, "设备不在线或验真已经过期。");
         if (input.status === "PUBLISHED" && !agentVersionAtLeast(value(current, "device_agent_version"), HOSTING_V2_MIN_AGENT_VERSION)) throw new ExchangeDomainError("HOSTING_AGENT_UPGRADE_REQUIRED", 409, `Host Agent 需要升级到 ${HOSTING_V2_MIN_AGENT_VERSION} 或更高版本。`);
         if (input.status === "PUBLISHED") {
@@ -904,7 +906,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
           (SELECT cmd.payload_json FROM hosting_v2_verification_proofs proof JOIN hosting_v2_agent_commands cmd ON cmd.id=proof.command_id
            WHERE proof.device_id=d.id AND proof.agent_evidence_digest=d.verification_evidence_digest ORDER BY proof.recorded_at DESC LIMIT 1) AS verification_payload_json
         FROM hosting_v2_offers o JOIN hosting_v2_devices d ON d.id=o.device_id JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id
-        WHERE o.status='PUBLISHED' AND p.status='APPROVED' AND o.available_from<=? AND o.available_until>? AND d.status='VERIFIED' AND d.verification_status='PASSED' AND d.verified_until>? AND d.last_seen_at>=?
+        WHERE o.status='PUBLISHED' AND p.status='APPROVED' AND p.agreement_version IS NOT NULL AND p.evidence_digest IS NOT NULL AND o.available_from<=? AND o.available_until>? AND d.status='VERIFIED' AND d.verification_status='PASSED' AND d.verified_until>? AND d.last_seen_at>=?
         ORDER BY o.card_hour_micros_per_gpu_hour,o.created_at`, [now, now, now, cutoff]))
         .filter((row) => gpuTradingEligibility(rowInventory(row)).passed
           && agentVersionAtLeast(value(row, "device_agent_version"), HOSTING_V2_MIN_AGENT_VERSION)
@@ -932,7 +934,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         JOIN hosting_v2_fee_schedules f ON f.id=o.fee_schedule_id
         JOIN hosting_v2_devices d ON d.id=o.device_id
         JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id
-        WHERE o.id=? AND o.status='PUBLISHED' AND p.status='APPROVED' AND o.available_from<=? AND o.available_until>? AND d.status='VERIFIED' AND d.verification_status='PASSED' AND d.verified_until>? AND d.last_seen_at>=?`, [offerId, context.now, context.now, context.now, staleCutoff]);
+        WHERE o.id=? AND o.status='PUBLISHED' AND p.status='APPROVED' AND p.agreement_version IS NOT NULL AND p.evidence_digest IS NOT NULL AND o.available_from<=? AND o.available_until>? AND d.status='VERIFIED' AND d.verification_status='PASSED' AND d.verified_until>? AND d.last_seen_at>=?`, [offerId, context.now, context.now, context.now, staleCutoff]);
       if (!row) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源已不可租用，请刷新市场。");
       if (!gpuTradingEligibility(rowInventory(row)).passed) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源未通过真实物理 GPU 审计，请刷新市场。");
       if (!agentVersionAtLeast(value(row, "device_agent_version"), HOSTING_V2_MIN_AGENT_VERSION)) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源交付组件正在升级，请刷新市场。");

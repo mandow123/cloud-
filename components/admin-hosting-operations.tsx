@@ -136,6 +136,7 @@ export function AdminHostingOperations() {
   const isRoot = roles.includes("ROOT");
   const isApprover = roles.includes("FINANCE_APPROVER") && !isRoot;
   const selectedProfile = profiles.find((profile) => profile.organizationId === reviewTarget);
+  const reviewEvidenceReady = reviewDecision !== "APPROVE" || /^[a-fA-F0-9]{64}$/u.test(evidenceDigest.trim());
   const selectedCleanup = cleanupIncidents.find((incident) => incident.contractId === cleanupTarget);
   const selectedStop = stopIncidents.find((incident) => incident.contractId === stopTarget);
   const selectedDispute = disputes.find((dispute) => dispute.contractId === disputeTarget);
@@ -369,8 +370,8 @@ export function AdminHostingOperations() {
             <div className="admin-hosting-facts"><span>组织 ID <b>{selectedProfile ? text(selectedProfile, "organizationId") : "—"}</b></span><span>类型 <b>{selectedProfile ? text(selectedProfile, "supplierType") : "—"}</b></span><span>版本 <b>{selectedProfile ? integer(selectedProfile, "version") : "—"}</b></span></div>
             <label><span>审核决定</span><select onChange={(event) => setReviewDecision(event.target.value)} value={reviewDecision}><option value="APPROVE">批准</option><option value="REJECT">拒绝</option><option value="SUSPEND">暂停</option></select></label>
             <label><span>审核说明</span><textarea maxLength={500} minLength={4} onChange={(event) => setReviewNote(event.target.value)} placeholder="说明材料依据、权限边界和结论" required rows={3} value={reviewNote} /></label>
-            <label><span>证据 SHA-256（可选）</span><input maxLength={64} minLength={64} onChange={(event) => setEvidenceDigest(event.target.value)} pattern="[a-fA-F0-9]{64}" placeholder="仅保存摘要，不上传敏感材料" value={evidenceDigest} /></label>
-            <button className="admin-button primary" disabled={busy === "review" || !selectedProfile} type="submit">{busy === "review" ? "正在提交…" : "保存审核结果"}</button>
+            <label><span>证据 SHA-256（批准必填）</span><input maxLength={64} minLength={64} onChange={(event) => setEvidenceDigest(event.target.value)} pattern="[a-fA-F0-9]{64}" placeholder="仅保存摘要，不上传敏感材料" required={reviewDecision === "APPROVE"} value={evidenceDigest} /></label>
+            <button className="admin-button primary" disabled={busy === "review" || !selectedProfile || !reviewEvidenceReady} type="submit">{busy === "review" ? "正在提交…" : "保存审核结果"}</button>
           </form> : <AdminEmpty description="尚无供应方提交准入申请。" title="没有待审核供应主体" />}
         </section>
 
