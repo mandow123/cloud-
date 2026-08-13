@@ -3,9 +3,10 @@
 import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { heartbeat, pairDevice, processOneCommand } from "../../host-agent/src/client.mjs";
 import { digestJson } from "../../host-agent/src/protocol.mjs";
+import { readState } from "../../host-agent/src/state.mjs";
 
 if (process.env.NODE_ENV === "production"
   || process.env.KAI_ENVIRONMENT !== "LOCAL"
@@ -36,7 +37,7 @@ function assertLocalBundle(bundle) {
   }
 }
 
-const inventory = Object.freeze({
+const fixtureInventory = Object.freeze({
   hostnameDigest: `sha256:${"1".repeat(64)}`,
   gpuModel: "RTX_4090",
   gpuUuidDigest: `sha256:${"2".repeat(64)}`,
@@ -51,10 +52,16 @@ const inventory = Object.freeze({
   sshPortEnd: 27_019,
 });
 
+function assertLocalStateFile(value) {
+  if (!isAbsolute(value) || !/^\/(?:private\/)?tmp\/kai-cloud-local-agent-state-[A-Za-z0-9._-]+\.json$/u.test(value)) {
+    throw new Error("LOCAL_AGENT_STATE_FILE_FORBIDDEN");
+  }
+}
+
 const sha = (value) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 const observedAt = () => new Date().toISOString();
 
-function verificationResult(command, state) {
+function verificationResult(command, state, inventory) {
   const challengeDigest = digestJson({
     protocolVersion: 1,
     deviceId: state.deviceId,
@@ -82,7 +89,7 @@ function verificationResult(command, state) {
   return { outcome: "SUCCEEDED", evidenceDigest: digestJson(details), errorCode: null, details };
 }
 
-function provisionResult(command) {
+function provisionResult(command, inventory) {
   const details = {
     protocolVersion: 1,
     contractId: command.contractId,
@@ -145,26 +152,47 @@ function cleanupResult(command) {
   return { outcome: "SUCCEEDED", evidenceDigest: digestJson(details), errorCode: null, details };
 }
 
-const bundle = await stdinJson();
-assertLocalBundle(bundle);
-const directory = await mkdtemp(join(tmpdir(), "kai-local-host-agent-"));
-const stateFile = join(directory, "identity.json");
+const configuredStateFile = process.env.KAI_HOSTING_LOCAL_STATE_FILE?.trim() || null;
+let directory = null;
+let stateFile;
+let inventory;
+let pairingBundle = null;
+if (configuredStateFile) {
+  assertLocalStateFile(configuredStateFile);
+  stateFile = configuredStateFile;
+  const state = await readState(stateFile);
+  if (state.status !== "ACTIVE" || !state.inventory || !String(state.inventory.cpuModel).includes("not a real GPU")) {
+    throw new Error("LOCAL_AGENT_STATE_INVALID");
+  }
+  inventory = Object.freeze(state.inventory);
+} else {
+  pairingBundle = await stdinJson();
+  assertLocalBundle(pairingBundle);
+  directory = await mkdtemp(join(tmpdir(), "kai-local-host-agent-"));
+  stateFile = join(directory, "identity.json");
+  inventory = fixtureInventory;
+}
 let stopping = false;
 process.once("SIGINT", () => { stopping = true; });
 process.once("SIGTERM", () => { stopping = true; });
 
 try {
-  const paired = await pairDevice({
-    bundle,
-    displayName: "LOCAL ACCEPTANCE · 非真实 GPU",
-    publicHost: inventory.publicHost,
-    sshPortStart: String(inventory.sshPortStart),
-    sshPortEnd: String(inventory.sshPortEnd),
-    stateFile,
-    allowInsecureLocal: true,
-    inventoryCollector: async () => inventory,
-  });
-  process.stdout.write(`${JSON.stringify({ event: "local_agent.paired", deviceId: paired.deviceId, simulation: true })}\n`);
+  if (configuredStateFile) {
+    const state = await readState(stateFile);
+    process.stdout.write(`${JSON.stringify({ event: "local_agent.resumed", deviceId: state.deviceId, simulation: true })}\n`);
+  } else {
+    const paired = await pairDevice({
+      bundle: pairingBundle,
+      displayName: "LOCAL ACCEPTANCE · 非真实 GPU",
+      publicHost: inventory.publicHost,
+      sshPortStart: String(inventory.sshPortStart),
+      sshPortEnd: String(inventory.sshPortEnd),
+      stateFile,
+      allowInsecureLocal: true,
+      inventoryCollector: async () => inventory,
+    });
+    process.stdout.write(`${JSON.stringify({ event: "local_agent.paired", deviceId: paired.deviceId, simulation: true })}\n`);
+  }
   let nextHeartbeatAt = 0;
   let lastConnectionError = null;
   while (!stopping) {
@@ -177,8 +205,8 @@ try {
       const processed = await processOneCommand({
         stateFile,
         allowInsecureLocal: true,
-        verifier: verificationResult,
-        provisioner: provisionResult,
+        verifier: (command, state) => verificationResult(command, state, inventory),
+        provisioner: (command) => provisionResult(command, inventory),
         starter: startResult,
         stopper: stopResult,
         cleaner: cleanupResult,
@@ -196,5 +224,5 @@ try {
     }
   }
 } finally {
-  await rm(directory, { recursive: true, force: true });
+  if (directory) await rm(directory, { recursive: true, force: true });
 }
