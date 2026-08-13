@@ -172,8 +172,20 @@ export function validateProductionEnvironment(environment = process.env, { check
     if (!/^KAI_HOSTING_TERMS_\d{4}_\d{2}$/.test(environment.KAI_HOSTING_TERMS_VERSION ?? "")) {
       errors.push("KAI_HOSTING_TERMS_VERSION must be a dated immutable version when Hosting V2 setup or trading is enabled");
     }
-    if (!/^kaic_[A-Za-z0-9_-]{8,200}$/.test(environment.KAI_ACCOUNT_OIDC_CLIENT_ID ?? "")) {
-      errors.push("KAI_ACCOUNT_OIDC_CLIENT_ID must be a valid Public Client ID when Hosting V2 setup or trading is enabled");
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/.test(environment.KAI_ACCOUNT_OIDC_CLIENT_ID ?? "")) {
+      errors.push("KAI_ACCOUNT_OIDC_CLIENT_ID must be a valid Client ID when Hosting V2 setup or trading is enabled");
+    }
+    const issuer = environment.KAI_ACCOUNT_OIDC_ISSUER?.trim() || "https://account.kai.com/connect";
+    if (issuer !== "https://account.kai.com/connect" && issuer !== "https://auth.kai.com/api/auth") {
+      errors.push("KAI_ACCOUNT_OIDC_ISSUER must be an approved KAI Identity issuer when Hosting V2 setup or trading is enabled");
+    }
+    if (issuer === "https://auth.kai.com/api/auth" && Buffer.byteLength(environment.KAI_ACCOUNT_OIDC_CLIENT_SECRET?.trim() ?? "", "utf8") < 16) {
+      errors.push("KAI_ACCOUNT_OIDC_CLIENT_SECRET must be configured for the auth.kai.com server Web client");
+    }
+    const scopes = (environment.KAI_ACCOUNT_OIDC_SCOPES?.trim() || (issuer === "https://auth.kai.com/api/auth" ? "openid profile email" : "openid kai:name email")).replace(/\s+/g, " ");
+    const scopeList = scopes.split(" ");
+    if (!/^[A-Za-z0-9:._-]+(?: [A-Za-z0-9:._-]+)*$/.test(scopes) || scopeList.length > 12 || new Set(scopeList).size !== scopeList.length || !scopeList.includes("openid") || !scopeList.includes("email")) {
+      errors.push("KAI_ACCOUNT_OIDC_SCOPES must contain unique openid and email scopes");
     }
     const transactionSecret = environment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET ?? "";
     if (Buffer.byteLength(transactionSecret, "utf8") < 32 || PLACEHOLDER_SECRET_PATTERN.test(transactionSecret)) {

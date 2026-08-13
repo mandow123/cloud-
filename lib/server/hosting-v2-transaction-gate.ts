@@ -22,7 +22,7 @@ export async function requireHostingV2TransactionCapability() {
       (await getHostingV2Store()).readiness(now),
       (await getCardHourStore()).health(),
       environment.KAI_ACCOUNT_OIDC_CLIENT_ID?.trim() && environment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET?.trim()
-        ? probeKaiIdentityDiscovery()
+        ? probeKaiIdentityDiscovery({ env: environment })
         : Promise.resolve({ available: false as const, probe: "read-only" as const }),
     ]);
     requireHostingV2TransactionReady(evaluateHostingV2Capability({

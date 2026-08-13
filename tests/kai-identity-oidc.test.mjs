@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { AccountAuthError, resolveAccountSession } from "../lib/server/account-auth.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
-import { beginKaiIdentityLogin, clearKaiIdentityTransactionCookie, completeKaiIdentityLogin, KAI_IDENTITY_DISCOVERY, KAI_IDENTITY_ISSUER, probeKaiIdentityDiscovery } from "../lib/server/kai-identity-oidc.ts";
+import { beginKaiIdentityLogin, clearKaiIdentityTransactionCookie, completeKaiIdentityLogin, KAI_IDENTITY_DISCOVERY, KAI_IDENTITY_ISSUER, KAI_IDENTITY_MODERN_DISCOVERY, KAI_IDENTITY_MODERN_ISSUER, probeKaiIdentityDiscovery } from "../lib/server/kai-identity-oidc.ts";
 import { readFileSync } from "node:fs";
 
 const encoder = new TextEncoder();
@@ -91,6 +91,103 @@ test("KAI Identity uses Authorization Code + PKCE and creates an ordinary active
   assert.equal(resolved?.account.id, completed.issued.context.account.id);
   assert.equal(resolved?.authMethod, "KAI_IDENTITY_OIDC");
   store.close();
+});
+
+test("modern KAI Identity exchanges a confidential PKCE code and verifies an EdDSA ID token", async () => {
+  const now = new Date("2026-08-13T01:30:00.000Z");
+  const env = {
+    NODE_ENV: "production",
+    KAI_TRUST_PROXY: "1",
+    KAI_PUBLIC_ORIGIN: "https://cloud.kai.com",
+    KAI_ACCOUNT_OIDC_ISSUER: KAI_IDENTITY_MODERN_ISSUER,
+    KAI_ACCOUNT_OIDC_CLIENT_ID: "cloud-web-client-2026",
+    KAI_ACCOUNT_OIDC_CLIENT_SECRET: "modern-client-secret-0000000000000000",
+    KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: "modern-transaction-secret-000000000000000000000000",
+  };
+  const metadata = {
+    issuer: KAI_IDENTITY_MODERN_ISSUER,
+    authorization_endpoint: `${KAI_IDENTITY_MODERN_ISSUER}/oauth2/authorize`,
+    token_endpoint: `${KAI_IDENTITY_MODERN_ISSUER}/oauth2/token`,
+    jwks_uri: `${KAI_IDENTITY_MODERN_ISSUER}/jwks`,
+    userinfo_endpoint: `${KAI_IDENTITY_MODERN_ISSUER}/oauth2/userinfo`,
+    id_token_signing_alg_values_supported: ["EdDSA"],
+    token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post"],
+  };
+  const started = await beginKaiIdentityLogin(new Request("https://cloud.kai.com/api/auth/kai/start?returnTo=%2Fsupply"), {
+    env,
+    now,
+    fetcher: async (url) => {
+      assert.equal(String(url), KAI_IDENTITY_MODERN_DISCOVERY);
+      return Response.json(metadata);
+    },
+  });
+  const authorization = new URL(started.location);
+  const state = authorization.searchParams.get("state");
+  const nonce = authorization.searchParams.get("nonce");
+  assert.equal(authorization.searchParams.get("scope"), "openid profile email");
+  assert.equal(authorization.searchParams.get("code_challenge_method"), "S256");
+
+  const keyPair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+  const publicJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+  publicJwk.kid = "modern-key";
+  publicJwk.use = "sig";
+  publicJwk.alg = "EdDSA";
+  const header = encode({ alg: "EdDSA", kid: "modern-key", typ: "JWT" });
+  const claims = encode({ iss: KAI_IDENTITY_MODERN_ISSUER, aud: env.KAI_ACCOUNT_OIDC_CLIENT_ID, sub: "modern-cloud-user", nonce, iat: Math.floor(now.getTime() / 1000), exp: Math.floor(now.getTime() / 1000) + 300 });
+  const signature = new Uint8Array(await crypto.subtle.sign({ name: "Ed25519" }, keyPair.privateKey, encoder.encode(`${header}.${claims}`)));
+  const idToken = `${header}.${claims}.${Buffer.from(signature).toString("base64url")}`;
+  const fetcher = async (url, init = {}) => {
+    if (String(url) === KAI_IDENTITY_MODERN_DISCOVERY) return Response.json(metadata);
+    if (String(url) === metadata.token_endpoint) {
+      const headers = new Headers(init.headers);
+      assert.equal(headers.get("authorization"), `Basic ${Buffer.from(`${env.KAI_ACCOUNT_OIDC_CLIENT_ID}:${env.KAI_ACCOUNT_OIDC_CLIENT_SECRET}`).toString("base64")}`);
+      const body = new URLSearchParams(init.body);
+      assert.equal(body.get("client_id"), null);
+      assert.equal(body.get("code"), "modern-code");
+      assert.ok(body.get("code_verifier"));
+      return Response.json({ access_token: "modern-access-token", token_type: "Bearer", id_token: idToken });
+    }
+    if (String(url) === metadata.jwks_uri) return Response.json({ keys: [publicJwk] });
+    if (String(url) === metadata.userinfo_endpoint) return Response.json({ sub: "modern-cloud-user", name: "Modern User", email: "modern@example.com", email_verified: true });
+    throw new Error(`unexpected request ${url}`);
+  };
+  const store = await createSqliteAccountAuthStore(":memory:");
+  const callback = new Request(`https://cloud.kai.com/api/auth/kai/callback?code=modern-code&state=${encodeURIComponent(state)}&iss=${encodeURIComponent(KAI_IDENTITY_MODERN_ISSUER)}`, {
+    headers: { cookie: started.transactionCookie.split(";", 1)[0] },
+  });
+  const completed = await completeKaiIdentityLogin(callback, { env, now, fetcher, store });
+  assert.equal(completed.returnTo, "/supply");
+  assert.equal(completed.issued.context.account.primaryEmail, "modern@example.com");
+  assert.equal(completed.issued.context.authMethod, "KAI_IDENTITY_OIDC");
+  store.close();
+});
+
+test("modern KAI Identity rejects cross-origin Discovery endpoints and unapproved issuers", async () => {
+  const env = {
+    NODE_ENV: "production",
+    KAI_PUBLIC_ORIGIN: "https://cloud.kai.com",
+    KAI_ACCOUNT_OIDC_ISSUER: KAI_IDENTITY_MODERN_ISSUER,
+    KAI_ACCOUNT_OIDC_CLIENT_ID: "cloud-web-client-2026",
+    KAI_ACCOUNT_OIDC_CLIENT_SECRET: "modern-client-secret-0000000000000000",
+    KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: "modern-transaction-secret-000000000000000000000000",
+  };
+  const poisoned = {
+    issuer: KAI_IDENTITY_MODERN_ISSUER,
+    authorization_endpoint: `${KAI_IDENTITY_MODERN_ISSUER}/oauth2/authorize`,
+    token_endpoint: "https://attacker.example/token",
+    jwks_uri: `${KAI_IDENTITY_MODERN_ISSUER}/jwks`,
+    userinfo_endpoint: `${KAI_IDENTITY_MODERN_ISSUER}/oauth2/userinfo`,
+    id_token_signing_alg_values_supported: ["EdDSA"],
+    token_endpoint_auth_methods_supported: ["client_secret_basic"],
+  };
+  await assert.rejects(beginKaiIdentityLogin(new Request("https://cloud.kai.com/api/auth/kai/start"), {
+    env,
+    fetcher: async () => Response.json(poisoned),
+  }), (error) => error instanceof AccountAuthError && error.code === "OIDC_DISCOVERY_INVALID");
+  await assert.rejects(beginKaiIdentityLogin(new Request("https://cloud.kai.com/api/auth/kai/start"), {
+    env: { ...env, KAI_ACCOUNT_OIDC_ISSUER: "https://attacker.example" },
+    fetcher: async () => Response.json(poisoned),
+  }), (error) => error instanceof AccountAuthError && error.code === "KAI_IDENTITY_NOT_CONFIGURED");
 });
 
 test("KAI Identity readiness validates Discovery without following redirects", async () => {

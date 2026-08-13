@@ -4,6 +4,9 @@ import { getAccountAuthStore, type AccountAuthStore } from "./account-auth-store
 export const KAI_IDENTITY_ISSUER = "https://account.kai.com/connect";
 export const KAI_IDENTITY_DISCOVERY = `${KAI_IDENTITY_ISSUER}/.well-known/openid-configuration`;
 export const KAI_IDENTITY_SCOPES = "openid kai:name email";
+export const KAI_IDENTITY_MODERN_ISSUER = "https://auth.kai.com/api/auth";
+export const KAI_IDENTITY_MODERN_DISCOVERY = `${KAI_IDENTITY_MODERN_ISSUER}/.well-known/openid-configuration`;
+export const KAI_IDENTITY_MODERN_SCOPES = "openid profile email";
 const TRANSACTION_MAX_AGE_SECONDS = 10 * 60;
 const SECURE_TRANSACTION_COOKIE = "__Host-kai_oidc_transaction";
 const DEVELOPMENT_TRANSACTION_COOKIE = "kai_oidc_transaction_dev";
@@ -25,6 +28,15 @@ type OidcMetadata = Readonly<{
   token_endpoint: string;
   jwks_uri: string;
   userinfo_endpoint: string;
+  id_token_signing_alg_values_supported?: readonly string[];
+  token_endpoint_auth_methods_supported?: readonly string[];
+}>;
+
+type OidcProviderConfiguration = Readonly<{
+  issuer: string;
+  discovery: string;
+  scopes: string;
+  clientSecret?: string;
 }>;
 
 export type KaiIdentityStart = Readonly<{ location: string; transactionCookie: string }>;
@@ -36,6 +48,7 @@ export type KaiIdentityDiscoveryProbe = Readonly<{
 }>;
 
 let discoveryProbeCache: Readonly<{
+  key: string;
   expiresAt: number;
   result: Promise<KaiIdentityDiscoveryProbe>;
 }> | null = null;
@@ -96,11 +109,39 @@ export function clearKaiIdentityTransactionCookie(request: Request, env?: Enviro
   return transactionCookie(request, "", 0, env);
 }
 
+function providerConfiguration(env: Environment): OidcProviderConfiguration {
+  const issuer = env.KAI_ACCOUNT_OIDC_ISSUER?.trim() || KAI_IDENTITY_ISSUER;
+  if (issuer !== KAI_IDENTITY_ISSUER && issuer !== KAI_IDENTITY_MODERN_ISSUER) {
+    throw new AccountAuthError("KAI_IDENTITY_NOT_CONFIGURED", 503, "KAI 统一账户签发方不在允许列表中。");
+  }
+  const defaultScopes = issuer === KAI_IDENTITY_MODERN_ISSUER ? KAI_IDENTITY_MODERN_SCOPES : KAI_IDENTITY_SCOPES;
+  const scopes = env.KAI_ACCOUNT_OIDC_SCOPES?.trim().replace(/\s+/gu, " ") || defaultScopes;
+  const scopeList = scopes.split(" ");
+  if (!/^[A-Za-z0-9:._-]+(?: [A-Za-z0-9:._-]+)*$/u.test(scopes)
+    || scopeList.length > 12
+    || new Set(scopeList).size !== scopeList.length
+    || !scopeList.includes("openid")
+    || !scopeList.includes("email")) {
+    throw new AccountAuthError("KAI_IDENTITY_NOT_CONFIGURED", 503, "KAI 统一账户授权范围配置无效。");
+  }
+  const clientSecret = env.KAI_ACCOUNT_OIDC_CLIENT_SECRET?.trim();
+  if (clientSecret && (new TextEncoder().encode(clientSecret).byteLength < 16 || new TextEncoder().encode(clientSecret).byteLength > 2048)) {
+    throw new AccountAuthError("KAI_IDENTITY_NOT_CONFIGURED", 503, "KAI 统一账户客户端密钥配置无效。");
+  }
+  return {
+    issuer,
+    discovery: `${issuer}/.well-known/openid-configuration`,
+    scopes,
+    ...(clientSecret ? { clientSecret } : {}),
+  };
+}
+
 function oidcConfiguration(env: Environment) {
+  const provider = providerConfiguration(env);
   const clientId = env.KAI_ACCOUNT_OIDC_CLIENT_ID?.trim();
   const secret = env.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET?.trim();
   const publicOrigin = env.KAI_PUBLIC_ORIGIN?.trim();
-  if (!clientId || !/^kaic_[A-Za-z0-9_-]{8,200}$/u.test(clientId)) {
+  if (!clientId || !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/u.test(clientId)) {
     throw new AccountAuthError("KAI_IDENTITY_NOT_CONFIGURED", 503, "KAI 统一账户尚未完成应用登记。");
   }
   if (!secret || new TextEncoder().encode(secret).byteLength < 32) {
@@ -111,7 +152,11 @@ function oidcConfiguration(env: Environment) {
   if (!origin.startsWith("https://") && env.NODE_ENV === "production") {
     throw new AccountAuthError("KAI_IDENTITY_NOT_CONFIGURED", 503, "生产统一登录必须使用 HTTPS。");
   }
-  return { clientId, secret, redirectUri: `${origin}/api/auth/kai/callback` };
+  return { ...provider, clientId, secret, redirectUri: `${origin}/api/auth/kai/callback` };
+}
+
+export function isKaiIdentityConfigured(env: Environment = environment()) {
+  try { oidcConfiguration(env); return true; } catch { return false; }
 }
 
 async function transactionKey(secret: string) {
@@ -153,10 +198,41 @@ async function fetchJson(fetcher: typeof fetch, url: string, init: RequestInit |
   return asJsonObject(payload, code);
 }
 
-async function readMetadata(fetcher: typeof fetch, timeoutMs = 4_000): Promise<OidcMetadata> {
+function metadataEndpoint(value: unknown, issuer: string) {
+  if (typeof value !== "string") throw new AccountAuthError("OIDC_DISCOVERY_INVALID", 503, "KAI 统一账户元数据校验失败。");
+  let endpoint: URL;
+  try { endpoint = new URL(value); } catch { throw new AccountAuthError("OIDC_DISCOVERY_INVALID", 503, "KAI 统一账户元数据校验失败。"); }
+  const issuerUrl = new URL(issuer);
+  if (endpoint.protocol !== "https:" || endpoint.origin !== issuerUrl.origin || endpoint.username || endpoint.password || endpoint.hash) {
+    throw new AccountAuthError("OIDC_DISCOVERY_INVALID", 503, "KAI 统一账户元数据校验失败。");
+  }
+  return endpoint.toString();
+}
+
+function optionalStringArray(value: unknown) {
+  return Array.isArray(value) && value.every((item) => typeof item === "string") ? value as string[] : undefined;
+}
+
+function expectedProviderEndpoints(issuer: string) {
+  return issuer === KAI_IDENTITY_MODERN_ISSUER
+    ? {
+        authorization_endpoint: `${issuer}/oauth2/authorize`,
+        token_endpoint: `${issuer}/oauth2/token`,
+        jwks_uri: `${issuer}/jwks`,
+        userinfo_endpoint: `${issuer}/oauth2/userinfo`,
+      }
+    : {
+        authorization_endpoint: `${issuer}/auth`,
+        token_endpoint: `${issuer}/token`,
+        jwks_uri: `${issuer}/jwks`,
+        userinfo_endpoint: `${issuer}/me`,
+      };
+}
+
+async function readMetadata(fetcher: typeof fetch, provider: OidcProviderConfiguration, timeoutMs = 4_000): Promise<OidcMetadata> {
   let response: Response;
   try {
-    response = await fetcher(KAI_IDENTITY_DISCOVERY, {
+    response = await fetcher(provider.discovery, {
       cache: "no-store",
       redirect: "manual",
       headers: { accept: "application/json" },
@@ -172,21 +248,38 @@ async function readMetadata(fetcher: typeof fetch, timeoutMs = 4_000): Promise<O
   if (!response.ok || !payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new AccountAuthError("OIDC_DISCOVERY_INVALID", 503, "KAI 统一账户元数据校验失败。");
   }
-  const expected: OidcMetadata = {
-    issuer: KAI_IDENTITY_ISSUER,
-    authorization_endpoint: `${KAI_IDENTITY_ISSUER}/auth`,
-    token_endpoint: `${KAI_IDENTITY_ISSUER}/token`,
-    jwks_uri: `${KAI_IDENTITY_ISSUER}/jwks`,
-    userinfo_endpoint: `${KAI_IDENTITY_ISSUER}/me`,
+  const object = payload as JsonObject;
+  if (object.issuer !== provider.issuer) throw new AccountAuthError("OIDC_DISCOVERY_INVALID", 503, "KAI 统一账户元数据校验失败。");
+  const signingAlgorithms = optionalStringArray(object.id_token_signing_alg_values_supported);
+  const authenticationMethods = optionalStringArray(object.token_endpoint_auth_methods_supported);
+  if ((provider.issuer === KAI_IDENTITY_MODERN_ISSUER && !signingAlgorithms)
+    || (signingAlgorithms && !signingAlgorithms.some((algorithm) => algorithm === "ES256" || algorithm === "EdDSA"))) {
+    throw new AccountAuthError("OIDC_DISCOVERY_INVALID", 503, "KAI 统一账户不支持 Cloud 所需的签名算法。");
+  }
+  const requiredAuthenticationMethod = provider.clientSecret ? "client_secret_basic" : "none";
+  if ((provider.issuer === KAI_IDENTITY_MODERN_ISSUER && !authenticationMethods)
+    || (authenticationMethods && !authenticationMethods.includes(requiredAuthenticationMethod))) {
+    throw new AccountAuthError("OIDC_DISCOVERY_INVALID", 503, "KAI 统一账户客户端认证方式不匹配。");
+  }
+  const expectedEndpoints = expectedProviderEndpoints(provider.issuer);
+  for (const [field, expected] of Object.entries(expectedEndpoints)) {
+    if (metadataEndpoint(object[field], provider.issuer) !== expected) throw new AccountAuthError("OIDC_DISCOVERY_INVALID", 503, "KAI 统一账户元数据校验失败。");
+  }
+  return {
+    issuer: provider.issuer,
+    ...expectedEndpoints,
+    ...(signingAlgorithms ? { id_token_signing_alg_values_supported: signingAlgorithms } : {}),
+    ...(authenticationMethods ? { token_endpoint_auth_methods_supported: authenticationMethods } : {}),
   };
-  for (const [key, value] of Object.entries(expected)) if (payload[key] !== value) throw new AccountAuthError("OIDC_DISCOVERY_INVALID", 503, "KAI 统一账户元数据校验失败。");
-  return expected;
 }
 
-export async function probeKaiIdentityDiscovery(options: { fetcher?: typeof fetch; timeoutMs?: number } = {}): Promise<KaiIdentityDiscoveryProbe> {
+export async function probeKaiIdentityDiscovery(options: { env?: Environment; fetcher?: typeof fetch; timeoutMs?: number } = {}): Promise<KaiIdentityDiscoveryProbe> {
+  let provider: OidcProviderConfiguration;
+  try { provider = providerConfiguration(options.env ?? environment()); }
+  catch { return { available: false, probe: "read-only", errorCode: "OIDC_DISCOVERY_INVALID" }; }
   const check = async (): Promise<KaiIdentityDiscoveryProbe> => {
     try {
-      await readMetadata(options.fetcher ?? fetch, options.timeoutMs ?? 2_500);
+      await readMetadata(options.fetcher ?? fetch, provider, options.timeoutMs ?? 2_500);
       return { available: true, probe: "read-only" };
     } catch (error) {
       const errorCode = error instanceof AccountAuthError && ["KAI_IDENTITY_UNAVAILABLE", "OIDC_DISCOVERY_REDIRECT", "OIDC_DISCOVERY_INVALID"].includes(error.code)
@@ -197,9 +290,10 @@ export async function probeKaiIdentityDiscovery(options: { fetcher?: typeof fetc
   };
   if (options.fetcher) return check();
   const now = Date.now();
-  if (discoveryProbeCache && discoveryProbeCache.expiresAt > now) return discoveryProbeCache.result;
+  const key = `${provider.discovery}|${provider.clientSecret ? "client_secret_basic" : "none"}`;
+  if (discoveryProbeCache && discoveryProbeCache.key === key && discoveryProbeCache.expiresAt > now) return discoveryProbeCache.result;
   const result = check();
-  discoveryProbeCache = { expiresAt: now + DISCOVERY_PROBE_CACHE_MS, result };
+  discoveryProbeCache = { key, expiresAt: now + DISCOVERY_PROBE_CACHE_MS, result };
   return result;
 }
 
@@ -222,22 +316,33 @@ function parseJwt(value: unknown) {
 
 async function validateIdToken(value: unknown, input: { metadata: OidcMetadata; clientId: string; nonce: string; now: Date; fetcher: typeof fetch }) {
   const token = parseJwt(value);
-  if (token.header.alg !== "ES256" || typeof token.header.kid !== "string") throw new AccountAuthError("OIDC_ID_TOKEN_INVALID", 401, "统一登录令牌算法无效。");
+  const algorithm = token.header.alg;
+  if ((algorithm !== "ES256" && algorithm !== "EdDSA") || typeof token.header.kid !== "string") throw new AccountAuthError("OIDC_ID_TOKEN_INVALID", 401, "统一登录令牌算法无效。");
+  if (input.metadata.id_token_signing_alg_values_supported && !input.metadata.id_token_signing_alg_values_supported.includes(algorithm)) {
+    throw new AccountAuthError("OIDC_ID_TOKEN_INVALID", 401, "统一登录令牌算法无效。");
+  }
   const jwks = await fetchJson(input.fetcher, input.metadata.jwks_uri, { cache: "no-store", headers: { accept: "application/json" } }, "OIDC_JWKS_INVALID");
   if (!Array.isArray(jwks.keys)) throw new AccountAuthError("OIDC_JWKS_INVALID", 503, "统一登录签名密钥无效。");
   const jwk = jwks.keys.find((candidate) => candidate && typeof candidate === "object" && (candidate as JsonObject).kid === token.header.kid) as JsonWebKey | undefined;
-  if (!jwk || jwk.kty !== "EC" || jwk.crv !== "P-256") throw new AccountAuthError("OIDC_JWKS_INVALID", 503, "统一登录签名密钥无效。");
+  if (!jwk || (algorithm === "ES256" ? jwk.kty !== "EC" || jwk.crv !== "P-256" : jwk.kty !== "OKP" || jwk.crv !== "Ed25519")) {
+    throw new AccountAuthError("OIDC_JWKS_INVALID", 503, "统一登录签名密钥无效。");
+  }
   let verified = false;
   try {
-    const key = await crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
-    verified = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, token.signature, token.signingInput);
+    if (algorithm === "ES256") {
+      const key = await crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+      verified = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, token.signature, token.signingInput);
+    } else {
+      const key = await crypto.subtle.importKey("jwk", jwk, { name: "Ed25519" }, false, ["verify"]);
+      verified = await crypto.subtle.verify({ name: "Ed25519" }, key, token.signature, token.signingInput);
+    }
   } catch { verified = false; }
   if (!verified) throw new AccountAuthError("OIDC_ID_TOKEN_INVALID", 401, "统一登录令牌签名无效。");
   const claims = token.claims;
   const audience = claims.aud;
   const audienceValid = audience === input.clientId || (Array.isArray(audience) && audience.length === 1 && audience[0] === input.clientId);
   const nowSeconds = Math.floor(input.now.getTime() / 1_000);
-  if (claims.iss !== KAI_IDENTITY_ISSUER || !audienceValid || claims.nonce !== input.nonce || typeof claims.sub !== "string" || !claims.sub) throw new AccountAuthError("OIDC_ID_TOKEN_INVALID", 401, "统一登录令牌校验失败。");
+  if (claims.iss !== input.metadata.issuer || !audienceValid || claims.nonce !== input.nonce || typeof claims.sub !== "string" || !claims.sub) throw new AccountAuthError("OIDC_ID_TOKEN_INVALID", 401, "统一登录令牌校验失败。");
   if (typeof claims.exp !== "number" || claims.exp <= nowSeconds - 30 || claims.exp > nowSeconds + 10 * 60 || typeof claims.iat !== "number" || claims.iat > nowSeconds + 30) throw new AccountAuthError("OIDC_ID_TOKEN_INVALID", 401, "统一登录令牌已过期或时间无效。");
   return claims;
 }
@@ -245,7 +350,7 @@ async function validateIdToken(value: unknown, input: { metadata: OidcMetadata; 
 export async function beginKaiIdentityLogin(request: Request, options: { env?: Environment; fetcher?: typeof fetch; now?: Date } = {}): Promise<KaiIdentityStart> {
   const env = options.env ?? environment();
   const config = oidcConfiguration(env);
-  const metadata = await readMetadata(options.fetcher ?? fetch);
+  const metadata = await readMetadata(options.fetcher ?? fetch, config);
   const verifier = randomBase64Url(32);
   const challenge = base64UrlEncode(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))));
   const transaction: OidcTransaction = {
@@ -259,7 +364,7 @@ export async function beginKaiIdentityLogin(request: Request, options: { env?: E
     redirect_uri: config.redirectUri,
     response_type: "code",
     response_mode: "query",
-    scope: KAI_IDENTITY_SCOPES,
+    scope: config.scopes,
     state: transaction.state,
     nonce: transaction.nonce,
     code_challenge: challenge,
@@ -280,15 +385,21 @@ export async function completeKaiIdentityLogin(request: Request, options: { env?
   const state = url.searchParams.get("state");
   if (!state || state !== transaction.state) throw new AccountAuthError("OIDC_STATE_INVALID", 401, "登录状态校验失败，请重新登录。");
   if (url.searchParams.has("error")) throw new AccountAuthError("OIDC_AUTHORIZATION_DENIED", 401, "登录或授权未完成。");
-  if (url.searchParams.get("iss") && url.searchParams.get("iss") !== KAI_IDENTITY_ISSUER) throw new AccountAuthError("OIDC_ISSUER_INVALID", 401, "登录签发方校验失败。");
+  if (url.searchParams.get("iss") && url.searchParams.get("iss") !== config.issuer) throw new AccountAuthError("OIDC_ISSUER_INVALID", 401, "登录签发方校验失败。");
   const code = url.searchParams.get("code");
   if (!code || code.length > 2048) throw new AccountAuthError("OIDC_RESPONSE_INVALID", 401, "统一登录响应无效，请重新登录。");
   const fetcher = options.fetcher ?? fetch;
-  const metadata = await readMetadata(fetcher);
+  const metadata = await readMetadata(fetcher, config);
+  const tokenHeaders = new Headers({ accept: "application/json", "content-type": "application/x-www-form-urlencoded" });
+  const tokenBody = new URLSearchParams({ grant_type: "authorization_code", redirect_uri: config.redirectUri, code, code_verifier: transaction.verifier });
+  if (config.clientSecret) {
+    const formEncode = (value: string) => new URLSearchParams([["", value]]).toString().slice(1);
+    tokenHeaders.set("authorization", `Basic ${Buffer.from(`${formEncode(config.clientId)}:${formEncode(config.clientSecret)}`).toString("base64")}`);
+  } else tokenBody.set("client_id", config.clientId);
   const tokenPayload = await fetchJson(fetcher, metadata.token_endpoint, {
     method: "POST",
-    headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "authorization_code", client_id: config.clientId, redirect_uri: config.redirectUri, code, code_verifier: transaction.verifier }),
+    headers: tokenHeaders,
+    body: tokenBody,
   }, "OIDC_TOKEN_EXCHANGE_FAILED");
   const claims = await validateIdToken(tokenPayload.id_token, { metadata, clientId: config.clientId, nonce: transaction.nonce, now, fetcher });
   if (typeof tokenPayload.access_token !== "string" || !tokenPayload.access_token) throw new AccountAuthError("OIDC_TOKEN_EXCHANGE_FAILED", 401, "统一登录令牌无效。");
@@ -296,7 +407,7 @@ export async function completeKaiIdentityLogin(request: Request, options: { env?
   if (userinfo.sub !== claims.sub || userinfo.email_verified !== true || typeof userinfo.email !== "string" || !userinfo.email.includes("@")) throw new AccountAuthError("OIDC_USERINFO_INVALID", 401, "统一账户没有可用的已验证邮箱。");
   const store = options.store ?? await getAccountAuthStore();
   const identity = await store.resolveOrCreateKaiIdentity({
-    issuer: KAI_IDENTITY_ISSUER,
+    issuer: config.issuer,
     subject: String(claims.sub),
     displayName: typeof userinfo.name === "string" && userinfo.name.trim() ? userinfo.name.trim().slice(0, 120) : userinfo.email.split("@")[0].slice(0, 120),
     verifiedEmail: userinfo.email.trim().toLowerCase(),

@@ -13,7 +13,7 @@ import { getCardHourStore } from "./card-hour-store.ts";
 import { evaluateHostingV2Capability } from "./hosting-v2-readiness.ts";
 import { isHostingV2ConfigurationEnabled } from "./hosting-v2-feature.ts";
 import { getHostingV2Store } from "./hosting-v2-store.ts";
-import { probeKaiIdentityDiscovery } from "./kai-identity-oidc.ts";
+import { isKaiIdentityConfigured, probeKaiIdentityDiscovery } from "./kai-identity-oidc.ts";
 import { readMarketSnapshot } from "./market-snapshot.ts";
 import { assertMarketplaceSecurityConfiguration, createMarketplaceReadinessStore } from "./marketplace-store.ts";
 import { sshProvisionerReadiness } from "./ssh-provisioner.ts";
@@ -50,7 +50,9 @@ function requiredCapability(keys:readonly string[],environment:Environment,extra
 function capabilityReadiness(environment:Environment){
   const identityExtra:string[]=[];
   if((environment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET?.trim().length??0)>0&&(environment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET?.trim().length??0)<32)identityExtra.push("KAI_ACCOUNT_OIDC_TRANSACTION_SECRET(>=32 chars)");
-  if(environment.KAI_ACCOUNT_OIDC_CLIENT_ID?.trim()&&!/^kaic_[A-Za-z0-9_-]{8,200}$/u.test(environment.KAI_ACCOUNT_OIDC_CLIENT_ID.trim()))identityExtra.push("KAI_ACCOUNT_OIDC_CLIENT_ID(valid Public Client ID)");
+  if(environment.KAI_ACCOUNT_OIDC_CLIENT_ID?.trim()&&!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/u.test(environment.KAI_ACCOUNT_OIDC_CLIENT_ID.trim()))identityExtra.push("KAI_ACCOUNT_OIDC_CLIENT_ID(valid Client ID)");
+  if(environment.KAI_ACCOUNT_OIDC_CLIENT_SECRET?.trim()&&(environment.KAI_ACCOUNT_OIDC_CLIENT_SECRET?.trim().length??0)<16)identityExtra.push("KAI_ACCOUNT_OIDC_CLIENT_SECRET(>=16 chars)");
+  if(environment.KAI_ACCOUNT_OIDC_CLIENT_ID?.trim()&&environment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET?.trim()&&!isKaiIdentityConfigured(environment))identityExtra.push("KAI_ACCOUNT_OIDC_PROVIDER(valid issuer, scopes and client authentication)");
   const alipay=alipayReadiness(environment),ssh=sshProvisionerReadiness(environment);
   return{
     adminPasswordLogin:requiredCapability(["KAI_ADMIN_USERNAME","KAI_ADMIN_PASSWORD_HASH"],environment,
@@ -68,7 +70,7 @@ export async function evaluateReadiness(){
   const checkedAt=new Date().toISOString();
   const configuredCapabilities=capabilityReadiness(environment);
   const identityProbePromise=configuredCapabilities.kaiIdentityLogin.available
-    ? probeKaiIdentityDiscovery()
+    ? probeKaiIdentityDiscovery({env:environment})
     : Promise.resolve(null);
   const hostingV2StoragePromise=isHostingV2ConfigurationEnabled(environment)?(async()=>{
     try{
