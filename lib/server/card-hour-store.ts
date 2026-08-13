@@ -9,7 +9,15 @@ export type CardHourDashboard = Readonly<{
   buybacks: readonly Record<string, unknown>[];
   income: Readonly<{ rentalPendingMicros: number; rentalVestedMicros: number; commissionPendingMicros: number; commissionVestedMicros: number }>;
   referral: Readonly<{ code: string; invitedOrganizations: number }>;
-  ledger: readonly Record<string, unknown>[];
+  ledger: readonly Readonly<{
+    operation: string;
+    business_key: string;
+    account_code: "USER_AVAILABLE" | "USER_HELD";
+    side: "DEBIT" | "CREDIT";
+    amount_micros: number;
+    balance_after_micros: number;
+    created_at: string;
+  }>[];
 }>;
 
 export interface CardHourStore {

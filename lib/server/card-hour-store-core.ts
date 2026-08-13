@@ -72,7 +72,7 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       const payments = await db.all<Row>("SELECT * FROM card_hour_order_payments WHERE organization_id=? ORDER BY created_at DESC LIMIT 20", [organizationId]);
       const buybacks = await db.all<Row>("SELECT * FROM card_hour_buyback_orders WHERE organization_id=? ORDER BY created_at DESC LIMIT 20", [organizationId]);
       const incomeRows = await db.all<Row>("SELECT income_type,status,COALESCE(SUM(amount_micros),0) AS amount_micros FROM card_hour_income_accruals WHERE organization_id=? GROUP BY income_type,status", [organizationId]);
-      const ledger = await db.all<Row>(`SELECT b.operation,b.business_key,e.side,e.amount_micros,e.balance_after_micros,e.created_at
+      const ledger = await db.all<CardHourDashboard["ledger"][number]>(`SELECT b.operation,b.business_key,e.account_code,e.side,e.amount_micros,e.balance_after_micros,e.created_at
         FROM card_hour_ledger_entries e JOIN card_hour_ledger_batches b ON b.id=e.batch_id
         WHERE e.organization_id=? ORDER BY e.created_at DESC LIMIT 30`, [organizationId]);
       const invited = await db.first<{ count: number }>("SELECT COUNT(*) AS count FROM card_hour_referral_attributions WHERE referrer_organization_id=?", [organizationId]);

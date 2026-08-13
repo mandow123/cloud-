@@ -98,6 +98,10 @@ test("hosting order hold settles actual usage once and vests rental and referral
     const supplierDashboard = await store.dashboard(supplier.activeOrganization.id, "2026-08-11T01:04:01Z");
     const referrerDashboard = await store.dashboard(referrer.activeOrganization.id, "2026-08-11T01:04:01Z");
     assert.deepEqual(buyerDashboard.balance, { availableMicros: 4_000_000, heldMicros: 0, lifetimeTopupMicros: 10_000_000, lifetimeSpentMicros: 6_000_000 });
+    assert.deepEqual({ ...buyerDashboard.ledger.find((item) => item.business_key === "order:HOSTING_V2:hosting-contract-1") }, {
+      operation: "ORDER_CAPTURE", business_key: "order:HOSTING_V2:hosting-contract-1", account_code: "USER_HELD",
+      side: "DEBIT", amount_micros: 6_000_000, balance_after_micros: 0, created_at: "2026-08-11T01:04:00Z",
+    });
     assert.equal(supplierDashboard.balance.availableMicros, 5_000_000);
     assert.equal(supplierDashboard.income.rentalVestedMicros, 5_000_000);
     assert.equal(referrerDashboard.balance.availableMicros, 300_000);
