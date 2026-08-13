@@ -10,6 +10,16 @@ import styles from "./supply-console.module.css";
 const HOST_AGENT_VERSION = "1.9.5";
 const HOST_AGENT_ARCHIVE = `kai-host-agent-${HOST_AGENT_VERSION}.tgz`;
 
+function agentRegistrationEndpoint() {
+  if (typeof window === "undefined") return "/api/v2/agent/register";
+  const origin = new URL(window.location.origin);
+  if (origin.protocol === "http:" && ["127.0.0.1", "localhost"].includes(origin.hostname)) {
+    origin.hostname = "supplier.localhost";
+  }
+  origin.pathname = "/api/v2/agent/register";
+  return origin.toString();
+}
+
 type PairingDevice = Pick<HostingDevice, "id" | "displayName" | "agentVersion" | "status" | "verificationStatus" | "lastSequence" | "lastSeenAt"> & Readonly<{ gpuModel: HostingDevice["inventory"]["gpuModel"] }>;
 type PairingStatus = Readonly<{ challengeId: string; expiresAt: string; consumedAt: string | null; device: PairingDevice | null }>;
 
@@ -74,7 +84,7 @@ export function SupplyResourceRegistration() {
 
   const pairingBundle = useMemo(() => challenge ? JSON.stringify({
     version: 1,
-    registerEndpoint: typeof window === "undefined" ? "/api/v2/agent/register" : `${window.location.origin}/api/v2/agent/register`,
+    registerEndpoint: agentRegistrationEndpoint(),
     challengeId: challenge.id,
     nonce: challenge.nonce,
     minimumAgentVersion: challenge.minimumAgentVersion,

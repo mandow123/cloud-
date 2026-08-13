@@ -46,6 +46,8 @@ test("resource registration issues a short-lived server challenge without client
   assert.match(source, /policy\?\.approvedImages\.length/u);
   assert.match(source, /\/etc\/kai-host-actuator\.env/u);
   assert.match(source, /challengeId: challenge\.id/u);
+  assert.match(source, /registerEndpoint: agentRegistrationEndpoint\(\)/u);
+  assert.match(source, /origin\.hostname = "supplier\.localhost"/u);
   assert.match(source, /nonce: challenge\.nonce/u);
   assert.match(source, /minimumAgentVersion: challenge\.minimumAgentVersion/u);
   assert.match(source, /expiresAt: challenge\.expiresAt/u);
