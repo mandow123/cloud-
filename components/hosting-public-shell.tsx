@@ -6,10 +6,10 @@ export const hostingPublicStyles = styles;
 
 const routes = [
   { href: "/hosting", label: "总览" },
-  { href: "/hosting/personal-gpu", label: "个人 GPU" },
-  { href: "/hosting/cloud", label: "云资源接入" },
-  { href: "/hosting/earnings", label: "收益与结算" },
-  { href: "/hosting/partners", label: "供应商合作" },
+  { href: "/hosting/personal-gpu", label: "上架 GPU" },
+  { href: "/hosting/cloud", label: "云连接器" },
+  { href: "/hosting/earnings", label: "收益账本" },
+  { href: "/hosting/partners", label: "供应商审核" },
 ] as const;
 
 export function HostingPublicShell({

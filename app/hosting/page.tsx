@@ -17,42 +17,17 @@ export default function HostingPage() {
   return (
     <HostingPublicShell
       activePath="/hosting"
-      eyebrow="KAI Hosting · Real compute network"
-      title="让算力抵达需要它的时刻。"
-      summary="Rent verified compute. Host real machines. Settle every second in KAI 标准卡时。"
+      eyebrow="KAI HOSTING / VERIFIED COMPUTE NETWORK"
+      title="Host compute. Earn card-hours. / 上架真实算力，获得卡时收益。"
+      summary="真实设备、可冻结报价、可连接实例、按秒计量和可验证清理，全部进入同一条订单链路。"
     >
       <HostingLegacyHashRedirect />
       <HostingLaunchpad />
 
       <section className={styles.section}>
         <SectionHeader
-          index="01 / WORKSPACES"
-          title="每一步都有独立工作面"
-          lead="不是页内锚点，也不是静态介绍。每个入口都连接到对应状态和下一步操作。"
-        />
-        <div className={styles.cardGrid}>
-          {[
-            ["01", "个人 GPU", "网络预检、Agent 安装、验真与第一笔订单。", "/hosting/personal-gpu", "打开接入页"],
-            ["02", "云资源接入", "云主机、IDC 与集群库存连接器及开放状态。", "/hosting/cloud", "打开连接器页"],
-            ["03", "收益与结算", "卡时计量、租金、佣金和不可变账本口径。", "/hosting/earnings", "打开收益页"],
-            ["04", "供应商合作", "企业协议、权属审核和邀请制接入进度。", "/hosting/partners", "打开合作页"],
-            ["05", "供应控制台", "资源、挂牌、订单、异常和收益的操作中心。", "/login?returnTo=%2Fsupply", "进入控制台"],
-            ["06", "Host Agent 教程", "从预检到配对、连接验证与安全清理。", "/guides/host-agent", "打开操作手册"],
-          ].map(([code, title, description, href, linkLabel]) => (
-            <article className={styles.card} key={code}>
-              <span className={styles.cardCode}>{code}</span>
-              <h3>{title}</h3>
-              <p>{description}</p>
-              <Link href={href}>{linkLabel} →</Link>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className={styles.section}>
-        <SectionHeader
-          index="02 / STATE MACHINE"
-          title="一条订单，只能按证据向前走"
+          index="CONTRACT STATE MACHINE / 合同状态机"
+          title="每一阶段都由前后端共同确认"
           lead="成交时冻结规格与费率；交付、计量、验收和清理都由后端状态机约束。"
         />
         <ol className={styles.process}>
@@ -77,12 +52,12 @@ export default function HostingPage() {
 
       <aside className={styles.notice}>
         <div>
-          <h2>从一台真实机器开始</h2>
-          <p>首期只接受单张 RTX 4090 / H100。公开充值、卡时回购和未经生产验收的连接器继续保持关闭。</p>
+          <h2>首期只开放单张 RTX 4090 / H100</h2>
+          <p>先完成一台机器、一份报价、一笔三分钟订单和一次彻底清理。公开充值、卡时回购和未验收连接器继续关闭。</p>
         </div>
         <div className={styles.actions}>
-          <Link className={styles.actionPrimary} href="/login?returnTo=%2Fsupply%2Fonboarding">开始供应商审核</Link>
-          <Link className={styles.actionSecondary} href="/guides/host-agent">阅读上架教程</Link>
+          <Link className={styles.actionPrimary} href="/login?returnTo=%2Fsupply%2Fonboarding">开始上架</Link>
+          <Link className={styles.actionSecondary} href="/guides/host-agent">Host Agent 教程</Link>
         </div>
       </aside>
     </HostingPublicShell>

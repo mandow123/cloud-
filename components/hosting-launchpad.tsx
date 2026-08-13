@@ -138,16 +138,17 @@ export function HostingLaunchpad() {
   const operations = readiness.operations;
   const transactionOpen = readiness.enabled && readiness.ready;
   const supplierHref = account.authenticated ? "/supply" : "/login?returnTo=%2Fsupply";
-  const supplierAction = account.authenticated ? "进入供应控制台" : "登录后开始上架";
+  const supplierOnboardingHref = account.authenticated ? "/supply/onboarding" : "/login?returnTo=%2Fsupply%2Fonboarding";
+  const earningsHref = account.authenticated ? "/supply/earnings" : "/login?returnTo=%2Fsupply%2Fearnings";
   const checkRows = Object.entries(CHECK_LABELS) as Array<[keyof typeof CHECK_LABELS, string]>;
 
   return (
     <section className={styles.launchpad} aria-labelledby="hosting-launchpad-title">
       <header className={styles.launchpadHeader}>
         <div>
-          <p className={styles.sectionIndex}>LIVE CONTROL PLANE</p>
-          <h2 id="hosting-launchpad-title">现在要租用，还是提供算力？</h2>
-          <p>两条路径共用同一份真实报价、设备证据、订单状态与卡时账本。</p>
+          <p className={styles.sectionIndex}>LIVE MARKET / 实时控制面</p>
+          <h2 id="hosting-launchpad-title">从一个真实动作开始</h2>
+          <p>租用、上架、履约与结算共用同一份设备证据、合同快照和卡时账本。</p>
         </div>
         <div className={transactionOpen && !state.localAcceptance ? styles.liveState : styles.closedState}>
           <span aria-hidden="true" />
@@ -156,27 +157,33 @@ export function HostingLaunchpad() {
       </header>
 
       <div className={styles.launchpadActions}>
-        <article className={styles.launchpadAction}>
-          <span className={styles.cardCode}>BUY · RENT</span>
-          <h3>我需要 GPU 算力</h3>
-          <p>比较经过验真的真实报价，锁定卡时后获得独立实例与临时 SSH 凭证。</p>
-          <div className={styles.actionMeta}>
-            <span><strong>{offers.length}</strong> 个可成交报价</span>
-            <span>{models.length ? models.join(" · ") : "暂无真实机器在线"}</span>
-          </div>
-          <Link className={styles.actionPrimary} href="/gpu">进入 GPU 市场</Link>
-        </article>
+        <Link className={styles.launchpadAction} href="/gpu">
+          <span className={styles.cardCode}>01 / RENT</span>
+          <div><h3>租用 GPU</h3><p>筛选验真报价，锁定卡时并启动实例。</p></div>
+          <div className={styles.actionMeta}><strong>{offers.length}</strong><span>{models.length ? models.join(" · ") : "暂无真实机器在线"}</span></div>
+          <span className={styles.actionArrow} aria-hidden="true">→</span>
+        </Link>
 
-        <article className={styles.launchpadAction}>
-          <span className={styles.cardCode}>HOST · EARN</span>
-          <h3>我有 GPU 可以上架</h3>
-          <p>完成主体审核、Agent 配对与硬件验真，再发布以 KAI 标准卡时计价的报价。</p>
-          <div className={styles.actionMeta}>
-            <span><strong>{operations?.activeAgentCount ?? 0}</strong> 台有效 Agent</span>
-            <span>{account.authenticated ? account.organization?.name ?? "当前交易主体" : "尚未登录交易主体"}</span>
-          </div>
-          <Link className={styles.actionSecondary} href={supplierHref}>{supplierAction}</Link>
-        </article>
+        <Link className={styles.launchpadAction} href={supplierOnboardingHref}>
+          <span className={styles.cardCode}>02 / ONBOARD</span>
+          <div><h3>上架一张 GPU</h3><p>完成主体审核、Agent 配对和硬件验真。</p></div>
+          <div className={styles.actionMeta}><strong>{operations?.approvedSupplierCount ?? 0}</strong><span>个已审核供应主体</span></div>
+          <span className={styles.actionArrow} aria-hidden="true">→</span>
+        </Link>
+
+        <Link className={styles.launchpadAction} href={supplierHref}>
+          <span className={styles.cardCode}>03 / OPERATE</span>
+          <div><h3>管理资源与订单</h3><p>查看设备、报价、履约、异常和清理证据。</p></div>
+          <div className={styles.actionMeta}><strong>{operations?.activeAgentCount ?? 0}</strong><span>台有效 Host Agent</span></div>
+          <span className={styles.actionArrow} aria-hidden="true">→</span>
+        </Link>
+
+        <Link className={styles.launchpadAction} href={earningsHref}>
+          <span className={styles.cardCode}>04 / SETTLE</span>
+          <div><h3>查看卡时收益</h3><p>核对租金、佣金、锁定、释放和结算账目。</p></div>
+          <div className={styles.actionMeta}><strong>{account.authenticated ? "LIVE" : "—"}</strong><span>{account.authenticated ? account.organization?.name ?? "当前交易主体" : "登录后查看"}</span></div>
+          <span className={styles.actionArrow} aria-hidden="true">→</span>
+        </Link>
       </div>
 
       <div className={styles.launchpadData}>

@@ -83,6 +83,35 @@ test("hosting public styles use the shared light and dark design tokens", () => 
   assert.match(earnings, /31\.137725 KAI 标准卡时/u);
 });
 
+test("hosting landing is a live front-to-back control plane instead of a static brochure", () => {
+  const launchpad = readFileSync("components/hosting-launchpad.tsx", "utf8");
+  for (const endpoint of ["/api/ready", "/api/v2/offers", "/api/auth/session"]) {
+    assert.match(launchpad, new RegExp(endpoint.replaceAll("/", "\\/"), "u"));
+  }
+  for (const route of [
+    "/gpu",
+    "/supply/onboarding",
+    "/supply",
+    "/supply/earnings",
+  ]) assert.match(launchpad, new RegExp(route.replaceAll("/", "\\/"), "u"));
+
+  assert.match(launchpad, /offers\.length/u);
+  assert.match(launchpad, /activeAgentCount/u);
+  assert.match(launchpad, /approvedSupplierCount/u);
+  assert.match(launchpad, /failedCleanupCount/u);
+  assert.match(launchpad, /readiness\.enabled && readiness\.ready/u);
+  assert.match(launchpad, /页面不会用模拟资源冒充真实供给/u);
+
+  const page = readFileSync("app/hosting/page.tsx", "utf8");
+  assert.match(page, /Host compute\. Earn card-hours\. \/ 上架真实算力，获得卡时收益。/u);
+  assert.doesNotMatch(page, /让算力抵达需要它的时刻|每一步都有独立工作面/u);
+
+  const css = readFileSync("components/hosting-public.module.css", "utf8");
+  assert.match(css, /\.launchpadActions\s*\{[\s\S]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/u);
+  assert.match(css, /\.launchpadAction:hover,[\s\S]*background:\s*var\(--accent-soft\)/u);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*\.launchpadActions[\s\S]*grid-template-columns:\s*1fr/u);
+});
+
 test("the configured supplier agreement has an immutable public document", () => {
   const terms = readFileSync("app/hosting/partners/terms/KAI_HOSTING_TERMS_2026_08/page.tsx", "utf8");
   assert.match(terms, /const version = "KAI_HOSTING_TERMS_2026_08"/u);
