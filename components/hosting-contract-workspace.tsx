@@ -73,14 +73,14 @@ export function HostingContractWorkspace({ contractId }: { contractId: string })
     } finally { setBusyAction(null); }
   }
 
-  if (loading) return <main className={styles.market}><div className={styles.loading}>正在读取合同、实例和计量状态…</div></main>;
-  if (!contract) return <main className={styles.market}><section className={styles.error} role="alert"><strong>无法打开租赁工作台</strong><span>{error}</span>{loginRequired ? <Link href={`/login?returnTo=${encodeURIComponent(`/gpu/contracts/${contractId}`)}`}>登录或注册</Link> : <Link href="/gpu/contracts">返回我的租赁</Link>}</section></main>;
+  if (loading) return <div className={styles.market}><div className={styles.loading}>正在读取合同、实例和计量状态…</div></div>;
+  if (!contract) return <div className={styles.market}><section className={styles.error} role="alert"><strong>无法打开租赁工作台</strong><span>{error}</span>{loginRequired ? <Link href={`/login?returnTo=${encodeURIComponent(`/gpu/contracts/${contractId}`)}`}>登录或注册</Link> : <Link href="/gpu/contracts">返回我的租赁</Link>}</section></div>;
 
   const currentStep = workflowIndex(contract.status);
   const endpoint = contract.endpointDisplay;
   const acceptanceDeadlineAt = acceptanceDeadline(contract);
   return (
-    <main className={styles.market}>
+    <div className={styles.market}>
       <header className={styles.detailHeader}>
         <div><Link href="/gpu/contracts">← 我的租赁</Link><p className={styles.eyebrow}>INSTANCE DELIVERY WORKSPACE</p><h1>{contract.snapshot.title}</h1><p>{contract.snapshot.gpuModel} · {contract.snapshot.region} · 合同 {contract.id}</p></div>
         <span className={styles.statusPill} data-status={contract.status}>{hostingContractStatusLabel(contract.status)}</span>
@@ -133,6 +133,6 @@ export function HostingContractWorkspace({ contractId }: { contractId: string })
           <small>状态版本 v{contract.version} · 更新于 {formatHostingTime(contract.updatedAt)}</small>
         </aside>
       </div>
-    </main>
+    </div>
   );
 }

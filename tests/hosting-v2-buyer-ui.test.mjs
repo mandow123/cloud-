@@ -22,6 +22,7 @@ test("GPU public routes use the real Hosting V2 buyer flow on separate pages", (
   assert.match(market, /href=\{`\/gpu\/offers\/\$\{encodeURIComponent\(offer\.id\)\}`\}/u);
   assert.match(market, /href="\/gpu\/contracts"/u);
   assert.doesNotMatch(market, /\/api\/v1\/lab|#personal-gpu/u);
+  assert.doesNotMatch(market, /<main/u);
 });
 
 test("checkout only submits the selected offer and requested duration", () => {
@@ -29,6 +30,7 @@ test("checkout only submits the selected offer and requested duration", () => {
   assert.match(checkout, /marketplacePost<BuyerHostingContract>\("\/api\/v2\/contracts", \{ offerId: offer\.id, reservedSeconds \}/u);
   assert.doesNotMatch(checkout, /\{ offerId: offer\.id, reservedSeconds, (?:heldMicros|price|supplierOrganizationId|deviceId)/u);
   assert.match(checkout, /router\.push\(`\/gpu\/contracts\/\$\{encodeURIComponent\(result\.record\.id\)\}`\)/u);
+  assert.doesNotMatch(checkout, /<main/u);
 });
 
 test("buyer workspace drives every lifecycle action through its server endpoint", () => {
@@ -46,6 +48,7 @@ test("buyer workspace drives every lifecycle action through its server endpoint"
   assert.match(workspace, /containerRemoved/u);
   assert.doesNotMatch(workspace, /marketplacePost[^\n]+(?:measuredSeconds|settledMicros|heldMicros|supplierIncomeMicros)/u);
   assert.match(workspace, /window\.setInterval\(\(\) => \{ void load\(true\); \}, 5_000\)/u);
+  assert.doesNotMatch(workspace, /<main/u);
 });
 
 test("buyer contract collection is scoped to the signed-in buyer organization", () => {

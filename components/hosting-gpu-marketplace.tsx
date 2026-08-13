@@ -29,7 +29,7 @@ export function HostingGpuMarketplace() {
   }, [model, offers, sort]);
 
   return (
-    <main className={styles.market}>
+    <div className={styles.market}>
       <header className={styles.marketHeader}>
         <div><p className={styles.eyebrow}>KAI VERIFIED GPU MARKET</p><h1>GPU 算力市场</h1><p>报价、可用时间和交付模板在成交时冻结；租用统一使用 KAI 标准卡时。</p></div>
         <div className={styles.headerActions}><Link href="/gpu/contracts">我的租赁</Link><Link className={styles.primary} href="/hosting/personal-gpu">上架 GPU</Link></div>
@@ -62,6 +62,6 @@ export function HostingGpuMarketplace() {
           {!records.length ? <div className={styles.empty}>当前没有符合条件且验真有效的 GPU 报价。</div> : null}
         </section>
       ) : null}
-    </main>
+    </div>
   );
 }

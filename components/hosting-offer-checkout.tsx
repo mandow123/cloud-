@@ -50,14 +50,14 @@ export function HostingOfferCheckout({ offerId }: { offerId: string }) {
     } finally { setBusy(false); }
   }
 
-  if (loading) return <main className={styles.market}><div className={styles.loading}>正在核对报价和成交条件…</div></main>;
-  if (!offer) return <main className={styles.market}><section className={styles.error} role="alert"><strong>无法继续租用</strong><span>{error}</span><Link href="/gpu">返回 GPU 市场</Link></section></main>;
+  if (loading) return <div className={styles.market}><div className={styles.loading}>正在核对报价和成交条件…</div></div>;
+  if (!offer) return <div className={styles.market}><section className={styles.error} role="alert"><strong>无法继续租用</strong><span>{error}</span><Link href="/gpu">返回 GPU 市场</Link></section></div>;
 
   const minMinutes = Math.ceil(offer.minRentalSeconds / 60);
   const maxMinutes = Math.floor(offer.maxRentalSeconds / 60);
   const cny = heldMicros / 1_000_000 * 1.002;
   return (
-    <main className={styles.market}>
+    <div className={styles.market}>
       <header className={styles.detailHeader}><div><Link href="/gpu">← GPU 市场</Link><p className={styles.eyebrow}>LOCK A VERIFIED OFFER</p><h1>确认资源与卡时锁定</h1></div><span className={styles.statusPill}>报价可成交</span></header>
       <div className={styles.checkoutGrid}>
         <section className={styles.detailPanel}>
@@ -80,6 +80,6 @@ export function HostingOfferCheckout({ offerId }: { offerId: string }) {
           <small>公开自助充值和自动回购保持关闭；试运营卡时由平台双人审批发放。</small>
         </aside>
       </div>
-    </main>
+    </div>
   );
 }
