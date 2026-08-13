@@ -1,11 +1,22 @@
 import type { AccountSessionContext } from "./account-auth.ts";
 
+export type CardHourPurchaseRecord = Readonly<{
+  id: string;
+  sourceSystem: string;
+  orderId: string;
+  amountMicros: number;
+  cnyReferenceCents: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}>;
+
 export type CardHourDashboard = Readonly<{
   assetCode: "KAI_CREDIT_HOUR";
   rate: Readonly<{ cardHours: "1"; cny: "1.002"; topupBlockCardHours: "5"; topupBlockCny: "5.01" }>;
   balance: Readonly<{ availableMicros: number; heldMicros: number; lifetimeTopupMicros: number; lifetimeSpentMicros: number }>;
   topups: readonly Record<string, unknown>[];
-  purchases: readonly Record<string, unknown>[];
+  purchases: readonly CardHourPurchaseRecord[];
   buybacks: readonly Record<string, unknown>[];
   income: Readonly<{ rentalPendingMicros: number; rentalVestedMicros: number; commissionPendingMicros: number; commissionVestedMicros: number }>;
   referral: Readonly<{ code: string; invitedOrganizations: number }>;

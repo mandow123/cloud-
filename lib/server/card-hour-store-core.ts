@@ -1,4 +1,5 @@
 import { CARD_HOUR_ASSET_CODE } from "../card-hours.ts";
+import { hostingCnyReferenceCents } from "../hosting-v2.ts";
 import { CARD_HOUR_SCHEMA_VERSION, cardHourSchemaStatements } from "../../db/card-hour-schema.ts";
 import { AccountAuthError, accountAuthDigest } from "./account-auth.ts";
 import type { CardHourDashboard, CardHourStore } from "./card-hour-store.ts";
@@ -35,10 +36,27 @@ function paymentRecord(row: Row) {
 }
 
 function holdRecord(row: Row) {
+  const amountMicros = row.settled_micros == null ? number(row, "amount_micros") : number(row, "settled_micros");
   return {
     id: text(row, "id"), sourceSystem: "HOSTING_V2", orderId: text(row, "order_id"),
     amountMicros: number(row, "amount_micros"), settledMicros: row.settled_micros == null ? null : number(row, "settled_micros"),
+    cnyReferenceCents: hostingCnyReferenceCents(amountMicros),
     status: text(row, "status"), createdAt: text(row, "created_at"), updatedAt: text(row, "updated_at"),
+  };
+}
+
+function hostingPurchaseRecord(row: Row) {
+  const hold = holdRecord(row);
+  const amountMicros = hold.settledMicros ?? hold.amountMicros;
+  return {
+    id: hold.id,
+    sourceSystem: hold.sourceSystem,
+    orderId: hold.orderId,
+    amountMicros,
+    cnyReferenceCents: hostingCnyReferenceCents(amountMicros),
+    status: hold.status,
+    createdAt: hold.createdAt,
+    updatedAt: hold.updatedAt,
   };
 }
 
@@ -70,6 +88,7 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       const wallet = await db.first<Row>("SELECT * FROM card_hour_wallets WHERE organization_id=?", [organizationId]);
       const topups = await db.all<Row>("SELECT * FROM card_hour_topup_orders WHERE organization_id=? ORDER BY created_at DESC LIMIT 20", [organizationId]);
       const payments = await db.all<Row>("SELECT * FROM card_hour_order_payments WHERE organization_id=? ORDER BY created_at DESC LIMIT 20", [organizationId]);
+      const hostingHolds = await db.all<Row>("SELECT * FROM card_hour_order_holds WHERE organization_id=? ORDER BY created_at DESC LIMIT 20", [organizationId]);
       const buybacks = await db.all<Row>("SELECT * FROM card_hour_buyback_orders WHERE organization_id=? ORDER BY created_at DESC LIMIT 20", [organizationId]);
       const incomeRows = await db.all<Row>("SELECT income_type,status,COALESCE(SUM(amount_micros),0) AS amount_micros FROM card_hour_income_accruals WHERE organization_id=? GROUP BY income_type,status", [organizationId]);
       const ledger = await db.all<CardHourDashboard["ledger"][number]>(`SELECT b.operation,b.business_key,e.account_code,e.side,e.amount_micros,e.balance_after_micros,e.created_at
@@ -89,7 +108,11 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
         assetCode: CARD_HOUR_ASSET_CODE,
         rate: { cardHours: "1", cny: "1.002", topupBlockCardHours: "5", topupBlockCny: "5.01" },
         balance: { availableMicros: number(wallet, "available_micros"), heldMicros: number(wallet, "held_micros"), lifetimeTopupMicros: number(wallet, "lifetime_topup_micros"), lifetimeSpentMicros: number(wallet, "lifetime_spent_micros") },
-        topups: topups.map(topupRecord), purchases: payments.map(paymentRecord), buybacks,
+        topups: topups.map(topupRecord),
+        purchases: [...payments.map(paymentRecord), ...hostingHolds.map(hostingPurchaseRecord)]
+          .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+          .slice(0, 20),
+        buybacks,
         income, referral: { code, invitedOrganizations: Number(invited?.count ?? 0) }, ledger,
       } satisfies CardHourDashboard;
     },

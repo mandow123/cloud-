@@ -24,6 +24,21 @@ test("the personal menu reads only the member summary and local comparison contr
   }
 });
 
+test("the member workspace exposes GPU contracts through the same personal order entry", async () => {
+  const [page, summary, contracts] = await Promise.all([
+    source("app/member/page.tsx"),
+    source("components/personal-center-overview.tsx"),
+    source("components/hosting-contract-list.tsx"),
+  ]);
+  assert.match(page, /id="orders"[\s\S]*<HostingContractList embedded \/>[\s\S]*<BuyerOrderList \/>/u);
+  assert.match(page, /isHostingV2Enabled\(\)/u);
+  assert.match(summary, /gpuContracts/u);
+  assert.match(summary, /gpuPendingAcceptance/u);
+  assert.match(contracts, /marketplaceGet<\{ records: BuyerHostingContract\[\] \}>\("\/api\/v2\/contracts"\)/u);
+  assert.match(contracts, /if \(embedded\)/u);
+  assert.match(contracts, /进入工作台/u);
+});
+
 test("signed-in and signed-out personal actions stay buyer-facing", async () => {
   const menu = await source("components/personal-menu.tsx");
   for (const label of ["登录后查看个人业务", "卡时账户", "购买记录", "我的对比", "我的回购", "租金与佣金", "邀请奖励"]) {

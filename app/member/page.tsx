@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import { AccountRequired } from "@/components/account-required";
 import { BuyerOrderList } from "@/components/buyer-order-list";
+import { HostingContractList } from "@/components/hosting-contract-list";
 import { MemberWorkspace } from "@/components/member-workspace";
 import { PersonalCenterOverview } from "@/components/personal-center-overview";
 import { CardHourAccountPanel } from "@/components/card-hour-account-panel";
+import { isHostingV2Enabled } from "@/lib/server/hosting-v2-feature";
 
 export const metadata: Metadata = {
   title: "个人中心",
@@ -11,6 +13,7 @@ export const metadata: Metadata = {
 };
 
 export default function MemberPage() {
+  const hostingV2Enabled = isHostingV2Enabled();
   return (
     <>
       <header className="border-b border-[var(--border)] bg-[var(--info-bg)]">
@@ -34,7 +37,10 @@ export default function MemberPage() {
         <MemberWorkspace />
         <section className="mt-16 scroll-mt-28" id="orders">
           <AccountRequired purpose="查看个人订单">
-            <BuyerOrderList />
+            <div className="grid gap-16">
+              {hostingV2Enabled ? <HostingContractList embedded /> : null}
+              <BuyerOrderList />
+            </div>
           </AccountRequired>
         </section>
       </div>

@@ -42,19 +42,25 @@ function databaseFixture() {
 
 test("personal summary returns only the unauthenticated envelope without reading private stores", async () => {
   let countReads = 0;
+  let hostingReads = 0;
   const summary = await memberPersonalSummary(new Request("http://localhost/api/v1/member/personal-summary"), {
     resolveSession: async () => null,
     readCounts: async () => {
       countReads += 1;
       throw new Error("must not read counts");
     },
+    readHostingCounts: async () => {
+      hostingReads += 1;
+      throw new Error("must not read hosting counts");
+    },
     paymentReady: () => { throw new Error("must not inspect payment readiness"); },
   });
   assert.deepEqual(summary, { authenticated: false });
   assert.equal(countReads, 0);
+  assert.equal(hostingReads, 0);
 });
 
-test("authenticated personal summary uses the current organization and exposes only masked profile facts", async () => {
+test("authenticated personal summary merges only the current organization's GPU contracts and exposes masked profile facts", async () => {
   const reads = [];
   const summary = await memberPersonalSummary(new Request("http://localhost/api/v1/member/personal-summary"), {
     resolveSession: async () => session,
@@ -62,11 +68,18 @@ test("authenticated personal summary uses the current organization and exposes o
       reads.push({ organizationId, asOf });
       return { purchaseRequests: 3, orders: 4, pendingPayment: 1, pendingAcceptance: 2 };
     },
+    readHostingCounts: async (organizationId, asOf) => {
+      reads.push({ organizationId, asOf, source: "hosting" });
+      return { orders: 5, pendingAcceptance: 1 };
+    },
     paymentReady: () => false,
     now: () => AS_OF,
   });
 
-  assert.deepEqual(reads, [{ organizationId: "org_current", asOf: AS_OF.toISOString() }]);
+  assert.deepEqual(reads, [
+    { organizationId: "org_current", asOf: AS_OF.toISOString() },
+    { organizationId: "org_current", asOf: AS_OF.toISOString(), source: "hosting" },
+  ]);
   assert.deepEqual(summary, {
     authenticated: true,
     profile: {
@@ -75,7 +88,14 @@ test("authenticated personal summary uses the current organization and exposes o
       organizationName: "Current Buyer Organization",
       subjectStatus: "ACTIVE",
     },
-    counts: { purchaseRequests: 3, orders: 4, pendingPayment: 1, pendingAcceptance: 2 },
+    counts: {
+      purchaseRequests: 3,
+      orders: 9,
+      pendingPayment: 1,
+      pendingAcceptance: 3,
+      gpuContracts: 5,
+      gpuPendingAcceptance: 1,
+    },
     payment: { ready: false, reason: "\u652f\u4ed8\u670d\u52a1\u6682\u672a\u5f00\u901a" },
   });
   const encoded = JSON.stringify(summary);
@@ -86,6 +106,7 @@ test("authenticated personal summary uses the current organization and exposes o
   const ready = await memberPersonalSummary(new Request("http://localhost/api/v1/member/personal-summary"), {
     resolveSession: async () => session,
     readCounts: async () => ({ purchaseRequests: 0, orders: 0, pendingPayment: 0, pendingAcceptance: 0 }),
+    readHostingCounts: async () => ({ orders: 0, pendingAcceptance: 0 }),
     paymentReady: () => true,
     now: () => AS_OF,
   });
@@ -94,6 +115,7 @@ test("authenticated personal summary uses the current organization and exposes o
 
 test("inactive memberships do not read organization transaction counts", async () => {
   let countReads = 0;
+  let hostingReads = 0;
   const summary = await memberPersonalSummary(new Request("http://localhost/api/v1/member/personal-summary"), {
     resolveSession: async () => ({
       ...session,
@@ -103,11 +125,23 @@ test("inactive memberships do not read organization transaction counts", async (
       countReads += 1;
       throw new Error("must not read organization counts");
     },
+    readHostingCounts: async () => {
+      hostingReads += 1;
+      throw new Error("must not read organization hosting counts");
+    },
     paymentReady: () => { throw new Error("must not inspect payment readiness"); },
     now: () => AS_OF,
   });
   assert.equal(countReads, 0);
-  assert.deepEqual(summary.counts, { purchaseRequests: 0, orders: 0, pendingPayment: 0, pendingAcceptance: 0 });
+  assert.equal(hostingReads, 0);
+  assert.deepEqual(summary.counts, {
+    purchaseRequests: 0,
+    orders: 0,
+    pendingPayment: 0,
+    pendingAcceptance: 0,
+    gpuContracts: 0,
+    gpuPendingAcceptance: 0,
+  });
   assert.deepEqual(summary.payment, { ready: false, reason: "当前交易主体尚未启用" });
   assert.equal(summary.profile.subjectStatus, "SUSPENDED");
 });

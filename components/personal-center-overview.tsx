@@ -19,6 +19,8 @@ type PersonalSummary = {
     orders: number;
     pendingPayment: number;
     pendingAcceptance: number;
+    gpuContracts: number;
+    gpuPendingAcceptance: number;
   };
   payment?: { ready: boolean; reason?: string };
 };
@@ -110,8 +112,8 @@ export function PersonalCenterOverview() {
   const cards = [
     { target: "purchase-requests", label: "购买申请", value: count(summary.counts.purchaseRequests), detail: "平台核验库存与正式价格" },
     { anchor: "pending-payment", target: "orders", label: "待支付", value: count(summary.counts.pendingPayment), detail: summary.payment?.ready ? "仅统计有效正式付款单" : (summary.payment?.reason || "支付服务暂未开通") },
-    { target: "orders", label: "我的订单", value: count(summary.counts.orders), detail: "不包含尚未成单的购买申请" },
-    { anchor: "pending-acceptance", target: "orders", label: "待验收", value: count(summary.counts.pendingAcceptance), detail: "服务完成后由买方确认" },
+    { target: "orders", label: "我的订单", value: count(summary.counts.orders), detail: `含 ${count(summary.counts.gpuContracts)} 笔 GPU 租赁合同` },
+    { anchor: "pending-acceptance", target: "orders", label: "待验收", value: count(summary.counts.pendingAcceptance), detail: summary.counts.gpuPendingAcceptance > 0 ? `${count(summary.counts.gpuPendingAcceptance)} 笔 GPU 租赁待确认` : "服务完成后由买方确认" },
     { target: "compare", label: "我的对比", value: String(compareItems.length), detail: "本机保存，最多 3 项" },
   ];
 
