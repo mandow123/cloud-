@@ -33,6 +33,13 @@ export async function createLocalTestAccountSession(request:Request,options:{sto
   const configured=localIdentity(request,env);
   const rootAlias=new URL(request.url).hostname==="root.localhost"&&configured.roles.split(",").map((role)=>role.trim()).includes("ROOT");
   if(rootAlias){
+    // A development database may already contain the immutable Root created by
+    // the ordinary localhost preview. The dedicated root.localhost QA origin
+    // must reuse that singleton instead of attempting to mint a second Root.
+    // This branch is reachable only through the development-only, same-origin
+    // local preview guard above and does not change production bootstrap rules.
+    const existingRoot=await store.resolveRootAdministrator();
+    if(existingRoot)return createAccountSession(request,existingRoot,"ADMIN_PASSWORD",{store,now});
     const username=env.KAI_ADMIN_USERNAME?.trim();
     if(!username)throw new Error("LOCAL_ROOT_ALIAS_NOT_CONFIGURED");
     const identity=await store.resolveOrCreatePasswordAdministrator({username,displayName:env.KAI_ADMIN_DISPLAY_NAME?.trim()||"KAI Root",createdAt:now.toISOString()});

@@ -180,6 +180,19 @@ test("LOCAL Root alias reuses the configured singleton password administrator", 
   store.close();
 });
 
+test("LOCAL Root alias reuses a singleton previously established by localhost preview", async () => {
+  const store=await createSqliteAccountAuthStore(":memory:");
+  const ordinaryRequest=new Request("http://localhost/api/auth/local",{method:"POST",headers:{origin:"http://localhost","sec-fetch-site":"same-origin"}});
+  const established=await createLocalTestAccountSession(ordinaryRequest,{store,env:{NODE_ENV:"development",KAI_ADMIN_LOCAL_AUTH:"1",KAI_ADMIN_LOCAL_ROLES:"ROOT",KAI_ADMIN_LOCAL_SUBJECT:"existing-local-root"}});
+  const aliasRequest=new Request("http://root.localhost/api/auth/local",{method:"POST",headers:{origin:"http://root.localhost","sec-fetch-site":"same-origin"}});
+  const alias=await createLocalTestAccountSession(aliasRequest,{store,env:{NODE_ENV:"development",KAI_ADMIN_LOCAL_AUTH:"1",KAI_ADMIN_LOCAL_MULTI_ROLE_QA:"1",KAI_ADMIN_USERNAME:"configured-root"}});
+  assert.equal(alias.context.account.id,established.context.account.id);
+  assert.equal(alias.context.activeOrganization.id,established.context.activeOrganization.id);
+  assert.deepEqual(alias.context.membership.roles,["ROOT"]);
+  assert.equal(alias.context.authMethod,"ADMIN_PASSWORD");
+  store.close();
+});
+
 test("LOCAL multi-role origins are exact and can never weaken production origin checks", () => {
   const environment = { NODE_ENV: "development", KAI_ADMIN_LOCAL_AUTH: "1", KAI_ADMIN_LOCAL_MULTI_ROLE_QA: "1" };
   const supplierRequest = new Request("http://supplier.localhost:3014/api/v2/supply/profile", { headers: { origin: "http://supplier.localhost:3014", "sec-fetch-site": "same-origin" } });

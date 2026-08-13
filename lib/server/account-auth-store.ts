@@ -62,6 +62,7 @@ export interface AccountAuthStore {
     verifiedAt: string;
   }): Promise<ResolvedIdentity>;
   resolveOrCreatePasswordAdministrator(input: { username: string; displayName: string; createdAt: string }): Promise<ResolvedIdentity>;
+  resolveRootAdministrator(): Promise<ResolvedIdentity | null>;
   listMemberships(accountId: string): Promise<Array<Membership & { organization: Organization }>>;
   getOrganization(organizationId: string): Promise<Organization | null>;
   getMembership(accountId: string, organizationId: string): Promise<(Membership & { organization: Organization }) | null>;
@@ -253,6 +254,23 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
       return {
         account: account(created), organization: organization(created),
         membership: { id: createdMembershipId, accountId: text(created, "account_id"), organizationId: text(created, "organization_id"), status: text(created, "membership_status") as Membership["status"], roles: await readMembershipRoles(db, createdMembershipId) },
+      };
+    },
+    async resolveRootAdministrator() {
+      const row = await db.first<Row>(`SELECT r.account_id,r.organization_id,r.membership_id,
+          a.display_name,a.primary_email,a.status AS account_status,
+          o.name AS organization_name,o.external_key,o.status AS organization_status,
+          m.status AS membership_status
+        FROM admin_root_membership r
+        JOIN admin_user_accounts a ON a.id=r.account_id
+        JOIN admin_organizations o ON o.id=r.organization_id
+        JOIN admin_memberships m ON m.id=r.membership_id
+        WHERE r.singleton=1 AND m.status='ACTIVE'`);
+      if (!row) return null;
+      const membershipId = text(row, "membership_id");
+      return {
+        account: account(row), organization: organization(row),
+        membership: { id: membershipId, accountId: text(row, "account_id"), organizationId: text(row, "organization_id"), status: text(row, "membership_status") as Membership["status"], roles: await readMembershipRoles(db, membershipId) },
       };
     },
     async listMemberships(accountId) {
