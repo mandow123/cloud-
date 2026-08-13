@@ -27,3 +27,19 @@ export function physicalGpuAudit(inventory: HostingDeviceInventory) {
         : "GPU 型号、显存、硬件摘要或驱动/CUDA 版本未达到首期真实机验收门槛。",
   } as const;
 }
+
+type Environment = Record<string, string | undefined>;
+
+export function gpuTradingEligibility(inventory: HostingDeviceInventory, environment: Environment = typeof process === "undefined" ? {} : process.env) {
+  const physical = physicalGpuAudit(inventory);
+  if (physical.passed) return { ...physical, localAcceptance: false } as const;
+  const explicitLocalFixture = environment.KAI_ENVIRONMENT === "LOCAL"
+    && environment.KAI_HOSTING_LOCAL_ACCEPTANCE === "1"
+    && inventory.publicHost === "local-qa.invalid"
+    && LOCAL_FIXTURE.test(inventory.driverVersion)
+    && LOCAL_FIXTURE.test(inventory.cudaVersion)
+    && LOCAL_FIXTURE.test(inventory.cpuModel);
+  return explicitLocalFixture
+    ? { passed: true, localAcceptance: true, detail: "仅限本地闭环验收；不能作为真实 GPU 验收或生产供给。" } as const
+    : { ...physical, localAcceptance: false } as const;
+}

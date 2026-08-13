@@ -41,7 +41,8 @@ test("transaction gate rejects incomplete production readiness and local accepta
   assert.throws(() => requireHostingV2TransactionReady(incomplete), (error) => error.code === "HOSTING_V2_NOT_READY" && error.status === 503);
   assert.equal(isLocalHostingAcceptance({ NODE_ENV: "development", KAI_ENVIRONMENT: "LOCAL" }), false);
   assert.equal(isLocalHostingAcceptance({ NODE_ENV: "development", KAI_ENVIRONMENT: "LOCAL", KAI_HOSTING_LOCAL_ACCEPTANCE: "1" }), true);
-  assert.equal(isLocalHostingAcceptance({ NODE_ENV: "production", KAI_ENVIRONMENT: "LOCAL", KAI_HOSTING_LOCAL_ACCEPTANCE: "1" }), false);
+  assert.equal(isLocalHostingAcceptance({ NODE_ENV: "production", KAI_ENVIRONMENT: "LOCAL", KAI_HOSTING_LOCAL_ACCEPTANCE: "1" }), true, "optimized local previews remain local deployments");
+  assert.equal(isLocalHostingAcceptance({ NODE_ENV: "development", KAI_ENVIRONMENT: "PRODUCTION", KAI_HOSTING_LOCAL_ACCEPTANCE: "1" }), false, "deployment environment, not build mode, controls the bypass");
 });
 
 test("setup mode exposes configuration readiness without opening public trading", () => {

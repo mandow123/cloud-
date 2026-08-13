@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
-import { parseAgentProof, parseHostingDeviceInventory, verifyExistingDeviceProof } from "../lib/server/hosting-agent-api.ts";
+import { parseAgentProof, parseHostingDeviceInventory, requireHostingAgentTransport, verifyExistingDeviceProof } from "../lib/server/hosting-agent-api.ts";
 import { hostingAgentCanonicalJson, hostingAgentDigest, hostingAgentKeyId, verifyHostingAgentSignature } from "../lib/server/hosting-agent-crypto.ts";
 import { verifyControlPlaneReachability } from "../lib/server/hosting-agent-reachability.ts";
 import { createSqliteHostingV2Store } from "../lib/server/hosting-v2-store-sqlite.ts";
@@ -25,6 +25,33 @@ function mutation(actorId, key, hash, now = new Date().toISOString()) {
 function base64url(value) {
   return Buffer.from(value).toString("base64url");
 }
+
+test("Agent HTTP transport accepts only explicitly enabled local QA role hosts", () => {
+  const previous = {
+    NODE_ENV: process.env.NODE_ENV,
+    KAI_ENVIRONMENT: process.env.KAI_ENVIRONMENT,
+    KAI_HOSTING_LOCAL_ACCEPTANCE: process.env.KAI_HOSTING_LOCAL_ACCEPTANCE,
+    KAI_ADMIN_LOCAL_AUTH: process.env.KAI_ADMIN_LOCAL_AUTH,
+    KAI_ADMIN_LOCAL_MULTI_ROLE_QA: process.env.KAI_ADMIN_LOCAL_MULTI_ROLE_QA,
+  };
+  Object.assign(process.env, {
+    NODE_ENV: "test",
+    KAI_ENVIRONMENT: "LOCAL",
+    KAI_HOSTING_LOCAL_ACCEPTANCE: "1",
+    KAI_ADMIN_LOCAL_AUTH: "1",
+    KAI_ADMIN_LOCAL_MULTI_ROLE_QA: "1",
+  });
+  try {
+    assert.doesNotThrow(() => requireHostingAgentTransport(new Request("http://supplier.localhost:3014/api/v2/agent/register")));
+    assert.throws(() => requireHostingAgentTransport(new Request("http://attacker.localhost:3014/api/v2/agent/register")), (error) => error.code === "AGENT_HTTPS_REQUIRED");
+    process.env.KAI_ENVIRONMENT = "PRODUCTION";
+    assert.throws(() => requireHostingAgentTransport(new Request("http://supplier.localhost:3014/api/v2/agent/register")), (error) => error.code === "AGENT_HTTPS_REQUIRED");
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
+});
 
 function successfulVerificationDetails(inventoryDigest, observedAt, challengeDigest) {
   const tests = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "WORKLOAD_IMAGE", "PORT_REACHABILITY"];

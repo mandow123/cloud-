@@ -1,5 +1,6 @@
 import type { AdminAuthMethod, Membership, Organization, UserAccount } from "../admin-auth-types.ts";
 import { getAccountAuthStore, type AccountAuthStore, type ResolvedIdentity } from "./account-auth-store.ts";
+import { isAllowedLocalQaOrigin } from "./local-qa-origin.ts";
 
 export const ACCOUNT_SESSION_ABSOLUTE_MS = 8 * 60 * 60 * 1_000;
 export const ACCOUNT_SESSION_IDLE_MS = 30 * 60 * 1_000;
@@ -73,7 +74,7 @@ export function assertAccountAuthSameOrigin(request: Request) {
   let parsed: URL; try { parsed = new URL(origin); } catch { throw new AccountAuthError("AUTH_ORIGIN_REJECTED", 403, "认证请求来源无效。 "); }
   const publicOrigin = typeof process === "undefined" ? undefined : process.env.KAI_PUBLIC_ORIGIN;
   const expected = publicOrigin ? new URL(publicOrigin).origin : new URL(request.url).origin;
-  if (parsed.origin !== expected || request.headers.get("sec-fetch-site")?.toLowerCase() === "cross-site") throw new AccountAuthError("AUTH_ORIGIN_REJECTED", 403, "认证请求来源无效。 ");
+  if ((parsed.origin !== expected && !isAllowedLocalQaOrigin(request, parsed)) || request.headers.get("sec-fetch-site")?.toLowerCase() === "cross-site") throw new AccountAuthError("AUTH_ORIGIN_REJECTED", 403, "认证请求来源无效。 ");
 }
 
 export function readAccountSessionToken(request: Request) {

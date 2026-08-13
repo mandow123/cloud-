@@ -9,8 +9,7 @@ import { probeKaiIdentityDiscovery } from "./kai-identity-oidc.ts";
 type Environment = Record<string, string | undefined>;
 
 export function isLocalHostingAcceptance(environment: Environment = typeof process === "undefined" ? {} : process.env) {
-  return environment.NODE_ENV !== "production"
-    && environment.KAI_ENVIRONMENT === "LOCAL"
+  return environment.KAI_ENVIRONMENT === "LOCAL"
     && environment.KAI_HOSTING_LOCAL_ACCEPTANCE === "1";
 }
 

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,6 +25,10 @@ function mutation(actorId, key, hash, now) {
   return { actorId, idempotencyKey: key, payloadHash: hash, now };
 }
 
+function sha256(value) {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
 function cleanupDetails(contractId, now) {
   return {
     protocolVersion: 1,
@@ -45,7 +50,7 @@ function seedStoppedContract(path, suffix, buyer, supplier, now, withMeteringPro
   const offerId = `hofr_settlement_${suffix}`;
   const contractId = `hctr_settlement_${suffix}`;
   const feeId = "hfee_settlement";
-  const inventory = { hostnameDigest: `sha256:${"1".repeat(64)}`, gpuModel: "RTX_4090", gpuUuidDigest: `sha256:${suffix.padEnd(64, "2").slice(0, 64)}`, gpuMemoryMiB: 24_576, driverVersion: "580.10", cudaVersion: "13.0", cpuModel: "AMD Ryzen 9 9950X", memoryMiB: 65_536, storageGiB: 2_048, publicHost: `${suffix}.settlement-gpu.example.com`, sshPortStart: 26_000, sshPortEnd: 26_019 };
+  const inventory = { hostnameDigest: `sha256:${"1".repeat(64)}`, gpuModel: "RTX_4090", gpuUuidDigest: sha256(`settlement-gpu-${suffix}`), gpuMemoryMiB: 24_576, driverVersion: "580.10", cudaVersion: "13.0", cpuModel: "AMD Ryzen 9 9950X", memoryMiB: 65_536, storageGiB: 2_048, publicHost: `${suffix}.settlement-gpu.example.com`, sshPortStart: 26_000, sshPortEnd: 26_019 };
   db.prepare("INSERT OR IGNORE INTO hosting_v2_supplier_profiles(organization_id,account_id,supplier_type,legal_display_name,contact_email,agreement_version,status,version,created_at,updated_at) VALUES(?,?,'INDIVIDUAL','结算测试供应方',?,'KAI_HOSTING_2026_08','APPROVED',3,?,?)").run(supplier.activeOrganization.id, supplier.account.id, supplier.account.primaryEmail, now, now);
   db.prepare("INSERT OR IGNORE INTO hosting_v2_fee_schedules(id,platform_fee_bps,referral_reward_bps,status,effective_from,created_by,created_at) VALUES(?,1000,300,'ACTIVE',?,'admin-market',?)").run(feeId, now, now);
   db.prepare(`INSERT INTO hosting_v2_devices(id,organization_id,account_id,display_name,device_key_id,device_public_key,agent_version,inventory_json,inventory_digest,status,verification_status,verification_evidence_digest,verified_until,last_sequence,last_seen_at,version,created_at,updated_at)

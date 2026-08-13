@@ -43,9 +43,11 @@ export function SupplyOfferCreate() {
       marketplaceGet<{ policy: SupplierHostingPolicy }>("/api/v2/supply/policy"),
     ]).then(([dashboardResult, policyResult]) => {
       if (cancelled) return;
-      const start = new Date(Date.now() + 10 * 60_000);
-      setAvailableFrom(localDateTime(start));
-      setAvailableUntil(localDateTime(new Date(start.getTime() + 24 * 60 * 60_000)));
+      // Allow an operator to publish immediately while covering sub-minute
+      // client/server clock skew. The server still validates the full window.
+      const start = new Date(Date.now() - 60_000);
+      setAvailableFrom((current) => current || localDateTime(start));
+      setAvailableUntil((current) => current || localDateTime(new Date(start.getTime() + 24 * 60 * 60_000)));
       setDashboard(dashboardResult.dashboard);
       setPolicy(policyResult.policy);
       const eligible = dashboardResult.dashboard.devices.find((device) => device.status === "VERIFIED" && device.verificationStatus === "PASSED");
@@ -117,7 +119,7 @@ export function SupplyOfferCreate() {
             <label className={styles.field}><span>KAI 标准卡时 / GPU 小时</span><input inputMode="decimal" onChange={(event) => setRate(event.target.value)} pattern="\d{1,9}(\.\d{1,6})?" required value={rate} /><small>最多 6 位小数；人民币只按 1 卡时 = ¥1.002 显示参考。</small></label>
             <label className={styles.field}><span>最低租用分钟</span><input min={3} onChange={(event) => setMinimumMinutes(event.target.value)} step={1} type="number" value={minimumMinutes} /></label>
             <label className={styles.field}><span>最长租用分钟</span><input max={44640} min={3} onChange={(event) => setMaximumMinutes(event.target.value)} step={1} type="number" value={maximumMinutes} /></label>
-            <label className={styles.field}><span>可用开始</span><input onChange={(event) => setAvailableFrom(event.target.value)} type="datetime-local" value={availableFrom} /></label>
+            <label className={styles.field}><span>可用开始</span><input onChange={(event) => setAvailableFrom(event.target.value)} type="datetime-local" value={availableFrom} /><small>默认立即生效，并预留 1 分钟处理客户端与服务端时钟偏差。</small></label>
             <label className={styles.field}><span>可用结束</span><input onChange={(event) => setAvailableUntil(event.target.value)} type="datetime-local" value={availableUntil} /></label>
             <label className={`${styles.field} ${styles.fieldFull}`}><span>平台批准的交付镜像</span><select onChange={(event) => setApprovedImage(event.target.value)} required value={approvedImage}>{policy?.approvedImages.map((image) => <option key={image} value={image}>{image}</option>)}</select><small>仅允许不可变 sha256 镜像；不能填写自定义镜像或 latest 标签。</small></label>
           </div>

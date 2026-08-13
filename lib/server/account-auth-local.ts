@@ -31,6 +31,15 @@ function localOrganization(identity:ReturnType<typeof localIdentity>){
 export async function createLocalTestAccountSession(request:Request,options:{store?:AccountAuthStore;env?:Env;now?:Date}={}){
   const env=options.env??(typeof process === "undefined" ? {} : process.env);assertLocalInteractiveRequest(request,env);const store=options.store??await getAccountAuthStore(),now=options.now??new Date();
   const configured=localIdentity(request,env);
+  const rootAlias=new URL(request.url).hostname==="root.localhost"&&configured.roles.split(",").map((role)=>role.trim()).includes("ROOT");
+  if(rootAlias){
+    const username=env.KAI_ADMIN_USERNAME?.trim();
+    if(!username)throw new Error("LOCAL_ROOT_ALIAS_NOT_CONFIGURED");
+    const identity=await store.resolveOrCreatePasswordAdministrator({username,displayName:env.KAI_ADMIN_DISPLAY_NAME?.trim()||"KAI Root",createdAt:now.toISOString()});
+    await store.activateMembership(identity.membership.id,["ROOT"],now.toISOString());
+    const active=await store.resolveOrCreatePasswordAdministrator({username,displayName:identity.account.displayName,createdAt:now.toISOString()});
+    return createAccountSession(request,active,"ADMIN_PASSWORD",{store,now});
+  }
   const subject=configured.subject;
   const organization=localOrganization(configured);
   const identity=await store.resolveOrCreateIdentity({provider:"LOCAL",tenantKey:organization.key,subject,displayName:configured.displayName,normalizedEmail:null,organizationExternalKey:organization.key,organizationName:organization.name,verifiedAt:now.toISOString()});

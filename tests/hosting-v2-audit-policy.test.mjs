@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { physicalGpuAudit } from "../lib/server/hosting-v2-audit-policy.ts";
+import { gpuTradingEligibility, physicalGpuAudit } from "../lib/server/hosting-v2-audit-policy.ts";
 
 const realLookingInventory = {
   hostnameDigest: `sha256:${"1".repeat(64)}`,
@@ -35,6 +35,23 @@ test("real-machine audit rejects the explicit local protocol fixture", () => {
   });
   assert.equal(result.passed, false);
   assert.match(result.detail, /本地协议模拟标记/u);
+});
+
+test("local fixtures can transact only inside the explicit LOCAL acceptance deployment", () => {
+  const fixture = {
+    ...realLookingInventory,
+    driverVersion: "LOCAL-QA",
+    cudaVersion: "LOCAL-QA",
+    cpuModel: "Local protocol fixture — not a real GPU",
+    publicHost: "local-qa.invalid",
+  };
+  assert.equal(gpuTradingEligibility(fixture, { KAI_ENVIRONMENT: "PRODUCTION", KAI_HOSTING_LOCAL_ACCEPTANCE: "1" }).passed, false);
+  assert.equal(gpuTradingEligibility(fixture, { KAI_ENVIRONMENT: "LOCAL" }).passed, false);
+  assert.deepEqual(gpuTradingEligibility(fixture, { KAI_ENVIRONMENT: "LOCAL", KAI_HOSTING_LOCAL_ACCEPTANCE: "1" }), {
+    passed: true,
+    localAcceptance: true,
+    detail: "仅限本地闭环验收；不能作为真实 GPU 验收或生产供给。",
+  });
 });
 
 test("real-machine audit rejects incomplete physical specifications", () => {

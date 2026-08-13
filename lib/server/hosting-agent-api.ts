@@ -6,6 +6,7 @@ import {
   hostingAgentTimestamp,
   verifyHostingAgentSignature,
 } from "./hosting-agent-crypto.ts";
+import { isExplicitLocalQaHost } from "./local-qa-origin.ts";
 
 const DIGEST = /^sha256:[a-f0-9]{64}$/u;
 
@@ -14,7 +15,9 @@ export function requireHostingAgentTransport(request: Request) {
   if (url.protocol === "https:") return;
   const trustedProxy = typeof process !== "undefined" && process.env.KAI_TRUST_PROXY === "1";
   if (trustedProxy && request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase() === "https") return;
-  const localDevelopment = typeof process !== "undefined" && process.env.NODE_ENV !== "production" && ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+  const localDevelopment = typeof process !== "undefined"
+    && (process.env.NODE_ENV !== "production" && ["localhost", "127.0.0.1", "::1"].includes(url.hostname)
+      || isExplicitLocalQaHost(url.hostname));
   if (!localDevelopment) throw new AccountAuthError("AGENT_HTTPS_REQUIRED", 403, "Host Agent 只允许通过 HTTPS 连接。 ");
 }
 

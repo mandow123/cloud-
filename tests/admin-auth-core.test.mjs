@@ -3,10 +3,11 @@ import test from "node:test";
 
 import { ADMIN_PERMISSIONS, ADMIN_ROLES } from "../lib/admin-auth-types.ts";
 import { adminPermissionsForRoles, requireAdminPermission } from "../lib/server/admin-auth.ts";
-import { AccountAuthError, createAccountSession, resolveAccountSession } from "../lib/server/account-auth.ts";
+import { AccountAuthError, assertAccountAuthSameOrigin, createAccountSession, resolveAccountSession } from "../lib/server/account-auth.ts";
 import { accountSessionEnvelope, readAuthJson } from "../lib/server/account-auth-http.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
 import { createLocalTestAccountSession } from "../lib/server/account-auth-local.ts";
+import { isAllowedLocalQaOrigin } from "../lib/server/local-qa-origin.ts";
 
 test("Root owns full administration while the independent finance approver receives only dual-control permissions", () => {
   assert.deepEqual(ADMIN_ROLES, ["ROOT","ROLE_ADMIN","INTAKE_OPERATOR","INVENTORY_OPERATOR","VERIFICATION_REVIEWER","MARKET_OPERATOR","FULFILLMENT_OPERATOR","FINANCE_OPERATOR","FINANCE_APPROVER","SUPPORT_READONLY","AUDITOR"]);
@@ -163,4 +164,42 @@ test("LOCAL multi-role QA uses host-only identities while production rejects the
   assert.deepEqual(finance.context.membership.roles,["FINANCE_APPROVER"]);
   await assert.rejects(createLocalTestAccountSession(new Request("http://buyer.localhost/api/auth/local",{method:"POST",headers:{origin:"http://buyer.localhost","sec-fetch-site":"same-origin"}}),{store,env:{...env,NODE_ENV:"production"}}),(error)=>error instanceof AccountAuthError&&error.status===403);
   store.close();
+});
+
+test("LOCAL Root alias reuses the configured singleton password administrator", async () => {
+  const store=await createSqliteAccountAuthStore(":memory:");
+  const env={NODE_ENV:"development",KAI_ADMIN_LOCAL_AUTH:"1",KAI_ADMIN_LOCAL_MULTI_ROLE_QA:"1",KAI_ADMIN_USERNAME:"configured-root",KAI_ADMIN_DISPLAY_NAME:"Configured Root"};
+  const request=new Request("http://root.localhost/api/auth/local",{method:"POST",headers:{origin:"http://root.localhost","sec-fetch-site":"same-origin"}});
+  const first=await createLocalTestAccountSession(request,{store,env});
+  const second=await createLocalTestAccountSession(request,{store,env});
+  assert.equal(first.context.account.id,second.context.account.id);
+  assert.equal(first.context.activeOrganization.externalKey,"KAI:CLOUD:ROOT");
+  assert.deepEqual(first.context.membership.roles,["ROOT"]);
+  const other=await store.resolveOrCreatePasswordAdministrator({username:"other-root",displayName:"Other",createdAt:new Date().toISOString()});
+  await assert.rejects(store.activateMembership(other.membership.id,["ROOT"],new Date().toISOString()));
+  store.close();
+});
+
+test("LOCAL multi-role origins are exact and can never weaken production origin checks", () => {
+  const environment = { NODE_ENV: "development", KAI_ADMIN_LOCAL_AUTH: "1", KAI_ADMIN_LOCAL_MULTI_ROLE_QA: "1" };
+  const supplierRequest = new Request("http://supplier.localhost:3014/api/v2/supply/profile", { headers: { origin: "http://supplier.localhost:3014", "sec-fetch-site": "same-origin" } });
+  assert.equal(isAllowedLocalQaOrigin(supplierRequest, new URL("http://supplier.localhost:3014"), environment), true);
+  assert.equal(isAllowedLocalQaOrigin(supplierRequest, new URL("http://buyer.localhost:3014"), environment), false);
+  assert.equal(isAllowedLocalQaOrigin(supplierRequest, new URL("http://supplier.localhost:3014"), { ...environment, NODE_ENV: "production" }), false);
+  assert.equal(isAllowedLocalQaOrigin(new Request("http://evil.localhost:3014/api"), new URL("http://evil.localhost:3014"), environment), false);
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousAuth = process.env.KAI_ADMIN_LOCAL_AUTH;
+  const previousMultiRole = process.env.KAI_ADMIN_LOCAL_MULTI_ROLE_QA;
+  const previousOrigin = process.env.KAI_PUBLIC_ORIGIN;
+  process.env.NODE_ENV = "development";
+  process.env.KAI_ADMIN_LOCAL_AUTH = "1";
+  process.env.KAI_ADMIN_LOCAL_MULTI_ROLE_QA = "1";
+  process.env.KAI_PUBLIC_ORIGIN = "http://127.0.0.1:3014";
+  try { assert.doesNotThrow(() => assertAccountAuthSameOrigin(supplierRequest)); }
+  finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previousNodeEnv;
+    if (previousAuth === undefined) delete process.env.KAI_ADMIN_LOCAL_AUTH; else process.env.KAI_ADMIN_LOCAL_AUTH = previousAuth;
+    if (previousMultiRole === undefined) delete process.env.KAI_ADMIN_LOCAL_MULTI_ROLE_QA; else process.env.KAI_ADMIN_LOCAL_MULTI_ROLE_QA = previousMultiRole;
+    if (previousOrigin === undefined) delete process.env.KAI_PUBLIC_ORIGIN; else process.env.KAI_PUBLIC_ORIGIN = previousOrigin;
+  }
 });

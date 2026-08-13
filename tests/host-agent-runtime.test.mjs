@@ -43,6 +43,9 @@ test("runtime canonical JSON, digest and Ed25519 signatures match the server pro
   await assert.rejects(verifyHostingAgentSignature(identity.publicKeyRaw, { ...payload, changed: true }, signature), (error) => error.code === "AGENT_SIGNATURE_INVALID");
   assert.throws(() => assertHttpsEndpoint("http://cloud.kai.com/api/v2/agent/register"), (error) => error.code === "HTTPS_REQUIRED");
   assert.equal(assertHttpsEndpoint("https://cloud.kai.com/api/v2/agent/register").protocol, "https:");
+  assert.equal(assertHttpsEndpoint("http://supplier.localhost:3014/api/v2/agent/register", { allowInsecureLocal: true }).hostname, "supplier.localhost");
+  assert.throws(() => assertHttpsEndpoint("http://attacker.localhost:3014/api/v2/agent/register", { allowInsecureLocal: true }), (error) => error.code === "HTTPS_REQUIRED");
+  assert.throws(() => assertHttpsEndpoint("http://supplier.localhost.example.com/api/v2/agent/register", { allowInsecureLocal: true }), (error) => error.code === "HTTPS_REQUIRED");
 });
 
 test("NVIDIA inventory parser accepts one supported GPU and rejects ambiguous hosts", () => {

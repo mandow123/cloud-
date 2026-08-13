@@ -79,7 +79,9 @@ export function assertHttpsEndpoint(value, { allowInsecureLocal = false } = {}) 
   let url;
   try { url = new URL(value); }
   catch { throw new AgentError("ENDPOINT_INVALID", "Agent endpoint must be an absolute URL."); }
-  const local = ["127.0.0.1", "localhost", "::1", "[::1]"].includes(url.hostname);
+  const hostname = url.hostname.toLowerCase();
+  const local = ["127.0.0.1", "localhost", "::1", "[::1]"].includes(hostname)
+    || /^(?:buyer|supplier|root|finance)\.localhost$/u.test(hostname);
   if (url.protocol !== "https:" && !(allowInsecureLocal && local && url.protocol === "http:")) {
     throw new AgentError("HTTPS_REQUIRED", "Host Agent only connects to HTTPS endpoints.");
   }

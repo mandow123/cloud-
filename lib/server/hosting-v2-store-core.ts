@@ -3,7 +3,7 @@ import { HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/h
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { assertHostingAgentWindow, hostingAgentCanonicalJson, hostingAgentDigest, verifyHostingAgentSignature } from "./hosting-agent-crypto.ts";
 import { assertHostingV2ApprovedImage, HOSTING_V2_OCI_IMAGE_PATTERN, hostingV2ApprovedImages } from "./hosting-v2-image-policy.ts";
-import { physicalGpuAudit } from "./hosting-v2-audit-policy.ts";
+import { gpuTradingEligibility, physicalGpuAudit } from "./hosting-v2-audit-policy.ts";
 import type { HostingMutationContext, HostingV2DatabaseAdapter, HostingV2Sql, HostingV2Store } from "./hosting-v2-store.ts";
 
 type Row = Record<string, unknown>;
@@ -36,6 +36,15 @@ function verificationAllowsImage(row: Row, image: string) {
     const payload = json<Record<string, unknown>>(row, "verification_payload_json");
     return Array.isArray(payload.approvedImages) && payload.approvedImages.includes(image);
   } catch { return false; }
+}
+
+function rowInventory(row: Row, key = "inventory_json") {
+  return json<HostingDeviceInventory>(row, key);
+}
+
+function assertGpuTradingEligible(row: Row, key = "inventory_json") {
+  const eligibility = gpuTradingEligibility(rowInventory(row, key));
+  if (!eligibility.passed) throw new ExchangeDomainError("HOSTING_PHYSICAL_GPU_REQUIRED", 409, eligibility.detail);
 }
 
 function assertSuccessfulVerificationDetails(details: Record<string, unknown> | undefined, payload: Record<string, unknown>, expectedInventoryDigest: string, controlPlaneReachabilityDigest: string | undefined, now: string) {
@@ -372,7 +381,7 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
         db.first<{ version: number | null }>("SELECT MAX(version) AS version FROM hosting_v2_schema_migrations"),
         db.first<Row>("SELECT id FROM hosting_v2_fee_schedules WHERE status='ACTIVE' AND effective_from<=? ORDER BY effective_from DESC LIMIT 1", [now]),
         db.first<{ count: number }>("SELECT COUNT(*) AS count FROM hosting_v2_supplier_profiles WHERE status='APPROVED'"),
-        db.all<Row>("SELECT agent_version FROM hosting_v2_devices WHERE status IN ('VERIFIED','BUSY') AND verification_status='PASSED' AND verified_until>? AND last_seen_at>=?", [now, staleCutoff]),
+        db.all<Row>("SELECT agent_version,inventory_json FROM hosting_v2_devices WHERE status IN ('VERIFIED','BUSY') AND verification_status='PASSED' AND verified_until>? AND last_seen_at>=?", [now, staleCutoff]),
         db.first<{ count: number }>("SELECT COUNT(*) AS count FROM hosting_v2_devices WHERE status='DRAINING'"),
         db.first<{ count: number }>(`SELECT COUNT(*) AS count FROM hosting_v2_contracts c
           WHERE c.status='CLEANING'
@@ -386,7 +395,7 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
         integrity: "ok" as const,
         activeFeeScheduleId: feeRow ? value(feeRow, "id") : null,
         approvedSupplierCount: Number(suppliers?.count ?? 0),
-        activeAgentCount: activeAgents.filter((row) => agentVersionAtLeast(value(row, "agent_version"), HOSTING_V2_MIN_AGENT_VERSION)).length,
+        activeAgentCount: activeAgents.filter((row) => gpuTradingEligibility(rowInventory(row)).passed && agentVersionAtLeast(value(row, "agent_version"), HOSTING_V2_MIN_AGENT_VERSION)).length,
         drainingDeviceCount: Number(drainingDevices?.count ?? 0),
         failedCleanupCount: Number(failedCleanups?.count ?? 0),
         cleaningContractCount: Number(cleaningContracts?.count ?? 0),
@@ -861,7 +870,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
     async updateOfferStatus(organizationId, offerId, input, context) {
       const replayed = await replay(db, context, "UPDATE_OFFER_STATUS");
       if (!replayed) {
-        const current = await db.first<Row>(`SELECT o.*,d.status device_status,d.verification_status device_verification,d.verification_evidence_digest,d.verified_until,d.last_seen_at,d.agent_version device_agent_version,p.status supplier_status,
+        const current = await db.first<Row>(`SELECT o.*,d.status device_status,d.verification_status device_verification,d.verification_evidence_digest,d.verified_until,d.last_seen_at,d.agent_version device_agent_version,d.inventory_json,p.status supplier_status,
           (SELECT cmd.payload_json FROM hosting_v2_verification_proofs proof JOIN hosting_v2_agent_commands cmd ON cmd.id=proof.command_id
            WHERE proof.device_id=d.id AND proof.agent_evidence_digest=d.verification_evidence_digest ORDER BY proof.recorded_at DESC LIMIT 1) AS verification_payload_json
           FROM hosting_v2_offers o JOIN hosting_v2_devices d ON d.id=o.device_id JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id WHERE o.id=? AND o.organization_id=?`, [offerId, organizationId]);
@@ -871,6 +880,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         if (input.status === "PUBLISHED" && (value(current, "device_status") !== "VERIFIED" || value(current, "device_verification") !== "PASSED" || Date.parse(value(current, "verified_until")) <= Date.parse(context.now) || Date.parse(value(current, "last_seen_at")) < Date.parse(context.now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000)) throw new ExchangeDomainError("EXCHANGE_VERIFICATION_EXPIRED", 409, "设备不在线或验真已经过期。");
         if (input.status === "PUBLISHED" && !agentVersionAtLeast(value(current, "device_agent_version"), HOSTING_V2_MIN_AGENT_VERSION)) throw new ExchangeDomainError("HOSTING_AGENT_UPGRADE_REQUIRED", 409, `Host Agent 需要升级到 ${HOSTING_V2_MIN_AGENT_VERSION} 或更高版本。`);
         if (input.status === "PUBLISHED") {
+          assertGpuTradingEligible(current);
           assertHostingV2ApprovedImage(value(current, "approved_image"));
           if (!verificationAllowsImage(current, value(current, "approved_image"))) throw new ExchangeDomainError("EXCHANGE_VERIFICATION_EXPIRED", 409, "设备尚未证明当前工作负载镜像可交付，请重新验真。");
         }
@@ -890,13 +900,14 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
     async listPublicOffers(now) {
       const cutoff = new Date(Date.parse(now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000).toISOString();
       const approvedImages = hostingV2ApprovedImages();
-      return (await db.all<Row>(`SELECT o.*,d.agent_version device_agent_version,
+      return (await db.all<Row>(`SELECT o.*,d.agent_version device_agent_version,d.inventory_json,
           (SELECT cmd.payload_json FROM hosting_v2_verification_proofs proof JOIN hosting_v2_agent_commands cmd ON cmd.id=proof.command_id
            WHERE proof.device_id=d.id AND proof.agent_evidence_digest=d.verification_evidence_digest ORDER BY proof.recorded_at DESC LIMIT 1) AS verification_payload_json
         FROM hosting_v2_offers o JOIN hosting_v2_devices d ON d.id=o.device_id JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id
         WHERE o.status='PUBLISHED' AND p.status='APPROVED' AND o.available_from<=? AND o.available_until>? AND d.status='VERIFIED' AND d.verification_status='PASSED' AND d.verified_until>? AND d.last_seen_at>=?
         ORDER BY o.card_hour_micros_per_gpu_hour,o.created_at`, [now, now, now, cutoff]))
-        .filter((row) => agentVersionAtLeast(value(row, "device_agent_version"), HOSTING_V2_MIN_AGENT_VERSION)
+        .filter((row) => gpuTradingEligibility(rowInventory(row)).passed
+          && agentVersionAtLeast(value(row, "device_agent_version"), HOSTING_V2_MIN_AGENT_VERSION)
           && approvedImages.has(value(row, "approved_image")) && verificationAllowsImage(row, value(row, "approved_image")))
         .map(offer);
     },
@@ -914,7 +925,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         return contract(row);
       }
       const staleCutoff = new Date(Date.parse(context.now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000).toISOString();
-      const row = await db.first<Row>(`SELECT o.*,f.platform_fee_bps,f.referral_reward_bps,d.agent_version device_agent_version,
+      const row = await db.first<Row>(`SELECT o.*,f.platform_fee_bps,f.referral_reward_bps,d.agent_version device_agent_version,d.inventory_json,
           (SELECT cmd.payload_json FROM hosting_v2_verification_proofs proof JOIN hosting_v2_agent_commands cmd ON cmd.id=proof.command_id
            WHERE proof.device_id=d.id AND proof.agent_evidence_digest=d.verification_evidence_digest ORDER BY proof.recorded_at DESC LIMIT 1) AS verification_payload_json
         FROM hosting_v2_offers o
@@ -923,6 +934,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id
         WHERE o.id=? AND o.status='PUBLISHED' AND p.status='APPROVED' AND o.available_from<=? AND o.available_until>? AND d.status='VERIFIED' AND d.verification_status='PASSED' AND d.verified_until>? AND d.last_seen_at>=?`, [offerId, context.now, context.now, context.now, staleCutoff]);
       if (!row) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源已不可租用，请刷新市场。");
+      if (!gpuTradingEligibility(rowInventory(row)).passed) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源未通过真实物理 GPU 审计，请刷新市场。");
       if (!agentVersionAtLeast(value(row, "device_agent_version"), HOSTING_V2_MIN_AGENT_VERSION)) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源交付组件正在升级，请刷新市场。");
       if (!hostingV2ApprovedImages().has(value(row, "approved_image")) || !verificationAllowsImage(row, value(row, "approved_image"))) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源工作负载镜像尚未通过当前验真，请刷新市场。");
       if (value(row, "organization_id") === account.activeOrganization.id) throw new ExchangeDomainError("EXCHANGE_OWNERSHIP_FORBIDDEN", 403, "供应方不能购买自己的资源。");
