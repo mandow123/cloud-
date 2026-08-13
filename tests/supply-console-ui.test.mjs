@@ -50,6 +50,13 @@ test("resource registration issues a short-lived server challenge without client
   assert.match(source, /minimumAgentVersion: challenge\.minimumAgentVersion/u);
   assert.match(source, /expiresAt: challenge\.expiresAt/u);
   assert.match(source, /navigator\.clipboard\.writeText\(pairingBundle\)/u);
+  assert.match(source, /new Blob/u);
+  assert.match(source, /type: "application\/json"/u);
+  assert.match(source, /anchor\.download = `kai-host-pairing-\$\{challenge\.id\}\.json`/u);
+  assert.match(source, /URL\.revokeObjectURL\(url\)/u);
+  assert.match(source, /下载私有配对文件/u);
+  assert.match(source, /废弃这份凭证/u);
+  assert.doesNotMatch(source, /废弃页面中的凭证/u);
   assert.match(source, /`\/api\/v2\/supply\/agent-challenges\/\$\{encodeURIComponent\(challenge\.id\)\}`/u);
   assert.match(source, /window\.setInterval\(\(\) => \{ void check\(\); \}, 3_000\)/u);
   assert.match(source, /进入设备验真/u);
