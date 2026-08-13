@@ -17,9 +17,10 @@ export default function HostingPage() {
   return (
     <HostingPublicShell
       activePath="/hosting"
-      eyebrow="KAI HOSTING / VERIFIED COMPUTE NETWORK"
-      title="Host compute. Earn card-hours. / 上架真实算力，获得卡时收益。"
-      summary="真实设备、可冻结报价、可连接实例、按秒计量和可验证清理，全部进入同一条订单链路。"
+      eyebrow="KAI HOSTING · VERIFIED COMPUTE NETWORK"
+      title="让闲置算力，安全地开始工作。"
+      titleEn="Put verified compute to work."
+      summary="从一张 GPU 到一笔真实订单：平台完成验真、挂牌、交付、按秒计量、卡时结算与清理再售。"
     >
       <HostingLegacyHashRedirect />
       <HostingLaunchpad />

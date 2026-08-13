@@ -4,118 +4,155 @@
 }
 
 .masthead {
+  position: relative;
+  overflow: hidden;
   border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--surface-muted);
+}
+
+.masthead::before {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--accent) 8%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--accent) 7%, transparent) 1px, transparent 1px);
+  background-size: 96px 96px;
+  mask-image: linear-gradient(to bottom, transparent, black 22%, black 76%, transparent);
+  content: "";
+  pointer-events: none;
 }
 
 .mastheadInner {
+  position: relative;
+  z-index: 1;
   width: min(calc(100% - 64px), 1180px);
   margin-inline: auto;
-  padding-block: 26px 22px;
+  padding-block: clamp(48px, 6vw, 72px) clamp(40px, 5vw, 60px);
+  text-align: center;
 }
 
 .eyebrow {
-  margin: 0 0 8px;
+  margin: 0 0 18px;
   color: var(--accent);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 750;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
 .title {
-  max-width: 1040px;
-  margin: 0;
-  font-size: clamp(1.25rem, 2.2vw, 1.85rem);
-  line-height: 1.25;
+  max-width: 900px;
+  margin: 0 auto;
+  color: var(--ink);
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  font-weight: 650;
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.titleEn {
+  margin: 12px 0 0;
+  color: var(--accent);
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(1rem, 1.5vw, 1.25rem);
+  font-weight: 550;
+  letter-spacing: 0.02em;
 }
 
 .summary {
-  max-width: 1040px;
-  margin: 8px 0 0;
+  max-width: 720px;
+  margin: 22px auto 0;
   color: var(--text);
-  font-size: 0.82rem;
+  font-size: 1rem;
+  line-height: 1.72;
 }
 
 .routeNav {
+  position: relative;
+  z-index: 1;
   width: min(calc(100% - 64px), 1180px);
   margin-inline: auto;
   border-top: 1px solid var(--border);
-  padding-block: 8px;
 }
 
 .routeNavList {
-  display: flex;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   margin: 0;
   padding: 0;
-  overflow-x: auto;
   list-style: none;
 }
 
 .routeNav a {
-  display: block;
-  border: 1px solid transparent;
-  padding: 8px 12px;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid var(--border);
+  padding: 10px 12px;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 650;
   text-decoration: none;
   white-space: nowrap;
 }
 
+.routeNav li:first-child a {
+  border-left: 1px solid var(--border);
+}
+
 .routeNav a:hover,
 .routeNav a:focus-visible {
-  border-color: var(--border);
+  background: var(--accent-soft);
   color: var(--ink);
 }
 
 .routeNav a[aria-current="page"] {
-  border-color: var(--border-strong);
   background: var(--accent-soft);
   color: var(--accent);
+  box-shadow: inset 0 -3px 0 var(--accent);
 }
 
 .content {
   width: min(calc(100% - 64px), 1180px);
   margin-inline: auto;
-  padding-block: 24px 72px;
+  padding-block: 36px 72px;
 }
 
 .launchpad {
-  border: 1px solid var(--border);
-  background: var(--surface);
+  background: transparent;
 }
 
 .launchpadHeader {
   display: flex;
-  align-items: center;
+  align-items: end;
   justify-content: space-between;
   gap: 28px;
-  border-bottom: 1px solid var(--border);
-  padding: 18px 20px;
+  padding: 0 0 22px;
 }
 
 .launchpadHeader h2 {
   margin: 0;
-  font-size: clamp(1.1rem, 1.8vw, 1.4rem);
+  font-size: clamp(1.55rem, 2.6vw, 2.15rem);
 }
 
 .launchpadHeader p:last-child {
   margin: 8px 0 0;
   color: var(--muted);
-  font-size: 0.86rem;
+  font-size: 0.92rem;
 }
 
 .liveState,
 .closedState {
   display: flex;
-  min-width: 196px;
+  min-width: 224px;
   align-items: center;
   gap: 12px;
   border: 1px solid var(--border);
-  padding: 11px 14px;
+  background: var(--surface);
+  padding: 12px 15px;
 }
 
 .liveState > span,
@@ -151,20 +188,20 @@
 
 .launchpadActions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  background: var(--border);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 2px solid var(--accent);
+  border-left: 1px solid var(--border);
 }
 
 .launchpadAction {
   position: relative;
-  display: grid;
-  min-height: 142px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: auto 1fr;
-  gap: 14px 22px;
+  min-height: 238px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   background: var(--surface);
-  padding: 20px;
+  padding: 22px;
   color: var(--ink);
   text-decoration: none;
 }
@@ -175,28 +212,23 @@
   outline: 0;
 }
 
-.launchpadAction > .cardCode {
-  grid-column: 1 / -1;
-}
-
 .launchpadAction h3 {
-  margin: 0 0 5px;
-  font-size: 1rem;
+  margin: 34px 0 7px;
+  font-size: 1.2rem;
 }
 
 .launchpadAction p {
   margin: 0;
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.82rem;
 }
 
 .actionMeta {
-  display: block;
-  min-width: 130px;
-  margin: 0 32px 0 0;
+  min-width: 0;
+  margin: auto 26px 0 0;
   color: var(--muted);
   font-size: 0.68rem;
-  text-align: right;
+  text-align: left;
 }
 
 .actionMeta strong {
@@ -214,31 +246,32 @@
 
 .actionArrow {
   position: absolute;
-  right: 20px;
-  bottom: 20px;
+  right: 22px;
+  bottom: 22px;
   color: var(--accent);
   font-size: 1.1rem;
 }
 
 .launchpadData {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(330px, 0.85fr);
-  gap: 1px;
-  border-top: 1px solid var(--border);
-  background: var(--border);
+  margin-top: 20px;
 }
 
 .liveMetrics {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  background: var(--border);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .liveMetrics > div {
-  min-height: 126px;
+  min-height: 112px;
+  border-right: 1px solid var(--border);
   background: var(--surface);
-  padding: 20px;
+  padding: 18px;
+}
+
+.liveMetrics > div:last-child {
+  border-right: 0;
 }
 
 .liveMetrics span,
@@ -262,7 +295,48 @@
 }
 
 .readinessPanel {
+  border-top: 1px solid var(--border);
   background: var(--surface);
+}
+
+.readinessDisclosure {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.readinessDisclosure > summary {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 18px;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  list-style: none;
+}
+
+.readinessDisclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.readinessDisclosure > summary::after {
+  color: var(--accent);
+  content: "+";
+  font-size: 1.05rem;
+}
+
+.readinessDisclosure[open] > summary::after {
+  content: "−";
+}
+
+.readinessDisclosure > summary strong {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.72rem;
 }
 
 .readinessPanel > header,
@@ -320,7 +394,9 @@
 }
 
 .offerPreview {
-  border-top: 1px solid var(--border);
+  margin-top: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .offerPreview > header a {
@@ -752,9 +828,19 @@
     grid-column: 2 / -1;
   }
 
-  .launchpadData {
-    grid-template-columns: 1fr;
+  .launchpadActions,
+  .liveMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .liveMetrics > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .liveMetrics > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--border);
+  }
+
 }
 
 @media (max-width: 640px) {
@@ -765,7 +851,32 @@
   }
 
   .mastheadInner {
-    padding-block: 22px 18px;
+    padding-block: 42px 34px;
+    text-align: left;
+  }
+
+  .title {
+    margin-inline: 0;
+    font-size: clamp(2rem, 10vw, 2.75rem);
+  }
+
+  .titleEn {
+    max-width: 300px;
+  }
+
+  .summary {
+    margin-inline: 0;
+  }
+
+  .routeNav {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .routeNavList {
+    width: max-content;
+    min-width: 100%;
+    grid-template-columns: repeat(5, minmax(112px, 1fr));
   }
 
   .content {
@@ -781,6 +892,16 @@
     grid-template-columns: 1fr;
   }
 
+  .liveMetrics > div,
+  .liveMetrics > div:nth-child(2) {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .liveMetrics > div:last-child {
+    border-bottom: 0;
+  }
+
   .launchpadHeader,
   .launchpadError {
     align-items: flex-start;
@@ -793,8 +914,7 @@
   }
 
   .launchpadAction {
-    min-height: auto;
-    grid-template-columns: 1fr;
+    min-height: 210px;
     padding: 18px;
   }
 
@@ -802,6 +922,10 @@
     min-width: 0;
     margin-right: 30px;
     text-align: left;
+  }
+
+  .readinessDisclosure > summary strong {
+    display: none;
   }
 
   .offerPreview article {

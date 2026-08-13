@@ -21,9 +21,22 @@
   font-size: 0.9375rem;
 }
 
-.kai-root:not(:has(.mandow-hound-root)) .theme-control,
+.kai-root:not(:has(.mandow-hound-root)) .theme-control {
+  min-width: 116px;
+  font-size: 0.6875rem;
+}
+
+.kai-root:not(:has(.mandow-hound-root)) .theme-control > span {
+  top: 5px;
+  font-size: 0.625rem;
+  line-height: 1;
+}
+
 .kai-root:not(:has(.mandow-hound-root)) .theme-control select {
-  font-size: 0.9375rem;
+  min-width: 116px;
+  padding: 18px 30px 4px 11px;
+  font-size: 0.8125rem;
+  line-height: 1.1;
 }
 
 .kai-root:not(:has(.mandow-hound-root)) .button {
@@ -547,6 +560,16 @@
 @media (max-width: 720px) {
   .kai-root:not(:has(.mandow-hound-root)) {
     font-size: 16px;
+  }
+
+  .kai-root:not(:has(.mandow-hound-root)) .theme-control,
+  .kai-root:not(:has(.mandow-hound-root)) .theme-control select {
+    min-width: 88px;
+  }
+
+  .kai-root:not(:has(.mandow-hound-root)) .theme-control select {
+    padding: 4px 26px 4px 10px;
+    font-size: 0.75rem;
   }
 
   .kai-root:not(:has(.mandow-hound-root)) .site-footer {

@@ -15,8 +15,9 @@ export default function PersonalGpuHostingPage() {
   return (
     <HostingPublicShell
       activePath="/hosting/personal-gpu"
-      eyebrow="Personal GPU · First production profile"
-      title="从一张 4090 开始，完整走完一笔真实租单。"
+      eyebrow="PERSONAL GPU · FIRST VERIFIED LISTING"
+      title="从一张 GPU，走完第一笔真实租单。"
+      titleEn="List one machine. Prove every step."
       summary="不是填写一张表就算上架。设备必须持续在线、规格可验证、端口可连接，并在订单结束后完成撤权与清理。"
     >
       <dl className={styles.metricGrid}>

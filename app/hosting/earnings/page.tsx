@@ -11,8 +11,9 @@ export default function HostingEarningsPage() {
   return (
     <HostingPublicShell
       activePath="/hosting/earnings"
-      eyebrow="Earnings · Immutable ledger"
+      eyebrow="EARNINGS · IMMUTABLE LEDGER"
       title="每一笔收益，都能回到一段真实服务时间。"
+      titleEn="Every earning traces back to real compute."
       summary="KAI 标准卡时是站内统一计量与结算单位。买家先锁定预估卡时，服务结束后按实际秒数扣减，多余部分释放，供应方租金和推荐佣金分别入账。"
     >
       <dl className={styles.metricGrid}>

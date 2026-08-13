@@ -16,12 +16,14 @@ export function HostingPublicShell({
   activePath,
   eyebrow,
   title,
+  titleEn,
   summary,
   children,
 }: {
   activePath: string;
   eyebrow: string;
   title: string;
+  titleEn?: string;
   summary: string;
   children: ReactNode;
 }) {
@@ -31,6 +33,7 @@ export function HostingPublicShell({
         <div className={styles.mastheadInner}>
           <p className={styles.eyebrow}>{eyebrow}</p>
           <h1 className={styles.title}>{title}</h1>
+          {titleEn ? <p className={styles.titleEn} lang="en">{titleEn}</p> : null}
           <p className={styles.summary}>{summary}</p>
         </div>
         <nav aria-label="Hosting 页面" className={styles.routeNav}>

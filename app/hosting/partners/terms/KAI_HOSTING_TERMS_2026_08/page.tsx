@@ -13,8 +13,9 @@ export default function HostingTerms202608Page() {
   return (
     <HostingPublicShell
       activePath="/hosting/partners"
-      eyebrow="Immutable supplier terms · 2026.08"
+      eyebrow="IMMUTABLE SUPPLIER TERMS · 2026.08"
       title="KAI Hosting 算力供应协议"
+      titleEn="Supplier Terms · Version 2026.08"
       summary="本页是邀请制试运营的固定协议版本。供应主体提交审核时，服务端会把此版本写入不可变审核记录；后续修订不会覆盖本页。"
     >
       <div className={styles.statusStrip} aria-label="协议版本信息">

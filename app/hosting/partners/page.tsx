@@ -11,8 +11,9 @@ export default function HostingPartnersPage() {
   return (
     <HostingPublicShell
       activePath="/hosting/partners"
-      eyebrow="Partners · Governed onboarding"
+      eyebrow="PARTNERS · GOVERNED ONBOARDING"
       title="供应商不是一个名字，而是一组可审核、可履约的能力。"
+      titleEn="Verified supply, accountable delivery."
       summary="企业供应商需要完成主体、权属、合同和技术能力审核。通过后按资源模板登记真实库存，并在生产连接器验收后开放成交。"
     >
       <div className={styles.statusStrip} aria-label="合作流程">

@@ -198,16 +198,22 @@ export function HostingLaunchpad() {
           ))}
         </section>
 
-        <section className={styles.readinessPanel} aria-labelledby="readiness-panel-title">
-          <header><h3 id="readiness-panel-title">成交就绪检查</h3><span>Release {shortRelease(state.release)}</span></header>
-          <ul>
-            {checkRows.map(([key, label]) => {
-              const check = readiness.checks[key];
-              return <li key={key}><span>{label}</span><strong className={check.ready ? styles.checkReady : styles.checkClosed}>{check.ready ? "READY" : "CLOSED"}</strong></li>;
-            })}
-          </ul>
-          <p>{state.localAcceptance ? "本地验收允许跑通交互和状态机，但不计作真实 GPU 或生产成交。" : transactionOpen ? "所有关键项已经就绪，新订单可以进入真实交付。" : "任一关键项未就绪时，公开成交保持关闭；页面不会用模拟资源冒充真实供给。"}</p>
-        </section>
+        <details className={styles.readinessDisclosure}>
+          <summary>
+            <span>平台成交边界</span>
+            <strong>{transactionOpen && !state.localAcceptance ? "可进入真实交付" : "查看当前限制"}</strong>
+          </summary>
+          <section className={styles.readinessPanel} aria-labelledby="readiness-panel-title">
+            <header><h3 id="readiness-panel-title">成交就绪检查</h3><span>Release {shortRelease(state.release)}</span></header>
+            <ul>
+              {checkRows.map(([key, label]) => {
+                const check = readiness.checks[key];
+                return <li key={key}><span>{label}</span><strong className={check.ready ? styles.checkReady : styles.checkClosed}>{check.ready ? "READY" : "CLOSED"}</strong></li>;
+              })}
+            </ul>
+            <p>{state.localAcceptance ? "本地验收允许跑通交互和状态机，但不计作真实 GPU 或生产成交。" : transactionOpen ? "所有关键项已经就绪，新订单可以进入真实交付。" : "任一关键项未就绪时，公开成交保持关闭；页面不会用模拟资源冒充真实供给。"}</p>
+          </section>
+        </details>
       </div>
 
       {offers.length ? (

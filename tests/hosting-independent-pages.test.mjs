@@ -103,13 +103,15 @@ test("hosting landing is a live front-to-back control plane instead of a static 
   assert.match(launchpad, /页面不会用模拟资源冒充真实供给/u);
 
   const page = readFileSync("app/hosting/page.tsx", "utf8");
-  assert.match(page, /Host compute\. Earn card-hours\. \/ 上架真实算力，获得卡时收益。/u);
-  assert.doesNotMatch(page, /让算力抵达需要它的时刻|每一步都有独立工作面/u);
+  assert.match(page, /让闲置算力，安全地开始工作。/u);
+  assert.match(page, /Put verified compute to work\./u);
+  assert.doesNotMatch(page, /用 KAI 卡时，直接买到算力|每一步都有独立工作面/u);
 
   const css = readFileSync("components/hosting-public.module.css", "utf8");
-  assert.match(css, /\.launchpadActions\s*\{[\s\S]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/u);
+  assert.match(css, /\.launchpadActions\s*\{[\s\S]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/u);
   assert.match(css, /\.launchpadAction:hover,[\s\S]*background:\s*var\(--accent-soft\)/u);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*\.launchpadActions[\s\S]*grid-template-columns:\s*1fr/u);
+  assert.match(launchpad, /<details className=\{styles\.readinessDisclosure\}>/u);
 });
 
 test("the configured supplier agreement has an immutable public document", () => {

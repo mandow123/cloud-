@@ -11,8 +11,9 @@ export default function CloudHostingPage() {
   return (
     <HostingPublicShell
       activePath="/hosting/cloud"
-      eyebrow="Cloud inventory · Connector contract"
-      title="同一个市场入口，不代表所有资源使用同一种交付方式。"
+      eyebrow="CLOUD INVENTORY · CONNECTOR CONTRACT"
+      title="同一个市场，多种经过验收的交付方式。"
+      titleEn="One market. Verified delivery paths."
       summary="云厂商、IDC 和自有集群通过统一连接器契约进入 KAI Cloud。只有完成真实预留、开通、计量、停止与清理演练的连接器才可成交。"
     >
       <section className={styles.section}>
