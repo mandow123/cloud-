@@ -36,7 +36,7 @@ function apiError(body: unknown, response: Response) {
   );
 }
 
-async function adminFetch(path: string, init: RequestInit = {}, timeoutMs = 15_000) {
+async function adminFetch(path: string, init: RequestInit = {}, timeoutMs = 15_000, acceptedErrorStatuses: readonly number[] = []) {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -48,7 +48,7 @@ async function adminFetch(path: string, init: RequestInit = {}, timeoutMs = 15_0
       signal: controller.signal,
     });
     const body = await responseBody(response);
-    if (!response.ok) throw apiError(body, response);
+    if (!response.ok && !acceptedErrorStatuses.includes(response.status)) throw apiError(body, response);
     return body;
   } catch (error) {
     if (error instanceof AdminApiError) throw error;
@@ -65,6 +65,14 @@ export async function adminGetJson(path: string) {
   const payload = await adminFetch(path);
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new AdminApiError("管理员接口返回了无法识别的内容。", 200, "INVALID_RESPONSE");
+  }
+  return payload as Record<string, unknown>;
+}
+
+export async function adminGetReadinessJson() {
+  const payload = await adminFetch("/api/ready", {}, 15_000, [503]);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new AdminApiError("就绪检查返回了无法识别的内容。", 200, "INVALID_RESPONSE");
   }
   return payload as Record<string, unknown>;
 }

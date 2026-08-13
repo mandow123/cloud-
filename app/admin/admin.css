@@ -652,6 +652,86 @@ body:has(.admin-app) #main-content {
   margin-bottom: 20px;
 }
 
+.admin-hosting-readiness {
+  margin-bottom: 20px;
+}
+
+.admin-hosting-readiness-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 16px;
+  background: var(--admin-line);
+}
+
+.admin-hosting-readiness-meta span {
+  display: grid;
+  gap: 5px;
+  background: var(--info-bg);
+  padding: 12px 14px;
+  color: var(--muted);
+  font-size: .7rem;
+}
+
+.admin-hosting-readiness-meta b {
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.admin-hosting-readiness-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 1px;
+  background: var(--admin-line);
+}
+
+.admin-hosting-readiness-list article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  min-height: 112px;
+  background: var(--surface);
+  padding: 16px;
+}
+
+.admin-hosting-readiness-list article.fail {
+  background: color-mix(in srgb, var(--danger) 5%, var(--surface));
+}
+
+.admin-hosting-readiness-list h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: .82rem;
+}
+
+.admin-hosting-readiness-list p,
+.admin-hosting-readiness-list small {
+  display: block;
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: .7rem;
+  line-height: 1.5;
+}
+
+.admin-hosting-readiness-list small {
+  color: var(--ink);
+}
+
+.admin-hosting-readiness-list a {
+  color: var(--accent);
+  font-size: .7rem;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.admin-hosting-readiness-list a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .admin-hosting-golden-form {
   grid-template-columns: minmax(0, 1fr) auto;
 }
@@ -1218,6 +1298,7 @@ body:has(.admin-app) #main-content {
   }
 
   .admin-hosting-summary,
+  .admin-hosting-readiness-list,
   .admin-hosting-golden-facts,
   .admin-hosting-form,
   .admin-hosting-grant-form {
@@ -1306,6 +1387,8 @@ body:has(.admin-app) #main-content {
 
   .admin-hosting-grid,
   .admin-hosting-summary,
+  .admin-hosting-readiness-meta,
+  .admin-hosting-readiness-list,
   .admin-hosting-golden-facts,
   .admin-hosting-golden-checks,
   .admin-hosting-form,
@@ -1324,6 +1407,14 @@ body:has(.admin-app) #main-content {
   .admin-hosting-facts,
   .admin-hosting-current {
     grid-template-columns: 1fr;
+  }
+
+  .admin-hosting-readiness-list article {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .admin-hosting-readiness-list article > a {
+    grid-column: 2;
   }
 
   .admin-panel-wide {

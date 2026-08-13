@@ -276,6 +276,14 @@ test("the Hosting admin page is wired to live approval APIs and has no fake clie
   assert.match(component, /\/api\/v2\/admin\/hosting\/stop-incidents/u);
   assert.match(component, /重新下发受控停机/u);
   assert.match(component, /\/api\/v2\/admin\/hosting\/disputes/u);
+  assert.match(component, /adminGetReadinessJson\(\)/u);
+  assert.match(component, /上线闭环就绪状态/u);
+  assert.match(component, /交易安全关闭/u);
+  assert.match(component, /HOSTING_ACTIVE_AGENT_MISSING/u);
+
+  const client = readFileSync(new URL("../components/admin-api-client.tsx", import.meta.url), "utf8");
+  assert.match(client, /adminFetch\("\/api\/ready", \{\}, 15_000, \[503\]\)/u);
+  assert.match(client, /acceptedErrorStatuses\.includes\(response\.status\)/u);
   assert.match(component, /继续执行/u);
   assert.match(component, /FINANCE_APPROVER/u);
   assert.doesNotMatch(component, /localStorage|sessionStorage/u);
