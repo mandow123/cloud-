@@ -104,6 +104,18 @@ export function SupplyResourceRegistration() {
     }
   }
 
+  function downloadBundle() {
+    if (!challenge || !pairingBundle) return;
+    const blob = new Blob([`${pairingBundle}\n`], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `kai-host-pairing-${challenge.id}.json`;
+    anchor.rel = "noopener";
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
   if (!dashboard && !error) return <div className={styles.loading} role="status">正在确认供应主体是否具备设备登记权限…</div>;
   const approved = dashboard?.profile?.status === "APPROVED";
 
@@ -160,8 +172,9 @@ export function SupplyResourceRegistration() {
               </dl>
               <pre className={styles.credentialBlock} tabIndex={0}>{pairingBundle}</pre>
               <div className={styles.actionRow}>
+                <button className={styles.actionButton} onClick={downloadBundle} type="button">下载私有配对文件</button>
                 <button className={styles.actionButton} onClick={() => void copyBundle()} type="button">{copied ? "已复制" : "复制配对内容"}</button>
-                {!pairedDevice ? <button className={styles.secondaryAction} onClick={() => { setChallenge(null); setPairedDevice(null); setPairingExpired(false); issueKey.current = null; }} type="button">废弃页面中的凭证</button> : null}
+                {!pairedDevice ? <button className={styles.secondaryAction} onClick={() => { setChallenge(null); setPairedDevice(null); setPairingExpired(false); issueKey.current = null; }} type="button">废弃这份凭证</button> : null}
               </div>
               {agentOnline && pairedDevice ? (
                 <div className={styles.connectionSuccess} role="status">
@@ -177,7 +190,7 @@ export function SupplyResourceRegistration() {
               ) : (
                 <div className={styles.connectionWaiting} role="status"><span aria-hidden="true" /><div><strong>正在等待这台主机完成配对</strong><p>主机成功注册后，本页面会自动显示设备名称并开放验真入口。</p></div></div>
               )}
-              <p className="m-0 text-xs text-[var(--muted)]">本页面不会把凭证写入浏览器存储。刷新后无法恢复；凭证会在服务端到期，或被一台成功注册的 Agent 消费。</p>
+              <p className="m-0 text-xs text-[var(--muted)]">下载文件只在当前浏览器内临时生成，不会写入浏览器存储。请把文件设为 `0600` 并仅交给目标主机；配对完成后立即安全删除。刷新后无法恢复，凭证会在服务端到期，或被一台成功注册的 Agent 消费。</p>
             </>
           )}
         </div>
