@@ -55,3 +55,48 @@ test("pending memberships cannot create trading records", async () => {
     store.close();
   }
 });
+
+test("root and finance approval memberships cannot become trading counterparties", async () => {
+  for (const role of ["ROOT", "FINANCE_APPROVER"]) {
+    const store = await createSqliteAccountAuthStore(":memory:");
+    const now = new Date();
+    const identity = await store.resolveOrCreateIdentity({
+      provider: "LOCAL",
+      tenantKey: `LOCAL:${role}`,
+      subject: `local-${role.toLowerCase()}`,
+      displayName: role,
+      normalizedEmail: null,
+      organizationExternalKey: `LOCAL:${role}`,
+      organizationName: `${role} Organization`,
+      verifiedAt: now.toISOString(),
+    });
+    await store.activateMembership(identity.membership.id, [role], now.toISOString());
+    const active = await store.resolveOrCreateIdentity({
+      provider: "LOCAL",
+      tenantKey: `LOCAL:${role}`,
+      subject: `local-${role.toLowerCase()}`,
+      displayName: role,
+      normalizedEmail: null,
+      organizationExternalKey: `LOCAL:${role}`,
+      organizationName: `${role} Organization`,
+      verifiedAt: now.toISOString(),
+    });
+    const issued = await createAccountSession(new Request("http://localhost/api/auth/local"), active, "ADMIN_PASSWORD", { store, now });
+    const previous = globalThis.__kaiAccountAuthStorePromise;
+    const previousLegacyGuard = process.env.KAI_ALLOW_LEGACY_ANON_WRITES;
+    globalThis.__kaiAccountAuthStorePromise = Promise.resolve(store);
+    delete process.env.KAI_ALLOW_LEGACY_ANON_WRITES;
+    try {
+      const request = new Request("http://localhost/api/v2/supply/profile", { headers: { cookie: issued.cookie.split(";")[0] } });
+      await assert.rejects(
+        requireTradingAccountSession(request),
+        (error) => error instanceof AccountAuthError && error.status === 403 && error.code === "TRADING_ADMIN_ROLE_FORBIDDEN",
+      );
+    } finally {
+      globalThis.__kaiAccountAuthStorePromise = previous;
+      if (previousLegacyGuard === undefined) delete process.env.KAI_ALLOW_LEGACY_ANON_WRITES;
+      else process.env.KAI_ALLOW_LEGACY_ANON_WRITES = previousLegacyGuard;
+      store.close();
+    }
+  }
+});

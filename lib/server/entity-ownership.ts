@@ -35,5 +35,12 @@ export async function requireTradingAccountSession(request: Request) {
   if (account.membership.status !== "ACTIVE") {
     throw new AccountAuthError("TRADING_SUBJECT_INACTIVE", 403, "当前交易主体尚未启用，不能创建购买、供应或订单记录。 ");
   }
+  if (account.membership.roles.some((role) => role === "ROOT" || role === "FINANCE_APPROVER")) {
+    throw new AccountAuthError(
+      "TRADING_ADMIN_ROLE_FORBIDDEN",
+      403,
+      "后台 Root 与独立财务审批身份不能参与买卖、供应或收款；如需交易，请切换到不含后台权限的独立组织。 ",
+    );
+  }
   return account;
 }
