@@ -111,7 +111,9 @@ npm run ops:image:promote -- \
 
 门禁会拒绝：不足 32 UTF-8 字节或已知占位值的 `KAI_CURSOR_SECRET`、非规范 HTTPS 公网 origin、非完整 40/64 位小写十六进制发布 SHA、可变 tag 或占位 digest、关闭的 HTTPS/代理标志、非 `0`/`1` 的 HSTS 标志，以及不安全或不存在的状态目录。镜像自己的 entrypoint 会在 `server.js` 之前重复相同校验；任一条件不满足时容器以非零状态退出，`up --wait` 不会报告成功。不要把跳过 `ops:deploy:validate -- --current-env`、删除 entrypoint 或不等待健康检查的命令当作受支持的发布路径。
 
-应用端口只绑定 `127.0.0.1:3051`。因此生产配置固定启用 `KAI_TRUST_PROXY=1`，并同时设置 `KAI_REQUIRE_HTTPS_WRITES=1`；任何绕过反向代理的明文写请求都会被拒绝。容器内业务数据库和行情目录固定分别挂载到 `/app/db` 与 `/app/market`，不得合并或改成应用根目录。容器还具有 1 CPU、512MB 内存、256 PIDs、只读根文件系统、日志轮转和 `/api/live` 存活检查。`/api/ready` 用于发布和反向代理就绪判断，不应替代存活检查。
+应用端口只绑定 `127.0.0.1:3051`。私网 3054 必须运行 `kai-cloud-edge-http-3054.service`，由它覆盖而不是继承请求中的 `Host`、`Forwarded` 与 `X-Forwarded-*`，并向应用固定签发 `X-Forwarded-Proto: https`。因此生产配置固定启用 `KAI_TRUST_PROXY=1`，并同时设置 `KAI_REQUIRE_HTTPS_WRITES=1`；任何绕过反向代理的明文写请求都会被拒绝。不得在公网边界继续使用旧的 `kai-cloud-edge-3054.socket` 原始 TCP 转发，否则应用无法确认 TLS 已在上游终止，安全 Cookie 和会员写入会保持关闭。容器内业务数据库和行情目录固定分别挂载到 `/app/db` 与 `/app/market`，不得合并或改成应用根目录。容器还具有 1 CPU、512MB 内存、256 PIDs、只读根文件系统、日志轮转和 `/api/live` 存活检查。`/api/ready` 用于发布和反向代理就绪判断，不应替代存活检查。
+
+切换前必须用同一份 Nginx 配置在临时回环端口演练 `/api/live` 与 `/api/session`，确认会话响应设置 `__Host-` 安全 Cookie。正式切换时停止并禁用 `kai-cloud-edge-3054.socket`，再启用 `kai-cloud-edge-http-3054.service`。若公网健康检查、登录回调或会员写入任一失败，立即停止新服务并重新启用原 socket；应用容器、数据库与审计数据无需回滚。
 
 Hosting V2 试运营固定使用管理员双人审批发放卡时，`KAI_ALIPAY_ENABLED` 必须保持 `0`；即使主机残留完整商户凭据也不能创建付款单。申请账号使用唯一 Root，审批账号使用独立的 `KAI_ADMIN_APPROVER_USERNAME` 与 `KAI_ADMIN_APPROVER_PASSWORD_HASH`，两个用户名、密码和实际操作者都必须不同；审批账号只获得卡时审批和只读审计权限。先设置 `KAI_HOSTING_V2_SETUP=1`、`KAI_HOSTING_V2=0` 进入预上线配置模式，仅完成供应商审核、费率、Agent 配对、设备验真和挂牌草稿；公开市场、租用、开通、启动、扣减和结算仍由服务端拒绝。配置模式只允许 Agent 执行验真，以及既有实例的停止与清理收尾，不能领取新的开通或启动命令。启用 `KAI_HOSTING_V2=1` 前必须配置 KAI Identity、不可变交付镜像和供应协议版本，并在隔离入口完成供应商审批、有效费率、在线 Host Agent、三分钟计量及清理演练。`/api/ready` 会逐项报告供应身份、Agent、费率、卡时账本、镜像、协议、计量、清理和支付宝关闭状态，任一关键项失败时新版本不得接入流量。
 

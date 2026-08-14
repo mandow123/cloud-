@@ -1,0 +1,21 @@
+[Unit]
+Description=KAI Cloud trusted HTTP ingress on private port 3054
+Requires=docker.service kai-cloud-edge-3054-firewall.service
+After=network-online.target docker.service kai-cloud-edge-3054-firewall.service
+Wants=network-online.target
+Conflicts=kai-cloud-edge-3054.socket
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/docker rm -f kai-cloud-edge-http-3054
+ExecStart=/usr/bin/docker run --name kai-cloud-edge-http-3054 --network host --read-only --tmpfs /tmp:rw,noexec,nosuid,size=32m --cap-drop ALL --security-opt no-new-privileges:true --user 101:101 --pids-limit 64 --memory 64m --cpus 0.25 --log-opt max-size=10m --log-opt max-file=3 --pull never -v /etc/kai-cloud/kai-cloud-edge-http-3054.conf:/etc/nginx/nginx.conf:ro docker.io/library/nginx@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236 nginx -g "daemon off;"
+ExecStartPost=/usr/bin/curl --retry 10 --retry-all-errors --retry-delay 1 --connect-timeout 2 --fail --silent --show-error --header "Host: cloud.kai.com" http://172.31.31.78:3054/api/live
+ExecStop=/usr/bin/docker stop --timeout 10 kai-cloud-edge-http-3054
+ExecStopPost=-/usr/bin/docker rm -f kai-cloud-edge-http-3054
+Restart=on-failure
+RestartSec=2s
+TimeoutStartSec=30s
+TimeoutStopSec=20s
+
+[Install]
+WantedBy=multi-user.target
