@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
+import { hostingPreviousCalendarMonth } from "../lib/hosting-v2.ts";
 import { cancelHostingContract, reserveHostingContract } from "../lib/server/hosting-contract-service.ts";
 import { createSqliteCardHourStore } from "../lib/server/card-hour-store-sqlite.ts";
 import { createSqliteHostingV2Store } from "../lib/server/hosting-v2-store-sqlite.ts";
@@ -92,6 +94,16 @@ test("GPU reservation locks exact card-hours once and cancellation releases them
     assert.equal(reserved.contract.status, "CARD_HOURS_HELD");
     assert.equal(reserved.heldMicros, 180_000);
     assert.equal(reserved.replayed, false);
+    assert.deepEqual(reserved.contract.snapshot.feeQualification, {
+      model: "PREVIOUS_CALENDAR_MONTH_SUPPLIER_SETTLED_GROSS_V1",
+      tierCode: "STARTER",
+      period: hostingPreviousCalendarMonth(now),
+      qualifyingVolumeMicros: 0,
+      platformFeeBps: 100,
+      referralRewardBps: 30,
+    });
+    assert.equal(reserved.contract.snapshot.platformFeeBps, 100);
+    assert.equal(reserved.contract.snapshot.referralRewardBps, 30);
     assert.deepEqual((await cardHours.dashboard(buyer.activeOrganization.id, now)).balance, { availableMicros: 9_820_000, heldMicros: 180_000, lifetimeTopupMicros: 10_000_000, lifetimeSpentMicros: 0 });
     const replay = await reserveHostingContract(reservationInput, stores);
     assert.equal(replay.contract.id, reserved.contract.id);
@@ -110,7 +122,33 @@ test("GPU reservation locks exact card-hours once and cancellation releases them
     assert.equal((await cardHours.dashboard(emptyBuyer.activeOrganization.id, now)).balance.heldMicros, 0);
     assert.equal((await hosting.listPublicOffers(now)).length, 1, "failed card-hour hold must republish the GPU offer");
 
+    const feePeriod = hostingPreviousCalendarMonth(now);
+    const history = new DatabaseSync(path);
+    const insertHistory = history.prepare(`INSERT INTO hosting_v2_contracts(
+      id,offer_id,device_id,buyer_organization_id,buyer_account_id,supplier_organization_id,fee_schedule_id,snapshot_json,
+      reserved_seconds,held_micros,settled_micros,status,accepted_at,idempotency_key,payload_hash,version,created_at,updated_at
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    const seedHistory = (id, supplierOrganizationId, status, acceptedAt, settledMicros) => insertHistory.run(
+      id, offer.id, offer.deviceId, `org-history-buyer-${id}`, `acct-history-buyer-${id}`, supplierOrganizationId, offer.feeScheduleId, "{}",
+      180, settledMicros, settledMicros, status, acceptedAt, `history-${id}`, `history-hash-${id}`, 1, acceptedAt, acceptedAt,
+    );
+    seedHistory("hctr_history_eligible", supplier.activeOrganization.id, "CLEANED", new Date(Date.parse(feePeriod.startAt) + 86_400_000).toISOString(), 100_000_000_000);
+    seedHistory("hctr_history_refunded", supplier.activeOrganization.id, "REFUNDED", new Date(Date.parse(feePeriod.startAt) + 172_800_000).toISOString(), 900_000_000_000);
+    seedHistory("hctr_history_other_supplier", "org-other-supplier", "CLEANED", new Date(Date.parse(feePeriod.startAt) + 259_200_000).toISOString(), 900_000_000_000);
+    seedHistory("hctr_history_current_month", supplier.activeOrganization.id, "CLEANED", now, 900_000_000_000);
+    history.close();
+
     const provisionReservation = await reserveHostingContract({ account: buyer, offerId: offer.id, reservedSeconds: 180, mutation: mutation(buyer.account.id, "buyer-reserve-provision", "buyer-reserve-provision-hash", now) }, stores);
+    assert.deepEqual(provisionReservation.contract.snapshot.feeQualification, {
+      model: "PREVIOUS_CALENDAR_MONTH_SUPPLIER_SETTLED_GROSS_V1",
+      tierCode: "STRATEGIC",
+      period: feePeriod,
+      qualifyingVolumeMicros: 100_000_000_000,
+      platformFeeBps: 20,
+      referralRewardBps: 6,
+    });
+    assert.equal(provisionReservation.contract.snapshot.platformFeeBps, 20);
+    assert.equal(provisionReservation.contract.snapshot.referralRewardBps, 6);
     const key = await normalizeSshPublicKey(testPublicKey());
     await hosting.attachSshKey(buyer.activeOrganization.id, provisionReservation.contract.id, key, mutation(buyer.account.id, "buyer-provision-key", "buyer-provision-key-hash", now));
     await assert.rejects(cancelHostingContract({ account: buyer, contractId: provisionReservation.contract.id, reason: "开通以后不能绕过清理", mutation: mutation(buyer.account.id, "buyer-cancel-after-provision", "buyer-cancel-after-provision-hash", now) }, stores), (error) => error.code === "EXCHANGE_STATE_CONFLICT");

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createAccountSession } from "../lib/server/account-auth.ts";
+import { hostingCurrentCalendarMonth, hostingPreviousCalendarMonth } from "../lib/hosting-v2.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
 import { getCardHourStore } from "../lib/server/card-hour-store.ts";
 import { getHostingV2Store } from "../lib/server/hosting-v2-store.ts";
@@ -324,7 +325,17 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     await hosting.createFeeSchedule({ platformFeeBps: 1_000, referralRewardBps: 300, activate: true, effectiveFrom: now }, mutation("golden-admin-market", "golden-fee-schedule", now));
 
     const policy = await json(await getSupplyPolicy(browserRead(supplier, "/api/v2/supply/policy")), 200);
-    assert.deepEqual(policy.policy, { approvedImages: [process.env.KAI_HOSTING_APPROVED_IMAGES], termsVersion: process.env.KAI_HOSTING_TERMS_VERSION });
+    const policyObservedAt = new Date().toISOString();
+    assert.deepEqual({ approvedImages: policy.policy.approvedImages, termsVersion: policy.policy.termsVersion }, { approvedImages: [process.env.KAI_HOSTING_APPROVED_IMAGES], termsVersion: process.env.KAI_HOSTING_TERMS_VERSION });
+    assert.deepEqual(policy.policy.feePreview, {
+      activeFeeScheduleId: (await hosting.activeFeeSchedule(policyObservedAt)).id,
+      tierCode: "STARTER",
+      period: hostingPreviousCalendarMonth(policyObservedAt),
+      qualifyingVolumeMicros: 0,
+      platformFeeBps: 100,
+      referralRewardBps: 30,
+      nextRecalculationAt: hostingCurrentCalendarMonth(policyObservedAt).endAt,
+    });
     const availableFrom = new Date(Date.parse(now) - 60_000).toISOString();
     const availableUntil = new Date(Date.parse(now) + 86_400_000).toISOString();
     const createdOffer = await json(await createSupplyOffer(browserRequest(supplier, "/api/v2/supply/offers", "POST", {
@@ -389,7 +400,7 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
 
     const accepted = await json(await acceptBuyerContract(browserRequest(buyer, `/api/v2/contracts/${contractId}/accept`, "POST", {}, "golden-contract-accept"), { params: Promise.resolve({ contractId }) }), 202);
     assert.equal(accepted.record.status, "CLEANING");
-    assert.deepEqual(accepted.settlement, { heldMicros: 180_000, settledMicros: 180_000, releasedMicros: 0, supplierIncomeMicros: 162_000, commissionMicros: 5_400, platformFeeMicros: 18_000 });
+    assert.deepEqual(accepted.settlement, { heldMicros: 180_000, settledMicros: 180_000, releasedMicros: 0, supplierIncomeMicros: 178_200, commissionMicros: 540, platformFeeMicros: 1_800 });
     const platformNetMicros = accepted.settlement.platformFeeMicros - accepted.settlement.commissionMicros;
     assert.equal(accepted.settlement.supplierIncomeMicros, accepted.settlement.settledMicros - accepted.settlement.platformFeeMicros);
     assert.equal(accepted.settlement.settledMicros, accepted.settlement.supplierIncomeMicros + accepted.settlement.commissionMicros + platformNetMicros);
@@ -419,19 +430,29 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
 
     const supplierContracts = await json(await listSupplierContracts(browserRead(supplier, "/api/v2/supply/contracts")), 200);
     assert.equal(supplierContracts.records[0].status, "CLEANED");
-    assert.equal(supplierContracts.records[0].supplierIncomeMicros, 162_000);
+    assert.equal(supplierContracts.records[0].supplierIncomeMicros, 178_200);
     assert.equal("buyerOrganizationId" in supplierContracts.records[0], false);
     assert.equal("buyerAccountId" in supplierContracts.records[0], false);
     const earnings = await json(await getSupplierEarnings(browserRead(supplier, "/api/v2/supply/earnings")), 200);
-    assert.equal(earnings.earnings.income.rentalVestedMicros, 162_000);
-    assert.equal(earnings.earnings.balance.availableMicros, 162_000);
+    assert.equal(earnings.earnings.income.rentalVestedMicros, 178_200);
+    assert.equal(earnings.earnings.balance.availableMicros, 178_200);
     assert.ok(earnings.earnings.ledger.some((entry) => entry.operation === "RENTAL_INCOME" && entry.businessKey.endsWith(contractId)));
+    assert.deepEqual(earnings.earnings.monthlySettlement, {
+      period: hostingCurrentCalendarMonth(earnings.earnings.updatedAt),
+      grossMicros: 180_000,
+      platformFeeMicros: 1_800,
+      supplierIncomeMicros: 178_200,
+      inFeeReferralCommissionMicros: 540,
+      platformNetMicros: 1_260,
+    });
+    assert.equal(earnings.earnings.feePreview.tierCode, "STARTER");
+    assert.equal(earnings.earnings.feePreview.qualifyingVolumeMicros, 0, "the current month must not affect the previous-month tier preview");
     const referrerEarnings = await cardHours.dashboard(referrer.context.activeOrganization.id, cleanedAt);
-    assert.equal(referrerEarnings.income.commissionVestedMicros, 5_400);
+    assert.equal(referrerEarnings.income.commissionVestedMicros, 540);
     const publicAfter = await json(await listPublicOffers(new Request(`${ORIGIN}/api/v2/offers`)), 200);
     assert.equal(publicAfter.records.length, 1, "cleaned and freshly verified inventory must become sellable again");
     const operations = await hosting.readiness(cleanedAt);
-    assert.equal(operations.schemaVersion, 11);
+    assert.equal(operations.schemaVersion, 12);
     assert.match(operations.activeFeeScheduleId, /^hfee_/u);
     assert.deepEqual({
       approvedSupplierCount: operations.approvedSupplierCount,

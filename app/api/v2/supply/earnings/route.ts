@@ -3,6 +3,7 @@ import { apiErrorResponse, beginApiRequest, jsonResponse } from "@/lib/server/ap
 import { getCardHourStore } from "@/lib/server/card-hour-store";
 import { requireTradingAccountSession } from "@/lib/server/entity-ownership";
 import { requireHostingV2Enabled } from "@/lib/server/hosting-v2-api";
+import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,12 @@ export async function GET(request: Request) {
     const account = await requireTradingAccountSession(request);
     if (!account) throw new AccountAuthError("ACCOUNT_AUTH_REQUIRED", 401, "请先登录账户。 ");
     const updatedAt = new Date().toISOString();
-    const dashboard = await (await getCardHourStore()).dashboard(account.activeOrganization.id, updatedAt);
+    const [cardHours, hosting] = await Promise.all([getCardHourStore(), getHostingV2Store()]);
+    const [dashboard, feePreview, monthlySettlement] = await Promise.all([
+      cardHours.dashboard(account.activeOrganization.id, updatedAt),
+      hosting.supplierFeePreview(account.activeOrganization.id, updatedAt),
+      hosting.supplierMonthlySettlement(account.activeOrganization.id, updatedAt),
+    ]);
     return jsonResponse({ earnings: {
       assetCode: dashboard.assetCode,
       rate: { cardHours: dashboard.rate.cardHours, cny: dashboard.rate.cny },
@@ -33,6 +39,8 @@ export async function GET(request: Request) {
       income: dashboard.income,
       referral: dashboard.referral,
       ledger: dashboard.ledger.map(safeLedgerEntry),
+      feePreview,
+      monthlySettlement,
       updatedAt,
     } }, 200, undefined, context);
   } catch (error) {

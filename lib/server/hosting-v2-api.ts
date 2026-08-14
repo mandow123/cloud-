@@ -2,7 +2,7 @@ import { AccountAuthError, assertAccountAuthSameOrigin } from "./account-auth.ts
 import { mutationHash, prepareWrite, requireIdempotencyKey } from "./api-guard.ts";
 import { authorizeMarketplaceRequest, persistMarketplaceSession } from "./marketplace-auth.ts";
 import type { HostingMutationContext } from "./hosting-v2-store.ts";
-import { HOSTING_V2_AGENT_STALE_SECONDS, type HostingContract, type HostingContractEvidence, type HostingDevice, type HostingOffer } from "../hosting-v2.ts";
+import { HOSTING_V2_AGENT_STALE_SECONDS, hostingActualFeeBreakdown, type HostingContract, type HostingContractEvidence, type HostingDevice, type HostingOffer } from "../hosting-v2.ts";
 import type { SupplierDeviceTask, SupplierDeviceWorkspace, SupplierDeviceWorkspaceRow, SupplierDeviceWorkspaceState } from "../hosting-v2-client.ts";
 
 export { requireHostingV2Enabled, requireHostingV2SetupEnabled } from "./hosting-v2-feature.ts";
@@ -52,6 +52,9 @@ export function hostingContractClientView(contract: HostingContract, evidence?: 
 }
 
 export function hostingSupplierContractClientView(contract: HostingContract, evidence?: HostingContractEvidence) {
+  const settlementBreakdown = contract.settledMicros !== null && contract.supplierIncomeMicros !== null && contract.commissionMicros !== null
+    ? hostingActualFeeBreakdown(contract.settledMicros, contract.supplierIncomeMicros, contract.commissionMicros)
+    : null;
   return {
     id: contract.id,
     offerId: contract.offerId,
@@ -63,6 +66,7 @@ export function hostingSupplierContractClientView(contract: HostingContract, evi
     settledMicros: contract.settledMicros,
     supplierIncomeMicros: contract.supplierIncomeMicros,
     commissionMicros: contract.commissionMicros,
+    settlementBreakdown,
     status: contract.status,
     sshPublicKeyFingerprint: contract.sshPublicKeyFingerprint,
     endpointDisplay: contract.endpointDisplay,

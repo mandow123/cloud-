@@ -14,6 +14,8 @@ import type {
   HostingGpuModel,
   HostingOffer,
   HostingSupplierProfile,
+  HostingSupplierFeePreview,
+  HostingSupplierMonthlySettlement,
   HostingSupplierType,
   HostingStopIncident,
 } from "../hosting-v2.ts";
@@ -60,6 +62,8 @@ export interface HostingV2Store {
   queueVerification(organizationId: string, deviceId: string, context: HostingMutationContext): Promise<HostingAgentCommand>;
   createFeeSchedule(input: { platformFeeBps: number; referralRewardBps: number; activate: boolean; effectiveFrom: string }, context: HostingMutationContext): Promise<HostingFeeSchedule>;
   activeFeeSchedule(now: string): Promise<HostingFeeSchedule | null>;
+  supplierFeePreview(organizationId: string, now: string): Promise<HostingSupplierFeePreview>;
+  supplierMonthlySettlement(organizationId: string, now: string): Promise<HostingSupplierMonthlySettlement>;
   createOffer(organizationId: string, input: { deviceId: string; title: string; gpuModel: HostingGpuModel; region: string; cardHourMicrosPerGpuHour: number; minRentalSeconds: number; maxRentalSeconds: number; availableFrom: string; availableUntil: string; approvedImage: string; termsVersion: string }, context: HostingMutationContext): Promise<HostingOffer>;
   updateOfferStatus(organizationId: string, offerId: string, input: { status: "PUBLISHED" | "PAUSED" | "UNLISTED"; expectedVersion: number }, context: HostingMutationContext): Promise<HostingOffer>;
   listPublicOffers(now: string): Promise<HostingOffer[]>;

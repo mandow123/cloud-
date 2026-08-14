@@ -1,4 +1,4 @@
-import { HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, hostingCardHourMicrosForSeconds, hostingFeeBreakdown, hostingFeeRatesAreValid, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDisputeCase, type HostingFeeSchedule, type HostingGoldenLoopAudit, type HostingOffer, type HostingStopIncident, type HostingSupplierProfile } from "../hosting-v2.ts";
+import { HOSTING_FEE_QUALIFICATION_MODEL, HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, hostingActualFeeBreakdown, hostingCardHourMicrosForSeconds, hostingCurrentCalendarMonth, hostingDefaultFeeTiers, hostingFeeBreakdown, hostingFeeRatesAreValid, hostingPreviousCalendarMonth, hostingSelectFeeTier, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDisputeCase, type HostingFeeSchedule, type HostingFeeTier, type HostingGoldenLoopAudit, type HostingOffer, type HostingStopIncident, type HostingSupplierFeePreview, type HostingSupplierMonthlySettlement, type HostingSupplierProfile } from "../hosting-v2.ts";
 import { HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { assertHostingAgentWindow, hostingAgentCanonicalJson, hostingAgentDigest, verifyHostingAgentSignature } from "./hosting-agent-crypto.ts";
@@ -216,6 +216,7 @@ function contract(row: Row): HostingContract {
   const rawSnapshot = json<HostingContract["snapshot"]>(row, "snapshot_json");
   const snapshot = {
     ...rawSnapshot,
+    feeQualification: rawSnapshot.feeQualification ?? null,
     acceptanceWindowSeconds: Number.isSafeInteger(rawSnapshot.acceptanceWindowSeconds) && rawSnapshot.acceptanceWindowSeconds >= 0
       ? rawSnapshot.acceptanceWindowSeconds
       : HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS,
@@ -366,6 +367,81 @@ function receipt(context: HostingMutationContext, commandType: string, entityTyp
   return { sql: "INSERT INTO hosting_v2_command_receipts(actor_id,idempotency_key,command_type,payload_hash,entity_type,entity_id,created_at) VALUES(?,?,?,?,?,?,?)", values: [context.actorId, context.idempotencyKey, commandType, context.payloadHash, entityType, entityId, context.now] };
 }
 
+async function supplierFeePreviewForSchedule(db: HostingV2DatabaseAdapter, organizationId: string, feeScheduleId: string | null, now: string): Promise<HostingSupplierFeePreview> {
+  const period = hostingPreviousCalendarMonth(now);
+  const nextRecalculationAt = hostingCurrentCalendarMonth(now).endAt;
+  const volumeRow = await db.first<{ qualifying_volume_micros: number | null }>(`SELECT COALESCE(SUM(c.settled_micros),0) qualifying_volume_micros
+    FROM hosting_v2_contracts c
+    WHERE c.supplier_organization_id=? AND c.accepted_at>=? AND c.accepted_at<?
+      AND c.status IN ('SETTLED','CLEANING','CLEANED') AND c.settled_micros>0
+      AND NOT EXISTS(SELECT 1 FROM hosting_v2_dispute_resolution_proposals p
+        WHERE p.contract_id=c.id AND p.resolution='REFUND' AND p.status='APPLIED')`, [organizationId, period.startAt, period.endAt]);
+  const qualifyingVolumeMicros = Number(volumeRow?.qualifying_volume_micros ?? 0);
+  if (!Number.isSafeInteger(qualifyingVolumeMicros) || qualifyingVolumeMicros < 0) {
+    throw new ExchangeDomainError("HOSTING_FEE_QUALIFYING_VOLUME_INVALID", 503, "供应方历史结算量超出安全计算范围，费率预览保持关闭。");
+  }
+  if (!feeScheduleId) {
+    return { activeFeeScheduleId: null, tierCode: null, period, qualifyingVolumeMicros, platformFeeBps: null, referralRewardBps: null, nextRecalculationAt };
+  }
+  const tierRows = await db.all<Row>(`SELECT tier_code,minimum_qualifying_micros,platform_fee_bps,referral_reward_bps
+    FROM hosting_v2_fee_tiers WHERE fee_schedule_id=? ORDER BY minimum_qualifying_micros`, [feeScheduleId]);
+  if (!tierRows.length) throw new ExchangeDomainError("HOSTING_FEE_TIERS_UNAVAILABLE", 503, "成交费率阶梯尚未配置，费率预览保持关闭。");
+  let selectedTier: HostingFeeTier;
+  try {
+    selectedTier = hostingSelectFeeTier(tierRows.map((tier) => ({
+      code: value(tier, "tier_code"),
+      minimumQualifyingMicros: number(tier, "minimum_qualifying_micros"),
+      platformFeeBps: number(tier, "platform_fee_bps"),
+      referralRewardBps: number(tier, "referral_reward_bps"),
+    })), qualifyingVolumeMicros);
+  } catch {
+    throw new ExchangeDomainError("HOSTING_FEE_TIERS_UNAVAILABLE", 503, "成交费率阶梯无效，费率预览保持关闭。");
+  }
+  return {
+    activeFeeScheduleId: feeScheduleId,
+    tierCode: selectedTier.code,
+    period,
+    qualifyingVolumeMicros,
+    platformFeeBps: selectedTier.platformFeeBps,
+    referralRewardBps: selectedTier.referralRewardBps,
+    nextRecalculationAt,
+  };
+}
+
+async function supplierMonthlySettlementReadModel(db: HostingV2DatabaseAdapter, organizationId: string, now: string): Promise<HostingSupplierMonthlySettlement> {
+  const period = hostingCurrentCalendarMonth(now);
+  const rows = await db.all<Row>(`SELECT c.id,c.settled_micros,c.supplier_income_micros,c.commission_micros
+    FROM hosting_v2_contracts c
+    WHERE c.supplier_organization_id=? AND c.accepted_at>=? AND c.accepted_at<?
+      AND ((c.status='SETTLED' AND c.settled_micros IS NOT NULL) OR c.status IN ('CLEANING','CLEANED'))
+      AND NOT EXISTS(SELECT 1 FROM hosting_v2_dispute_resolution_proposals p
+        WHERE p.contract_id=c.id AND p.resolution='REFUND' AND p.status='APPLIED')
+    ORDER BY c.accepted_at,c.id`, [organizationId, period.startAt, period.endAt]);
+  let grossMicros = 0n;
+  let platformFeeMicros = 0n;
+  let supplierIncomeMicros = 0n;
+  let inFeeReferralCommissionMicros = 0n;
+  let platformNetMicros = 0n;
+  try {
+    for (const row of rows) {
+      if (row.settled_micros == null || row.supplier_income_micros == null || row.commission_micros == null) throw new Error("HOSTING_ACTUAL_FEE_AMOUNTS_INVALID");
+      const actual = hostingActualFeeBreakdown(number(row, "settled_micros"), number(row, "supplier_income_micros"), number(row, "commission_micros"));
+      grossMicros += BigInt(actual.grossMicros);
+      platformFeeMicros += BigInt(actual.platformFeeMicros);
+      supplierIncomeMicros += BigInt(actual.supplierIncomeMicros);
+      inFeeReferralCommissionMicros += BigInt(actual.inFeeReferralCommissionMicros);
+      platformNetMicros += BigInt(actual.platformNetMicros);
+    }
+    const maximum = BigInt(Number.MAX_SAFE_INTEGER);
+    if ([grossMicros, platformFeeMicros, supplierIncomeMicros, inFeeReferralCommissionMicros, platformNetMicros].some((amount) => amount > maximum)) throw new Error("HOSTING_ACTUAL_FEE_AMOUNTS_INVALID");
+    const aggregate = hostingActualFeeBreakdown(Number(grossMicros), Number(supplierIncomeMicros), Number(inFeeReferralCommissionMicros));
+    if (aggregate.platformFeeMicros !== Number(platformFeeMicros) || aggregate.platformNetMicros !== Number(platformNetMicros)) throw new Error("HOSTING_ACTUAL_FEE_AMOUNTS_INVALID");
+    return { period, ...aggregate };
+  } catch {
+    throw new ExchangeDomainError("HOSTING_SETTLEMENT_FEE_AMOUNTS_INVALID", 503, "供应订单实际结算拆分不一致，收益汇总保持关闭。");
+  }
+}
+
 export async function createHostingV2Store(db: HostingV2DatabaseAdapter): Promise<HostingV2Store> {
   await db.ensureSchema(hostingV2SchemaStatements, HOSTING_V2_SCHEMA_VERSION);
   const store = {} as HostingV2Store;
@@ -455,12 +531,16 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
           d.status device_status,d.verification_status,d.verification_evidence_digest,d.verified_until,d.last_seen_at,d.agent_version,d.device_public_key,d.inventory_json,
           o.status offer_status,o.approved_image offer_approved_image,o.gpu_model offer_gpu_model,o.card_hour_micros_per_gpu_hour offer_rate,o.terms_version offer_terms_version,
           p.status supplier_status,p.agreement_version supplier_agreement_version,p.evidence_digest supplier_evidence_digest,
-          f.platform_fee_bps fee_platform_bps,f.referral_reward_bps fee_referral_bps
+          f.platform_fee_bps fee_platform_bps,f.referral_reward_bps fee_referral_bps,
+          ft.tier_code fee_tier_code,ft.minimum_qualifying_micros fee_tier_minimum_micros,
+          ft.platform_fee_bps fee_tier_platform_bps,ft.referral_reward_bps fee_tier_referral_bps
         FROM hosting_v2_contracts c
         JOIN hosting_v2_devices d ON d.id=c.device_id
         JOIN hosting_v2_offers o ON o.id=c.offer_id
         LEFT JOIN hosting_v2_supplier_profiles p ON p.organization_id=c.supplier_organization_id
         LEFT JOIN hosting_v2_fee_schedules f ON f.id=c.fee_schedule_id
+        LEFT JOIN hosting_v2_fee_tiers ft ON ft.fee_schedule_id=c.fee_schedule_id
+          AND ft.tier_code=json_extract(c.snapshot_json,'$.feeQualification.tierCode')
         WHERE c.id=?`, [contractId]);
       if (!main) return null;
       const [instance, metering, cleanup, acceptance, verification, commandRows, hold, holdEvents, ledgerBatches, incomeRows, attribution, dispute] = await Promise.all([
@@ -505,7 +585,19 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
       const agentFresh = Boolean(main.last_seen_at && Date.parse(value(main, "last_seen_at")) >= Date.parse(now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000);
       const verificationFresh = Boolean(main.verified_until && Date.parse(value(main, "verified_until")) > Date.parse(now));
       const commandsAuthentic = ["PROVISION", "START", "STOP", "CLEANUP"].every((type) => commandTransport.get(type) === true);
-      const pricingFrozen = snapshot.platformFeeBps === number(main, "fee_platform_bps") && snapshot.referralRewardBps === number(main, "fee_referral_bps")
+      const qualification = snapshot.feeQualification;
+      const tierPricingFrozen = Boolean(qualification
+        && qualification.model === HOSTING_FEE_QUALIFICATION_MODEL
+        && qualification.tierCode === nullable(main, "fee_tier_code")
+        && qualification.platformFeeBps === number(main, "fee_tier_platform_bps")
+        && qualification.referralRewardBps === number(main, "fee_tier_referral_bps")
+        && qualification.qualifyingVolumeMicros >= number(main, "fee_tier_minimum_micros")
+        && qualification.platformFeeBps === snapshot.platformFeeBps
+        && qualification.referralRewardBps === snapshot.referralRewardBps
+        && qualification.period?.timeZone === "Asia/Shanghai"
+        && Date.parse(qualification.period?.startAt ?? "") < Date.parse(qualification.period?.endAt ?? ""));
+      const legacyPricingFrozen = !qualification && snapshot.platformFeeBps === number(main, "fee_platform_bps") && snapshot.referralRewardBps === number(main, "fee_referral_bps");
+      const pricingFrozen = (tierPricingFrozen || legacyPricingFrozen)
         && snapshot.cardHourMicrosPerGpuHour === number(main, "offer_rate") && snapshot.approvedImage === value(main, "offer_approved_image")
         && snapshot.termsVersion === value(main, "offer_terms_version") && snapshot.gpuModel === value(main, "offer_gpu_model");
       const gpuAudit = physicalGpuAudit(inventory);
@@ -802,10 +894,15 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       if (!hostingFeeRatesAreValid(input.platformFeeBps, input.referralRewardBps)) throw new ExchangeInputError("推荐奖励应为非负整数且不能超过平台服务费。", "referralRewardBps");
       if (Number.isNaN(Date.parse(input.effectiveFrom))) throw new ExchangeInputError("费率生效时间无效。", "effectiveFrom");
       const recordId = id("hfee");
+      const tiers = hostingDefaultFeeTiers(input.platformFeeBps, input.referralRewardBps);
       const statements: HostingV2Sql[] = [];
       if (input.activate) statements.push({ sql: "UPDATE hosting_v2_fee_schedules SET status='RETIRED' WHERE status='ACTIVE'" });
       statements.push(
         { sql: "INSERT INTO hosting_v2_fee_schedules(id,platform_fee_bps,referral_reward_bps,status,effective_from,created_by,created_at) VALUES(?,?,?,?,?,?,?)", values: [recordId, input.platformFeeBps, input.referralRewardBps, input.activate ? "ACTIVE" : "DRAFT", new Date(input.effectiveFrom).toISOString(), context.actorId, context.now] },
+        ...tiers.map((tier) => ({
+          sql: "INSERT INTO hosting_v2_fee_tiers(fee_schedule_id,tier_code,minimum_qualifying_micros,platform_fee_bps,referral_reward_bps,created_at) VALUES(?,?,?,?,?,?)",
+          values: [recordId, tier.code, tier.minimumQualifyingMicros, tier.platformFeeBps, tier.referralRewardBps, context.now],
+        } satisfies HostingV2Sql)),
         event(context, null, "FEE_SCHEDULE", recordId, input.activate ? "FEE_SCHEDULE_ACTIVATED" : "FEE_SCHEDULE_CREATED"),
         receipt(context, "CREATE_FEE_SCHEDULE", "FEE_SCHEDULE", recordId),
       );
@@ -818,6 +915,15 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
     async activeFeeSchedule(now) {
       const row = await db.first<Row>("SELECT * FROM hosting_v2_fee_schedules WHERE status='ACTIVE' AND effective_from<=? ORDER BY effective_from DESC LIMIT 1", [now]);
       return row ? fee(row) : null;
+    },
+
+    async supplierFeePreview(organizationId, now) {
+      const row = await db.first<Row>("SELECT id FROM hosting_v2_fee_schedules WHERE status='ACTIVE' AND effective_from<=? ORDER BY effective_from DESC LIMIT 1", [now]);
+      return supplierFeePreviewForSchedule(db, organizationId, row ? value(row, "id") : null, now);
+    },
+
+    async supplierMonthlySettlement(organizationId, now) {
+      return supplierMonthlySettlementReadModel(db, organizationId, now);
     },
 
     async createOffer(organizationId, input, context) {
@@ -941,11 +1047,25 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       if (!hostingV2ApprovedImages().has(value(row, "approved_image")) || !verificationAllowsImage(row, value(row, "approved_image"))) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源工作负载镜像尚未通过当前验真，请刷新市场。");
       if (value(row, "organization_id") === account.activeOrganization.id) throw new ExchangeDomainError("EXCHANGE_OWNERSHIP_FORBIDDEN", 403, "供应方不能购买自己的资源。");
       if (!Number.isInteger(reservedSeconds) || reservedSeconds < number(row, "min_rental_seconds") || reservedSeconds > number(row, "max_rental_seconds")) throw new ExchangeInputError("租用时长不在挂牌范围内。", "reservedSeconds");
+      const feePreview = await supplierFeePreviewForSchedule(db, value(row, "organization_id"), value(row, "fee_schedule_id"), context.now);
+      if (feePreview.tierCode == null || feePreview.platformFeeBps == null || feePreview.referralRewardBps == null) {
+        throw new ExchangeDomainError("HOSTING_FEE_TIERS_UNAVAILABLE", 503, "成交费率阶梯尚未配置，成交保持关闭。");
+      }
       const recordId = id("hctr");
       const snapshot = {
         title: value(row, "title"), gpuModel: value(row, "gpu_model"), region: value(row, "region"),
         cardHourMicrosPerGpuHour: number(row, "card_hour_micros_per_gpu_hour"), approvedImage: value(row, "approved_image"), termsVersion: value(row, "terms_version"),
-        platformFeeBps: number(row, "platform_fee_bps"), referralRewardBps: number(row, "referral_reward_bps"), acceptanceWindowSeconds: HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS,
+        platformFeeBps: feePreview.platformFeeBps,
+        referralRewardBps: feePreview.referralRewardBps,
+        feeQualification: {
+          model: HOSTING_FEE_QUALIFICATION_MODEL,
+          tierCode: feePreview.tierCode,
+          period: feePreview.period,
+          qualifyingVolumeMicros: feePreview.qualifyingVolumeMicros,
+          platformFeeBps: feePreview.platformFeeBps,
+          referralRewardBps: feePreview.referralRewardBps,
+        },
+        acceptanceWindowSeconds: HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS,
       };
       await db.batch([
         { sql: `INSERT INTO hosting_v2_contracts(id,offer_id,device_id,buyer_organization_id,buyer_account_id,supplier_organization_id,fee_schedule_id,snapshot_json,reserved_seconds,held_micros,status,idempotency_key,payload_hash,version,created_at,updated_at)

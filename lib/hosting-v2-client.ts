@@ -1,4 +1,4 @@
-import type { HostingContractEvidence, HostingContractStatus, HostingDashboard, HostingDevice, HostingGpuModel, HostingSupplierProfile } from "./hosting-v2.ts";
+import type { HostingContractEvidence, HostingContractStatus, HostingDashboard, HostingDevice, HostingFeeQualificationSnapshot, HostingGpuModel, HostingSupplierFeePreview, HostingSupplierMonthlySettlement, HostingSupplierProfile } from "./hosting-v2.ts";
 
 export type PublicHostingOffer = Readonly<{
   id: string;
@@ -61,6 +61,7 @@ export type BuyerHostingContract = Readonly<{
     termsVersion: string;
     platformFeeBps: number;
     referralRewardBps: number;
+    feeQualification: HostingFeeQualificationSnapshot | null;
     acceptanceWindowSeconds: number;
   }>;
   reservedSeconds: number;
@@ -109,6 +110,13 @@ export type SupplierHostingContract = Readonly<{
   settledMicros: number | null;
   supplierIncomeMicros: number | null;
   commissionMicros: number | null;
+  settlementBreakdown: Readonly<{
+    grossMicros: number;
+    platformFeeMicros: number;
+    supplierIncomeMicros: number;
+    inFeeReferralCommissionMicros: number;
+    platformNetMicros: number;
+  }> | null;
   status: HostingContractStatus;
   sshPublicKeyFingerprint: string | null;
   endpointDisplay: string | null;
@@ -173,6 +181,7 @@ export type SupplierHostingDashboard = Readonly<{
 export type SupplierHostingPolicy = Readonly<{
   approvedImages: readonly string[];
   termsVersion: string;
+  feePreview: HostingSupplierFeePreview;
 }>;
 
 export type SupplierEarningsLedgerEntry = Readonly<{
@@ -196,6 +205,8 @@ export type SupplierEarningsDashboard = Readonly<{
   }>;
   referral: Readonly<{ code: string; invitedOrganizations: number }>;
   ledger: readonly SupplierEarningsLedgerEntry[];
+  feePreview: HostingSupplierFeePreview;
+  monthlySettlement: HostingSupplierMonthlySettlement;
   updatedAt: string;
 }>;
 

@@ -845,6 +845,72 @@
   margin-top: 2px;
 }
 
+.feeStrip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 20px;
+  margin-top: 20px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  background: var(--surface-muted);
+  padding: 14px 16px;
+}
+
+.feeStrip strong,
+.feeStrip span,
+.feeStrip small {
+  min-width: 0;
+}
+
+.feeStrip strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.feeStrip span,
+.feeStrip small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.feeStrip small {
+  grid-column: 1 / -1;
+}
+
+.feeFormula {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  background: var(--border);
+}
+
+.feeFormula > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  background: var(--surface-muted);
+  padding: 13px 14px;
+}
+
+.feeFormula dt,
+.feeFormula dd {
+  margin: 0;
+}
+
+.feeFormula dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.feeFormula dd {
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .message {
   margin-bottom: 20px;
   border-left: 3px solid var(--accent);
@@ -883,6 +949,7 @@
 .sidePanel li {
   color: var(--muted);
   font-size: 0.76rem;
+  overflow-wrap: anywhere;
 }
 
 .sidePanel ul {
@@ -1137,6 +1204,11 @@
   gap: 22px;
 }
 
+.detailGrid > *,
+.detailStack {
+  min-width: 0;
+}
+
 .detailStack {
   display: grid;
   gap: 22px;
@@ -1280,7 +1352,12 @@
 }
 
 .earningsGrid .dataSection {
+  min-width: 0;
   margin-top: 0;
+}
+
+.earningsGrid .sidePanel {
+  min-width: 0;
 }
 
 .credit {
@@ -1387,6 +1464,15 @@
   .historyFold > summary small {
     width: 100%;
     margin-left: 22px;
+  }
+
+  .feeStrip,
+  .feeFormula > div {
+    grid-template-columns: 1fr;
+  }
+
+  .feeFormula dd {
+    text-align: left;
   }
 
   .deviceFilters {
