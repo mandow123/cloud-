@@ -28,7 +28,7 @@ test("disabled Hosting V2 defers schema initialization so the previous image rem
 });
 
 test("disabled Hosting V2 stays rollback-safe without pretending its dependencies are ready", () => {
-  const result = evaluateHostingV2Capability({ environment: { KAI_HOSTING_V2: "0" }, hostingStorage: storage, cardHourStorage: storage, operations: null, kaiIdentityAvailable: false, adminPasswordAvailable: false, financeApprovalAvailable: false, alipay: alipayClosed });
+  const result = evaluateHostingV2Capability({ environment: { KAI_HOSTING_V2: "0" }, hostingStorage: storage, cardHourStorage: storage, operations: null, kaiIdentityAvailable: false, kaiIdentityLoginAudited: false, adminPasswordAvailable: false, financeApprovalAvailable: false, alipay: alipayClosed });
   assert.equal(result.enabled, false);
   assert.equal(result.configurationEnabled, false);
   assert.equal(result.ready, true);
@@ -37,7 +37,7 @@ test("disabled Hosting V2 stays rollback-safe without pretending its dependencie
 });
 
 test("transaction gate rejects incomplete production readiness and local acceptance is explicit", () => {
-  const incomplete = evaluateHostingV2Capability({ environment: { KAI_HOSTING_V2: "1" }, hostingStorage: storage, cardHourStorage: storage, operations: null, kaiIdentityAvailable: false, adminPasswordAvailable: false, financeApprovalAvailable: false, alipay: alipayClosed });
+  const incomplete = evaluateHostingV2Capability({ environment: { KAI_HOSTING_V2: "1" }, hostingStorage: storage, cardHourStorage: storage, operations: null, kaiIdentityAvailable: false, kaiIdentityLoginAudited: false, adminPasswordAvailable: false, financeApprovalAvailable: false, alipay: alipayClosed });
   assert.throws(() => requireHostingV2TransactionReady(incomplete), (error) => error.code === "HOSTING_V2_NOT_READY" && error.status === 503);
   assert.equal(isLocalHostingAcceptance({ NODE_ENV: "development", KAI_ENVIRONMENT: "LOCAL" }), false);
   assert.equal(isLocalHostingAcceptance({ NODE_ENV: "development", KAI_ENVIRONMENT: "LOCAL", KAI_HOSTING_LOCAL_ACCEPTANCE: "1" }), true);
@@ -46,7 +46,7 @@ test("transaction gate rejects incomplete production readiness and local accepta
 });
 
 test("setup mode exposes configuration readiness without opening public trading", () => {
-  const result = evaluateHostingV2Capability({ environment: { KAI_HOSTING_V2: "0", KAI_HOSTING_V2_SETUP: "1" }, hostingStorage: storage, cardHourStorage: storage, operations: null, kaiIdentityAvailable: false, adminPasswordAvailable: false, financeApprovalAvailable: false, alipay: alipayClosed });
+  const result = evaluateHostingV2Capability({ environment: { KAI_HOSTING_V2: "0", KAI_HOSTING_V2_SETUP: "1" }, hostingStorage: storage, cardHourStorage: storage, operations: null, kaiIdentityAvailable: false, kaiIdentityLoginAudited: false, adminPasswordAvailable: false, financeApprovalAvailable: false, alipay: alipayClosed });
   assert.equal(result.enabled, false);
   assert.equal(result.configurationEnabled, true);
   assert.equal(result.ready, true, "setup mode must not remove the healthy public app from service");
@@ -55,7 +55,7 @@ test("setup mode exposes configuration readiness without opening public trading"
 });
 
 test("enabled Hosting V2 fails closed until every trial dependency is present", () => {
-  const result = evaluateHostingV2Capability({ environment: { KAI_HOSTING_V2: "1" }, hostingStorage: { ready: false, errorCode: "HOSTING_DB_DOWN" }, cardHourStorage: { ready: false, errorCode: "CARD_HOUR_DB_DOWN" }, operations: null, kaiIdentityAvailable: false, adminPasswordAvailable: false, financeApprovalAvailable: false, alipay: alipayClosed });
+  const result = evaluateHostingV2Capability({ environment: { KAI_HOSTING_V2: "1" }, hostingStorage: { ready: false, errorCode: "HOSTING_DB_DOWN" }, cardHourStorage: { ready: false, errorCode: "CARD_HOUR_DB_DOWN" }, operations: null, kaiIdentityAvailable: false, kaiIdentityLoginAudited: false, adminPasswordAvailable: false, financeApprovalAvailable: false, alipay: alipayClosed });
   assert.equal(result.ready, false);
   assert.equal(result.checks.storage.reason, "HOSTING_DB_DOWN");
   assert.equal(result.checks.cardHourLedger.reason, "CARD_HOUR_DB_DOWN");
@@ -66,9 +66,27 @@ test("enabled Hosting V2 fails closed until every trial dependency is present", 
   assert.equal(result.checks.supplierTerms.ready, false);
 });
 
+test("supplier identity requires a successful KAI Identity login audit in addition to Discovery", () => {
+  const environment = { KAI_HOSTING_V2: "1", KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOSTING_TERMS_VERSION: "KAI_HOSTING_TERMS_2026_08" };
+  const result = evaluateHostingV2Capability({
+    environment,
+    hostingStorage: storage,
+    cardHourStorage: storage,
+    operations,
+    kaiIdentityAvailable: true,
+    kaiIdentityLoginAudited: false,
+    adminPasswordAvailable: true,
+    financeApprovalAvailable: true,
+    alipay: alipayClosed,
+  });
+  assert.equal(result.ready, false);
+  assert.equal(result.checks.supplierIdentity.ready, false);
+  assert.equal(result.checks.supplierIdentity.reason, "KAI_IDENTITY_LOGIN_EVIDENCE_MISSING");
+});
+
 test("internal Agent trial becomes ready only with identity, policy, fee, ledger and cleanup safety", () => {
   const environment = { KAI_HOSTING_V2: "1", KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOSTING_TERMS_VERSION: "KAI_HOSTING_TERMS_2026_08" };
-  const ready = evaluateHostingV2Capability({ environment, hostingStorage: storage, cardHourStorage: storage, operations, kaiIdentityAvailable: true, adminPasswordAvailable: true, financeApprovalAvailable: true, alipay: alipayClosed });
+  const ready = evaluateHostingV2Capability({ environment, hostingStorage: storage, cardHourStorage: storage, operations, kaiIdentityAvailable: true, kaiIdentityLoginAudited: true, adminPasswordAvailable: true, financeApprovalAvailable: true, alipay: alipayClosed });
   assert.equal(ready.ready, true);
   assert.equal(ready.fundingMode, "ADMIN_DUAL_CONTROL_TRIAL_GRANTS");
   assert.equal(ready.checks.approvedImages.count, 1);
@@ -79,12 +97,12 @@ test("internal Agent trial becomes ready only with identity, policy, fee, ledger
   assert.equal("activeFeeScheduleId" in ready.operations, false, "public readiness must not expose internal fee identifiers");
   assert.equal(ready.operations.activeFeeScheduleConfigured, true);
 
-  const cleanupFailure = evaluateHostingV2Capability({ environment, hostingStorage: storage, cardHourStorage: storage, operations: { ...operations, activeAgentCount: 0, drainingDeviceCount: 1, failedCleanupCount: 1, cleaningContractCount: 1 }, kaiIdentityAvailable: true, adminPasswordAvailable: true, financeApprovalAvailable: true, alipay: alipayClosed });
+  const cleanupFailure = evaluateHostingV2Capability({ environment, hostingStorage: storage, cardHourStorage: storage, operations: { ...operations, activeAgentCount: 0, drainingDeviceCount: 1, failedCleanupCount: 1, cleaningContractCount: 1 }, kaiIdentityAvailable: true, kaiIdentityLoginAudited: true, adminPasswordAvailable: true, financeApprovalAvailable: true, alipay: alipayClosed });
   assert.equal(cleanupFailure.ready, false);
   assert.equal(cleanupFailure.checks.agentDelivery.ready, false);
   assert.equal(cleanupFailure.checks.cleanup.ready, false);
 
-  const accidentalPaymentEnablement = evaluateHostingV2Capability({ environment, hostingStorage: storage, cardHourStorage: storage, operations, kaiIdentityAvailable: true, adminPasswordAvailable: true, financeApprovalAvailable: true, alipay: { ...alipayClosed, enabled: true, configured: true, canCreatePayment: true, missing: [] } });
+  const accidentalPaymentEnablement = evaluateHostingV2Capability({ environment, hostingStorage: storage, cardHourStorage: storage, operations, kaiIdentityAvailable: true, kaiIdentityLoginAudited: true, adminPasswordAvailable: true, financeApprovalAvailable: true, alipay: { ...alipayClosed, enabled: true, configured: true, canCreatePayment: true, missing: [] } });
   assert.equal(accidentalPaymentEnablement.ready, false);
   assert.equal(accidentalPaymentEnablement.checks.alipayClosed.reason, "ALIPAY_MUST_REMAIN_DISABLED_DURING_TRIAL");
 });

@@ -75,6 +75,7 @@ function feeFromPayload(payload: Record<string, unknown>): FeeSchedule | null {
 const readinessReason: Readonly<Record<string, string>> = {
   HOSTING_V2_STORAGE_NOT_READY: "交易存储尚未完成生产初始化",
   KAI_IDENTITY_NOT_READY: "统一登录当前不可用",
+  KAI_IDENTITY_LOGIN_EVIDENCE_MISSING: "尚未完成一次真实 KAI Identity 登录验收",
   KAI_ACCOUNT_OIDC_CLIENT_ID: "尚未配置统一登录 Client ID",
   KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: "尚未配置统一登录会话密钥",
   OIDC_DISCOVERY_INVALID: "统一身份中心 Discovery 当前不可用或配置不一致",

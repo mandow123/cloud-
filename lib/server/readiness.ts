@@ -91,12 +91,32 @@ export async function evaluateReadiness(){
       return{ready:health.integrity==="ok",...health,probe:"read-only" as const};
     }catch(error){return{ready:false,backend:"unknown" as const,schemaVersion:0,integrity:"error" as const,probe:"read-only" as const,errorCode:errorCode(error)};}
   })();
+  const authPromise=(async()=>{
+    try{
+      const store=await getAccountAuthStore();
+      await store.listMemberships("__readiness_probe__");
+      return{
+        ready:true,
+        schemaVersion:ADMIN_IDENTITY_SCHEMA_VERSION,
+        probe:"read-only" as const,
+        kaiIdentityLoginAudited:await store.hasSuccessfulKaiIdentityLoginAudit(),
+      };
+    }catch(error){
+      return{
+        ready:false,
+        schemaVersion:ADMIN_IDENTITY_SCHEMA_VERSION,
+        probe:"read-only" as const,
+        errorCode:errorCode(error),
+        kaiIdentityLoginAudited:false,
+      };
+    }
+  })();
   const [marketplace,exchange,supply,admin,auth,standardization,cardHours,hostingV2Storage,marketResult,identityProbe]=await Promise.all([
     marketplacePromise,
     storeCheck(EXCHANGE_SCHEMA_VERSION,async()=>{const products=await (await getExchangeStore()).listProductVersions();if(products.length<1)throw new Error("EXCHANGE_REFERENCE_DATA_MISSING");}),
     storeCheck(SUPPLY_SCHEMA_VERSION,async()=>{await (await getSupplyStore()).listOffers("__readiness_probe__");}),
     storeCheck(ADMIN_OPERATIONS_SCHEMA_VERSION,async()=>{await (await getAdminOperationsStore()).listAuditEvents({limit:1});}),
-    storeCheck(ADMIN_IDENTITY_SCHEMA_VERSION,async()=>{await (await getAccountAuthStore()).listMemberships("__readiness_probe__");}),
+    authPromise,
     storeCheck(STANDARDIZATION_SCHEMA_VERSION,async()=>{await (await getStandardizationStore()).getQuotes();}),
     storeCheck(CARD_HOUR_SCHEMA_VERSION,async()=>{await (await getCardHourStore()).health();}),
     hostingV2StoragePromise,
@@ -110,7 +130,8 @@ export async function evaluateReadiness(){
     market={source:marketResult.value.source,publishedAt:marketResult.value.snapshot.publishedAt,ageHours:ageHours===null?null:Math.round(ageHours*10)/10,stale,ready:marketResult.value.source==="persistent"&&!stale};
   }else market={source:"unavailable",publishedAt:null,ageHours:null,stale:true,ready:false,errorCode:errorCode(marketResult.error)};
   const {snapshot:hostingOperations,...hostingV2Health}=hostingV2Storage;
-  const storage={marketplace,exchange,supply,admin,auth,standardization,cardHours,hostingV2:hostingV2Health};
+  const {kaiIdentityLoginAudited,...authHealth}=auth;
+  const storage={marketplace,exchange,supply,admin,auth:authHealth,standardization,cardHours,hostingV2:hostingV2Health};
   const capabilities={
     ...configuredCapabilities,
     kaiIdentityLogin:identityProbe
@@ -123,6 +144,7 @@ export async function evaluateReadiness(){
     cardHourStorage:cardHours,
     operations:hostingOperations,
     kaiIdentityAvailable:capabilities.kaiIdentityLogin.available,
+    kaiIdentityLoginAudited,
     adminPasswordAvailable:capabilities.adminPasswordLogin.available,
     financeApprovalAvailable:capabilities.financeApprovalLogin.available,
     alipay:alipayReadiness(environment),

@@ -11,6 +11,8 @@ const TRANSACTION_MAX_AGE_SECONDS = 10 * 60;
 const SECURE_TRANSACTION_COOKIE = "__Host-kai_oidc_transaction";
 const DEVELOPMENT_TRANSACTION_COOKIE = "kai_oidc_transaction_dev";
 const DISCOVERY_PROBE_CACHE_MS = 30_000;
+const OIDC_JSON_TIMEOUT_MS = 4_000;
+const OIDC_JSON_MAX_BYTES = 512 * 1024;
 
 type Environment = Record<string, string | undefined>;
 type JsonObject = Record<string, unknown>;
@@ -192,9 +194,50 @@ function asJsonObject(value: unknown, code = "OIDC_RESPONSE_INVALID") {
 
 async function fetchJson(fetcher: typeof fetch, url: string, init: RequestInit | undefined, code: string) {
   let response: Response;
-  try { response = await fetcher(url, init); } catch { throw new AccountAuthError("KAI_IDENTITY_UNAVAILABLE", 503, "KAI 统一账户暂时无法连接。"); }
-  const payload = await response.json().catch(() => null);
+  try {
+    response = await fetcher(url, {
+      ...init,
+      redirect: "manual",
+      signal: init?.signal ?? AbortSignal.timeout(OIDC_JSON_TIMEOUT_MS),
+    });
+  } catch { throw new AccountAuthError("KAI_IDENTITY_UNAVAILABLE", 503, "KAI 统一账户暂时无法连接。"); }
   if (!response.ok) throw new AccountAuthError(code, 401, "统一登录未完成，请重新登录。");
+  const declaredLength = Number(response.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declaredLength) && declaredLength > OIDC_JSON_MAX_BYTES) {
+    throw new AccountAuthError(code, 401, "统一登录响应超过大小限制。");
+  }
+  const reader = response.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > OIDC_JSON_MAX_BYTES) {
+          await reader.cancel("OIDC response too large").catch(() => {});
+          throw new AccountAuthError(code, 401, "统一登录响应超过大小限制。");
+        }
+        chunks.push(value);
+      }
+    }
+  } catch (error) {
+    if (error instanceof AccountAuthError) throw error;
+    throw new AccountAuthError("KAI_IDENTITY_UNAVAILABLE", 503, "KAI 统一账户暂时无法连接。");
+  }
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  let payload: unknown = null;
+  try {
+    payload = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    throw new AccountAuthError(code, 401, "统一登录响应无效，请重新登录。");
+  }
   return asJsonObject(payload, code);
 }
 
@@ -323,8 +366,15 @@ async function validateIdToken(value: unknown, input: { metadata: OidcMetadata; 
   }
   const jwks = await fetchJson(input.fetcher, input.metadata.jwks_uri, { cache: "no-store", headers: { accept: "application/json" } }, "OIDC_JWKS_INVALID");
   if (!Array.isArray(jwks.keys)) throw new AccountAuthError("OIDC_JWKS_INVALID", 503, "统一登录签名密钥无效。");
-  const jwk = jwks.keys.find((candidate) => candidate && typeof candidate === "object" && (candidate as JsonObject).kid === token.header.kid) as JsonWebKey | undefined;
-  if (!jwk || (algorithm === "ES256" ? jwk.kty !== "EC" || jwk.crv !== "P-256" : jwk.kty !== "OKP" || jwk.crv !== "Ed25519")) {
+  const matchingKeys = jwks.keys.filter((candidate) => candidate && typeof candidate === "object" && (candidate as JsonObject).kid === token.header.kid) as JsonWebKey[];
+  const jwk = matchingKeys.length === 1 ? matchingKeys[0] : undefined;
+  const keyOperations = jwk?.key_ops;
+  const keyUsageInvalid = jwk?.use !== undefined && jwk.use !== "sig";
+  const keyAlgorithmInvalid = jwk?.alg !== undefined && jwk.alg !== algorithm;
+  const keyOperationsInvalid = keyOperations !== undefined
+    && (!Array.isArray(keyOperations) || keyOperations.length !== 1 || keyOperations[0] !== "verify");
+  if (!jwk || keyUsageInvalid || keyAlgorithmInvalid || keyOperationsInvalid
+    || (algorithm === "ES256" ? jwk.kty !== "EC" || jwk.crv !== "P-256" : jwk.kty !== "OKP" || jwk.crv !== "Ed25519")) {
     throw new AccountAuthError("OIDC_JWKS_INVALID", 503, "统一登录签名密钥无效。");
   }
   let verified = false;
@@ -343,7 +393,7 @@ async function validateIdToken(value: unknown, input: { metadata: OidcMetadata; 
   const audienceValid = audience === input.clientId || (Array.isArray(audience) && audience.length === 1 && audience[0] === input.clientId);
   const nowSeconds = Math.floor(input.now.getTime() / 1_000);
   if (claims.iss !== input.metadata.issuer || !audienceValid || claims.nonce !== input.nonce || typeof claims.sub !== "string" || !claims.sub) throw new AccountAuthError("OIDC_ID_TOKEN_INVALID", 401, "统一登录令牌校验失败。");
-  if (typeof claims.exp !== "number" || claims.exp <= nowSeconds - 30 || claims.exp > nowSeconds + 10 * 60 || typeof claims.iat !== "number" || claims.iat > nowSeconds + 30) throw new AccountAuthError("OIDC_ID_TOKEN_INVALID", 401, "统一登录令牌已过期或时间无效。");
+  if (typeof claims.exp !== "number" || claims.exp <= nowSeconds - 30 || typeof claims.iat !== "number" || claims.iat > nowSeconds + 30) throw new AccountAuthError("OIDC_ID_TOKEN_INVALID", 401, "统一登录令牌已过期或时间无效。");
   return claims;
 }
 
@@ -401,6 +451,9 @@ export async function completeKaiIdentityLogin(request: Request, options: { env?
     headers: tokenHeaders,
     body: tokenBody,
   }, "OIDC_TOKEN_EXCHANGE_FAILED");
+  if (typeof tokenPayload.token_type !== "string" || tokenPayload.token_type.toLowerCase() !== "bearer") {
+    throw new AccountAuthError("OIDC_TOKEN_EXCHANGE_FAILED", 401, "统一登录令牌无效。");
+  }
   const claims = await validateIdToken(tokenPayload.id_token, { metadata, clientId: config.clientId, nonce: transaction.nonce, now, fetcher });
   if (typeof tokenPayload.access_token !== "string" || !tokenPayload.access_token) throw new AccountAuthError("OIDC_TOKEN_EXCHANGE_FAILED", 401, "统一登录令牌无效。");
   const userinfo = await fetchJson(fetcher, metadata.userinfo_endpoint, { headers: { accept: "application/json", authorization: `Bearer ${tokenPayload.access_token}` }, cache: "no-store" }, "OIDC_USERINFO_INVALID");

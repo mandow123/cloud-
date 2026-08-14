@@ -51,6 +51,7 @@ export function evaluateHostingV2Capability(input: {
   cardHourStorage: StorageCheck;
   operations: HostingV2OperationalSnapshot | null;
   kaiIdentityAvailable: boolean;
+  kaiIdentityLoginAudited: boolean;
   adminPasswordAvailable: boolean;
   financeApprovalAvailable: boolean;
   alipay: AlipayReadiness;
@@ -72,7 +73,14 @@ export function evaluateHostingV2Capability(input: {
   const operations = input.operations;
   const hostingStorageReady = input.hostingStorage.ready && operations !== null;
   const cardHourStorageReady = input.cardHourStorage.ready;
-  const supplierIdentityReady = input.kaiIdentityAvailable && (operations?.approvedSupplierCount ?? 0) > 0;
+  const supplierIdentityReady = input.kaiIdentityAvailable
+    && input.kaiIdentityLoginAudited
+    && (operations?.approvedSupplierCount ?? 0) > 0;
+  const supplierIdentityReason = !input.kaiIdentityAvailable
+    ? "KAI_IDENTITY_NOT_READY"
+    : !input.kaiIdentityLoginAudited
+      ? "KAI_IDENTITY_LOGIN_EVIDENCE_MISSING"
+      : "HOSTING_APPROVED_SUPPLIER_MISSING";
   const agentReady = (operations?.activeAgentCount ?? 0) > 0;
   const feeReady = Boolean(operations?.activeFeeScheduleId);
   const cleanupReady = hostingStorageReady
@@ -81,7 +89,7 @@ export function evaluateHostingV2Capability(input: {
   const alipayClosed = !input.alipay.enabled && !input.alipay.canCreatePayment;
   const checks = {
     storage: check(hostingStorageReady, input.hostingStorage.errorCode ?? "HOSTING_V2_STORAGE_NOT_READY"),
-    supplierIdentity: check(supplierIdentityReady, input.kaiIdentityAvailable ? "HOSTING_APPROVED_SUPPLIER_MISSING" : "KAI_IDENTITY_NOT_READY"),
+    supplierIdentity: check(supplierIdentityReady, supplierIdentityReason),
     trialGrantRequest: check(input.adminPasswordAvailable, "HOSTING_ROOT_ADMIN_NOT_READY"),
     trialGrantApproval: check(input.financeApprovalAvailable, "HOSTING_FINANCE_APPROVER_NOT_READY"),
     agentDelivery: check(agentReady, "HOSTING_ACTIVE_AGENT_MISSING"),

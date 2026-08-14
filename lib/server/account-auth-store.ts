@@ -81,6 +81,7 @@ export interface AccountAuthStore {
   countRecentPasswordFailures(usernameHash: string, requestFingerprint: string, since: string): Promise<number>;
   recordPasswordAttempt(input: { usernameHash: string; requestFingerprint: string; outcome: "ALLOWED" | "DENIED"; occurredAt: string }): Promise<void>;
   recordAudit(input: { accountId?: string; organizationId?: string; sessionId?: string; eventType: string; outcome: "ALLOWED" | "DENIED" | "ERROR"; target?: string; metadata?: Record<string, unknown>; occurredAt: string }): Promise<void>;
+  hasSuccessfulKaiIdentityLoginAudit(): Promise<boolean>;
 }
 
 type Row = Record<string, unknown>;
@@ -411,6 +412,18 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
     async recordAudit(input) {
       await db.run(`INSERT INTO admin_auth_audit_events(id,account_id,organization_id,session_id,event_type,outcome,target,metadata_json,occurred_at)
         VALUES(?,?,?,?,?,?,?,?,?)`, [`aae_${crypto.randomUUID()}`, input.accountId ?? null, input.organizationId ?? null, input.sessionId ?? null, input.eventType, input.outcome, input.target ?? null, JSON.stringify(input.metadata ?? {}), input.occurredAt]);
+    },
+    async hasSuccessfulKaiIdentityLoginAudit() {
+      const row = await db.first<{ verified: number }>(`SELECT 1 AS verified
+        FROM admin_auth_audit_events audit
+        JOIN kai_identity_oidc_sessions session ON session.id=audit.session_id
+          AND session.account_id=audit.account_id
+          AND session.organization_id=audit.organization_id
+        WHERE audit.event_type='LOGIN_SUCCEEDED'
+          AND audit.outcome='ALLOWED'
+          AND json_extract(audit.metadata_json,'$.authMethod')='KAI_IDENTITY_OIDC'
+        LIMIT 1`);
+      return row != null;
     },
   };
 }

@@ -17,6 +17,13 @@ test("private edge overwrites forwarding metadata before the app trusts HTTPS", 
   assert.doesNotMatch(nginx, /\$proxy_add_x_forwarded_for|\$http_x_forwarded/u);
 });
 
+test("edge access logs never record OAuth callback query secrets", () => {
+  assert.match(nginx, /log_format kai_edge '[^'\n]*\$request_method \$uri \$status [^'\n]*';/u);
+  assert.match(nginx, /access_log \/dev\/stdout kai_edge;/u);
+  assert.doesNotMatch(nginx, /access_log\s+[^;\n]+\s+combined\s*;/u);
+  assert.doesNotMatch(nginx, /\$(?:request_uri|args|query_string|request)\b/u);
+});
+
 test("edge proxy is immutable, constrained and conflicts with the raw TCP socket", () => {
   assert.match(service, /Conflicts=kai-cloud-edge-3054\.socket/u);
   assert.match(service, /Requires=docker\.service kai-cloud-edge-3054-firewall\.service/u);
