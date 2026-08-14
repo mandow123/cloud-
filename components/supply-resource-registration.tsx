@@ -132,8 +132,8 @@ export function SupplyResourceRegistration() {
   return (
     <>
       <div className={styles.pageHeading}>
-        <div><h1>登记新资源</h1><p>先选择接入模板并检查主机，再签发 5 分钟有效的一次性 Agent 配对凭证。</p></div>
-        <Link className={styles.secondaryAction} href="/supply/resources">返回资源列表</Link>
+        <div><h1>连接托管设备</h1><p>先选择设备模板并检查主机，再签发 5 分钟有效的一次性 Agent 配对凭证。</p></div>
+        <Link className={styles.secondaryAction} href="/supply/devices">返回托管设备</Link>
       </div>
 
       {error ? <div className={`${styles.message} ${styles.messageError}`} role="alert">{error}</div> : null}
@@ -189,7 +189,7 @@ export function SupplyResourceRegistration() {
               {agentOnline && pairedDevice ? (
                 <div className={styles.connectionSuccess} role="status">
                   <div><span>HOST ONLINE</span><strong>{pairedDevice.displayName}</strong><p>{pairedDevice.gpuModel.replace("_", " ")} · Agent {pairedDevice.agentVersion} · 服务端已收到第 {pairedDevice.lastSequence} 次签名心跳</p></div>
-                  <Link className={styles.actionButton} href={`/supply/resources/${encodeURIComponent(pairedDevice.id)}`}>进入设备验真</Link>
+                  <Link className={styles.actionButton} href={`/supply/devices/${encodeURIComponent(pairedDevice.id)}`}>进入设备验真</Link>
                 </div>
               ) : connectionVerified && pairedDevice ? (
                 <div className={styles.connectionWaiting} role="status"><span aria-hidden="true" /><div><strong>{pairedDevice.displayName} 的签名连接已验证</strong><p>请完成批准镜像配置并启动 Host Agent 服务；收到在线心跳后会自动开放验真入口。</p></div></div>

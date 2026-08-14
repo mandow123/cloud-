@@ -42,9 +42,17 @@
 
 .consoleNav {
   display: flex;
+  width: 100%;
+  max-width: 100%;
   align-items: center;
   gap: 4px;
   overflow-x: auto;
+}
+
+@media (min-width: 981px) {
+  .consoleNav {
+    width: auto;
+  }
 }
 
 .consoleNav a,
@@ -59,6 +67,21 @@
   font-weight: 650;
   text-decoration: none;
   white-space: nowrap;
+}
+
+.consoleNav a .navCount {
+  display: inline-flex;
+  min-width: 20px;
+  min-height: 20px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  padding: 1px 5px;
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.62rem;
 }
 
 .consoleNav a:hover,
@@ -317,6 +340,316 @@
   margin-top: 22px;
   border: 1px solid var(--border);
   background: var(--surface);
+}
+
+.deviceOverview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--border);
+  background: var(--border);
+}
+
+.deviceOverview > div {
+  min-width: 0;
+  background: var(--surface);
+  padding: 15px 18px;
+}
+
+.deviceOverview span,
+.deviceOverview small {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deviceOverview strong {
+  display: block;
+  margin: 8px 0 2px;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.35rem;
+}
+
+.taskFold,
+.historyFold {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.taskFold > summary,
+.historyFold > summary {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 16px;
+  color: var(--ink);
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.taskFold > summary strong {
+  display: inline-flex;
+  min-width: 24px;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.7rem;
+}
+
+.taskFold > summary small,
+.historyFold > summary small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.taskList {
+  border-top: 1px solid var(--border);
+}
+
+.taskList > a {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  min-height: 62px;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding: 9px 16px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.taskList > a:last-child {
+  border-bottom: 0;
+}
+
+.taskList > a:hover,
+.taskList > a:focus-visible {
+  background: var(--surface-muted);
+}
+
+.taskList > a span:nth-child(2) strong,
+.taskList > a span:nth-child(2) small {
+  display: block;
+}
+
+.taskList > a span:nth-child(2) strong {
+  font-size: 0.78rem;
+}
+
+.taskList > a span:nth-child(2) small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.taskPriority {
+  border: 1px solid var(--border-strong);
+  padding: 4px 6px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.taskPriorityCritical {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.taskPriorityWarning {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.taskMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--border);
+  background: var(--border);
+}
+
+.taskMetrics > div {
+  min-width: 0;
+  background: var(--surface);
+  padding: 16px 18px;
+}
+
+.taskMetrics span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.taskMetrics strong {
+  display: block;
+  margin-top: 8px;
+  overflow: hidden;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.25rem;
+  text-overflow: ellipsis;
+}
+
+.taskEmpty {
+  padding: 28px;
+  text-align: center;
+}
+
+.taskEmpty strong {
+  color: var(--ink);
+}
+
+.taskEmpty p {
+  margin: 8px auto 18px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.foldEmpty {
+  margin: 0;
+  padding: 20px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.deviceListHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--border);
+  padding: 13px 16px;
+}
+
+.deviceListHeader h2 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.deviceListHeader > div:first-child > span {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.deviceFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.deviceFilters button {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 6px 9px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.deviceFilters button:hover,
+.deviceFilters button:focus-visible,
+.deviceFilters button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.deviceFilters button span {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.64rem;
+}
+
+.deviceTable tbody tr {
+  height: 64px;
+}
+
+.deviceState {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  border: 1px solid var(--success);
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: var(--success);
+  font-size: 0.66rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.deviceStateWarning {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.deviceStateMuted {
+  border-color: var(--border-strong);
+  color: var(--muted);
+}
+
+.deviceStateDetail {
+  display: block;
+  max-width: 290px;
+  margin-top: 4px;
+  line-height: 1.35;
+}
+
+.historyGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  border-top: 1px solid var(--border);
+  background: var(--border);
+}
+
+.historyGrid section {
+  background: var(--surface-muted);
+  padding: 16px;
+}
+
+.historyGrid section > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.historyGrid section strong {
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+.historyGrid section span {
+  border: 1px solid var(--border-strong);
+  padding: 3px 6px;
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.historyGrid section p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.55;
 }
 
 .tableWrap {
@@ -1008,6 +1341,15 @@
   .inventoryGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .deviceListHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .historyGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1022,11 +1364,89 @@
 
   .metrics,
   .earningsMetrics,
+  .deviceOverview,
+  .taskMetrics,
   .fieldGrid,
   .resourceCards,
   .pairingFacts,
   .inventoryGrid {
     grid-template-columns: 1fr;
+  }
+
+  .deviceOverview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .taskFold > summary,
+  .historyFold > summary {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .taskFold > summary small,
+  .historyFold > summary small {
+    width: 100%;
+    margin-left: 22px;
+  }
+
+  .deviceFilters {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .deviceFilters button {
+    min-height: 44px;
+    justify-content: space-between;
+  }
+
+  .deviceTable {
+    min-width: 0;
+  }
+
+  .deviceTable thead {
+    display: none;
+  }
+
+  .deviceTable,
+  .deviceTable tbody,
+  .deviceTable tr,
+  .deviceTable td {
+    display: block;
+    width: 100%;
+  }
+
+  .deviceTable tbody tr {
+    height: auto;
+    border-bottom: 1px solid var(--border);
+    padding: 12px 14px;
+  }
+
+  .deviceTable tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .deviceTable td {
+    display: grid;
+    grid-template-columns: 94px minmax(0, 1fr);
+    gap: 10px;
+    border: 0;
+    padding: 6px 0;
+  }
+
+  .deviceTable td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 0.66rem;
+    font-weight: 700;
+  }
+
+  .deviceTable .emptyRow {
+    display: block;
+  }
+
+  .deviceTable .emptyRow::before {
+    content: none;
   }
 
   .contractSteps {

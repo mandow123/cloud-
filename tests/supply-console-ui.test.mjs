@@ -15,6 +15,10 @@ test("supplier console exposes the implemented resource, listing, order and earn
     "app/supply/orders/page.tsx",
     "app/supply/orders/[contractId]/page.tsx",
     "app/supply/earnings/page.tsx",
+    "app/supply/devices/page.tsx",
+    "app/supply/devices/new/page.tsx",
+    "app/supply/devices/[deviceId]/page.tsx",
+    "app/supply/tasks/page.tsx",
   ]) {
     assert.equal(existsSync(path), true, `${path} must exist`);
   }
@@ -28,14 +32,18 @@ test("supplier console exposes the implemented resource, listing, order and earn
 
   const shell = readFileSync("components/supply-console-shell.tsx", "utf8");
   assert.match(shell, /href: "\/supply"/u);
-  assert.match(shell, /href: "\/supply\/onboarding"/u);
-  assert.match(shell, /href: "\/supply\/resources"/u);
+  assert.doesNotMatch(shell, /href: "\/supply\/onboarding"/u);
+  assert.match(shell, /href: "\/supply\/devices"/u);
   assert.match(shell, /href: "\/supply\/listings"/u);
   assert.match(shell, /href: "\/supply\/orders"/u);
   assert.match(shell, /href: "\/supply\/earnings"/u);
+  assert.match(shell, /href: "\/supply\/tasks"/u);
+  assert.match(shell, /taskCount/u);
   assert.match(shell, /configurationMode/u);
   assert.match(shell, /预上线配置模式/u);
   assert.match(shell, /aria-disabled="true"/u);
+  const routes = shell.slice(shell.indexOf("const availableRoutes"), shell.indexOf("] as const"));
+  assert.equal((routes.match(/href:/gu) ?? []).length, 6);
 });
 
 test("resource registration issues a short-lived server challenge without client identity fields", () => {
@@ -81,6 +89,21 @@ test("resource details are selected from the current organization dashboard and 
   assert.match(detail, /const verificationPending = device\?\.status === "VERIFYING" \|\| device\?\.verificationStatus === "PENDING"/u);
   assert.match(detail, /window\.setInterval\(\(\) => \{ void load\(\); \}, 2_000\)/u);
   assert.doesNotMatch(`${list}\n${detail}`, /x-kai-workspace-role|localStorage|sessionStorage|\/bin\/sh|sudo/u);
+});
+
+test("managed-device console uses the server projection, compact filters and truthful folded history", () => {
+  const list = readFileSync("components/supply-resources.tsx", "utf8");
+  const route = readFileSync("app/api/v2/supply/dashboard/route.ts", "utf8");
+  const projection = readFileSync("lib/server/hosting-v2-api.ts", "utf8");
+  assert.match(route, /hostingSupplierDeviceWorkspaceView/u);
+  assert.match(list, /const workspace = dashboard\.deviceWorkspace/u);
+  for (const label of ["托管设备", "运营中", "部署中", "待处理", "离线", "已停用", "待办队列", "资产记录", "已恢复运营"]) assert.match(list, new RegExp(label, "u"));
+  assert.match(list, /<details className=\{styles\.taskFold\}/u);
+  assert.match(list, /<details className=\{styles\.historyFold\}/u);
+  assert.match(projection, /renewal: \{ enabled: false/u);
+  assert.match(projection, /buyback: \{ enabled: false/u);
+  assert.match(projection, /decommission: \{ enabled: false/u);
+  assert.doesNotMatch(list, /device\.status\}|device\.verificationStatus\}/u);
 });
 
 test("supplier pages read and mutate through the authenticated hosting v2 APIs", () => {

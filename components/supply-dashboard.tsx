@@ -84,9 +84,9 @@ export function SupplyDashboard() {
         : profile.status === "APPROVED" && !supplierApproved
           ? { title: "补全供应商审核证据", description: "当前记录标记为通过，但缺少有效协议版本或审核证据摘要，后端已保持关闭。请由管理员补录审核证据。", href: "/supply/onboarding", label: "查看审核记录" }
         : supplierApproved && dashboard.devices.length === 0
-          ? { title: "可以登记第一台设备", description: "资源登记页会生成 5 分钟有效、受限的一次性 Agent 配对凭证。", href: "/supply/resources/new", label: "登记第一台设备" }
+          ? { title: "可以连接第一台设备", description: "托管设备页会生成 5 分钟有效、受限的一次性 Agent 配对凭证。", href: "/supply/devices/new", label: "连接第一台设备" }
           : supplierApproved && dashboard.readiness.onlineVerifiedDevices === 0
-            ? { title: "让设备在线并完成验真", description: "Host Agent 心跳和硬件验真都有效后，设备才具备挂牌资格。", href: "/supply/resources", label: "查看设备状态" }
+            ? { title: "让设备在线并完成验真", description: "Host Agent 心跳和硬件验真都有效后，设备才具备挂牌资格。", href: "/supply/devices", label: "查看设备状态" }
             : supplierApproved && dashboard.offers.length === 0
               ? { title: "创建第一条真实报价", description: "选择已验真的设备、可用窗口和 KAI 标准卡时价格。", href: "/supply/listings/new", label: "创建挂牌" }
               : supplierApproved

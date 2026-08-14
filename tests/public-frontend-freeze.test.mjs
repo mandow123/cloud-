@@ -61,6 +61,9 @@ const APPROVED_HOSTING_V2_ROUTES = new Set([
   "app/hosting/personal-gpu/page.tsx",
   "app/supply/layout.tsx",
   "app/supply/earnings/page.tsx",
+  "app/supply/devices/[deviceId]/page.tsx",
+  "app/supply/devices/new/page.tsx",
+  "app/supply/devices/page.tsx",
   "app/supply/listings/new/page.tsx",
   "app/supply/listings/page.tsx",
   "app/supply/onboarding/page.tsx",
@@ -70,6 +73,7 @@ const APPROVED_HOSTING_V2_ROUTES = new Set([
   "app/supply/resources/[deviceId]/page.tsx",
   "app/supply/resources/new/page.tsx",
   "app/supply/resources/page.tsx",
+  "app/supply/tasks/page.tsx",
 ]);
 const APPROVED_HOSTING_V2_COMPONENTS = new Set([
   "components/hosting-launchpad.tsx",

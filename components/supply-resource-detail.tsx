@@ -64,7 +64,7 @@ export function SupplyResourceDetail({ deviceId }: { deviceId: string }) {
   }
 
   if (found === null) return <div className={styles.loading} role="status">正在读取设备、硬件证据和验真状态…</div>;
-  if (!device) return <section className={styles.error} role="alert"><h2>没有找到这台设备</h2><p>设备不存在，或它不属于当前登录组织。</p><Link className={`${styles.secondaryAction} mt-4`} href="/supply/resources">返回资源列表</Link></section>;
+  if (!device) return <section className={styles.error} role="alert"><h2>没有找到这台设备</h2><p>设备不存在，或它不属于当前登录组织。</p><Link className={`${styles.secondaryAction} mt-4`} href="/supply/devices">返回托管设备</Link></section>;
 
   const inventory = device.inventory;
   const canVerify = ["ONLINE", "VERIFIED"].includes(device.status) && !busy;
@@ -73,7 +73,7 @@ export function SupplyResourceDetail({ deviceId }: { deviceId: string }) {
     <>
       <div className={styles.pageHeading}>
         <div><h1>{device.displayName}</h1><p>{device.id} · 所有硬件字段来自设备签名清单，不接受网页手工改写。</p></div>
-        <div className={styles.actionRow}><Link className={styles.secondaryAction} href="/supply/resources">返回资源列表</Link><button className={styles.actionButton} disabled={!canVerify} onClick={() => void queueVerification()} type="button">{busy ? "正在创建…" : "重新验真"}</button></div>
+        <div className={styles.actionRow}><Link className={styles.secondaryAction} href="/supply/devices">返回托管设备</Link><button className={styles.actionButton} disabled={!canVerify} onClick={() => void queueVerification()} type="button">{busy ? "正在创建…" : "重新验真"}</button></div>
       </div>
 
       {message ? <div className={`${styles.message} ${message.kind === "error" ? styles.messageError : ""}`} role={message.kind === "error" ? "alert" : "status"}>{message.text}</div> : null}

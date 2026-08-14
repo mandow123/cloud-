@@ -111,7 +111,7 @@ export function SupplyContractDetail({ contractId }: { contractId: string }) {
           <section><h2>合同快照</h2><ul><li>{contract.snapshot.gpuModel} · {contract.snapshot.region}</li><li>{formatCardHours(contract.snapshot.cardHourMicrosPerGpuHour)} KAI / GPU 小时</li><li>{contract.snapshot.approvedImage}</li><li>{contract.snapshot.termsVersion}</li></ul></section>
           <section><h3>安全边界</h3><p>供应方页面只能读取当前组织的合同；不返回买家账户或组织标识，也不能提交计量、金额和结算状态。</p></section>
           <section><h3>异常处理</h3><p>开通、计量或清理失败会停止自动复售。请保留主机在线，等待平台根据 Agent 证据处理。</p></section>
-          <section><Link className={styles.secondaryAction} href={`/supply/resources/${encodeURIComponent(contract.deviceId)}`}>查看关联设备</Link></section>
+          <section><Link className={styles.secondaryAction} href={`/supply/devices/${encodeURIComponent(contract.deviceId)}`}>查看关联设备</Link></section>
         </aside>
       </div>
     </>

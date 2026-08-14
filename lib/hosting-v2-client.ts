@@ -121,11 +121,51 @@ export type SupplierHostingContract = Readonly<{
   evidence?: HostingContractEvidence;
 }>;
 
+export type SupplierDeviceWorkspaceState = "AVAILABLE" | "DEPLOYING" | "OPERATING" | "ACTION_REQUIRED" | "OFFLINE" | "DISABLED";
+
+export type SupplierDeviceTask = Readonly<{
+  id: string;
+  deviceId: string;
+  priority: "P0" | "P1" | "P2";
+  title: string;
+  description: string;
+  href: string;
+}>;
+
+export type SupplierDeviceWorkspaceRow = Readonly<{
+  id: string;
+  displayName: string;
+  gpuModel: HostingGpuModel;
+  gpuMemoryMiB: number;
+  state: SupplierDeviceWorkspaceState;
+  stateLabel: string;
+  stateDetail: string;
+  verificationStatus: HostingDevice["verificationStatus"];
+  lastSeenAt: string | null;
+  activeContractId: string | null;
+  activeContractStatus: HostingContractStatus | null;
+  publishedOfferCount: number;
+  taskCount: number;
+}>;
+
+export type SupplierDeviceWorkspace = Readonly<{
+  generatedAt: string;
+  summary: Readonly<Record<SupplierDeviceWorkspaceState, number>>;
+  records: readonly SupplierDeviceWorkspaceRow[];
+  tasks: readonly SupplierDeviceTask[];
+  historyCapabilities: Readonly<{
+    renewal: Readonly<{ enabled: false; label: "已续约"; reason: string }>;
+    buyback: Readonly<{ enabled: false; label: "已回购"; reason: string }>;
+    decommission: Readonly<{ enabled: false; label: "设备关闭"; reason: string }>;
+  }>;
+}>;
+
 export type SupplierHostingDashboard = Readonly<{
   profile: HostingSupplierProfile | null;
   devices: readonly HostingDevice[];
   offers: readonly SupplierHostingOffer[];
   contracts: readonly SupplierHostingContract[];
+  deviceWorkspace: SupplierDeviceWorkspace;
   earnings: HostingDashboard["earnings"];
   readiness: HostingDashboard["readiness"];
 }>;
