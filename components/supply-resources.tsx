@@ -23,7 +23,7 @@ const verificationLabels = {
 export function SupplyResources() {
   const [dashboard, setDashboard] = useState<SupplierHostingDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"ALL" | SupplierDeviceWorkspaceState>("ALL");
+  const [filter, setFilter] = useState<"ALL" | "TASKS" | SupplierDeviceWorkspaceState>("ALL");
 
   const load = useCallback(async () => {
     setError(null);
@@ -47,13 +47,18 @@ export function SupplyResources() {
   const workspace = dashboard.deviceWorkspace;
   const filters = [
     ["ALL", "全部", workspace.records.length],
+    ["AVAILABLE", "待租", workspace.summary.AVAILABLE],
     ["OPERATING", "运营中", workspace.summary.OPERATING],
     ["DEPLOYING", "部署中", workspace.summary.DEPLOYING],
-    ["ACTION_REQUIRED", "待处理", workspace.summary.ACTION_REQUIRED],
+    ["TASKS", "待处理", workspace.records.filter((record) => record.taskCount > 0).length],
     ["OFFLINE", "离线", workspace.summary.OFFLINE],
     ["DISABLED", "已停用", workspace.summary.DISABLED],
   ] as const;
-  const visibleRecords = filter === "ALL" ? workspace.records : workspace.records.filter((record) => record.state === filter);
+  const visibleRecords = filter === "ALL"
+    ? workspace.records
+    : filter === "TASKS"
+      ? workspace.records.filter((record) => record.taskCount > 0)
+      : workspace.records.filter((record) => record.state === filter);
   const urgentTaskCount = workspace.tasks.filter((task) => task.priority === "P0" || task.priority === "P1").length;
 
   return (
@@ -69,7 +74,7 @@ export function SupplyResources() {
         <div><span>托管设备</span><strong>{workspace.records.length}</strong><small>当前组织</small></div>
         <div><span>运营中</span><strong>{workspace.summary.OPERATING}</strong><small>正在计量或待验收</small></div>
         <div><span>部署中</span><strong>{workspace.summary.DEPLOYING}</strong><small>验真、锁定或开通中</small></div>
-        <div><span>待处理</span><strong>{workspace.summary.ACTION_REQUIRED + workspace.summary.OFFLINE}</strong><small>{urgentTaskCount} 项优先处理</small></div>
+        <div><span>待处理</span><strong>{workspace.tasks.length}</strong><small>{urgentTaskCount} 项优先处理</small></div>
       </section>
 
       <details className={styles.taskFold} open={urgentTaskCount > 0}>
@@ -103,7 +108,7 @@ export function SupplyResources() {
                   <td data-label="GPU">{device.gpuModel}<br /><small>{device.gpuMemoryMiB} MiB · {verificationLabels[device.verificationStatus]}</small></td>
                   <td data-label="挂牌">{device.publishedOfferCount ? `${device.publishedOfferCount} 条可售` : "未挂牌"}{device.activeContractStatus ? <><br /><small>{hostingContractStatusLabel(device.activeContractStatus)}</small></> : null}</td>
                   <td data-label="最后心跳">{dateTime(device.lastSeenAt)}</td>
-                  <td data-label="操作"><Link className={styles.tableLink} href={`/supply/devices/${encodeURIComponent(device.id)}`}>设备详情 →</Link></td>
+                  <td data-label="操作"><Link aria-label={`${device.displayName}：${device.primaryAction.label}`} className={styles.tableLink} href={device.primaryAction.href}>{device.primaryAction.label} →</Link></td>
                 </tr>
               )) : <tr><td className={styles.emptyRow} colSpan={6}>{workspace.records.length ? "当前筛选条件下没有设备。" : "尚未登记设备。审核通过后，可签发一次性配对凭证连接第一台主机。"}</td></tr>}
             </tbody>
@@ -112,7 +117,7 @@ export function SupplyResources() {
       </section>
 
       <details className={styles.historyFold}>
-        <summary><span>资产记录</span><small>续约、回购与历史状态</small></summary>
+        <summary><span>资产生命周期能力</span><small>续约、回购、关闭与恢复运营</small></summary>
         <div className={styles.historyGrid}>
           <section><div><strong>{workspace.historyCapabilities.renewal.label}</strong><span>尚未开放</span></div><p>{workspace.historyCapabilities.renewal.reason}</p></section>
           <section><div><strong>{workspace.historyCapabilities.buyback.label}</strong><span>尚未开放</span></div><p>{workspace.historyCapabilities.buyback.reason}</p></section>

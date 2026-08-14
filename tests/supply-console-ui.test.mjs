@@ -97,9 +97,11 @@ test("managed-device console uses the server projection, compact filters and tru
   const projection = readFileSync("lib/server/hosting-v2-api.ts", "utf8");
   assert.match(route, /hostingSupplierDeviceWorkspaceView/u);
   assert.match(list, /const workspace = dashboard\.deviceWorkspace/u);
-  for (const label of ["托管设备", "运营中", "部署中", "待处理", "离线", "已停用", "待办队列", "资产记录", "已恢复运营"]) assert.match(list, new RegExp(label, "u"));
+  for (const label of ["托管设备", "待租", "运营中", "部署中", "待处理", "离线", "已停用", "待办队列", "资产生命周期能力", "已恢复运营"]) assert.match(list, new RegExp(label, "u"));
   assert.match(list, /<details className=\{styles\.taskFold\}/u);
   assert.match(list, /<details className=\{styles\.historyFold\}/u);
+  assert.match(list, /device\.primaryAction\.href/u);
+  assert.match(list, /device\.primaryAction\.label/u);
   assert.match(projection, /renewal: \{ enabled: false/u);
   assert.match(projection, /buyback: \{ enabled: false/u);
   assert.match(projection, /decommission: \{ enabled: false/u);

@@ -122,7 +122,8 @@ export function hostingSupplierDeviceWorkspaceView(
   for (const device of devices) {
     const deviceOffers = offers.filter((offer) => offer.deviceId === device.id);
     const publishedOfferCount = deviceOffers.filter((offer) => offer.status === "PUBLISHED").length;
-    const activeContract = supplierContracts.find((contract) => contract.deviceId === device.id && CONTRACT_ACTIVE.has(contract.status)) ?? null;
+    const activeContracts = supplierContracts.filter((contract) => contract.deviceId === device.id && CONTRACT_ACTIVE.has(contract.status));
+    const activeContract = activeContracts.length === 1 ? activeContracts[0] : null;
     const lastSeenMs = device.lastSeenAt ? Date.parse(device.lastSeenAt) : Number.NaN;
     const stale = !Number.isFinite(lastSeenMs) || lastSeenMs < staleCutoff;
     const verificationValid = device.verificationStatus === "PASSED"
@@ -132,7 +133,13 @@ export function hostingSupplierDeviceWorkspaceView(
     let stateDetail = publishedOfferCount > 0 ? "设备在线，挂牌可接受预留" : "设备在线，等待创建挂牌";
     let task: SupplierDeviceTask | null = null;
 
-    if (device.status === "REVOKED") {
+    if (activeContracts.length > 1) {
+      state = "ACTION_REQUIRED"; stateLabel = "待处理"; stateDetail = "检测到多份活动合同，设备已暂停自动履约";
+      task = {
+        id: `${device.id}:contract-conflict`, deviceId: device.id, priority: "P0", title: `${device.displayName} 合同状态冲突`,
+        description: stateDetail, href: "/supply/orders",
+      };
+    } else if (device.status === "REVOKED") {
       state = "DISABLED"; stateLabel = "已停用"; stateDetail = "Agent 身份已撤销，不会接收平台任务";
     } else if (device.status === "DRAINING" && activeContract?.status === "CLEANING") {
       state = "DEPLOYING"; stateLabel = "清理中"; stateDetail = "Agent 正在撤销访问并清理受控实例，完成前不会重新挂牌";
@@ -177,11 +184,25 @@ export function hostingSupplierDeviceWorkspaceView(
     }
 
     if (task) tasks.push(task);
+    const deviceHref = `/supply/devices/${encodeURIComponent(device.id)}`;
+    const primaryAction = state === "ACTION_REQUIRED"
+      ? { label: "查看并处理", href: task?.href ?? deviceHref }
+      : state === "OFFLINE"
+        ? { label: "检查 Agent", href: task?.href ?? deviceHref }
+        : state === "DEPLOYING"
+          ? { label: "查看进度", href: activeContract ? `/supply/orders/${encodeURIComponent(activeContract.id)}` : deviceHref }
+          : state === "OPERATING"
+            ? { label: "查看订单", href: activeContract ? `/supply/orders/${encodeURIComponent(activeContract.id)}` : deviceHref }
+            : state === "DISABLED"
+              ? { label: "查看停用记录", href: deviceHref }
+              : publishedOfferCount > 0
+                ? { label: "查看挂牌", href: "/supply/listings" }
+                : { label: "创建挂牌", href: "/supply/listings/new" };
     records.push({
       id: device.id, displayName: device.displayName, gpuModel: device.inventory.gpuModel, gpuMemoryMiB: device.inventory.gpuMemoryMiB,
       state, stateLabel, stateDetail, verificationStatus: device.verificationStatus, lastSeenAt: device.lastSeenAt,
       activeContractId: activeContract?.id ?? null, activeContractStatus: activeContract?.status ?? null,
-      publishedOfferCount, taskCount: task ? 1 : 0,
+      publishedOfferCount, taskCount: task ? 1 : 0, primaryAction,
     });
   }
 

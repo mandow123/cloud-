@@ -135,6 +135,25 @@ test("supplier device workspace derives one compact presentation state from real
   assert.equal(byId.get("offline").stateLabel, "离线");
   assert.equal(byId.get("disabled").state, "DISABLED");
   assert.equal(workspace.tasks.find((item) => item.deviceId === "failed").priority, "P0");
+  assert.equal(byId.get("available").primaryAction.label, "查看挂牌");
+  assert.equal(byId.get("deploying").primaryAction.href.includes("/supply/orders/"), true);
+  assert.equal(byId.get("offline").primaryAction.label, "检查 Agent");
+});
+
+test("workspace fails closed when a device has more than one active contract", () => {
+  const workspace = hostingSupplierDeviceWorkspaceView(
+    [device("conflict", { status: "BUSY" })],
+    [offer("conflict")],
+    [contract("conflict", "IN_SERVICE"), contract("conflict", "PROVISIONING", { id: "contract-second" })],
+    "org-supplier",
+    NOW,
+  );
+
+  assert.equal(workspace.records[0].state, "ACTION_REQUIRED");
+  assert.equal(workspace.records[0].activeContractId, null);
+  assert.equal(workspace.records[0].primaryAction.href, "/supply/orders");
+  assert.equal(workspace.tasks[0].priority, "P0");
+  assert.match(workspace.tasks[0].description, /多份活动合同/u);
 });
 
 test("workspace treats stale heartbeat and invalid verification as actions without inventing commercial events", () => {

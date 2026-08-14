@@ -154,6 +154,10 @@ export type SupplierDeviceWorkspaceRow = Readonly<{
   activeContractStatus: HostingContractStatus | null;
   publishedOfferCount: number;
   taskCount: number;
+  primaryAction: Readonly<{
+    label: string;
+    href: string;
+  }>;
 }>;
 
 export type SupplierDeviceWorkspace = Readonly<{
