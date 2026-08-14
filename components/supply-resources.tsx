@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { hostingContractStatusLabel, type SupplierDeviceWorkspaceState, type SupplierHostingDashboard } from "@/lib/hosting-v2-client";
+import { hostingContractStatusLabel, type SupplierDeviceWorkspaceState, type SupplierHostingDashboard, type SupplierHostingPolicy } from "@/lib/hosting-v2-client";
 import { marketplaceErrorMessage, marketplaceGet } from "@/lib/client/marketplace-client";
+import { SupplyFeeTierFold, SupplyFeeUnavailableFold } from "./supply-fee-preview";
 import styles from "./supply-console.module.css";
 
 function dateTime(value: string | null) {
@@ -22,14 +23,27 @@ const verificationLabels = {
 
 export function SupplyResources() {
   const [dashboard, setDashboard] = useState<SupplierHostingDashboard | null>(null);
+  const [policy, setPolicy] = useState<SupplierHostingPolicy | null>(null);
+  const [feeError, setFeeError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"ALL" | "TASKS" | SupplierDeviceWorkspaceState>("ALL");
 
   const load = useCallback(async () => {
     setError(null);
+    setFeeError(null);
     try {
-      const result = await marketplaceGet<{ dashboard: SupplierHostingDashboard }>("/api/v2/supply/dashboard");
-      setDashboard(result.dashboard);
+      const [dashboardResult, policyResult] = await Promise.allSettled([
+        marketplaceGet<{ dashboard: SupplierHostingDashboard }>("/api/v2/supply/dashboard"),
+        marketplaceGet<{ policy: SupplierHostingPolicy }>("/api/v2/supply/policy"),
+      ]);
+      if (dashboardResult.status === "rejected") throw dashboardResult.reason;
+      setDashboard(dashboardResult.value.dashboard);
+      if (policyResult.status === "fulfilled") {
+        setPolicy(policyResult.value.policy);
+      } else {
+        setPolicy(null);
+        setFeeError(marketplaceErrorMessage(policyResult.reason, "累计成交费率暂时无法读取。"));
+      }
     } catch (cause) {
       setError(marketplaceErrorMessage(cause, "托管设备暂时无法读取。"));
     }
@@ -41,7 +55,7 @@ export function SupplyResources() {
   }, [load]);
 
   if (error) return <section className={styles.error} role="alert"><h2>资源读取失败</h2><p>{error}</p><button className={`${styles.secondaryAction} mt-4`} onClick={() => void load()} type="button">重新读取</button></section>;
-  if (!dashboard) return <div className={styles.loading} role="status">正在读取当前组织的资源与验真状态…</div>;
+  if (!dashboard) return <div className={styles.loading} role="status">正在读取当前组织的资源、验真状态与累计成交费率…</div>;
 
   const approved = dashboard.readiness.supplierApproved;
   const workspace = dashboard.deviceWorkspace;
@@ -89,6 +103,8 @@ export function SupplyResources() {
           )) : <p className={styles.foldEmpty}>当前没有待处理事项。</p>}
         </div>
       </details>
+
+      {policy ? <SupplyFeeTierFold preview={policy.feePreview} /> : <SupplyFeeUnavailableFold message={feeError ?? "累计成交费率正在读取。"} />}
 
       <section className={styles.dataSection} aria-labelledby="resource-list-title">
         <header className={styles.deviceListHeader}>

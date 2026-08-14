@@ -2,7 +2,8 @@ export const HOSTING_V2_MIN_RENTAL_SECONDS = 180;
 export const HOSTING_V2_AGENT_STALE_SECONDS = 90;
 export const HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS = 30 * 60;
 export const HOSTING_V2_CARD_HOUR_MICROS = 1_000_000;
-export const HOSTING_FEE_QUALIFICATION_MODEL = "PREVIOUS_CALENDAR_MONTH_SUPPLIER_SETTLED_GROSS_V1" as const;
+export const HOSTING_FEE_QUALIFICATION_MODEL = "LIFETIME_SUPPLIER_SETTLED_GROSS_V1" as const;
+export const HOSTING_FEE_LEGACY_QUALIFICATION_MODEL = "PREVIOUS_CALENDAR_MONTH_SUPPLIER_SETTLED_GROSS_V1" as const;
 export const HOSTING_FEE_QUALIFICATION_TIME_ZONE = "Asia/Shanghai" as const;
 
 export type HostingFeeTier = Readonly<{
@@ -19,23 +20,35 @@ export type HostingFeeQualificationPeriod = Readonly<{
   timeZone: typeof HOSTING_FEE_QUALIFICATION_TIME_ZONE;
 }>;
 
-export type HostingFeeQualificationSnapshot = Readonly<{
-  model: typeof HOSTING_FEE_QUALIFICATION_MODEL;
+type HostingFeeQualificationSnapshotBase = Readonly<{
   tierCode: string;
-  period: HostingFeeQualificationPeriod;
   qualifyingVolumeMicros: number;
   platformFeeBps: number;
   referralRewardBps: number;
 }>;
 
+export type HostingFeeQualificationSnapshot =
+  | (HostingFeeQualificationSnapshotBase & Readonly<{
+    model: typeof HOSTING_FEE_QUALIFICATION_MODEL;
+    asOf: string;
+  }>)
+  | (HostingFeeQualificationSnapshotBase & Readonly<{
+    model: typeof HOSTING_FEE_LEGACY_QUALIFICATION_MODEL;
+    period: HostingFeeQualificationPeriod;
+  }>);
+
 export type HostingSupplierFeePreview = Readonly<{
   activeFeeScheduleId: string | null;
+  model: typeof HOSTING_FEE_QUALIFICATION_MODEL;
   tierCode: string | null;
-  period: HostingFeeQualificationPeriod;
+  asOf: string;
   qualifyingVolumeMicros: number;
   platformFeeBps: number | null;
   referralRewardBps: number | null;
-  nextRecalculationAt: string;
+  tiers: readonly HostingFeeTier[];
+  nextTierCode: string | null;
+  nextTierMinimumMicros: number | null;
+  remainingToNextTierMicros: number | null;
 }>;
 
 export type HostingSupplierMonthlySettlement = Readonly<{
@@ -49,10 +62,10 @@ export type HostingSupplierMonthlySettlement = Readonly<{
 
 const HOSTING_DEFAULT_PLATFORM_FEE_TIERS = [
   { code: "STARTER", minimumQualifyingMicros: 0, platformFeeBps: 100 },
-  { code: "GROWTH", minimumQualifyingMicros: 1_000 * HOSTING_V2_CARD_HOUR_MICROS, platformFeeBps: 80 },
-  { code: "SCALE", minimumQualifyingMicros: 10_000 * HOSTING_V2_CARD_HOUR_MICROS, platformFeeBps: 60 },
-  { code: "VOLUME", minimumQualifyingMicros: 50_000 * HOSTING_V2_CARD_HOUR_MICROS, platformFeeBps: 40 },
-  { code: "STRATEGIC", minimumQualifyingMicros: 100_000 * HOSTING_V2_CARD_HOUR_MICROS, platformFeeBps: 20 },
+  { code: "GROWTH", minimumQualifyingMicros: 10_000 * HOSTING_V2_CARD_HOUR_MICROS, platformFeeBps: 80 },
+  { code: "SCALE", minimumQualifyingMicros: 50_000 * HOSTING_V2_CARD_HOUR_MICROS, platformFeeBps: 60 },
+  { code: "VOLUME", minimumQualifyingMicros: 200_000 * HOSTING_V2_CARD_HOUR_MICROS, platformFeeBps: 40 },
+  { code: "STRATEGIC", minimumQualifyingMicros: 1_000_000 * HOSTING_V2_CARD_HOUR_MICROS, platformFeeBps: 20 },
 ] as const;
 
 export const HOSTING_SUPPLIER_TYPES = ["INDIVIDUAL", "COMPANY", "IDC", "CLOUD_VENDOR"] as const;

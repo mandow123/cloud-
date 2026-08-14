@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { HOSTING_V2_AGENT_STALE_SECONDS } from "@/lib/hosting-v2";
 import { createIdempotencyKey, marketplaceErrorMessage, marketplaceGet, marketplacePost } from "@/lib/client/marketplace-client";
 import type { SupplierHostingDashboard, SupplierHostingOffer, SupplierHostingPolicy } from "@/lib/hosting-v2-client";
-import { formatCardHours, formatHostingTime } from "@/lib/hosting-v2-client";
+import { SupplyFeePreviewStrip } from "./supply-fee-preview";
 import styles from "./supply-console.module.css";
 
 function localDateTime(date: Date) {
@@ -19,19 +19,6 @@ function decimalMicros(value: string) {
   if (!match) return null;
   const micros = Number(match[1]) * 1_000_000 + Number((match[2] ?? "").padEnd(6, "0"));
   return Number.isSafeInteger(micros) && micros > 0 ? micros : null;
-}
-
-const FEE_TIER_LABELS: Record<string, string> = {
-  STARTER: "起步档",
-  GROWTH: "成长档",
-  SCALE: "规模档",
-  VOLUME: "大客户档",
-  STRATEGIC: "战略档",
-};
-
-function formatBasisPoints(value: number | null) {
-  if (value === null || !Number.isInteger(value) || value < 0) return "未配置";
-  return `${Math.floor(value / 100)}.${String(value % 100).padStart(2, "0")}%`;
 }
 
 function eligibleHostingDevice(device: SupplierHostingDashboard["devices"][number], now: number) {
@@ -96,6 +83,9 @@ export function SupplyOfferCreate() {
     dashboard?.readiness.supplierApproved
     && selectedDevice
     && policy
+    && policy.feePreview.activeFeeScheduleId
+    && policy.feePreview.tierCode
+    && policy.feePreview.platformFeeBps !== null
     && approvedImage
     && rateMicros
     && title.trim().length >= 3
@@ -153,11 +143,7 @@ export function SupplyOfferCreate() {
             <label className={styles.field}><span>可用结束</span><input onChange={(event) => setAvailableUntil(event.target.value)} type="datetime-local" value={availableUntil} /></label>
             <label className={`${styles.field} ${styles.fieldFull}`}><span>平台批准的交付镜像</span><select onChange={(event) => setApprovedImage(event.target.value)} required value={approvedImage}>{policy?.approvedImages.map((image) => <option key={image} value={image}>{image}</option>)}</select><small>仅允许不可变 sha256 镜像；不能填写自定义镜像或 latest 标签。</small></label>
           </div>
-          {policy ? <div className={styles.feeStrip} aria-label="当前供应服务费档位">
-            <strong>本月服务费 {formatBasisPoints(policy.feePreview.platformFeeBps)} · {policy.feePreview.tierCode ? (FEE_TIER_LABELS[policy.feePreview.tierCode] ?? policy.feePreview.tierCode) : "尚未生效"}</strong>
-            <span>上月合格成交 {formatCardHours(policy.feePreview.qualifyingVolumeMicros)} KAI</span>
-            <small>{policy.feePreview.period.key} 的已结算、未退款毛额决定本月档位，下次于 {formatHostingTime(policy.feePreview.nextRecalculationAt)} 重算。推荐佣金包含在本笔服务费内，不会再次向供应方或买家加收。</small>
-          </div> : null}
+          {policy ? <SupplyFeePreviewStrip preview={policy.feePreview} /> : null}
           <div className={styles.agreement}><input checked readOnly type="checkbox" /><span>本次挂牌使用服务端协议 <strong>{policy?.termsVersion ?? "未就绪"}</strong>。发布前仍会再次检查供应资格、Agent 心跳、验真有效期和平台费率。</span></div>
           <div className={styles.formActions}><button className={styles.saveButton} disabled={!formReady || busy} type="submit">{busy ? "正在创建草稿…" : "创建挂牌草稿"}</button></div>
         </form>

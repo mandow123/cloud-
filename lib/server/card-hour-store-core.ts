@@ -77,6 +77,7 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       await db.first("SELECT id FROM card_hour_ledger_batches LIMIT 1");
       await db.first("SELECT id FROM card_hour_ledger_entries LIMIT 1");
       await db.first("SELECT id FROM card_hour_order_holds LIMIT 1");
+      await db.first("SELECT id FROM hosting_v2_supplier_fee_volume_events LIMIT 1");
       return { schemaVersion: CARD_HOUR_SCHEMA_VERSION, integrity: "ok" as const };
     },
     async dashboard(organizationId, now) {
@@ -253,6 +254,8 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
         { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
         { sql: "UPDATE hosting_v2_contracts SET status='SETTLED',accepted_at=?,version=version+1,updated_at=? WHERE id=? AND status='AWAITING_ACCEPTANCE' AND EXISTS(SELECT 1 FROM hosting_v2_acceptance_proofs WHERE contract_id=?)", values: [input.now, input.now, input.orderId, input.orderId] },
         { sql: "INSERT OR IGNORE INTO card_hour_hold_events(id,hold_id,event_type,amount_micros,payload_hash,occurred_at) SELECT ?,?,'SETTLED',?,?,? WHERE EXISTS(SELECT 1 FROM card_hour_order_holds WHERE id=? AND status='HELD') AND EXISTS(SELECT 1 FROM hosting_v2_acceptance_proofs WHERE contract_id=?)", values: [eventId, holdId, input.settledMicros, input.payloadHash, input.now, holdId, input.orderId] },
+        { sql: `INSERT INTO hosting_v2_supplier_fee_volume_events(id,supplier_organization_id,contract_id,event_type,amount_micros,source_event_id,payload_digest,occurred_at,created_at)
+          SELECT ?,?,?,'SETTLEMENT',?,?,?,?,? WHERE EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=? AND event_type='SETTLED')`, values: [`hfve_${crypto.randomUUID()}`, input.supplierOrganizationId, input.orderId, input.settledMicros, eventId, input.payloadHash, input.now, input.now, eventId] },
         { sql: "UPDATE card_hour_order_holds SET settled_micros=?,status='SETTLED',updated_at=? WHERE id=? AND status='HELD' AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?) AND EXISTS(SELECT 1 FROM hosting_v2_contracts WHERE id=? AND status='SETTLED')", values: [input.settledMicros, input.now, holdId, eventId, input.orderId] },
         { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,lifetime_spent_micros=lifetime_spent_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?) AND EXISTS(SELECT 1 FROM hosting_v2_contracts WHERE id=? AND status='SETTLED')", values: [releaseMicros, heldMicros, input.settledMicros, input.now, organizationId, eventId, input.orderId] },
         { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) SELECT ?,?,'ORDER_CAPTURE',?,?,'POSTED',?,? WHERE EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [captureBatchId, organizationId, `order:HOSTING_V2:${input.orderId}`, input.settledMicros, JSON.stringify({ sourceSystem: "HOSTING_V2", orderId: input.orderId, heldMicros, releasedMicros: releaseMicros }), input.now, eventId] },
@@ -332,6 +335,10 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       ];
       if (resolution === "REFUND") statements.push(
         { sql: "INSERT INTO card_hour_hold_events(id,hold_id,event_type,amount_micros,payload_hash,occurred_at) VALUES(?,?,'RELEASED',?,?,?)", values: [eventId, holdId, heldMicros, input.payloadHash, input.now] },
+        { sql: `INSERT INTO hosting_v2_supplier_fee_volume_events(id,supplier_organization_id,contract_id,event_type,amount_micros,source_event_id,payload_digest,occurred_at,created_at)
+          SELECT ?,?,?,'REFUND',SUM(CASE WHEN event_type='SETTLEMENT' THEN amount_micros ELSE -amount_micros END),?,?,?,?
+          FROM hosting_v2_supplier_fee_volume_events WHERE contract_id=?
+          HAVING SUM(CASE WHEN event_type='SETTLEMENT' THEN amount_micros ELSE -amount_micros END)>0`, values: [`hfve_${crypto.randomUUID()}`, supplierOrganizationId, text(current, "contract_id"), eventId, input.payloadHash, input.now, input.now, text(current, "contract_id")] },
         { sql: "UPDATE card_hour_order_holds SET status='RELEASED',updated_at=? WHERE id=? AND status='HELD'", values: [input.now, holdId] },
         { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,version=version+1,updated_at=? WHERE organization_id=?", values: [heldMicros, heldMicros, input.now, buyerOrganizationId] },
         { sql: "UPDATE hosting_v2_contracts SET status='REFUNDED',settled_micros=0,supplier_income_micros=0,commission_micros=0,version=version+1,updated_at=? WHERE id=? AND status='DISPUTED'", values: [input.now, text(current, "contract_id")] },
@@ -341,6 +348,8 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       );
       else statements.push(
         { sql: "INSERT INTO card_hour_hold_events(id,hold_id,event_type,amount_micros,payload_hash,occurred_at) VALUES(?,?,'SETTLED',?,?,?)", values: [eventId, holdId, settledMicros, input.payloadHash, input.now] },
+        { sql: `INSERT INTO hosting_v2_supplier_fee_volume_events(id,supplier_organization_id,contract_id,event_type,amount_micros,source_event_id,payload_digest,occurred_at,created_at)
+          SELECT ?,?,?,'SETTLEMENT',?,?,?,?,? WHERE EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=? AND event_type='SETTLED')`, values: [`hfve_${crypto.randomUUID()}`, supplierOrganizationId, text(current, "contract_id"), settledMicros, eventId, input.payloadHash, input.now, input.now, eventId] },
         { sql: "UPDATE card_hour_order_holds SET settled_micros=?,status='SETTLED',updated_at=? WHERE id=? AND status='HELD'", values: [settledMicros, input.now, holdId] },
         { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,lifetime_spent_micros=lifetime_spent_micros+?,version=version+1,updated_at=? WHERE organization_id=?", values: [heldMicros - settledMicros, heldMicros, settledMicros, input.now, buyerOrganizationId] },
         { sql: "UPDATE hosting_v2_contracts SET status='SETTLED',settled_micros=?,supplier_income_micros=?,commission_micros=?,accepted_at=?,version=version+1,updated_at=? WHERE id=? AND status='DISPUTED'", values: [settledMicros, supplierIncomeMicros, commissionMicros, input.now, input.now, text(current, "contract_id")] },

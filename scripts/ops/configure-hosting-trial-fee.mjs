@@ -27,8 +27,8 @@ function argumentsFrom(argv) {
   if (baseUrl.protocol !== "https:" || baseUrl.username || baseUrl.password || baseUrl.search || baseUrl.hash || baseUrl.pathname !== "/") {
     fail("base URL must be an origin-only HTTPS URL");
   }
-  const platformFeeBps = Number(options.platformFeeBps ?? "1000");
-  const referralRewardBps = Number(options.referralRewardBps ?? "300");
+  const platformFeeBps = Number(options.platformFeeBps ?? "100");
+  const referralRewardBps = Number(options.referralRewardBps ?? "30");
   if (!Number.isInteger(platformFeeBps) || platformFeeBps < 0 || platformFeeBps > 5000) fail("platform fee must be 0-5000 basis points");
   if (!Number.isInteger(referralRewardBps) || referralRewardBps < 0 || referralRewardBps > platformFeeBps) fail("referral reward must be 0-platform fee basis points");
   return { baseUrl: baseUrl.origin, credentialFile: resolve(options.credentialFile), platformFeeBps, referralRewardBps };

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { marketplaceErrorMessage, marketplaceGet } from "@/lib/client/marketplace-client";
 import type { SupplierEarningsDashboard } from "@/lib/hosting-v2-client";
 import { formatCardHours, formatHostingTime } from "@/lib/hosting-v2-client";
+import { SupplyFeePreviewStrip } from "./supply-fee-preview";
 import styles from "./supply-console.module.css";
 
 const OPERATION_LABELS: Record<string, string> = {
@@ -14,19 +15,6 @@ const OPERATION_LABELS: Record<string, string> = {
   RENTAL_INCOME: "租金收益",
   COMMISSION_INCOME: "佣金收益",
 };
-
-const FEE_TIER_LABELS: Record<string, string> = {
-  STARTER: "起步档",
-  GROWTH: "成长档",
-  SCALE: "规模档",
-  VOLUME: "大客户档",
-  STRATEGIC: "战略档",
-};
-
-function formatBasisPoints(value: number | null) {
-  if (value === null || !Number.isInteger(value) || value < 0) return "未配置";
-  return `${Math.floor(value / 100)}.${String(value % 100).padStart(2, "0")}%`;
-}
 
 export function SupplyEarnings() {
   const [earnings, setEarnings] = useState<SupplierEarningsDashboard | null>(null);
@@ -63,11 +51,7 @@ export function SupplyEarnings() {
             <div><span>邀请组织</span><strong>{earnings.referral.invitedOrganizations}</strong><small>推荐码 {earnings.referral.code}</small></div>
           </div>
 
-          <div className={styles.feeStrip} aria-label="当前供应服务费档位">
-            <strong>本月服务费 {formatBasisPoints(earnings.feePreview.platformFeeBps)} · {earnings.feePreview.tierCode ? (FEE_TIER_LABELS[earnings.feePreview.tierCode] ?? earnings.feePreview.tierCode) : "尚未生效"}</strong>
-            <span>上月合格成交 {formatCardHours(earnings.feePreview.qualifyingVolumeMicros)} KAI</span>
-            <small>{earnings.feePreview.period.key} 的已结算、未退款毛额决定本月档位；{formatHostingTime(earnings.feePreview.nextRecalculationAt)} 重新计算。推荐佣金包含在平台服务费内。</small>
-          </div>
+          <SupplyFeePreviewStrip preview={earnings.feePreview} />
 
           <section className={styles.dataSection} aria-labelledby="settlement-summary-title">
             <header className={styles.panelHeader}><h2 id="settlement-summary-title">{earnings.monthlySettlement.period.key} 月度分账</h2><span>实际已结算订单</span></header>

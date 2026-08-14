@@ -878,6 +878,119 @@
   grid-column: 1 / -1;
 }
 
+.feeFold {
+  margin-top: 14px;
+  margin-bottom: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.feeFold > summary {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  min-height: 52px;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  color: var(--ink);
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.feeFold > summary > span {
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.feeFold > summary > strong {
+  border-left: 1px solid var(--border);
+  padding-left: 12px;
+  color: var(--accent);
+  font-size: 0.75rem;
+}
+
+.feeFold > summary > small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feeFoldBody {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.36fr);
+  border-top: 1px solid var(--border);
+}
+
+.feeTierTable {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+}
+
+.feeTierTable th,
+.feeTierTable td {
+  border-bottom: 1px solid var(--border);
+  padding: 11px 15px;
+  text-align: left;
+}
+
+.feeTierTable th {
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+}
+
+.feeTierTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.feeTierTable td strong,
+.feeTierTable td small {
+  display: block;
+}
+
+.feeTierTable td small {
+  margin-top: 2px;
+  color: var(--accent);
+  font-size: 0.62rem;
+}
+
+.feeTierCurrent td {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.feeFoldMeta {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  border-left: 1px solid var(--border);
+  background: var(--surface-muted);
+  padding: 16px;
+}
+
+.feeFoldMeta p {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.feeFoldMeta strong {
+  color: var(--ink);
+  font-size: 0.72rem;
+}
+
+.feeFoldMeta span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.55;
+}
+
 .feeFormula {
   display: grid;
   gap: 1px;
@@ -1427,6 +1540,15 @@
   .historyGrid {
     grid-template-columns: 1fr;
   }
+
+  .feeFoldBody {
+    grid-template-columns: 1fr;
+  }
+
+  .feeFoldMeta {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1469,6 +1591,21 @@
   .feeStrip,
   .feeFormula > div {
     grid-template-columns: 1fr;
+  }
+
+  .feeFold > summary {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .feeFold > summary > strong {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .feeFold > summary > small {
+    text-align: left;
+    white-space: normal;
   }
 
   .feeFormula dd {

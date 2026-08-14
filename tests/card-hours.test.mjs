@@ -66,7 +66,7 @@ test("hosting referral commission is allocated only within the platform fee", ()
 test("captured topup credits once and order capture cannot overdraw or replay twice", async () => {
   const store = await createSqliteCardHourStore(":memory:");
   try {
-    assert.deepEqual(await store.health(), { schemaVersion: 2, integrity: "ok" });
+    assert.deepEqual(await store.health(), { schemaVersion: 3, integrity: "ok" });
     const topup = await store.createTopup({ account, cardHourMicros: 5_000_000, amountCents: 501, idempotencyKey: "topup-000000000001", payloadHash: "hash-topup", now: "2026-08-10T00:00:00Z", expiresAt: "2026-08-10T00:15:00Z" });
     await store.applyTopupEvent({ orderId: topup.record.id, providerEventId: "event-1", providerTransactionId: "transaction-1", eventType: "CAPTURED", amountCents: 501, payloadDigest: "digest", occurredAt: "2026-08-10T00:01:00Z", receivedAt: "2026-08-10T00:01:01Z" });
     assert.equal((await store.applyTopupEvent({ orderId: topup.record.id, providerEventId: "event-2", providerTransactionId: "transaction-1", eventType: "CAPTURED", amountCents: 501, payloadDigest: "digest", occurredAt: "2026-08-10T00:02:00Z", receivedAt: "2026-08-10T00:02:01Z" })).applied, false);
@@ -122,6 +122,19 @@ test("hosting order hold settles actual usage once and vests rental and referral
     const settlement = { buyerOrganizationId: buyer.activeOrganization.id, orderId: "hosting-contract-1", measuredSeconds: 6_000, settledMicros: 6_000_000, supplierOrganizationId: supplier.activeOrganization.id, supplierIncomeMicros: 5_000_000, commissionMicros: 300_000, acceptanceMode: "BUYER", acceptanceDeadlineAt: "2026-08-11T01:04:00.000Z", acceptanceActorId: buyer.account.id, acceptancePayloadHash: "hosting-acceptance-hash", payloadHash: "hosting-settlement-hash", now: "2026-08-11T01:04:00Z" };
     assert.equal((await store.settleHostingOrder(settlement)).applied, true);
     assert.equal((await store.settleHostingOrder(settlement)).applied, false);
+
+    const auditDb = new DatabaseSync(path);
+    const volumeAudit = auditDb.prepare(`SELECT supplier_organization_id,contract_id,event_type,amount_micros,payload_digest,occurred_at
+      FROM hosting_v2_supplier_fee_volume_events WHERE contract_id='hosting-contract-1'`).get();
+    auditDb.close();
+    assert.deepEqual({ ...volumeAudit }, {
+      supplier_organization_id: supplier.activeOrganization.id,
+      contract_id: "hosting-contract-1",
+      event_type: "SETTLEMENT",
+      amount_micros: 6_000_000,
+      payload_digest: "hosting-settlement-hash",
+      occurred_at: "2026-08-11T01:04:00Z",
+    });
 
     const buyerDashboard = await store.dashboard(buyer.activeOrganization.id, "2026-08-11T01:04:01Z");
     const supplierDashboard = await store.dashboard(supplier.activeOrganization.id, "2026-08-11T01:04:01Z");

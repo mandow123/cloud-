@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createAccountSession } from "../lib/server/account-auth.ts";
-import { hostingCurrentCalendarMonth, hostingPreviousCalendarMonth } from "../lib/hosting-v2.ts";
+import { hostingCurrentCalendarMonth, hostingDefaultFeeTiers } from "../lib/hosting-v2.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
 import { getCardHourStore } from "../lib/server/card-hour-store.ts";
 import { getHostingV2Store } from "../lib/server/hosting-v2-store.ts";
@@ -329,12 +329,16 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     assert.deepEqual({ approvedImages: policy.policy.approvedImages, termsVersion: policy.policy.termsVersion }, { approvedImages: [process.env.KAI_HOSTING_APPROVED_IMAGES], termsVersion: process.env.KAI_HOSTING_TERMS_VERSION });
     assert.deepEqual(policy.policy.feePreview, {
       activeFeeScheduleId: (await hosting.activeFeeSchedule(policyObservedAt)).id,
+      model: "LIFETIME_SUPPLIER_SETTLED_GROSS_V1",
       tierCode: "STARTER",
-      period: hostingPreviousCalendarMonth(policyObservedAt),
+      asOf: policy.policy.feePreview.asOf,
       qualifyingVolumeMicros: 0,
       platformFeeBps: 100,
       referralRewardBps: 30,
-      nextRecalculationAt: hostingCurrentCalendarMonth(policyObservedAt).endAt,
+      tiers: hostingDefaultFeeTiers(1_000, 300),
+      nextTierCode: "GROWTH",
+      nextTierMinimumMicros: 10_000_000_000,
+      remainingToNextTierMicros: 10_000_000_000,
     });
     const availableFrom = new Date(Date.parse(now) - 60_000).toISOString();
     const availableUntil = new Date(Date.parse(now) + 86_400_000).toISOString();
@@ -446,13 +450,13 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
       platformNetMicros: 1_260,
     });
     assert.equal(earnings.earnings.feePreview.tierCode, "STARTER");
-    assert.equal(earnings.earnings.feePreview.qualifyingVolumeMicros, 0, "the current month must not affect the previous-month tier preview");
+    assert.equal(earnings.earnings.feePreview.qualifyingVolumeMicros, 180_000, "completed settlement must immediately affect the supplier lifetime preview");
     const referrerEarnings = await cardHours.dashboard(referrer.context.activeOrganization.id, cleanedAt);
     assert.equal(referrerEarnings.income.commissionVestedMicros, 540);
     const publicAfter = await json(await listPublicOffers(new Request(`${ORIGIN}/api/v2/offers`)), 200);
     assert.equal(publicAfter.records.length, 1, "cleaned and freshly verified inventory must become sellable again");
     const operations = await hosting.readiness(cleanedAt);
-    assert.equal(operations.schemaVersion, 12);
+    assert.equal(operations.schemaVersion, 13);
     assert.match(operations.activeFeeScheduleId, /^hfee_/u);
     assert.deepEqual({
       approvedSupplierCount: operations.approvedSupplierCount,

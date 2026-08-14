@@ -1,4 +1,4 @@
-import { HOSTING_FEE_QUALIFICATION_MODEL, HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, hostingActualFeeBreakdown, hostingCardHourMicrosForSeconds, hostingCurrentCalendarMonth, hostingDefaultFeeTiers, hostingFeeBreakdown, hostingFeeRatesAreValid, hostingPreviousCalendarMonth, hostingSelectFeeTier, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDisputeCase, type HostingFeeSchedule, type HostingFeeTier, type HostingGoldenLoopAudit, type HostingOffer, type HostingStopIncident, type HostingSupplierFeePreview, type HostingSupplierMonthlySettlement, type HostingSupplierProfile } from "../hosting-v2.ts";
+import { HOSTING_FEE_LEGACY_QUALIFICATION_MODEL, HOSTING_FEE_QUALIFICATION_MODEL, HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, hostingActualFeeBreakdown, hostingCardHourMicrosForSeconds, hostingCurrentCalendarMonth, hostingDefaultFeeTiers, hostingFeeBreakdown, hostingFeeRatesAreValid, hostingSelectFeeTier, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDisputeCase, type HostingFeeSchedule, type HostingFeeTier, type HostingGoldenLoopAudit, type HostingOffer, type HostingStopIncident, type HostingSupplierFeePreview, type HostingSupplierMonthlySettlement, type HostingSupplierProfile } from "../hosting-v2.ts";
 import { HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { assertHostingAgentWindow, hostingAgentCanonicalJson, hostingAgentDigest, verifyHostingAgentSignature } from "./hosting-agent-crypto.ts";
@@ -368,43 +368,65 @@ function receipt(context: HostingMutationContext, commandType: string, entityTyp
 }
 
 async function supplierFeePreviewForSchedule(db: HostingV2DatabaseAdapter, organizationId: string, feeScheduleId: string | null, now: string): Promise<HostingSupplierFeePreview> {
-  const period = hostingPreviousCalendarMonth(now);
-  const nextRecalculationAt = hostingCurrentCalendarMonth(now).endAt;
-  const volumeRow = await db.first<{ qualifying_volume_micros: number | null }>(`SELECT COALESCE(SUM(c.settled_micros),0) qualifying_volume_micros
-    FROM hosting_v2_contracts c
-    WHERE c.supplier_organization_id=? AND c.accepted_at>=? AND c.accepted_at<?
-      AND c.status IN ('SETTLED','CLEANING','CLEANED') AND c.settled_micros>0
-      AND NOT EXISTS(SELECT 1 FROM hosting_v2_dispute_resolution_proposals p
-        WHERE p.contract_id=c.id AND p.resolution='REFUND' AND p.status='APPLIED')`, [organizationId, period.startAt, period.endAt]);
-  const qualifyingVolumeMicros = Number(volumeRow?.qualifying_volume_micros ?? 0);
+  if (!Number.isFinite(Date.parse(now))) throw new ExchangeDomainError("HOSTING_FEE_QUALIFICATION_TIME_INVALID", 400, "成交费率核算时间无效。");
+  const asOf = new Date(Date.parse(now)).toISOString();
+  const volumeRow = await db.first<{ qualifying_volume_micros: number | null }>(`SELECT COALESCE(SUM(
+      CASE WHEN event_type='SETTLEMENT' THEN amount_micros ELSE -amount_micros END
+    ),0) qualifying_volume_micros
+    FROM hosting_v2_supplier_fee_volume_events
+    WHERE supplier_organization_id=? AND occurred_at<=?`, [organizationId, asOf]);
+  const legacyVolumeRow = await db.first<{ qualifying_volume_micros: number | null }>(`SELECT COALESCE(SUM(settled.amount_micros),0) qualifying_volume_micros
+    FROM card_hour_hold_events settled
+    JOIN card_hour_order_holds h ON h.id=settled.hold_id AND h.source_system='HOSTING_V2'
+    JOIN hosting_v2_contracts c ON c.id=h.order_id
+    WHERE c.supplier_organization_id=? AND settled.event_type='SETTLED' AND settled.occurred_at<=?
+      AND NOT EXISTS(SELECT 1 FROM hosting_v2_supplier_fee_volume_events recorded WHERE recorded.source_event_id=settled.id)
+      AND NOT EXISTS(
+        SELECT 1 FROM hosting_v2_dispute_resolution_proposals proposal
+        JOIN card_hour_hold_events refunded ON refunded.hold_id=h.id AND refunded.event_type='RELEASED'
+        WHERE proposal.contract_id=c.id AND proposal.resolution='REFUND' AND proposal.status='APPLIED'
+          AND refunded.occurred_at<=?
+      )`, [organizationId, asOf, asOf]).catch(() => null);
+  const qualifyingVolumeMicros = Number(volumeRow?.qualifying_volume_micros ?? 0) + Number(legacyVolumeRow?.qualifying_volume_micros ?? 0);
   if (!Number.isSafeInteger(qualifyingVolumeMicros) || qualifyingVolumeMicros < 0) {
     throw new ExchangeDomainError("HOSTING_FEE_QUALIFYING_VOLUME_INVALID", 503, "供应方历史结算量超出安全计算范围，费率预览保持关闭。");
   }
   if (!feeScheduleId) {
-    return { activeFeeScheduleId: null, tierCode: null, period, qualifyingVolumeMicros, platformFeeBps: null, referralRewardBps: null, nextRecalculationAt };
+    return {
+      activeFeeScheduleId: null, model: HOSTING_FEE_QUALIFICATION_MODEL, tierCode: null, asOf,
+      qualifyingVolumeMicros, platformFeeBps: null, referralRewardBps: null, tiers: [],
+      nextTierCode: null, nextTierMinimumMicros: null, remainingToNextTierMicros: null,
+    };
   }
   const tierRows = await db.all<Row>(`SELECT tier_code,minimum_qualifying_micros,platform_fee_bps,referral_reward_bps
-    FROM hosting_v2_fee_tiers WHERE fee_schedule_id=? ORDER BY minimum_qualifying_micros`, [feeScheduleId]);
+    FROM hosting_v2_lifetime_fee_tiers WHERE fee_schedule_id=? ORDER BY minimum_qualifying_micros`, [feeScheduleId]);
   if (!tierRows.length) throw new ExchangeDomainError("HOSTING_FEE_TIERS_UNAVAILABLE", 503, "成交费率阶梯尚未配置，费率预览保持关闭。");
+  const tiers = tierRows.map((tier) => ({
+    code: value(tier, "tier_code"),
+    minimumQualifyingMicros: number(tier, "minimum_qualifying_micros"),
+    platformFeeBps: number(tier, "platform_fee_bps"),
+    referralRewardBps: number(tier, "referral_reward_bps"),
+  }));
   let selectedTier: HostingFeeTier;
   try {
-    selectedTier = hostingSelectFeeTier(tierRows.map((tier) => ({
-      code: value(tier, "tier_code"),
-      minimumQualifyingMicros: number(tier, "minimum_qualifying_micros"),
-      platformFeeBps: number(tier, "platform_fee_bps"),
-      referralRewardBps: number(tier, "referral_reward_bps"),
-    })), qualifyingVolumeMicros);
+    selectedTier = hostingSelectFeeTier(tiers, qualifyingVolumeMicros);
   } catch {
     throw new ExchangeDomainError("HOSTING_FEE_TIERS_UNAVAILABLE", 503, "成交费率阶梯无效，费率预览保持关闭。");
   }
+  const selectedIndex = tiers.findIndex((tier) => tier.code === selectedTier.code);
+  const nextTier = tiers[selectedIndex + 1] ?? null;
   return {
     activeFeeScheduleId: feeScheduleId,
+    model: HOSTING_FEE_QUALIFICATION_MODEL,
     tierCode: selectedTier.code,
-    period,
+    asOf,
     qualifyingVolumeMicros,
     platformFeeBps: selectedTier.platformFeeBps,
     referralRewardBps: selectedTier.referralRewardBps,
-    nextRecalculationAt,
+    tiers,
+    nextTierCode: nextTier?.code ?? null,
+    nextTierMinimumMicros: nextTier?.minimumQualifyingMicros ?? null,
+    remainingToNextTierMicros: nextTier ? nextTier.minimumQualifyingMicros - qualifyingVolumeMicros : null,
   };
 }
 
@@ -466,6 +488,13 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
         db.first<{ count: number }>("SELECT COUNT(*) AS count FROM hosting_v2_contracts WHERE status='CLEANING'"),
       ]);
       if (Number(migration?.version ?? 0) !== HOSTING_V2_SCHEMA_VERSION) throw new Error("HOSTING_V2_SCHEMA_MISMATCH");
+      await db.first("SELECT tier_code FROM hosting_v2_lifetime_fee_tiers LIMIT 1");
+      const invalidFeeVolume = await db.first<Row>(`SELECT supplier_organization_id
+        FROM hosting_v2_supplier_fee_volume_events
+        GROUP BY supplier_organization_id
+        HAVING SUM(CASE WHEN event_type='SETTLEMENT' THEN amount_micros ELSE -amount_micros END)<0
+        LIMIT 1`);
+      if (invalidFeeVolume) throw new Error("HOSTING_FEE_VOLUME_AUDIT_INVALID");
       return {
         schemaVersion: HOSTING_V2_SCHEMA_VERSION,
         integrity: "ok" as const,
@@ -533,7 +562,9 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
           p.status supplier_status,p.agreement_version supplier_agreement_version,p.evidence_digest supplier_evidence_digest,
           f.platform_fee_bps fee_platform_bps,f.referral_reward_bps fee_referral_bps,
           ft.tier_code fee_tier_code,ft.minimum_qualifying_micros fee_tier_minimum_micros,
-          ft.platform_fee_bps fee_tier_platform_bps,ft.referral_reward_bps fee_tier_referral_bps
+          ft.platform_fee_bps fee_tier_platform_bps,ft.referral_reward_bps fee_tier_referral_bps,
+          lft.tier_code lifetime_fee_tier_code,lft.minimum_qualifying_micros lifetime_fee_tier_minimum_micros,
+          lft.platform_fee_bps lifetime_fee_tier_platform_bps,lft.referral_reward_bps lifetime_fee_tier_referral_bps
         FROM hosting_v2_contracts c
         JOIN hosting_v2_devices d ON d.id=c.device_id
         JOIN hosting_v2_offers o ON o.id=c.offer_id
@@ -541,6 +572,8 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
         LEFT JOIN hosting_v2_fee_schedules f ON f.id=c.fee_schedule_id
         LEFT JOIN hosting_v2_fee_tiers ft ON ft.fee_schedule_id=c.fee_schedule_id
           AND ft.tier_code=json_extract(c.snapshot_json,'$.feeQualification.tierCode')
+        LEFT JOIN hosting_v2_lifetime_fee_tiers lft ON lft.fee_schedule_id=c.fee_schedule_id
+          AND lft.tier_code=json_extract(c.snapshot_json,'$.feeQualification.tierCode')
         WHERE c.id=?`, [contractId]);
       if (!main) return null;
       const [instance, metering, cleanup, acceptance, verification, commandRows, hold, holdEvents, ledgerBatches, incomeRows, attribution, dispute] = await Promise.all([
@@ -586,16 +619,24 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
       const verificationFresh = Boolean(main.verified_until && Date.parse(value(main, "verified_until")) > Date.parse(now));
       const commandsAuthentic = ["PROVISION", "START", "STOP", "CLEANUP"].every((type) => commandTransport.get(type) === true);
       const qualification = snapshot.feeQualification;
+      const lifetimeQualification = qualification?.model === HOSTING_FEE_QUALIFICATION_MODEL ? qualification : null;
+      const legacyQualification = qualification?.model === HOSTING_FEE_LEGACY_QUALIFICATION_MODEL ? qualification : null;
+      const lifetimeTierPricingFrozen = Boolean(lifetimeQualification
+        && lifetimeQualification.tierCode === nullable(main, "lifetime_fee_tier_code")
+        && lifetimeQualification.platformFeeBps === number(main, "lifetime_fee_tier_platform_bps")
+        && lifetimeQualification.referralRewardBps === number(main, "lifetime_fee_tier_referral_bps")
+        && lifetimeQualification.qualifyingVolumeMicros >= number(main, "lifetime_fee_tier_minimum_micros")
+        && Number.isFinite(Date.parse(lifetimeQualification.asOf)));
+      const legacyTierPricingFrozen = Boolean(legacyQualification
+        && legacyQualification.tierCode === nullable(main, "fee_tier_code")
+        && legacyQualification.platformFeeBps === number(main, "fee_tier_platform_bps")
+        && legacyQualification.referralRewardBps === number(main, "fee_tier_referral_bps")
+        && legacyQualification.period.timeZone === "Asia/Shanghai"
+        && Date.parse(legacyQualification.period.startAt) < Date.parse(legacyQualification.period.endAt));
       const tierPricingFrozen = Boolean(qualification
-        && qualification.model === HOSTING_FEE_QUALIFICATION_MODEL
-        && qualification.tierCode === nullable(main, "fee_tier_code")
-        && qualification.platformFeeBps === number(main, "fee_tier_platform_bps")
-        && qualification.referralRewardBps === number(main, "fee_tier_referral_bps")
-        && qualification.qualifyingVolumeMicros >= number(main, "fee_tier_minimum_micros")
+        && (lifetimeTierPricingFrozen || legacyTierPricingFrozen)
         && qualification.platformFeeBps === snapshot.platformFeeBps
-        && qualification.referralRewardBps === snapshot.referralRewardBps
-        && qualification.period?.timeZone === "Asia/Shanghai"
-        && Date.parse(qualification.period?.startAt ?? "") < Date.parse(qualification.period?.endAt ?? ""));
+        && qualification.referralRewardBps === snapshot.referralRewardBps);
       const legacyPricingFrozen = !qualification && snapshot.platformFeeBps === number(main, "fee_platform_bps") && snapshot.referralRewardBps === number(main, "fee_referral_bps");
       const pricingFrozen = (tierPricingFrozen || legacyPricingFrozen)
         && snapshot.cardHourMicrosPerGpuHour === number(main, "offer_rate") && snapshot.approvedImage === value(main, "offer_approved_image")
@@ -903,6 +944,10 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
           sql: "INSERT INTO hosting_v2_fee_tiers(fee_schedule_id,tier_code,minimum_qualifying_micros,platform_fee_bps,referral_reward_bps,created_at) VALUES(?,?,?,?,?,?)",
           values: [recordId, tier.code, tier.minimumQualifyingMicros, tier.platformFeeBps, tier.referralRewardBps, context.now],
         } satisfies HostingV2Sql)),
+        ...tiers.map((tier) => ({
+          sql: "INSERT INTO hosting_v2_lifetime_fee_tiers(fee_schedule_id,tier_code,minimum_qualifying_micros,platform_fee_bps,referral_reward_bps,created_at) VALUES(?,?,?,?,?,?)",
+          values: [recordId, tier.code, tier.minimumQualifyingMicros, tier.platformFeeBps, tier.referralRewardBps, context.now],
+        } satisfies HostingV2Sql)),
         event(context, null, "FEE_SCHEDULE", recordId, input.activate ? "FEE_SCHEDULE_ACTIVATED" : "FEE_SCHEDULE_CREATED"),
         receipt(context, "CREATE_FEE_SCHEDULE", "FEE_SCHEDULE", recordId),
       );
@@ -1060,7 +1105,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         feeQualification: {
           model: HOSTING_FEE_QUALIFICATION_MODEL,
           tierCode: feePreview.tierCode,
-          period: feePreview.period,
+          asOf: feePreview.asOf,
           qualifyingVolumeMicros: feePreview.qualifyingVolumeMicros,
           platformFeeBps: feePreview.platformFeeBps,
           referralRewardBps: feePreview.referralRewardBps,

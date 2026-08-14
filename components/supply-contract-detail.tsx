@@ -5,17 +5,11 @@ import { useCallback, useEffect, useState } from "react";
 import { marketplaceErrorMessage, marketplaceGet } from "@/lib/client/marketplace-client";
 import type { SupplierHostingContract } from "@/lib/hosting-v2-client";
 import { formatCardHours, formatEvidenceDigest, formatHostingTime, hostingContractStatusLabel } from "@/lib/hosting-v2-client";
+import { feeQualificationDescription, feeTierLabel, formatBasisPoints } from "./supply-fee-preview";
 import styles from "./supply-console.module.css";
 
 const POLLED = new Set(["CARD_HOURS_HELD", "PROVISIONING", "READY", "IN_SERVICE", "AWAITING_ACCEPTANCE", "SETTLED", "CLEANING", "DISPUTED", "FAILED"]);
 const STEPS = ["CARD_HOURS_HELD", "PROVISIONING", "READY", "IN_SERVICE", "AWAITING_ACCEPTANCE", "CLEANING", "CLEANED"] as const;
-const FEE_TIER_LABELS: Record<string, string> = { STARTER: "起步档", GROWTH: "成长档", SCALE: "规模档", VOLUME: "大客户档", STRATEGIC: "战略档" };
-
-function formatBasisPoints(value: number) {
-  if (!Number.isInteger(value) || value < 0) return "—";
-  return `${Math.floor(value / 100)}.${String(value % 100).padStart(2, "0")}%`;
-}
-
 function stepIndex(status: SupplierHostingContract["status"]) {
   if (status === "SETTLED") return 5;
   return STEPS.indexOf(status as (typeof STEPS)[number]);
@@ -117,7 +111,7 @@ export function SupplyContractDetail({ contractId }: { contractId: string }) {
           </section>
         </div>
         <aside className={styles.sidePanel}>
-          <section><h2>合同快照</h2><ul><li>{contract.snapshot.gpuModel} · {contract.snapshot.region}</li><li>{formatCardHours(contract.snapshot.cardHourMicrosPerGpuHour)} KAI / GPU 小时</li><li>平台服务费 {formatBasisPoints(contract.snapshot.platformFeeBps)}{contract.snapshot.feeQualification ? ` · ${FEE_TIER_LABELS[contract.snapshot.feeQualification.tierCode] ?? contract.snapshot.feeQualification.tierCode}` : " · 旧版固定费率"}</li><li>{contract.snapshot.feeQualification ? `${contract.snapshot.feeQualification.period.key} 合格成交 ${formatCardHours(contract.snapshot.feeQualification.qualifyingVolumeMicros)} KAI` : "成交时已冻结费率版本"}</li><li>{contract.snapshot.approvedImage}</li><li>{contract.snapshot.termsVersion}</li></ul></section>
+          <section><h2>合同快照</h2><ul><li>{contract.snapshot.gpuModel} · {contract.snapshot.region}</li><li>{formatCardHours(contract.snapshot.cardHourMicrosPerGpuHour)} KAI / GPU 小时</li><li>平台服务费 {formatBasisPoints(contract.snapshot.platformFeeBps)}{contract.snapshot.feeQualification ? ` · ${feeTierLabel(contract.snapshot.feeQualification.tierCode)}` : " · 旧版固定费率"}</li><li>{contract.snapshot.feeQualification ? feeQualificationDescription(contract.snapshot.feeQualification) : "成交时已冻结费率版本"}</li><li>{contract.snapshot.approvedImage}</li><li>{contract.snapshot.termsVersion}</li></ul></section>
           <section><h3>安全边界</h3><p>供应方页面只能读取当前组织的合同；不返回买家账户或组织标识，也不能提交计量、金额和结算状态。</p></section>
           <section><h3>异常处理</h3><p>开通、计量或清理失败会停止自动复售。请保留主机在线，等待平台根据 Agent 证据处理。</p></section>
           <section><Link className={styles.secondaryAction} href={`/supply/devices/${encodeURIComponent(contract.deviceId)}`}>查看关联设备</Link></section>

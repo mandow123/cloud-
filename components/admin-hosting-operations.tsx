@@ -13,6 +13,7 @@ import {
 } from "@/components/admin-api-client";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { AdminEmpty, AdminError, AdminLoading, AdminLoginRequired } from "@/components/admin-states";
+import { hostingDefaultFeeTiers } from "@/lib/hosting-v2";
 
 type FeeSchedule = Readonly<{
   id: string;
@@ -158,6 +159,11 @@ function cardHours(micros: unknown) {
   return Number.isSafeInteger(value) ? (value / 1_000_000).toLocaleString("zh-CN", { maximumFractionDigits: 6 }) : "—";
 }
 
+function referralSharePercent(fee: FeeSchedule | null) {
+  if (!fee || !Number.isFinite(fee.platformFeeBps) || fee.platformFeeBps <= 0) return 0;
+  return Math.round(fee.referralRewardBps * 10_000 / fee.platformFeeBps) / 100;
+}
+
 function tone(status: string) {
   if (["APPROVED", "ACTIVE", "POSTED", "APPLIED", "CLEANED", "REFUNDED"].includes(status)) return "success";
   if (["REJECTED", "SUSPENDED"].includes(status)) return "danger";
@@ -200,8 +206,7 @@ export function AdminHostingOperations() {
   const [reviewDecision, setReviewDecision] = useState("APPROVE");
   const [reviewNote, setReviewNote] = useState("");
   const [evidenceDigest, setEvidenceDigest] = useState("");
-  const [platformFeeBps, setPlatformFeeBps] = useState("1000");
-  const [referralRewardBps, setReferralRewardBps] = useState("300");
+  const [referralShare, setReferralShare] = useState("30");
   const [grantOrganizationId, setGrantOrganizationId] = useState("");
   const [grantCardHours, setGrantCardHours] = useState("100");
   const [grantReason, setGrantReason] = useState("");
@@ -226,6 +231,7 @@ export function AdminHostingOperations() {
   const selectedCleanup = cleanupIncidents.find((incident) => incident.contractId === cleanupTarget);
   const selectedStop = stopIncidents.find((incident) => incident.contractId === stopTarget);
   const selectedDispute = disputes.find((dispute) => dispute.contractId === disputeTarget);
+  const activeFeeTiers = useMemo(() => fee ? hostingDefaultFeeTiers(fee.platformFeeBps, fee.referralRewardBps) : [], [fee]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -303,8 +309,8 @@ export function AdminHostingOperations() {
   function submitFee(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void run("fee", () => adminPostAction("/api/v2/admin/hosting/fees", {
-      platformFeeBps: Number(platformFeeBps),
-      referralRewardBps: Number(referralRewardBps),
+      platformFeeBps: 100,
+      referralRewardBps: Number(referralShare),
       activate: true,
       effectiveFrom: new Date().toISOString(),
     }), "新费率版本已激活，既有合同快照不受影响。");
@@ -404,7 +410,7 @@ export function AdminHostingOperations() {
         <div><span>当前职责</span><strong>{isRoot ? "Root · 发起与配置" : "Finance Approver · 独立复核"}</strong></div>
         <div><span>卡时发放</span><strong>{isRoot ? "只能提交申请" : "只能批准或拒绝"}</strong></div>
         <div><span>公开支付</span><strong>关闭</strong></div>
-        <div><span>当前费率</span><strong>{fee ? `${fee.platformFeeBps / 100}% / 推荐 ${fee.referralRewardBps / 100}%` : isRoot ? "未配置" : "职责外不可见"}</strong></div>
+        <div><span>当前费率</span><strong>{fee ? `五档 1.0%–0.2% / 推荐占服务费 ${referralSharePercent(fee)}%` : isRoot ? "未配置" : "职责外不可见"}</strong></div>
       </div> : null}
 
       {session && readiness ? <section className="admin-panel admin-hosting-panel admin-hosting-readiness" aria-labelledby="hosting-readiness-title">
@@ -476,12 +482,15 @@ export function AdminHostingOperations() {
 
         <section className="admin-panel admin-hosting-panel" aria-labelledby="fee-schedule-title">
           <div className="admin-panel-head"><div><p className="admin-kicker">Versioned fee</p><h2 id="fee-schedule-title">成交费率版本</h2></div>{fee ? <span className={`admin-status ${tone(fee.status)}`}>{fee.status}</span> : null}</div>
-          {fee ? <div className="admin-hosting-current"><span>当前版本 <b>{fee.id}</b></span><span>平台服务费 <b>{fee.platformFeeBps} BP</b></span><span>推荐奖励 <b>{fee.referralRewardBps} BP</b></span><span>生效时间 <b>{datetime(fee.effectiveFrom)}</b></span></div> : <p className="admin-hosting-copy">未配置有效费率时，生产挂牌必须保持关闭。</p>}
+          {fee ? <>
+            <div className="admin-hosting-current"><span>当前版本 <b>{fee.id}</b></span><span>供应商服务费 <b>1.0%–0.2%</b></span><span>推荐佣金 <b>占服务费 {referralSharePercent(fee)}%</b></span><span>生效时间 <b>{datetime(fee.effectiveFrom)}</b></span></div>
+            <div className="admin-hosting-current" aria-label="供应商累计成交费率阶梯">{activeFeeTiers.map((tier) => <span key={tier.code}><b>{tier.code}</b> · ≥ {cardHours(tier.minimumQualifyingMicros)} KAI · {tier.platformFeeBps / 100}%</span>)}</div>
+          </> : <p className="admin-hosting-copy">未配置有效费率时，生产挂牌必须保持关闭。</p>}
           <form className="admin-hosting-form compact" onSubmit={submitFee}>
-            <label><span>平台服务费（BP）</span><input max={5000} min={0} onChange={(event) => setPlatformFeeBps(event.target.value)} required type="number" value={platformFeeBps} /></label>
-            <label><span>推荐奖励（BP）</span><input max={Number(platformFeeBps) || 0} min={0} onChange={(event) => setReferralRewardBps(event.target.value)} required type="number" value={referralRewardBps} /></label>
+            <label><span>推荐佣金占平台手续费（%）</span><input max={100} min={0} onChange={(event) => setReferralShare(event.target.value)} required step={1} type="number" value={referralShare} /></label>
             <button className="admin-button primary" disabled={busy === "fee"} type="submit">{busy === "fee" ? "正在激活…" : "创建并激活新版本"}</button>
           </form>
+          <p className="admin-hosting-warning">供应商手续费五档固定为 1.0%、0.8%、0.6%、0.4%、0.2%；这里只配置推荐佣金在平台手续费内部的分配比例，不会向供应商或买家重复加收。</p>
         </section>
 
         <section className="admin-panel admin-hosting-panel admin-panel-wide-column" aria-labelledby="grant-request-title">

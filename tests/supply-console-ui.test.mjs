@@ -93,6 +93,7 @@ test("resource details are selected from the current organization dashboard and 
 
 test("managed-device console uses the server projection, compact filters and truthful folded history", () => {
   const list = readFileSync("components/supply-resources.tsx", "utf8");
+  const fee = readFileSync("components/supply-fee-preview.tsx", "utf8");
   const route = readFileSync("app/api/v2/supply/dashboard/route.ts", "utf8");
   const projection = readFileSync("lib/server/hosting-v2-api.ts", "utf8");
   assert.match(route, /hostingSupplierDeviceWorkspaceView/u);
@@ -102,10 +103,47 @@ test("managed-device console uses the server projection, compact filters and tru
   assert.match(list, /<details className=\{styles\.historyFold\}/u);
   assert.match(list, /device\.primaryAction\.href/u);
   assert.match(list, /device\.primaryAction\.label/u);
+  assert.match(list, /marketplaceGet<\{ policy: SupplierHostingPolicy \}>\("\/api\/v2\/supply\/policy"\)/u);
+  assert.match(list, /<SupplyFeeTierFold preview=\{policy\.feePreview\} \/>/u);
+  assert.match(list, /<SupplyFeeUnavailableFold message=\{feeError/u);
+  assert.match(list, /Promise\.allSettled/u);
+  assert.match(fee, /<details className=\{styles\.feeFold\}>/u);
+  assert.doesNotMatch(fee, /<details className=\{styles\.feeFold\} open/u);
+  assert.match(fee, /preview\.tiers\.map/u);
+  assert.match(fee, /preview\.remainingToNextTierMicros/u);
+  assert.match(fee, /preview\.asOf/u);
+  assert.match(fee, /累计有效成交口径/u);
+  assert.match(fee, /href="\/supply\/earnings"/u);
+  assert.match(fee, /页面不会推算或缓存费率/u);
+  const filters = list.slice(list.indexOf("const filters = ["), list.indexOf("] as const;", list.indexOf("const filters = [")));
+  for (const state of ["ALL", "AVAILABLE", "OPERATING", "DEPLOYING", "TASKS", "OFFLINE", "DISABLED"]) assert.match(filters, new RegExp(`"${state}"`, "u"));
+  assert.equal((filters.match(/^\s+\[/gmu) ?? []).length, 7);
+  assert.doesNotMatch(filters, /FEE|费率|成交量/u);
   assert.match(projection, /renewal: \{ enabled: false/u);
   assert.match(projection, /buyback: \{ enabled: false/u);
   assert.match(projection, /decommission: \{ enabled: false/u);
   assert.doesNotMatch(list, /device\.status\}|device\.verificationStatus\}/u);
+  const lifecycle = list.slice(list.indexOf('<details className={styles.historyFold}'), list.indexOf("</details>", list.indexOf('<details className={styles.historyFold}')));
+  assert.doesNotMatch(lifecycle, /<button|<Link|数量|\bcount\b/u);
+});
+
+test("supplier fee UI reads lifetime cumulative fields and preserves legacy contract wording", () => {
+  const fee = readFileSync("components/supply-fee-preview.tsx", "utf8");
+  const create = readFileSync("components/supply-offer-create.tsx", "utf8");
+  const detail = readFileSync("components/supply-contract-detail.tsx", "utf8");
+  const earnings = readFileSync("components/supply-earnings.tsx", "utf8");
+  const combined = `${fee}\n${create}\n${detail}\n${earnings}`;
+
+  for (const field of ["qualifyingVolumeMicros", "platformFeeBps", "tierCode", "tiers", "nextTierCode", "remainingToNextTierMicros", "asOf"]) {
+    assert.match(fee, new RegExp(`preview\\.${field}`, "u"));
+  }
+  for (const tier of ["STARTER", "GROWTH", "SCALE", "VOLUME", "STRATEGIC"]) assert.match(fee, new RegExp(tier, "u"));
+  assert.match(fee, /LIFETIME_SUPPLIER_SETTLED_GROSS_V1/u);
+  assert.match(fee, /旧版月度档位/u);
+  assert.match(create, /<SupplyFeePreviewStrip preview=\{policy\.feePreview\} \/>/u);
+  assert.match(earnings, /<SupplyFeePreviewStrip preview=\{earnings\.feePreview\} \/>/u);
+  assert.match(detail, /feeQualificationDescription\(contract\.snapshot\.feeQualification\)/u);
+  assert.doesNotMatch(combined, /上月合格成交|本月服务费|nextRecalculationAt|feePreview\.period/u);
 });
 
 test("supplier pages read and mutate through the authenticated hosting v2 APIs", () => {
@@ -144,6 +182,9 @@ test("listing UI uses only authenticated Hosting V2 offer APIs and server-owned 
   assert.match(create, /Date\.parse\(device\.verifiedUntil\) > now/u);
   assert.match(create, /Date\.parse\(device\.lastSeenAt\) >= now - HOSTING_V2_AGENT_STALE_SECONDS \* 1_000/u);
   assert.match(create, /window\.setInterval\(\(\) => setEligibilityNow\(Date\.now\(\)\), 30_000\)/u);
+  assert.match(create, /policy\.feePreview\.activeFeeScheduleId/u);
+  assert.match(create, /policy\.feePreview\.tierCode/u);
+  assert.match(create, /policy\.feePreview\.platformFeeBps !== null/u);
   const payload = create.slice(create.indexOf("const payload = {"), create.indexOf("const serialized"));
   assert.doesNotMatch(payload, /gpuModel|termsVersion|organizationId|accountId|feeScheduleId/u);
   assert.match(create, /approvedImage/u);
@@ -197,5 +238,7 @@ test("supplier console uses the shared light and dark tokens", () => {
   for (const token of ["canvas", "surface", "ink", "text", "muted", "border", "accent", "error", "warning"]) {
     assert.match(css, new RegExp(`var\\(--${token}`, "u"));
   }
+  for (const selector of ["feeFold", "feeFoldBody", "feeTierTable", "feeTierCurrent", "feeFoldMeta"]) assert.match(css, new RegExp(`\\.${selector}`, "u"));
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]+\.feeFold > summary/u);
   assert.doesNotMatch(css, /#[0-9a-f]{3,8}/iu);
 });

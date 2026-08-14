@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
-import { hostingPreviousCalendarMonth } from "../lib/hosting-v2.ts";
 import { cancelHostingContract, reserveHostingContract } from "../lib/server/hosting-contract-service.ts";
 import { createSqliteCardHourStore } from "../lib/server/card-hour-store-sqlite.ts";
 import { createSqliteHostingV2Store } from "../lib/server/hosting-v2-store-sqlite.ts";
@@ -95,9 +94,9 @@ test("GPU reservation locks exact card-hours once and cancellation releases them
     assert.equal(reserved.heldMicros, 180_000);
     assert.equal(reserved.replayed, false);
     assert.deepEqual(reserved.contract.snapshot.feeQualification, {
-      model: "PREVIOUS_CALENDAR_MONTH_SUPPLIER_SETTLED_GROSS_V1",
+      model: "LIFETIME_SUPPLIER_SETTLED_GROSS_V1",
       tierCode: "STARTER",
-      period: hostingPreviousCalendarMonth(now),
+      asOf: now,
       qualifyingVolumeMicros: 0,
       platformFeeBps: 100,
       referralRewardBps: 30,
@@ -122,28 +121,26 @@ test("GPU reservation locks exact card-hours once and cancellation releases them
     assert.equal((await cardHours.dashboard(emptyBuyer.activeOrganization.id, now)).balance.heldMicros, 0);
     assert.equal((await hosting.listPublicOffers(now)).length, 1, "failed card-hour hold must republish the GPU offer");
 
-    const feePeriod = hostingPreviousCalendarMonth(now);
     const history = new DatabaseSync(path);
-    const insertHistory = history.prepare(`INSERT INTO hosting_v2_contracts(
-      id,offer_id,device_id,buyer_organization_id,buyer_account_id,supplier_organization_id,fee_schedule_id,snapshot_json,
-      reserved_seconds,held_micros,settled_micros,status,accepted_at,idempotency_key,payload_hash,version,created_at,updated_at
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
-    const seedHistory = (id, supplierOrganizationId, status, acceptedAt, settledMicros) => insertHistory.run(
-      id, offer.id, offer.deviceId, `org-history-buyer-${id}`, `acct-history-buyer-${id}`, supplierOrganizationId, offer.feeScheduleId, "{}",
-      180, settledMicros, settledMicros, status, acceptedAt, `history-${id}`, `history-hash-${id}`, 1, acceptedAt, acceptedAt,
+    const insertHistory = history.prepare(`INSERT INTO hosting_v2_supplier_fee_volume_events(
+      id,supplier_organization_id,contract_id,event_type,amount_micros,source_event_id,payload_digest,occurred_at,created_at
+    ) VALUES(?,?,?,?,?,?,?,?,?)`);
+    const seedHistory = (id, supplierOrganizationId, contractId, eventType, amountMicros, occurredAt) => insertHistory.run(
+      id, supplierOrganizationId, contractId, eventType, amountMicros, `source-${id}`, `hash-${id}`, occurredAt, occurredAt,
     );
-    seedHistory("hctr_history_eligible", supplier.activeOrganization.id, "CLEANED", new Date(Date.parse(feePeriod.startAt) + 86_400_000).toISOString(), 100_000_000_000);
-    seedHistory("hctr_history_refunded", supplier.activeOrganization.id, "REFUNDED", new Date(Date.parse(feePeriod.startAt) + 172_800_000).toISOString(), 900_000_000_000);
-    seedHistory("hctr_history_other_supplier", "org-other-supplier", "CLEANED", new Date(Date.parse(feePeriod.startAt) + 259_200_000).toISOString(), 900_000_000_000);
-    seedHistory("hctr_history_current_month", supplier.activeOrganization.id, "CLEANED", now, 900_000_000_000);
+    seedHistory("volume_eligible", supplier.activeOrganization.id, "history-eligible", "SETTLEMENT", 1_000_000_000_000, "2025-12-31T23:59:59.000Z");
+    seedHistory("volume_refunded_settlement", supplier.activeOrganization.id, "history-refunded", "SETTLEMENT", 900_000_000_000, "2026-01-01T00:00:00.000Z");
+    seedHistory("volume_refunded_refund", supplier.activeOrganization.id, "history-refunded", "REFUND", 900_000_000_000, "2026-02-01T00:00:00.000Z");
+    seedHistory("volume_other_supplier", "org-other-supplier", "history-other", "SETTLEMENT", 9_000_000_000_000, "2026-03-01T00:00:00.000Z");
+    seedHistory("volume_future", supplier.activeOrganization.id, "history-future", "SETTLEMENT", 9_000_000_000_000, new Date(Date.parse(now) + 1_000).toISOString());
     history.close();
 
     const provisionReservation = await reserveHostingContract({ account: buyer, offerId: offer.id, reservedSeconds: 180, mutation: mutation(buyer.account.id, "buyer-reserve-provision", "buyer-reserve-provision-hash", now) }, stores);
     assert.deepEqual(provisionReservation.contract.snapshot.feeQualification, {
-      model: "PREVIOUS_CALENDAR_MONTH_SUPPLIER_SETTLED_GROSS_V1",
+      model: "LIFETIME_SUPPLIER_SETTLED_GROSS_V1",
       tierCode: "STRATEGIC",
-      period: feePeriod,
-      qualifyingVolumeMicros: 100_000_000_000,
+      asOf: now,
+      qualifyingVolumeMicros: 1_000_000_000_000,
       platformFeeBps: 20,
       referralRewardBps: 6,
     });

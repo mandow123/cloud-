@@ -1,4 +1,4 @@
-export const CARD_HOUR_SCHEMA_VERSION = 2;
+export const CARD_HOUR_SCHEMA_VERSION = 3;
 
 export const cardHourSchemaStatements = [
   `CREATE TABLE IF NOT EXISTS card_hour_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`,
@@ -151,6 +151,21 @@ export const cardHourSchemaStatements = [
     UNIQUE(hold_id,event_type),
     FOREIGN KEY (hold_id) REFERENCES card_hour_order_holds(id)
   )`,
+  `CREATE TABLE IF NOT EXISTS hosting_v2_supplier_fee_volume_events (
+    id TEXT PRIMARY KEY,
+    supplier_organization_id TEXT NOT NULL,
+    contract_id TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK (event_type IN ('SETTLEMENT','REFUND','REVERSAL')),
+    amount_micros INTEGER NOT NULL CHECK (amount_micros > 0),
+    source_event_id TEXT NOT NULL UNIQUE,
+    payload_digest TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS hosting_v2_fee_volume_supplier_time_idx ON hosting_v2_supplier_fee_volume_events(supplier_organization_id,occurred_at,source_event_id)`,
+  `CREATE INDEX IF NOT EXISTS hosting_v2_fee_volume_contract_time_idx ON hosting_v2_supplier_fee_volume_events(contract_id,occurred_at,source_event_id)`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_fee_volume_immutable_update BEFORE UPDATE ON hosting_v2_supplier_fee_volume_events BEGIN SELECT RAISE(ABORT, 'hosting fee volume event immutable'); END`,
+  `CREATE TRIGGER IF NOT EXISTS hosting_v2_fee_volume_immutable_delete BEFORE DELETE ON hosting_v2_supplier_fee_volume_events BEGIN SELECT RAISE(ABORT, 'hosting fee volume event immutable'); END`,
   `CREATE TABLE IF NOT EXISTS card_hour_trial_grants (
     id TEXT PRIMARY KEY,
     organization_id TEXT NOT NULL,

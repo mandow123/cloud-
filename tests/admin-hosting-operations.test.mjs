@@ -280,6 +280,10 @@ test("the Hosting admin page is wired to live approval APIs and has no fake clie
   assert.match(component, /上线闭环就绪状态/u);
   assert.match(component, /交易安全关闭/u);
   assert.match(component, /HOSTING_ACTIVE_AGENT_MISSING/u);
+  assert.match(component, /五档 1\.0%–0\.2%/u);
+  assert.match(component, /推荐佣金占平台手续费/u);
+  assert.match(component, /hostingDefaultFeeTiers/u);
+  assert.doesNotMatch(component, /平台服务费（BP）|推荐奖励（BP）/u);
 
   const client = readFileSync(new URL("../components/admin-api-client.tsx", import.meta.url), "utf8");
   assert.match(client, /adminFetch\("\/api\/ready", \{\}, 15_000, \[503\]\)/u);
