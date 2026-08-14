@@ -28,7 +28,8 @@ export function topupAmountCents(cardHourMicros: number) {
 
 export function cnyCentsToCardHourMicros(cents: number) {
   if (!Number.isSafeInteger(cents) || cents < 1 || cents > 100_000_000) throw new Error("CARD_HOUR_PRICE_INVALID");
-  const value = Math.ceil((cents * 10 * CARD_HOUR_MICROS) / 1002);
+  const numerator = BigInt(cents) * 10n * BigInt(CARD_HOUR_MICROS);
+  const value = Number((numerator + 1001n) / 1002n);
   if (!Number.isSafeInteger(value)) throw new Error("CARD_HOUR_PRICE_INVALID");
   return value;
 }

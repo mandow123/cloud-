@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { cnyCentsToCardHourMicros, formatCardHourMicros, parseTopupCardHours, topupAmountCents } from "../lib/card-hours.ts";
-import { hostingFeeBreakdown } from "../lib/hosting-v2.ts";
+import { hostingCnyReferenceCents, hostingFeeBreakdown } from "../lib/hosting-v2.ts";
 import { createSqliteCardHourStore } from "../lib/server/card-hour-store-sqlite.ts";
 import { createSqliteHostingV2Store } from "../lib/server/hosting-v2-store-sqlite.ts";
 
@@ -33,6 +33,25 @@ test("card-hour conversion is exact at the 5-card-hour RMB boundary", () => {
   assert.equal(topupAmountCents(100_000_000), 10_020);
   assert.equal(formatCardHourMicros(cnyCentsToCardHourMicros(501)), "5");
   assert.throws(() => parseTopupCardHours("6"), /CARD_HOUR_TOPUP_INVALID/u);
+});
+
+test("CNY references round-trip through upward micro-card-hour conversion without cent drift", () => {
+  const micros = cnyCentsToCardHourMicros(3_120);
+  assert.equal(micros, 31_137_725);
+  assert.equal(hostingCnyReferenceCents(micros), 3_120);
+
+  for (let cents = 1; cents <= 100_000; cents += 1) {
+    const converted = cnyCentsToCardHourMicros(cents);
+    assert.ok(
+      BigInt(converted) * 1002n >= BigInt(cents) * 10n * 1_000_000n,
+      `conversion must not undercharge at ${cents} cents`,
+    );
+    assert.equal(hostingCnyReferenceCents(converted), cents);
+  }
+
+  for (const cents of [1, 501, 3_120, 100_000_000]) {
+    assert.equal(hostingCnyReferenceCents(cnyCentsToCardHourMicros(cents)), cents);
+  }
 });
 
 test("hosting referral commission is allocated only within the platform fee", () => {
@@ -113,7 +132,7 @@ test("hosting order hold settles actual usage once and vests rental and referral
       sourceSystem: "HOSTING_V2",
       orderId: "hosting-contract-1",
       amountMicros: 6_000_000,
-      cnyReferenceCents: 602,
+      cnyReferenceCents: 601,
       status: "SETTLED",
       createdAt: "2026-08-11T01:01:00Z",
       updatedAt: "2026-08-11T01:04:00Z",

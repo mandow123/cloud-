@@ -410,5 +410,5 @@ export function hostingFeeBreakdown(grossMicros: number, platformFeeBps: number,
 
 export function hostingCnyReferenceCents(cardHourMicros: number) {
   if (!Number.isSafeInteger(cardHourMicros) || cardHourMicros < 0) throw new Error("HOSTING_CARD_HOURS_INVALID");
-  return Math.ceil(cardHourMicros * 1002 / 10_000_000);
+  return Number((BigInt(cardHourMicros) * 1002n + 5_000_000n) / 10_000_000n);
 }
