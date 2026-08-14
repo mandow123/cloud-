@@ -76,15 +76,21 @@ export async function configureHostingTrialFee({
     fail("administrator login did not create a Root session");
   }
   try {
-    const session = await jsonResponse(await fetcher(`${origin}/api/session`, {
+    const sessionResponse = await fetcher(`${origin}/api/session`, {
       headers: { accept: "application/json", cookie },
       cache: "no-store",
-    }), "marketplace session");
+    });
+    const session = await jsonResponse(sessionResponse, "marketplace session");
+    const marketplaceCookie = sessionResponse.headers.get("set-cookie")?.split(";", 1)[0];
+    if (!marketplaceCookie || !/^(__Host-kai_session|kai_session_dev)=[a-f0-9]{64}$/u.test(marketplaceCookie)) {
+      fail("marketplace session did not create a bound browser cookie");
+    }
+    const browserCookie = `${cookie}; ${marketplaceCookie}`;
     const csrfToken = session.session?.csrfToken;
     if (typeof csrfToken !== "string" || csrfToken.length < 20) fail("marketplace session did not return a CSRF token");
 
     const current = await jsonResponse(await fetcher(`${origin}/api/v2/admin/hosting/fees`, {
-      headers: { accept: "application/json", cookie },
+      headers: { accept: "application/json", cookie: browserCookie },
       cache: "no-store",
     }), "fee lookup");
     if (current.record) {
@@ -96,7 +102,7 @@ export async function configureHostingTrialFee({
       headers: {
         accept: "application/json",
         "content-type": "application/json",
-        cookie,
+        cookie: browserCookie,
         origin,
         "x-kai-csrf": csrfToken,
         "idempotency-key": idempotencyKey,
@@ -137,4 +143,3 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
     process.exitCode = 1;
   });
 }
-
