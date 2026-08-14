@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { cnyCentsToCardHourMicros, formatCardHourMicros, parseTopupCardHours, topupAmountCents } from "../lib/card-hours.ts";
+import { hostingFeeBreakdown } from "../lib/hosting-v2.ts";
 import { createSqliteCardHourStore } from "../lib/server/card-hour-store-sqlite.ts";
 import { createSqliteHostingV2Store } from "../lib/server/hosting-v2-store-sqlite.ts";
 
@@ -32,6 +33,15 @@ test("card-hour conversion is exact at the 5-card-hour RMB boundary", () => {
   assert.equal(topupAmountCents(100_000_000), 10_020);
   assert.equal(formatCardHourMicros(cnyCentsToCardHourMicros(501)), "5");
   assert.throws(() => parseTopupCardHours("6"), /CARD_HOUR_TOPUP_INVALID/u);
+});
+
+test("hosting referral commission is allocated only within the platform fee", () => {
+  const split = hostingFeeBreakdown(1_234_567, 100, 100, true);
+  assert.equal(split.supplierIncomeMicros, split.grossMicros - split.platformFeeMicros);
+  assert.equal(split.platformNetMicros, split.platformFeeMicros - split.commissionMicros);
+  assert.equal(split.grossMicros, split.supplierIncomeMicros + split.commissionMicros + split.platformNetMicros);
+  assert.deepEqual(hostingFeeBreakdown(1_234_567, 100, 100, false), { ...split, commissionMicros: 0, platformNetMicros: split.platformFeeMicros });
+  assert.throws(() => hostingFeeBreakdown(1_234_567, 100, 101, true), /HOSTING_FEE_RATES_INVALID/u);
 });
 
 test("captured topup credits once and order capture cannot overdraw or replay twice", async () => {

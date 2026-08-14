@@ -1,4 +1,4 @@
-import { HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, hostingCardHourMicrosForSeconds, type HostingContract } from "../hosting-v2.ts";
+import { HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, hostingCardHourMicrosForSeconds, hostingFeeBreakdown, type HostingContract } from "../hosting-v2.ts";
 import { accountAuthDigest, type AccountSessionContext } from "./account-auth.ts";
 import type { CardHourStore } from "./card-hour-store.ts";
 import { getCardHourStore } from "./card-hour-store.ts";
@@ -110,9 +110,9 @@ async function settleAcceptedContract(current: HostingContract, acceptanceMode: 
   }
   const settledMicros = hostingCardHourMicrosForSeconds(current.snapshot.cardHourMicrosPerGpuHour, measuredSeconds);
   if (settledMicros > current.heldMicros) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "实际计量超过订单锁定额度。");
-  const platformFeeMicros = Math.floor(settledMicros * current.snapshot.platformFeeBps / 10_000);
-  const requestedCommissionMicros = Math.floor(settledMicros * current.snapshot.referralRewardBps / 10_000);
-  const supplierIncomeMicros = settledMicros - platformFeeMicros;
+  const requestedFeeBreakdown = hostingFeeBreakdown(settledMicros, current.snapshot.platformFeeBps, current.snapshot.referralRewardBps, true);
+  const { platformFeeMicros, supplierIncomeMicros } = requestedFeeBreakdown;
+  const requestedCommissionMicros = requestedFeeBreakdown.commissionMicros;
   const acceptancePayloadHash = await internalHash({ operation: "CLAIM_HOSTING_ACCEPTANCE", contractId: current.id, acceptanceMode, acceptanceDeadlineAt });
   const settlementPayloadHash = await internalHash({ operation: "SETTLE_HOSTING_ORDER", contractId: current.id, measuredSeconds, settledMicros, supplierIncomeMicros, requestedCommissionMicros, feeScheduleId: current.feeScheduleId });
   const settlementInput = {
@@ -139,7 +139,8 @@ async function settleAcceptedContract(current: HostingContract, acceptanceMode: 
     if (!converged || !["SETTLED", "CLEANING", "CLEANED"].includes(converged.status)) throw error;
     cardSettlement = await stores.cardHours.settleHostingOrder(settlementInput);
   }
-  const commissionMicros = cardSettlement.referrerOrganizationId ? requestedCommissionMicros : 0;
+  const appliedFeeBreakdown = hostingFeeBreakdown(settledMicros, current.snapshot.platformFeeBps, current.snapshot.referralRewardBps, Boolean(cardSettlement.referrerOrganizationId));
+  const commissionMicros = appliedFeeBreakdown.commissionMicros;
   let contract = current;
   if (!replayed) {
     try {

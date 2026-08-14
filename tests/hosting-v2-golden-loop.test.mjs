@@ -390,6 +390,10 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     const accepted = await json(await acceptBuyerContract(browserRequest(buyer, `/api/v2/contracts/${contractId}/accept`, "POST", {}, "golden-contract-accept"), { params: Promise.resolve({ contractId }) }), 202);
     assert.equal(accepted.record.status, "CLEANING");
     assert.deepEqual(accepted.settlement, { heldMicros: 180_000, settledMicros: 180_000, releasedMicros: 0, supplierIncomeMicros: 162_000, commissionMicros: 5_400, platformFeeMicros: 18_000 });
+    const platformNetMicros = accepted.settlement.platformFeeMicros - accepted.settlement.commissionMicros;
+    assert.equal(accepted.settlement.supplierIncomeMicros, accepted.settlement.settledMicros - accepted.settlement.platformFeeMicros);
+    assert.equal(accepted.settlement.settledMicros, accepted.settlement.supplierIncomeMicros + accepted.settlement.commissionMicros + platformNetMicros);
+    assert.equal(accepted.settlement.settledMicros, 180_000, "the buyer pays the frozen gross amount without a referral surcharge");
     const heartbeatAt = new Date().toISOString();
     await hosting.acceptHeartbeat(device.id, { sequence: 3, inventoryDigest, capacityState: "BUSY", observedAt: heartbeatAt }, mutation(`agent:${device.id}`, "golden-heartbeat-3", heartbeatAt));
     const cleanupCommand = await hosting.pollCommand(device.id, heartbeatAt);

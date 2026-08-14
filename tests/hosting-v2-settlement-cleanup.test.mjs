@@ -121,6 +121,10 @@ test("buyer acceptance settles actual card-hours, vests income and relists only 
     const accepted = await acceptHostingContract(acceptInput, stores);
     assert.equal(accepted.contract.status, "CLEANING");
     assert.deepEqual(accepted.settlement, { heldMicros: 3_600_000, settledMicros: 600_000, releasedMicros: 3_000_000, supplierIncomeMicros: 540_000, commissionMicros: 18_000, platformFeeMicros: 60_000 });
+    const platformNetMicros = accepted.settlement.platformFeeMicros - accepted.settlement.commissionMicros;
+    assert.equal(accepted.settlement.supplierIncomeMicros, accepted.settlement.settledMicros - accepted.settlement.platformFeeMicros, "supplier income subtracts the platform fee exactly once");
+    assert.equal(accepted.settlement.settledMicros, accepted.settlement.supplierIncomeMicros + accepted.settlement.commissionMicros + platformNetMicros, "gross equals supplier income plus in-fee commission plus platform net");
+    assert.notEqual(accepted.settlement.supplierIncomeMicros, accepted.settlement.settledMicros - accepted.settlement.platformFeeMicros - accepted.settlement.commissionMicros, "commission must not be deducted from the supplier a second time");
     assert.deepEqual((await cardHours.dashboard(buyer.activeOrganization.id, now)).balance, { availableMicros: 4_400_000, heldMicros: 0, lifetimeTopupMicros: 5_000_000, lifetimeSpentMicros: 600_000 });
     assert.equal((await cardHours.dashboard(supplier.activeOrganization.id, now)).income.rentalVestedMicros, 540_000);
     assert.equal((await cardHours.dashboard(supplier.activeOrganization.id, now)).balance.availableMicros, 540_000);
@@ -335,6 +339,9 @@ test("independent dispute resolution refunds or settles card-hours before eviden
     assert.equal(settled.ledger.resolution, "SETTLE");
     assert.equal(settled.ledger.settledMicros, 600_000);
     assert.equal(settled.ledger.supplierIncomeMicros, 540_000);
+    const disputePlatformFeeMicros = settled.ledger.settledMicros - settled.ledger.supplierIncomeMicros;
+    const disputePlatformNetMicros = disputePlatformFeeMicros - settled.ledger.commissionMicros;
+    assert.equal(settled.ledger.settledMicros, settled.ledger.supplierIncomeMicros + settled.ledger.commissionMicros + disputePlatformNetMicros);
     assert.deepEqual((await cardHours.dashboard(buyer.activeOrganization.id, openedAt)).balance, { availableMicros: 6_600_000, heldMicros: 0, lifetimeTopupMicros: 7_200_000, lifetimeSpentMicros: 600_000 });
     assert.equal((await cardHours.dashboard(supplier.activeOrganization.id, openedAt)).balance.availableMicros, 540_000);
     refreshDevicePresence(path, settleSeed.deviceId, openedAt);

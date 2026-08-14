@@ -82,6 +82,9 @@ test("only approved, verified and fee-backed GPU offers enter the public market"
     };
     await assert.rejects(store.createOffer(account.activeOrganization.id, offerInput, mutation(account.account.id, "offer-before-fee", "offer-before-fee-hash", now)), (error) => error.code === "EXCHANGE_STATE_CONFLICT" && error.status === 503);
     await assert.rejects(store.createFeeSchedule({ platformFeeBps: 500, referralRewardBps: 600, activate: true, effectiveFrom: now }, mutation("admin-market", "fee-invalid", "fee-invalid-hash", now)), (error) => error.name === "ExchangeInputError");
+    await assert.rejects(store.createFeeSchedule({ platformFeeBps: 100, referralRewardBps: 101, activate: true, effectiveFrom: now }, mutation("admin-market", "fee-referral-over-platform", "fee-referral-over-platform-hash", now)), (error) => error.name === "ExchangeInputError" && error.field === "referralRewardBps");
+    const allFeeMayFundReferral = await store.createFeeSchedule({ platformFeeBps: 100, referralRewardBps: 100, activate: false, effectiveFrom: now }, mutation("admin-market", "fee-referral-equals-platform", "fee-referral-equals-platform-hash", now));
+    assert.deepEqual({ platformFeeBps: allFeeMayFundReferral.platformFeeBps, referralRewardBps: allFeeMayFundReferral.referralRewardBps, status: allFeeMayFundReferral.status }, { platformFeeBps: 100, referralRewardBps: 100, status: "DRAFT" });
     const fee = await store.createFeeSchedule({ platformFeeBps: 1_000, referralRewardBps: 300, activate: true, effectiveFrom: now }, mutation("admin-market", "fee-active-0001", "fee-active-hash", now));
     assert.equal(fee.status, "ACTIVE");
 

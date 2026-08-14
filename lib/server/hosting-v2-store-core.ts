@@ -1,4 +1,4 @@
-import { HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, hostingCardHourMicrosForSeconds, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDisputeCase, type HostingFeeSchedule, type HostingGoldenLoopAudit, type HostingOffer, type HostingStopIncident, type HostingSupplierProfile } from "../hosting-v2.ts";
+import { HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, hostingCardHourMicrosForSeconds, hostingFeeBreakdown, hostingFeeRatesAreValid, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDisputeCase, type HostingFeeSchedule, type HostingGoldenLoopAudit, type HostingOffer, type HostingStopIncident, type HostingSupplierProfile } from "../hosting-v2.ts";
 import { HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { assertHostingAgentWindow, hostingAgentCanonicalJson, hostingAgentDigest, verifyHostingAgentSignature } from "./hosting-agent-crypto.ts";
@@ -491,9 +491,9 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
       const supplierIncomeMicros = main.supplier_income_micros == null ? null : number(main, "supplier_income_micros");
       const commissionMicros = main.commission_micros == null ? null : number(main, "commission_micros");
       const expectedSettled = measuredSeconds == null ? null : hostingCardHourMicrosForSeconds(snapshot.cardHourMicrosPerGpuHour, measuredSeconds);
-      const expectedPlatformFee = expectedSettled == null ? null : Math.floor(expectedSettled * snapshot.platformFeeBps / 10_000);
-      const expectedSupplierIncome = expectedSettled == null || expectedPlatformFee == null ? null : expectedSettled - expectedPlatformFee;
-      const expectedCommission = expectedSettled == null || !attribution ? 0 : Math.floor(expectedSettled * snapshot.referralRewardBps / 10_000);
+      const expectedFeeBreakdown = expectedSettled == null ? null : hostingFeeBreakdown(expectedSettled, snapshot.platformFeeBps, snapshot.referralRewardBps, Boolean(attribution));
+      const expectedSupplierIncome = expectedFeeBreakdown?.supplierIncomeMicros ?? null;
+      const expectedCommission = expectedFeeBreakdown?.commissionMicros ?? 0;
       const commandsByType = new Map<string, Row>();
       for (const row of commandRows) if (value(row, "status") === "SUCCEEDED") commandsByType.set(value(row, "command_type"), row);
       const commandTransport = new Map<string, boolean>();
@@ -799,7 +799,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         return fee(row);
       }
       if (!Number.isInteger(input.platformFeeBps) || input.platformFeeBps < 0 || input.platformFeeBps > 5000) throw new ExchangeInputError("平台服务费应为 0–5000 基点。", "platformFeeBps");
-      if (!Number.isInteger(input.referralRewardBps) || input.referralRewardBps < 0 || input.referralRewardBps > input.platformFeeBps) throw new ExchangeInputError("推荐奖励不能超过平台服务费。", "referralRewardBps");
+      if (!hostingFeeRatesAreValid(input.platformFeeBps, input.referralRewardBps)) throw new ExchangeInputError("推荐奖励应为非负整数且不能超过平台服务费。", "referralRewardBps");
       if (Number.isNaN(Date.parse(input.effectiveFrom))) throw new ExchangeInputError("费率生效时间无效。", "effectiveFrom");
       const recordId = id("hfee");
       const statements: HostingV2Sql[] = [];

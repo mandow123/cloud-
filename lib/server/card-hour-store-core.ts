@@ -1,5 +1,5 @@
 import { CARD_HOUR_ASSET_CODE } from "../card-hours.ts";
-import { hostingCnyReferenceCents } from "../hosting-v2.ts";
+import { hostingCnyReferenceCents, hostingFeeBreakdown } from "../hosting-v2.ts";
 import { CARD_HOUR_SCHEMA_VERSION, cardHourSchemaStatements } from "../../db/card-hour-schema.ts";
 import { AccountAuthError, accountAuthDigest } from "./account-auth.ts";
 import type { CardHourDashboard, CardHourStore } from "./card-hour-store.ts";
@@ -317,12 +317,11 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       if (settledBig > BigInt(Number.MAX_SAFE_INTEGER)) throw new AccountAuthError("HOSTING_DISPUTE_SETTLEMENT_INVALID", 409, "争议计量金额超出安全范围。 ");
       const settledMicros = Number(settledBig);
       if (resolution === "SETTLE" && (!Number.isSafeInteger(settledMicros) || settledMicros < 1 || settledMicros > heldMicros)) throw new AccountAuthError("HOSTING_DISPUTE_SETTLEMENT_INVALID", 409, "争议计量金额不在已锁定额度内。 ");
-      const platformFeeMicros = resolution === "SETTLE" ? Number(BigInt(settledMicros) * BigInt(platformFeeBps) / 10_000n) : 0;
-      const requestedCommissionMicros = resolution === "SETTLE" ? Number(BigInt(settledMicros) * BigInt(referralRewardBps) / 10_000n) : 0;
-      const supplierIncomeMicros = resolution === "SETTLE" ? settledMicros - platformFeeMicros : 0;
       const attribution = resolution === "SETTLE" ? await db.first<Row>("SELECT referrer_organization_id FROM card_hour_referral_attributions WHERE invitee_organization_id=?", [buyerOrganizationId]) : null;
       const referrerOrganizationId = attribution ? text(attribution, "referrer_organization_id") : null;
-      const commissionMicros = referrerOrganizationId ? requestedCommissionMicros : 0;
+      const feeBreakdown = resolution === "SETTLE" ? hostingFeeBreakdown(settledMicros, platformFeeBps, referralRewardBps, Boolean(referrerOrganizationId)) : null;
+      const supplierIncomeMicros = feeBreakdown?.supplierIncomeMicros ?? 0;
+      const commissionMicros = feeBreakdown?.commissionMicros ?? 0;
       const eventId = `chhe_${crypto.randomUUID()}`;
       const buyerBatchId = `chb_${crypto.randomUUID()}`;
       const rentalBatchId = `chb_${crypto.randomUUID()}`;

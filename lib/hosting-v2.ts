@@ -378,6 +378,36 @@ export function hostingCardHourMicrosForSeconds(rateMicrosPerGpuHour: number, se
   return Math.ceil(rateMicrosPerGpuHour * seconds / 3_600);
 }
 
+export function hostingFeeRatesAreValid(platformFeeBps: number, referralRewardBps: number) {
+  return Number.isInteger(platformFeeBps)
+    && platformFeeBps >= 0
+    && platformFeeBps <= 5_000
+    && Number.isInteger(referralRewardBps)
+    && referralRewardBps >= 0
+    && referralRewardBps <= platformFeeBps;
+}
+
+export function hostingFeeBreakdown(grossMicros: number, platformFeeBps: number, referralRewardBps: number, referralApplied: boolean) {
+  if (!Number.isSafeInteger(grossMicros) || grossMicros < 0) throw new Error("HOSTING_GROSS_AMOUNT_INVALID");
+  if (!hostingFeeRatesAreValid(platformFeeBps, referralRewardBps)) throw new Error("HOSTING_FEE_RATES_INVALID");
+  const gross = BigInt(grossMicros);
+  const platformFeeMicros = Number(gross * BigInt(platformFeeBps) / 10_000n);
+  const commissionMicros = referralApplied ? Number(gross * BigInt(referralRewardBps) / 10_000n) : 0;
+  const supplierIncomeMicros = grossMicros - platformFeeMicros;
+  const platformNetMicros = platformFeeMicros - commissionMicros;
+  if (supplierIncomeMicros < 0 || commissionMicros < 0 || platformNetMicros < 0
+    || grossMicros !== supplierIncomeMicros + commissionMicros + platformNetMicros) {
+    throw new Error("HOSTING_FEE_BREAKDOWN_INVALID");
+  }
+  return Object.freeze({
+    grossMicros,
+    supplierIncomeMicros,
+    platformFeeMicros,
+    commissionMicros,
+    platformNetMicros,
+  });
+}
+
 export function hostingCnyReferenceCents(cardHourMicros: number) {
   if (!Number.isSafeInteger(cardHourMicros) || cardHourMicros < 0) throw new Error("HOSTING_CARD_HOURS_INVALID");
   return Math.ceil(cardHourMicros * 1002 / 10_000_000);
