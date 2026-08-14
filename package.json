@@ -19,6 +19,7 @@
     "ops:restore:verify": "node scripts/ops/verify-restore.mjs",
     "ops:self-test": "node scripts/ops/self-test.mjs",
     "ops:identity:validate": "node scripts/ops/validate-kai-identity-upstream.mjs",
+    "ops:identity:configure": "node scripts/ops/configure-kai-identity-env.mjs",
     "ops:workload:validate": "node scripts/ops/validate-gpu-workload-image.mjs",
     "ops:deploy:validate": "node scripts/ops/validate-deployment.mjs",
     "ops:admin:configure-finance": "node scripts/ops/configure-finance-approver.mjs",
