@@ -100,6 +100,10 @@ test("hosting landing is a live front-to-back control plane instead of a static 
   assert.match(launchpad, /approvedSupplierCount/u);
   assert.match(launchpad, /failedCleanupCount/u);
   assert.match(launchpad, /readiness\.enabled && readiness\.ready/u);
+  assert.match(launchpad, /if \(readinessBody\.hostingV2\.enabled && readinessBody\.hostingV2\.ready\)/u);
+  const readinessGate = launchpad.indexOf("if (readinessBody.hostingV2.enabled && readinessBody.hostingV2.ready)");
+  const offersRequest = launchpad.indexOf('fetch("/api/v2/offers"');
+  assert.ok(readinessGate >= 0 && offersRequest > readinessGate, "offers must be fetched only after the readiness gate");
   assert.match(launchpad, /页面不会用模拟资源冒充真实供给/u);
 
   const page = readFileSync("app/hosting/page.tsx", "utf8");

@@ -2,40 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { PublicHostingOffer } from "@/lib/hosting-v2-client";
+import type { HostingReadinessEnvelope, PublicHostingOffer, PublicHostingReadiness } from "@/lib/hosting-v2-client";
 import { formatCardHours } from "@/lib/hosting-v2-client";
 import styles from "./hosting-public.module.css";
-
-type ReadinessCheck = Readonly<{ ready: boolean; reason?: string }>;
-
-type HostingReadiness = Readonly<{
-  enabled: boolean;
-  configurationEnabled: boolean;
-  ready: boolean;
-  rolloutMode: "DISABLED" | "SETUP" | "INTERNAL_AGENT_TRIAL";
-  checks: Readonly<{
-    supplierIdentity: ReadinessCheck;
-    agentDelivery: ReadinessCheck;
-    feeSchedule: ReadinessCheck;
-    cardHourLedger: ReadinessCheck;
-    approvedImages: ReadinessCheck & Readonly<{ count: number }>;
-    metering: ReadinessCheck;
-    cleanup: ReadinessCheck;
-    alipayClosed: ReadinessCheck;
-  }>;
-  operations: Readonly<{
-    approvedSupplierCount: number;
-    activeAgentCount: number;
-    drainingDeviceCount: number;
-    failedCleanupCount: number;
-  }> | null;
-}>;
-
-type ReadinessEnvelope = Readonly<{
-  release?: string;
-  environment?: Readonly<{ localAcceptance?: boolean }>;
-  hostingV2?: HostingReadiness;
-}>;
 
 type AccountEnvelope = Readonly<{
   authenticated?: boolean;
@@ -44,14 +13,14 @@ type AccountEnvelope = Readonly<{
 }>;
 
 type LaunchpadState = Readonly<{
-  readiness: HostingReadiness;
+  readiness: PublicHostingReadiness;
   release: string;
   offers: readonly PublicHostingOffer[];
   account: AccountEnvelope;
   localAcceptance: boolean;
 }>;
 
-const MODE_LABELS: Record<HostingReadiness["rolloutMode"], string> = {
+const MODE_LABELS: Record<PublicHostingReadiness["rolloutMode"], string> = {
   DISABLED: "尚未开放",
   SETUP: "预上线配置",
   INTERNAL_AGENT_TRIAL: "邀请制试运营",
@@ -91,21 +60,26 @@ export function HostingLaunchpad() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [readinessResponse, offersResponse, accountResponse] = await Promise.all([
+      const [readinessResponse, accountResponse] = await Promise.all([
         fetch("/api/ready", { cache: "no-store", credentials: "same-origin" }),
-        fetch("/api/v2/offers", { cache: "no-store", credentials: "same-origin" }),
         fetch("/api/auth/session", { cache: "no-store", credentials: "same-origin" }),
       ]);
-      const [readinessBody, offersBody, accountBody] = await Promise.all([
-        responseJson<ReadinessEnvelope>(readinessResponse),
-        responseJson<{ records?: PublicHostingOffer[] }>(offersResponse),
+      const [readinessBody, accountBody] = await Promise.all([
+        responseJson<HostingReadinessEnvelope>(readinessResponse),
         responseJson<AccountEnvelope>(accountResponse),
       ]);
-      if (!readinessBody?.hostingV2 || !accountResponse.ok || !accountBody) throw new Error("HOSTING_STATUS_INVALID");
+      if (!readinessResponse.ok || !readinessBody?.hostingV2 || !accountResponse.ok || !accountBody) throw new Error("HOSTING_STATUS_INVALID");
+      let offers: PublicHostingOffer[] = [];
+      if (readinessBody.hostingV2.enabled && readinessBody.hostingV2.ready) {
+        const offersResponse = await fetch("/api/v2/offers", { cache: "no-store", credentials: "same-origin" });
+        const offersBody = await responseJson<{ records?: PublicHostingOffer[] }>(offersResponse);
+        if (!offersResponse.ok || !Array.isArray(offersBody?.records)) throw new Error("HOSTING_OFFERS_INVALID");
+        offers = offersBody.records;
+      }
       setState({
         readiness: readinessBody.hostingV2,
         release: readinessBody.release ?? "unknown",
-        offers: offersResponse.ok && Array.isArray(offersBody?.records) ? offersBody.records : [],
+        offers,
         account: accountBody,
         localAcceptance: readinessBody.environment?.localAcceptance === true,
       });

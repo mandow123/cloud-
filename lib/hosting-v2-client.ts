@@ -18,6 +18,37 @@ export type PublicHostingOffer = Readonly<{
   }>;
 }>;
 
+export type HostingReadinessCheck = Readonly<{ ready: boolean; reason?: string }>;
+
+export type PublicHostingReadiness = Readonly<{
+  enabled: boolean;
+  configurationEnabled: boolean;
+  ready: boolean;
+  rolloutMode: "DISABLED" | "SETUP" | "INTERNAL_AGENT_TRIAL";
+  checks: Readonly<{
+    supplierIdentity: HostingReadinessCheck;
+    agentDelivery: HostingReadinessCheck;
+    feeSchedule: HostingReadinessCheck;
+    cardHourLedger: HostingReadinessCheck;
+    approvedImages: HostingReadinessCheck & Readonly<{ count: number }>;
+    metering: HostingReadinessCheck;
+    cleanup: HostingReadinessCheck;
+    alipayClosed: HostingReadinessCheck;
+  }>;
+  operations: Readonly<{
+    approvedSupplierCount: number;
+    activeAgentCount: number;
+    drainingDeviceCount: number;
+    failedCleanupCount: number;
+  }> | null;
+}>;
+
+export type HostingReadinessEnvelope = Readonly<{
+  release?: string;
+  environment?: Readonly<{ localAcceptance?: boolean }>;
+  hostingV2?: PublicHostingReadiness;
+}>;
+
 export type BuyerHostingContract = Readonly<{
   id: string;
   offerId: string;

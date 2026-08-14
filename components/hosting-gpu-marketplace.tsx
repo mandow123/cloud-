@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import type { PublicHostingOffer } from "@/lib/hosting-v2-client";
+import type { HostingReadinessEnvelope, PublicHostingOffer } from "@/lib/hosting-v2-client";
 import { formatCardHours, formatHostingTime } from "@/lib/hosting-v2-client";
 import { marketplaceErrorMessage, marketplaceGet } from "@/lib/client/marketplace-client";
 import styles from "./hosting-marketplace.module.css";
@@ -12,11 +12,20 @@ export function HostingGpuMarketplace() {
   const [model, setModel] = useState("ALL");
   const [sort, setSort] = useState("PRICE");
   const [error, setError] = useState<string | null>(null);
+  const [marketOpen, setMarketOpen] = useState<boolean | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void marketplaceGet<{ records: PublicHostingOffer[] }>("/api/v2/offers")
-      .then((result) => { if (!cancelled) setOffers(result.records); })
+    void marketplaceGet<HostingReadinessEnvelope>("/api/ready")
+      .then(async (readiness) => {
+        if (!readiness.hostingV2) throw new Error("HOSTING_STATUS_INVALID");
+        if (!readiness.hostingV2.enabled || !readiness.hostingV2.ready) {
+          if (!cancelled) { setMarketOpen(false); setOffers([]); }
+          return;
+        }
+        const result = await marketplaceGet<{ records: PublicHostingOffer[] }>("/api/v2/offers");
+        if (!cancelled) { setMarketOpen(true); setOffers(result.records); }
+      })
       .catch((cause) => { if (!cancelled) setError(marketplaceErrorMessage(cause, "GPU 市场暂时无法读取。")); });
     return () => { cancelled = true; };
   }, []);
@@ -46,6 +55,7 @@ export function HostingGpuMarketplace() {
       </section>
 
       {error ? <section className={styles.error} role="alert"><strong>市场读取失败</strong><span>{error}</span></section> : null}
+      {marketOpen === false ? <section className={styles.error} role="status"><strong>GPU 市场尚未开放</strong><span>统一身份、真实 Agent、费率、交付镜像、计量与清理全部就绪前，平台不会展示或接受成交。</span></section> : null}
       {!offers && !error ? <div className={styles.loading} role="status">正在读取经过验真的 GPU 报价…</div> : null}
       {offers ? (
         <section className={styles.offerTable} aria-label="可成交 GPU 报价">
