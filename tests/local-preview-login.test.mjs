@@ -10,5 +10,8 @@ test("local preview login is development-only and keeps the return path server-s
   assert.match(page, /safeReturnTo\(params\.returnTo\)/u);
   assert.match(component, /credentials: "same-origin"/u);
   assert.match(component, /window\.location\.assign\(returnTo\)/u);
-  assert.doesNotMatch(component, /localStorage|sessionStorage|document\.cookie|LOCAL_SECRET|local-auth-secret/u);
+  assert.match(component, /buyer\.localhost/u);
+  assert.match(component, /supplier\.localhost/u);
+  assert.match(component, /window\.location\.hostname/u);
+  assert.doesNotMatch(component, /root\.localhost|finance\.localhost|localStorage|sessionStorage|document\.cookie|LOCAL_SECRET|local-auth-secret/u);
 });
