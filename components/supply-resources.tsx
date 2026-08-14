@@ -34,7 +34,7 @@ export function SupplyResources() {
   if (error) return <section className={styles.error} role="alert"><h2>资源读取失败</h2><p>{error}</p><button className={`${styles.secondaryAction} mt-4`} onClick={() => void load()} type="button">重新读取</button></section>;
   if (!dashboard) return <div className={styles.loading} role="status">正在读取当前组织的资源与验真状态…</div>;
 
-  const approved = dashboard.profile?.status === "APPROVED";
+  const approved = dashboard.readiness.supplierApproved;
 
   return (
     <>

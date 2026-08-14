@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import type { HostingSupplierProfile } from "@/lib/hosting-v2";
+import { isHostingSupplierProfileReady, type HostingSupplierProfile } from "@/lib/hosting-v2";
 import type { SupplierHostingDashboard } from "@/lib/hosting-v2-client";
 import { marketplaceErrorMessage, marketplaceGet } from "@/lib/client/marketplace-client";
 import styles from "./supply-console.module.css";
@@ -73,6 +73,7 @@ export function SupplyDashboard() {
   if (!dashboard) return <div className={styles.loading} role="status">正在读取供应主体、设备和订单状态…</div>;
 
   const profile = dashboard.profile;
+  const supplierApproved = dashboard.readiness.supplierApproved && isHostingSupplierProfileReady(profile);
   const supplierContracts = dashboard.contracts;
   const nextStep = !profile
     ? { title: "先建立供应主体", description: "填写最少必要资料并保存草稿，确认后再提交人工审核。", href: "/supply/onboarding", label: "开始供应商审核" }
@@ -80,13 +81,15 @@ export function SupplyDashboard() {
       ? { title: "完成并提交审核资料", description: profile.status === "REJECTED" ? profile.reviewNote ?? "审核人员要求修改资料。" : "资料仍是草稿，尚未进入人工审核。", href: "/supply/onboarding", label: "继续填写资料" }
       : profile.status === "SUBMITTED"
         ? { title: "资料正在审核", description: "审核期间不能修改资料。状态变化会直接显示在本控制台。", href: "/supply/onboarding", label: "查看审核状态" }
-        : profile.status === "APPROVED" && dashboard.devices.length === 0
+        : profile.status === "APPROVED" && !supplierApproved
+          ? { title: "补全供应商审核证据", description: "当前记录标记为通过，但缺少有效协议版本或审核证据摘要，后端已保持关闭。请由管理员补录审核证据。", href: "/supply/onboarding", label: "查看审核记录" }
+        : supplierApproved && dashboard.devices.length === 0
           ? { title: "可以登记第一台设备", description: "资源登记页会生成 5 分钟有效、受限的一次性 Agent 配对凭证。", href: "/supply/resources/new", label: "登记第一台设备" }
-          : profile.status === "APPROVED" && dashboard.readiness.onlineVerifiedDevices === 0
+          : supplierApproved && dashboard.readiness.onlineVerifiedDevices === 0
             ? { title: "让设备在线并完成验真", description: "Host Agent 心跳和硬件验真都有效后，设备才具备挂牌资格。", href: "/supply/resources", label: "查看设备状态" }
-            : profile.status === "APPROVED" && dashboard.offers.length === 0
+            : supplierApproved && dashboard.offers.length === 0
               ? { title: "创建第一条真实报价", description: "选择已验真的设备、可用窗口和 KAI 标准卡时价格。", href: "/supply/listings/new", label: "创建挂牌" }
-              : profile.status === "APPROVED"
+              : supplierApproved
                 ? { title: "管理挂牌与订单", description: "查看公开状态、资源预留和 Host Agent 履约进度。", href: "/supply/listings", label: "进入挂牌管理" }
           : { title: "供应资格已暂停", description: profile.reviewNote ?? "请联系平台运营确认恢复条件。", href: "/supply/onboarding", label: "查看审核说明" };
 
@@ -107,7 +110,7 @@ export function SupplyDashboard() {
           <p>这里只显示当前登录账户与当前组织的数据。资源发布、履约和财务权限均由服务端分别判定。</p>
         </div>
         <span className={`${styles.statusBadge} ${profile ? profileBadgeClass[profile.status] ?? "" : styles.statusWarning}`}>
-          {profile ? profileLabels[profile.status] : "尚未建立供应主体"}
+          {profile?.status === "APPROVED" && !supplierApproved ? "审核记录不完整" : profile ? profileLabels[profile.status] : "尚未建立供应主体"}
         </span>
       </div>
 

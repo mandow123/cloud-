@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import type { HostingSupplierProfile, HostingSupplierType } from "@/lib/hosting-v2";
+import { isHostingSupplierProfileReady, type HostingSupplierProfile, type HostingSupplierType } from "@/lib/hosting-v2";
 import {
   createIdempotencyKey,
   marketplaceErrorMessage,
@@ -130,11 +130,12 @@ export function SupplierOnboardingForm() {
       <div className={styles.pageHeading}>
         <div><h1>供应商审核</h1><p>可以先保存草稿。提交审核后，管理员只依据服务端当前主体和本次资料版本处理申请。</p></div>
         <span className={`${styles.statusBadge} ${profile?.status === "REJECTED" || profile?.status === "SUSPENDED" ? styles.statusError : profile?.status === "DRAFT" || profile?.status === "SUBMITTED" ? styles.statusWarning : ""}`}>
-          {profile ? statusLabels[profile.status] : "尚未创建"}
+          {profile?.status === "APPROVED" && !isHostingSupplierProfileReady(profile) ? "审核记录不完整" : profile ? statusLabels[profile.status] : "尚未创建"}
         </span>
       </div>
 
       {message ? <div className={`${styles.message} ${message.kind === "error" ? styles.messageError : ""}`} role={message.kind === "error" ? "alert" : "status"}>{message.text}</div> : null}
+      {profile?.status === "APPROVED" && !isHostingSupplierProfileReady(profile) ? <div className={`${styles.message} ${styles.messageError}`} role="alert">这条旧审核记录缺少有效协议版本或审核证据摘要，因此后端不会签发 Agent 凭证或允许挂牌。请由管理员重新保存带 SHA-256 证据摘要的审核结果。</div> : null}
       {profile?.reviewNote ? <div className={`${styles.message} ${profile.status === "REJECTED" || profile.status === "SUSPENDED" ? styles.messageError : ""}`}><strong>审核说明：</strong> {profile.reviewNote}</div> : null}
 
       <div className={styles.formLayout}>

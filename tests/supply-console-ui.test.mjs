@@ -78,12 +78,16 @@ test("resource details are selected from the current organization dashboard and 
   assert.match(detail, /result\.dashboard\.devices\.find\(\(item\) => item\.id === deviceId\)/u);
   assert.match(detail, /`\/api\/v2\/supply\/devices\/\$\{encodeURIComponent\(device\.id\)\}\/verify`/u);
   assert.match(detail, /marketplacePost<HostingAgentCommand>/u);
+  assert.match(detail, /const verificationPending = device\?\.status === "VERIFYING" \|\| device\?\.verificationStatus === "PENDING"/u);
+  assert.match(detail, /window\.setInterval\(\(\) => \{ void load\(\); \}, 2_000\)/u);
   assert.doesNotMatch(`${list}\n${detail}`, /x-kai-workspace-role|localStorage|sessionStorage|\/bin\/sh|sudo/u);
 });
 
 test("supplier pages read and mutate through the authenticated hosting v2 APIs", () => {
   const dashboard = readFileSync("components/supply-dashboard.tsx", "utf8");
   assert.match(dashboard, /marketplaceGet<\{ dashboard: SupplierHostingDashboard \}>\("\/api\/v2\/supply\/dashboard"\)/u);
+  assert.match(dashboard, /dashboard\.readiness\.supplierApproved && isHostingSupplierProfileReady\(profile\)/u);
+  assert.match(dashboard, /审核记录不完整/u);
 
   const onboarding = readFileSync("components/supplier-onboarding-form.tsx", "utf8");
   assert.match(onboarding, /marketplaceGet<\{ record: HostingSupplierProfile \| null \}>\("\/api\/v2\/supply\/profile"\)/u);
@@ -93,6 +97,8 @@ test("supplier pages read and mutate through the authenticated hosting v2 APIs",
   assert.match(onboarding, /agreementVersion \|\| "读取中"/u);
   assert.match(onboarding, /agreementAccepted: true/u);
   assert.match(onboarding, /expectedVersion: profile\.version/u);
+  assert.match(onboarding, /!isHostingSupplierProfileReady\(profile\)/u);
+  assert.match(onboarding, /后端不会签发 Agent 凭证或允许挂牌/u);
   assert.doesNotMatch(`${dashboard}\n${onboarding}`, /x-kai-workspace-role|localStorage|sessionStorage/u);
 });
 
@@ -108,6 +114,11 @@ test("listing UI uses only authenticated Hosting V2 offer APIs and server-owned 
   assert.match(list, /\{ status, expectedVersion: offer\.version \}/u);
   assert.match(create, /marketplaceGet<\{ policy: SupplierHostingPolicy \}>\("\/api\/v2\/supply\/policy"\)/u);
   assert.match(create, /marketplacePost<SupplierHostingOffer>\("\/api\/v2\/supply\/offers", payload/u);
+  assert.match(create, /dashboard\?\.readiness\.supplierApproved/u);
+  assert.match(create, /HOSTING_V2_AGENT_STALE_SECONDS/u);
+  assert.match(create, /Date\.parse\(device\.verifiedUntil\) > now/u);
+  assert.match(create, /Date\.parse\(device\.lastSeenAt\) >= now - HOSTING_V2_AGENT_STALE_SECONDS \* 1_000/u);
+  assert.match(create, /window\.setInterval\(\(\) => setEligibilityNow\(Date\.now\(\)\), 30_000\)/u);
   const payload = create.slice(create.indexOf("const payload = {"), create.indexOf("const serialized"));
   assert.doesNotMatch(payload, /gpuModel|termsVersion|organizationId|accountId|feeScheduleId/u);
   assert.match(create, /approvedImage/u);

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { HOSTING_V2_AGENT_STALE_SECONDS } from "@/lib/hosting-v2";
 import { createIdempotencyKey, marketplaceErrorMessage, marketplaceGet, marketplacePost } from "@/lib/client/marketplace-client";
 import type { SupplierHostingDashboard, SupplierHostingOffer, SupplierHostingPolicy } from "@/lib/hosting-v2-client";
 import styles from "./supply-console.module.css";
@@ -19,6 +20,13 @@ function decimalMicros(value: string) {
   return Number.isSafeInteger(micros) && micros > 0 ? micros : null;
 }
 
+function eligibleHostingDevice(device: SupplierHostingDashboard["devices"][number], now: number) {
+  return device.status === "VERIFIED"
+    && device.verificationStatus === "PASSED"
+    && Boolean(device.verifiedUntil && Date.parse(device.verifiedUntil) > now)
+    && Boolean(device.lastSeenAt && Date.parse(device.lastSeenAt) >= now - HOSTING_V2_AGENT_STALE_SECONDS * 1_000);
+}
+
 export function SupplyOfferCreate() {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<SupplierHostingDashboard | null>(null);
@@ -32,6 +40,7 @@ export function SupplyOfferCreate() {
   const [availableFrom, setAvailableFrom] = useState("");
   const [availableUntil, setAvailableUntil] = useState("");
   const [approvedImage, setApprovedImage] = useState("");
+  const [eligibilityNow, setEligibilityNow] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const request = useRef<{ payload: string; key: string } | null>(null);
@@ -43,6 +52,7 @@ export function SupplyOfferCreate() {
       marketplaceGet<{ policy: SupplierHostingPolicy }>("/api/v2/supply/policy"),
     ]).then(([dashboardResult, policyResult]) => {
       if (cancelled) return;
+      const loadedAt = Date.now();
       // Allow an operator to publish immediately while covering sub-minute
       // client/server clock skew. The server still validates the full window.
       const start = new Date(Date.now() - 60_000);
@@ -50,20 +60,26 @@ export function SupplyOfferCreate() {
       setAvailableUntil((current) => current || localDateTime(new Date(start.getTime() + 24 * 60 * 60_000)));
       setDashboard(dashboardResult.dashboard);
       setPolicy(policyResult.policy);
-      const eligible = dashboardResult.dashboard.devices.find((device) => device.status === "VERIFIED" && device.verificationStatus === "PASSED");
+      const eligible = dashboardResult.dashboard.devices.find((device) => eligibleHostingDevice(device, loadedAt));
+      setEligibilityNow(loadedAt);
       if (eligible) { setDeviceId(eligible.id); setTitle(`${eligible.inventory.gpuModel === "RTX_4090" ? "RTX 4090" : "H100 80GB"} 单卡独享`); }
       setApprovedImage(policyResult.policy.approvedImages[0] ?? "");
     }).catch((cause) => { if (!cancelled) setError(marketplaceErrorMessage(cause, "挂牌策略或设备状态暂时无法读取。")); });
     return () => { cancelled = true; };
   }, []);
 
-  const eligibleDevices = (dashboard?.devices ?? []).filter((device) => device.status === "VERIFIED" && device.verificationStatus === "PASSED");
+  useEffect(() => {
+    const interval = window.setInterval(() => setEligibilityNow(Date.now()), 30_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const eligibleDevices = (dashboard?.devices ?? []).filter((device) => eligibleHostingDevice(device, eligibilityNow));
   const selectedDevice = eligibleDevices.find((device) => device.id === deviceId) ?? null;
   const rateMicros = decimalMicros(rate);
   const minMinutes = Number(minimumMinutes);
   const maxMinutes = Number(maximumMinutes);
   const formReady = Boolean(
-    dashboard?.profile?.status === "APPROVED"
+    dashboard?.readiness.supplierApproved
     && selectedDevice
     && policy
     && approvedImage

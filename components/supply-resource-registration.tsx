@@ -127,7 +127,7 @@ export function SupplyResourceRegistration() {
   }
 
   if (!dashboard && !error) return <div className={styles.loading} role="status">正在确认供应主体是否具备设备登记权限…</div>;
-  const approved = dashboard?.profile?.status === "APPROVED";
+  const approved = dashboard?.readiness.supplierApproved === true;
 
   return (
     <>

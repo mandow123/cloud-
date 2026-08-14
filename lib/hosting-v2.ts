@@ -24,6 +24,14 @@ export type HostingSupplierProfile = Readonly<{
   updatedAt: string;
 }>;
 
+export function isHostingSupplierProfileReady(profile: HostingSupplierProfile | null | undefined) {
+  return Boolean(
+    profile?.status === "APPROVED"
+    && profile.agreementVersion
+    && profile.evidenceDigest,
+  );
+}
+
 export type HostingAgentChallenge = Readonly<{
   id: string;
   organizationId: string;

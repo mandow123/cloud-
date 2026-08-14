@@ -23,6 +23,7 @@ export function SupplyResourceDetail({ deviceId }: { deviceId: string }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const verifyKey = useRef<string | null>(null);
+  const verificationPending = device?.status === "VERIFYING" || device?.verificationStatus === "PENDING";
 
   const load = useCallback(async () => {
     try {
@@ -39,6 +40,12 @@ export function SupplyResourceDetail({ deviceId }: { deviceId: string }) {
     const frame = window.requestAnimationFrame(() => { void load(); });
     return () => window.cancelAnimationFrame(frame);
   }, [load]);
+
+  useEffect(() => {
+    if (!verificationPending) return;
+    const interval = window.setInterval(() => { void load(); }, 2_000);
+    return () => window.clearInterval(interval);
+  }, [load, verificationPending]);
 
   async function queueVerification() {
     if (!device) return;
