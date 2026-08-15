@@ -268,6 +268,7 @@ test("Root request and independent finance approval are both required before tri
 
 test("the Hosting admin page is wired to live approval APIs and has no fake client-side ledger", () => {
   const component = readFileSync(new URL("../components/admin-hosting-operations.tsx", import.meta.url), "utf8");
+  const readinessView = readFileSync(new URL("../lib/admin-hosting-readiness-view.ts", import.meta.url), "utf8");
   const navigation = readFileSync(new URL("../lib/admin-view-models.ts", import.meta.url), "utf8");
   assert.match(component, /\/api\/v2\/admin\/supply\/profiles/u);
   assert.match(component, /\/api\/v2\/admin\/hosting\/fees/u);
@@ -279,7 +280,9 @@ test("the Hosting admin page is wired to live approval APIs and has no fake clie
   assert.match(component, /adminGetReadinessJson\(\)/u);
   assert.match(component, /上线闭环就绪状态/u);
   assert.match(component, /交易安全关闭/u);
-  assert.match(component, /HOSTING_ACTIVE_AGENT_MISSING/u);
+  assert.match(readinessView, /HOSTING_ACTIVE_AGENT_MISSING/u);
+  assert.match(readinessView, /HOSTING_APPROVED_SUPPLIER_MISSING/u);
+  assert.match(readinessView, /OIDC_DISCOVERY_INVALID/u);
   assert.match(component, /五档 1\.0%–0\.2%/u);
   assert.match(component, /推荐佣金占平台手续费/u);
   assert.match(component, /hostingDefaultFeeTiers/u);
