@@ -18,9 +18,9 @@ test("GPU public routes use the real Hosting V2 buyer flow on separate pages", (
   ]) assert.equal(existsSync(join(ROOT, path)), true, `${path} is missing`);
 
   const market = read("components/hosting-gpu-marketplace.tsx");
-  assert.match(market, /marketplaceGet<HostingReadinessEnvelope>\("\/api\/ready"\)/u);
-  assert.match(market, /!readiness\.hostingV2\.enabled \|\| !readiness\.hostingV2\.ready/u);
   assert.match(market, /marketplaceGet<\{ records: PublicHostingOffer\[\] \}>\("\/api\/v2\/offers"\)/u);
+  assert.match(market, /cause instanceof MarketplaceApiError && cause\.code === "HOSTING_V2_DISABLED"/u);
+  assert.doesNotMatch(market, /marketplaceGet<HostingReadinessEnvelope>\("\/api\/ready"\)/u);
   assert.match(market, /GPU 市场尚未开放/u);
   assert.match(market, /href=\{`\/gpu\/offers\/\$\{encodeURIComponent\(offer\.id\)\}`\}/u);
   assert.match(market, /href="\/gpu\/contracts"/u);

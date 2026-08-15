@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import type { HostingReadinessEnvelope, PublicHostingOffer } from "@/lib/hosting-v2-client";
+import type { PublicHostingOffer } from "@/lib/hosting-v2-client";
 import { formatCardHours, formatHostingTime } from "@/lib/hosting-v2-client";
-import { marketplaceErrorMessage, marketplaceGet } from "@/lib/client/marketplace-client";
+import { MarketplaceApiError, marketplaceErrorMessage, marketplaceGet } from "@/lib/client/marketplace-client";
 import styles from "./hosting-marketplace.module.css";
 
 export function HostingGpuMarketplace() {
@@ -16,17 +16,19 @@ export function HostingGpuMarketplace() {
 
   useEffect(() => {
     let cancelled = false;
-    void marketplaceGet<HostingReadinessEnvelope>("/api/ready")
-      .then(async (readiness) => {
-        if (!readiness.hostingV2) throw new Error("HOSTING_STATUS_INVALID");
-        if (!readiness.hostingV2.enabled || !readiness.hostingV2.ready) {
-          if (!cancelled) { setMarketOpen(false); setOffers([]); }
-          return;
-        }
-        const result = await marketplaceGet<{ records: PublicHostingOffer[] }>("/api/v2/offers");
+    void marketplaceGet<{ records: PublicHostingOffer[] }>("/api/v2/offers")
+      .then((result) => {
         if (!cancelled) { setMarketOpen(true); setOffers(result.records); }
       })
-      .catch((cause) => { if (!cancelled) setError(marketplaceErrorMessage(cause, "GPU 市场暂时无法读取。")); });
+      .catch((cause) => {
+        if (cancelled) return;
+        if (cause instanceof MarketplaceApiError && cause.code === "HOSTING_V2_DISABLED") {
+          setMarketOpen(false);
+          setOffers([]);
+          return;
+        }
+        setError(marketplaceErrorMessage(cause, "GPU 市场暂时无法读取。"));
+      });
     return () => { cancelled = true; };
   }, []);
 
