@@ -184,15 +184,19 @@ function cleanupDetails() {
   };
 }
 
-test("schema13 bridge opens a database whose newest hosting migration is 13", async () => {
+test("schema14 runtime safely upgrades a schema13 bridge database and creates the additive retirement table", async () => {
   const state = temporaryDatabase("kai-hosting-retirement-schema13-");
   seedMigrationVersion(state.path, 13);
   const store = await createSqliteHostingV2Store(state.path);
   try {
     const snapshot = await store.readiness(NOW);
-    assert.equal(snapshot.schemaVersion, 13);
+    assert.equal(snapshot.schemaVersion, 14);
     const db = new DatabaseSync(state.path);
-    assert.equal(db.prepare("SELECT MAX(version) version FROM hosting_v2_schema_migrations").get().version, 13);
+    assert.equal(db.prepare("SELECT MAX(version) version FROM hosting_v2_schema_migrations").get().version, 14);
+    const columns = db.prepare("PRAGMA table_info(hosting_v2_device_retirements)").all().map((row) => row.name);
+    for (const field of ["device_id", "organization_id", "mode", "status", "requested_at", "finalized_at"]) {
+      assert.ok(columns.includes(field), `missing bridge-critical field ${field}`);
+    }
     db.close();
   } finally {
     store.close();
@@ -200,7 +204,7 @@ test("schema13 bridge opens a database whose newest hosting migration is 13", as
   }
 });
 
-test("schema13 bridge tolerates an additive retirement table and future schema14 marker without writing it itself", async () => {
+test("schema14 runtime accepts an already migrated additive retirement database", async () => {
   const state = temporaryDatabase("kai-hosting-retirement-schema14-");
   seedMigrationVersion(state.path, 14, { retirementTable: true });
   let store;
