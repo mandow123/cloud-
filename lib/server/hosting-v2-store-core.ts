@@ -13,7 +13,7 @@ const number = (row: Row, key: string) => Number(row[key]);
 const json = <T>(row: Row, key: string) => JSON.parse(value(row, key)) as T;
 const id = (prefix: string) => `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
 const VERIFY_TEST_NAMES = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "WORKLOAD_IMAGE", "PORT_REACHABILITY"] as const;
-const HOSTING_V2_MIN_AGENT_VERSION = "1.9.5";
+const HOSTING_V2_MIN_AGENT_VERSION = "1.9.6";
 const HOSTING_V2_AUTOMATED_STOP_ATTEMPTS = 4;
 const DEVICE_RETIREMENT_EVENT_TYPES = ["DEVICE_RETIREMENT_REQUESTED", "DEVICE_CREDENTIAL_REVOKED", "DEVICE_RETIREMENT_FINALIZED"] as const;
 const DEVICE_RETIREMENT_REASON_CODES = ["SUPPLIER_REQUEST", "HARDWARE_FAILURE", "OWNERSHIP_CHANGE", "SECURITY_INCIDENT", "POLICY_VIOLATION", "ADMIN_EMERGENCY"] as const;

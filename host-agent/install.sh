@@ -70,7 +70,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [ ! -r /etc/os-release ] || ! grep -q '^ID=ubuntu$' /etc/os-release; then
+if [ ! -r /etc/os-release ] || ! grep -Eq '^ID=(ubuntu|"ubuntu")$' /etc/os-release; then
   echo "KAI Host Agent version 1 requires Ubuntu." >&2
   exit 1
 fi
@@ -104,9 +104,35 @@ import { join } from "node:path";
 const root = process.argv[2];
 const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const manifest = JSON.parse(readFileSync(join(root, "release-manifest.json"), "utf8"));
+const requiredFiles = [
+  "README.md",
+  "install.sh",
+  "kai-host-actuator.env.example",
+  "kai-host-actuator.service",
+  "kai-host-agent.service",
+  "package.json",
+  "src/actuator-client.mjs",
+  "src/actuator-server.mjs",
+  "src/actuator.mjs",
+  "src/cli.mjs",
+  "src/client.mjs",
+  "src/inventory.mjs",
+  "src/preflight.mjs",
+  "src/doctor.mjs",
+  "src/protocol.mjs",
+  "src/state.mjs",
+  "src/verify.mjs",
+];
 if (manifest.schemaVersion !== "kai-host-agent-release/1" || manifest.version !== packageJson.version
   || !/^\d+\.\d+\.\d+$/.test(packageJson.version) || !/^[a-f0-9]{40}$/.test(manifest.revision)
   || !Array.isArray(manifest.files) || manifest.files.length < 1) throw new Error("Host Agent release manifest is invalid.");
+const manifestPaths = manifest.files.map((file) => file?.path);
+const sortedManifestPaths = [...manifestPaths].sort();
+const sortedRequiredFiles = [...requiredFiles].sort();
+if (manifestPaths.length !== requiredFiles.length || new Set(manifestPaths).size !== requiredFiles.length
+  || sortedManifestPaths.some((path, index) => path !== sortedRequiredFiles[index])) {
+  throw new Error("Host Agent release manifest is incomplete or contains duplicate/unexpected files.");
+}
 for (const file of manifest.files) {
   if (!file || typeof file.path !== "string" || !/^[A-Za-z0-9._/-]{1,100}$/.test(file.path) || file.path.includes("..")
     || !Number.isSafeInteger(file.bytes) || file.bytes < 1 || !/^[a-f0-9]{64}$/.test(file.sha256)) throw new Error("Host Agent release file entry is invalid.");

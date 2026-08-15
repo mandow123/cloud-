@@ -33,7 +33,7 @@ function seedDevice(path, suffix, { withOffer = true, withContract = false, with
       `Retirement ${suffix}`,
       `sha256:${suffix.padEnd(64, "1").slice(0, 64)}`,
       suffix.toUpperCase().padEnd(43, "A").slice(0, 43),
-      "1.9.5",
+      "1.9.6",
       JSON.stringify({ gpuModel: "RTX_4090" }),
       `sha256:${suffix.padEnd(64, "2").slice(0, 64)}`,
       `sha256:${suffix.padEnd(64, "3").slice(0, 64)}`,

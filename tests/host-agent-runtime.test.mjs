@@ -219,7 +219,7 @@ test("pairing and heartbeat persist a private 0600 identity and send server-veri
         registerEndpoint: "http://127.0.0.1:3014/api/v2/agent/register",
         challengeId: "hac_runtime_challenge_000001",
         nonce: "runtimeNonceValue000001",
-        minimumAgentVersion: "1.9.5",
+        minimumAgentVersion: "1.9.6",
         expiresAt: new Date(Date.now() + 300_000).toISOString(),
       },
       displayName: "4090 工作站 01",
@@ -281,12 +281,15 @@ test("installer is offline, non-root at runtime and systemd-hardened", async () 
 
   assert.doesNotMatch(installer, /curl|wget|apt-get|npm install|docker group/u);
   assert.match(installer, /useradd --system/u);
-  assert.match(installer, /ID=ubuntu/u);
+  assert.match(installer, /\^ID=\(ubuntu\|"ubuntu"\)\$/u);
   assert.match(installer, /NODE_BINARY=\$\(command -v node\)/u);
   assert.match(installer, /\/usr\/bin\/node\|\/usr\/local\/bin\/node/u);
   assert.match(installer, /sed -i .*ExecStart/u);
   assert.match(installer, /release-manifest\.json/u);
   assert.match(installer, /createHash\("sha256"\)/u);
+  assert.match(installer, /const requiredFiles = \[/u);
+  assert.match(installer, /new Set\(manifestPaths\)\.size !== requiredFiles\.length/u);
+  assert.match(installer, /manifest is incomplete or contains duplicate\/unexpected files/u);
   assert.match(installer, /systemctl stop kai-host-agent\.service/u);
   assert.match(installer, /mv -Tf .*\/opt\/kai-host-agent\/current/u);
   assert.match(installer, /PREVIOUS_RELEASE/u);
@@ -321,6 +324,6 @@ test("installer is offline, non-root at runtime and systemd-hardened", async () 
   assert.match(installer, /kai-host-actuator\.service/u);
   assert.match(runtime, /check-connection/u);
   assert.match(runtime, /readPairingFile/u);
-  assert.equal(packageJson.version, "1.9.5");
+  assert.equal(packageJson.version, "1.9.6");
   assert.equal(packageJson.dependencies, undefined);
 });

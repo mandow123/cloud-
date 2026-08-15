@@ -15,7 +15,7 @@ import { readState, stateFilePath, writeState } from "./state.mjs";
 import { cleanupWorkload, provisionWorkload, startWorkload, stopWorkload } from "./actuator-client.mjs";
 import { runVerification } from "./verify.mjs";
 
-export const AGENT_VERSION = "1.9.5";
+export const AGENT_VERSION = "1.9.6";
 
 function validatePairingBundle(value, options = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new AgentError("PAIRING_INVALID", "Pairing bundle must be a JSON object.");
