@@ -18,6 +18,10 @@ export function isHostingV2SetupEnabled() {
   return typeof process !== "undefined" && isHostingV2ConfigurationEnabled(process.env);
 }
 
+export function isHostingV2DeviceRetirementEnabled() {
+  return typeof process !== "undefined" && isHostingV2SetupEnabled() && enabled(process.env.KAI_HOSTING_DEVICE_RETIREMENT);
+}
+
 export function requireHostingV2Enabled() {
   if (!isHostingV2Enabled()) {
     throw new AccountAuthError("HOSTING_V2_DISABLED", 503, "新版算力上架功能尚未在当前环境开放。 ");
@@ -27,5 +31,11 @@ export function requireHostingV2Enabled() {
 export function requireHostingV2SetupEnabled() {
   if (!isHostingV2SetupEnabled()) {
     throw new AccountAuthError("HOSTING_V2_SETUP_DISABLED", 503, "新版算力上架的配置入口尚未在当前环境开放。 ");
+  }
+}
+
+export function requireHostingV2DeviceRetirementEnabled() {
+  if (!isHostingV2DeviceRetirementEnabled()) {
+    throw new AccountAuthError("HOSTING_DEVICE_RETIREMENT_DISABLED", 503, "设备退场功能尚未在当前环境开放。 ");
   }
 }

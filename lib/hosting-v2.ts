@@ -150,6 +150,22 @@ export type HostingDevice = Readonly<{
   updatedAt: string;
 }>;
 
+export type HostingDeviceRetirement = Readonly<{
+  id: string;
+  deviceId: string;
+  organizationId: string;
+  mode: "GRACEFUL" | "EMERGENCY";
+  status: "DRAINING" | "MANUAL_ACTION_REQUIRED" | "FINALIZED";
+  reasonCode: string;
+  reason: string;
+  evidenceDigest: string | null;
+  requestedBy: string;
+  requestedAt: string;
+  finalizedBy: string | null;
+  finalizedAt: string | null;
+  version: number;
+}>;
+
 export type HostingFeeSchedule = Readonly<{
   id: string;
   platformFeeBps: number;
@@ -442,7 +458,9 @@ export type HostingDashboard = Readonly<{
 export function hostingCardHourMicrosForSeconds(rateMicrosPerGpuHour: number, seconds: number) {
   if (!Number.isSafeInteger(rateMicrosPerGpuHour) || rateMicrosPerGpuHour < 1) throw new Error("HOSTING_RATE_INVALID");
   if (!Number.isSafeInteger(seconds) || seconds < HOSTING_V2_MIN_RENTAL_SECONDS) throw new Error("HOSTING_DURATION_INVALID");
-  return Math.ceil(rateMicrosPerGpuHour * seconds / 3_600);
+  const result = Number((BigInt(rateMicrosPerGpuHour) * BigInt(seconds) + 3_599n) / 3_600n);
+  if (!Number.isSafeInteger(result)) throw new Error("HOSTING_AMOUNT_INVALID");
+  return result;
 }
 
 export function hostingFeeRatesAreValid(platformFeeBps: number, referralRewardBps: number) {

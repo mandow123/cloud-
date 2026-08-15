@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { ExchangeOrder, MarketListing, ProductVersion } from "@/lib/exchange";
+import { formatCardHourValue } from "@/lib/card-hours";
 import styles from "./gpu-cloud-lab.module.css";
 
 type LabSnapshot = {
@@ -25,11 +26,11 @@ function commandId(prefix: string) {
 }
 
 function kaiPrice(listing: MarketListing, rate: number) {
-  return (listing.unitPriceMicros / 1_000_000 / rate).toFixed(3);
+  return listing.unitPriceMicros / 1_000_000 / rate;
 }
 
 function kaiAmount(order: ExchangeOrder, rate: number) {
-  return (order.totalAmountCents / 100 / rate).toFixed(4);
+  return order.totalAmountCents / 100 / rate;
 }
 
 function shortId(value?: string | null) {
@@ -97,7 +98,7 @@ function OrderLoop({
         <span className={styles.testBadge}>资金未移动</span>
       </div>
       <div className={styles.orderPrice}>
-        <strong>{kaiAmount(order, rate)}</strong>
+        <strong>{formatCardHourValue(kaiAmount(order, rate))}</strong>
         <span>KAI 标准卡时</span>
       </div>
       <p className={styles.mutedLine}>订单 {shortId(order.id)} · {order.rateUnits} GPU · {order.durationSeconds / 3600} 小时</p>
@@ -282,7 +283,7 @@ export function GpuMarketplaceLab() {
                 </dl>
                 <div className={styles.offerPrice}>
                   <span>每 GPU / 小时</span>
-                  <strong>{kaiPrice(listing, snapshot?.kaiReferenceRate ?? 1.002)}</strong>
+                  <strong>{formatCardHourValue(kaiPrice(listing, snapshot?.kaiReferenceRate ?? 1.002))}</strong>
                   <small>KAI 标准卡时</small>
                   <button disabled={Boolean(busy)} onClick={(event) => { event.stopPropagation(); void rent(listing); }}>
                     {busy === "checkout" && selectedRow ? "锁定中…" : "租用"}
@@ -306,7 +307,7 @@ export function GpuMarketplaceLab() {
                   <dl className={styles.quoteList}>
                     <div><dt>GPU 数量</dt><dd>1</dd></div>
                     <div><dt>模板</dt><dd>PyTorch + CUDA</dd></div>
-                    <div><dt>预计支付</dt><dd>{(Number(kaiPrice(selected, snapshot?.kaiReferenceRate ?? 1.002)) * durationHours).toFixed(3)} 卡时</dd></div>
+                    <div><dt>预计支付</dt><dd>{formatCardHourValue(kaiPrice(selected, snapshot?.kaiReferenceRate ?? 1.002) * durationHours)} 卡时</dd></div>
                   </dl>
                   <button className={styles.primaryButton} disabled={Boolean(busy)} onClick={() => rent(selected)}>创建 TEST 租约</button>
                   <small>仅本地测试，不触发人民币、支付宝或真实卡时扣减。</small>

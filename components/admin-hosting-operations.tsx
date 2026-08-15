@@ -15,6 +15,7 @@ import { AdminPageHeader } from "@/components/admin-page-header";
 import { AdminEmpty, AdminError, AdminLoading, AdminLoginRequired } from "@/components/admin-states";
 import { hostingReadinessFromPayload, type HostingReadiness } from "@/lib/admin-hosting-readiness-view";
 import { hostingDefaultFeeTiers } from "@/lib/hosting-v2";
+import { formatCardHourDisplayMicros } from "@/lib/card-hours";
 
 type FeeSchedule = Readonly<{
   id: string;
@@ -74,7 +75,7 @@ function datetime(value: unknown) {
 
 function cardHours(micros: unknown) {
   const value = Number(micros);
-  return Number.isSafeInteger(value) ? (value / 1_000_000).toLocaleString("zh-CN", { maximumFractionDigits: 6 }) : "—";
+  try { return formatCardHourDisplayMicros(value); } catch { return "—"; }
 }
 
 function referralSharePercent(fee: FeeSchedule | null) {

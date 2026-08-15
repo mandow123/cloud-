@@ -139,7 +139,7 @@ export default async function Home() {
                     <span className="snapshot-detail">更新 <time dateTime={listing.quote.updatedAt}>{formatBeijingTime(listing.quote.updatedAt)}</time></span>
                     <span className="snapshot-detail">有效至 <time dateTime={listing.quote.validUntil}>{formatBeijingTime(listing.quote.validUntil)}</time></span>
                   </td>
-                  <td><Link className="table-action" href={requestHref(listing)}>按此发布需求</Link></td>
+                  <td><Link className="table-action" href={requestHref(listing)}>按此提交需求</Link></td>
                 </tr>
               ))}
             </tbody>
@@ -192,7 +192,7 @@ export default async function Home() {
           <p>提交后获得服务端需求编号；供应方报价会回流到需求方工作台。</p>
         </div>
         <div>
-          <Link className="button button-primary" href="/request">发布算力需求</Link>
+          <Link className="button button-primary" href="/request">提交算力需求</Link>
           <Link className="button button-secondary" href="/member">打开会员工作台</Link>
         </div>
       </section>

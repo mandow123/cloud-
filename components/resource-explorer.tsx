@@ -372,11 +372,11 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
               <div className="mt-6 border-y border-[var(--border)] bg-[var(--surface)] px-6 py-20 text-center">
                 <p className="m-0 text-xl font-semibold text-[var(--ink)]">没有匹配的目录资源</p>
                 <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-[var(--muted)]">
-                  当前筛选组合较窄。清除筛选后可浏览完整资源池，或发布需求由 KAI 进行人工撮合。
+                  当前筛选组合较窄。清除筛选后可浏览完整资源池，或提交算力需求由 KAI 进行人工撮合。
                 </p>
                 <div className="mt-6 flex flex-wrap justify-center gap-3">
                   <button className="button button-secondary cursor-pointer" type="button" onClick={clearFilters}>清除全部筛选</button>
-                  <Link className="button button-primary" href="/request">发布算力需求</Link>
+                  <Link className="button button-primary" href="/request">提交算力需求</Link>
                 </div>
               </div>
             ) : (
@@ -426,9 +426,9 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                             <Link
                               className={purchaseStyles.purchaseLink}
                               href={`/checkout/${encodeURIComponent(resource.id)}`}
-                              aria-label={`购买 ${resource.title}，参考价 ${formatPrice(resource.quote.median, resource.pricingUnit)}`}
+                              aria-label={`基于 ${resource.title} 提交询价，目录参考价 ${formatPrice(resource.quote.median, resource.pricingUnit)}`}
                             >
-                              <span>购买</span><span aria-hidden="true">→</span>
+                              <span>提交询价</span><span aria-hidden="true">→</span>
                             </Link>
                           </td>
                         </tr>
@@ -456,9 +456,9 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                           <Link
                             className={purchaseStyles.purchaseLink}
                             href={`/checkout/${encodeURIComponent(resource.id)}`}
-                            aria-label={`购买 ${resource.title}，参考价 ${formatPrice(resource.quote.median, resource.pricingUnit)}`}
+                            aria-label={`基于 ${resource.title} 提交询价，目录参考价 ${formatPrice(resource.quote.median, resource.pricingUnit)}`}
                           >
-                            <span>购买</span><span aria-hidden="true">→</span>
+                            <span>提交询价</span><span aria-hidden="true">→</span>
                           </Link>
                         </div>
                       </div>

@@ -227,11 +227,19 @@ export function memberResponseState(httpStatus: number): MemberResponseState {
   return "ERROR";
 }
 
-export function formatKaiDecimal(value: string, maximumFractionDigits = 4) {
+export function formatKaiDecimal(value: string) {
   const [integer, fraction = ""] = value.split(".");
   const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/gu, ",");
-  const visibleFraction = fraction.slice(0, maximumFractionDigits).replace(/0+$/u, "");
+  const visibleFraction = fraction.slice(0, 4).replace(/0+$/u, "");
   return visibleFraction ? `${grouped}.${visibleFraction}` : grouped;
+}
+
+export function formatKaiSchDisplay(value: string) {
+  const [integer, fraction = ""] = value.split(".");
+  let hundredths = BigInt(integer) * 100n + BigInt(fraction.slice(0, 2).padEnd(2, "0"));
+  if ((fraction[2] ?? "0") >= "5") hundredths += 1n;
+  const whole = (hundredths / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/gu, ",");
+  return `${whole}.${(hundredths % 100n).toString().padStart(2, "0")}`;
 }
 
 export function formatCnyCents(value: string) {
@@ -243,11 +251,9 @@ export function formatCnyCents(value: string) {
 export function formatCnyMicros(value: string | null) {
   if (value == null) return "—";
   const micros = BigInt(value);
-  const microsPerYuan = BigInt(1_000_000);
-  const whole = (micros / microsPerYuan).toLocaleString("zh-CN");
-  const rawFraction = (micros % microsPerYuan).toString().padStart(6, "0").replace(/0+$/u, "");
-  const fraction = rawFraction.padEnd(2, "0");
-  return `¥${whole}.${fraction}`;
+  const cents = (micros + 5_000n) / 10_000n;
+  const whole = (cents / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/gu, ",");
+  return `¥${whole}.${(cents % 100n).toString().padStart(2, "0")}`;
 }
 
 export function formatKaiDateTime(value: string) {

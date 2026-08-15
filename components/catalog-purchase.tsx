@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "@/components/catalog-purchase.module.css";
 import { createIdempotencyKey, marketplaceErrorMessage, marketplacePost } from "@/lib/client/marketplace-client";
+import { formatCardHourValue } from "@/lib/card-hours";
 import { formatPrice } from "@/lib/market";
 import type { MarketplaceRequestRecord } from "@/lib/marketplace";
 import type { ResourceListing } from "@/lib/types";
@@ -95,7 +96,7 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
       keyRef.current = null;
       setIntent(result.record);
     } catch (submitError) {
-      setError(marketplaceErrorMessage(submitError, "购买申请提交失败，请检查数量和交付日期后重试。"));
+      setError(marketplaceErrorMessage(submitError, "询价意向提交失败，请检查数量和交付日期后重试。"));
     } finally {
       setBusy(false);
     }
@@ -105,10 +106,10 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
     return (
       <div className={`shell ${styles.page}`}>
         <section className={styles.success} aria-labelledby="purchase-success-title">
-          <p className={styles.eyebrow}>Purchase request accepted</p>
-          <h2 id="purchase-success-title">购买申请已提交</h2>
+          <p className={styles.eyebrow}>Inquiry accepted</p>
+          <h2 id="purchase-success-title">询价意向已提交</h2>
           <p>申请编号：<strong>{intent.id}</strong></p>
-          <p>平台将先核验真实库存、供应商交付条件和正式价格；确认后只使用卡时完成支付。当前步骤不会扣减卡时。</p>
+          <p>平台将先核验真实库存、供应商交付条件和正式价格；确认可供后再生成真实订单，并只使用卡时完成支付。当前步骤不会锁库存或扣减卡时。</p>
           <div className={styles.successActions}>
             <Link className="button button-primary" href="/member">查看交易工作台</Link>
             <Link className="button button-secondary" href="/resources">继续选购资源</Link>
@@ -122,9 +123,9 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
     <div className={`shell ${styles.page}`}>
       <Link className={styles.backLink} href="/resources">← 返回资源市场</Link>
       <header className={styles.heading}>
-        <p>Purchase capacity</p>
-        <h1>确认资源与购买价格</h1>
-        <p>价格、资源数量和预计卡时放在同一页确认。提交后平台先核验真实库存与正式报价，再使用卡时支付。</p>
+        <p>Request a verified quote</p>
+        <h1>确认目录资源与询价范围</h1>
+        <p>目录价格、资源数量和预计卡时放在同一页作为询价参考。提交后平台核验真实库存与正式报价；本页不创建成交订单。</p>
       </header>
 
       <div className={styles.layout}>
@@ -140,8 +141,8 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
           </section>
 
           <section className={styles.formSection} aria-labelledby="purchase-form-title">
-            <p className={styles.eyebrow}>Purchase details</p>
-            <h2 id="purchase-form-title">填写购买数量</h2>
+            <p className={styles.eyebrow}>Inquiry details</p>
+            <h2 id="purchase-form-title">填写询价数量</h2>
             <div className={styles.formGrid}>
               <label className={styles.field}>
                 资源数量
@@ -177,18 +178,18 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
             {usesDuration ? <div><dt>服务时长</dt><dd>{durationNumber > 0 ? `${durationNumber} 小时` : "—"}</dd></div> : null}
             <div><dt>参考价格范围</dt><dd>¥{resource.quote.rangeMin.toLocaleString("zh-CN")}–¥{resource.quote.rangeMax.toLocaleString("zh-CN")}</dd></div>
             <div><dt>人民币参考价</dt><dd>{estimatedAmount > 0 ? money(estimatedAmount) : "—"}</dd></div>
-            <div><dt>预计支付卡时</dt><dd className={styles.estimated}>{estimatedCardHours > 0 ? `${estimatedCardHours.toFixed(6).replace(/0+$/u, "").replace(/\.$/u, "")} 卡时` : "—"}</dd></div>
+            <div><dt>预计支付卡时</dt><dd className={styles.estimated}>{estimatedCardHours > 0 ? `${formatCardHourValue(estimatedCardHours)} 卡时` : "—"}</dd></div>
           </dl>
           <p className={styles.scope}>{resource.quote.scopeNote}</p>
           <ol className={styles.flow}>
-            <li>提交购买申请，不立即扣减卡时</li>
+            <li>提交询价意向，不锁库存、不扣卡时</li>
             <li>平台确认库存与正式价格</li>
             <li>买方使用卡时支付后启动服务</li>
             <li>验收后平台结算供应商</li>
           </ol>
           {accountState === "signed-out" ? (
             <Link className={styles.submit} href={`/login?returnTo=${encodeURIComponent(`/checkout/${resource.id}`)}`}>
-              <span>登录后提交购买</span><span aria-hidden="true">→</span>
+              <span>登录后提交询价</span><span aria-hidden="true">→</span>
             </Link>
           ) : accountState === "inactive" ? (
             <Link className={styles.submit} href="/member#profile">
@@ -196,7 +197,7 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
             </Link>
           ) : (
             <button className={styles.submit} type="button" disabled={accountState !== "ready" || busy || estimatedAmount <= 0 || !deliveryDate} onClick={() => void submit()}>
-              <span>{accountState === "loading" ? "正在核对账户…" : busy ? "正在提交…" : "提交购买"}</span><span aria-hidden="true">→</span>
+              <span>{accountState === "loading" ? "正在核对账户…" : busy ? "正在提交…" : "提交询价"}</span><span aria-hidden="true">→</span>
             </button>
           )}
         </aside>

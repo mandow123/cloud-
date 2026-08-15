@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createIdempotencyKey, MarketplaceApiError, marketplaceErrorMessage, marketplaceGet, marketplacePost } from "@/lib/client/marketplace-client";
+import { hostingCardHourMicrosForSeconds } from "@/lib/hosting-v2";
 import type { BuyerHostingContract, PublicHostingOffer } from "@/lib/hosting-v2-client";
 import { formatCardHours, formatHostingTime } from "@/lib/hosting-v2-client";
 import styles from "./hosting-marketplace.module.css";
@@ -34,7 +35,14 @@ export function HostingOfferCheckout({ offerId }: { offerId: string }) {
   }, [offerId]);
 
   const reservedSeconds = minutes * 60;
-  const heldMicros = useMemo(() => offer ? Math.ceil(offer.pricing.cardHourMicrosPerGpuHour * reservedSeconds / 3_600) : 0, [offer, reservedSeconds]);
+  const heldMicros = useMemo(() => {
+    if (!offer) return null;
+    try {
+      return hostingCardHourMicrosForSeconds(offer.pricing.cardHourMicrosPerGpuHour, reservedSeconds);
+    } catch {
+      return null;
+    }
+  }, [offer, reservedSeconds]);
 
   async function reserve() {
     if (!offer || busy || reservedSeconds < offer.minRentalSeconds || reservedSeconds > offer.maxRentalSeconds) return;
@@ -55,7 +63,7 @@ export function HostingOfferCheckout({ offerId }: { offerId: string }) {
 
   const minMinutes = Math.ceil(offer.minRentalSeconds / 60);
   const maxMinutes = Math.floor(offer.maxRentalSeconds / 60);
-  const cny = heldMicros / 1_000_000 * 1.002;
+  const cny = heldMicros === null ? null : heldMicros / 1_000_000 * 1.002;
   return (
     <div className={styles.market}>
       <header className={styles.detailHeader}><div><Link href="/gpu">← GPU 市场</Link><p className={styles.eyebrow}>LOCK A VERIFIED OFFER</p><h1>确认资源与卡时锁定</h1></div><span className={styles.statusPill}>报价可成交</span></header>
@@ -73,8 +81,8 @@ export function HostingOfferCheckout({ offerId }: { offerId: string }) {
           <h2>租用配置</h2>
           <label><span>租用分钟数</span><input min={minMinutes} max={maxMinutes} step={1} type="number" value={minutes} onChange={(event) => setMinutes(Number(event.target.value))} /></label>
           <small>允许 {minMinutes}–{maxMinutes} 分钟；实际按秒计量，最低计费 3 分钟。</small>
-          <dl className={styles.quoteList}><div><dt>网站价</dt><dd>{formatCardHours(offer.pricing.cardHourMicrosPerGpuHour)} 卡时 / GPU 小时</dd></div><div><dt>预估锁定</dt><dd>{formatCardHours(heldMicros)} KAI 标准卡时</dd></div><div><dt>人民币参考</dt><dd>约 ¥{cny.toFixed(3)}</dd></div></dl>
-          <button className={styles.primary} disabled={busy || !Number.isSafeInteger(minutes) || minutes < minMinutes || minutes > maxMinutes} onClick={() => void reserve()} type="button">{busy ? "正在锁定卡时…" : "锁定卡时并创建合同"}</button>
+          <dl className={styles.quoteList}><div><dt>网站价</dt><dd>{formatCardHours(offer.pricing.cardHourMicrosPerGpuHour)} 卡时 / GPU 小时</dd></div><div><dt>预估锁定</dt><dd>{heldMicros === null ? "—" : `${formatCardHours(heldMicros)} KAI 标准卡时`}</dd></div><div><dt>人民币参考</dt><dd>{cny === null ? "—" : `约 ¥${cny.toFixed(2)}`}</dd></div></dl>
+          <button className={styles.primary} disabled={busy || heldMicros === null || !Number.isSafeInteger(minutes) || minutes < minMinutes || minutes > maxMinutes} onClick={() => void reserve()} type="button">{busy ? "正在锁定卡时…" : "锁定卡时并创建合同"}</button>
           {error ? <p className={styles.inlineError} role="alert">{error}</p> : null}
           {loginRequired ? <Link className={styles.loginLink} href={`/login?returnTo=${encodeURIComponent(`/gpu/offers/${offer.id}`)}`}>登录或注册后继续</Link> : null}
           <small>公开自助充值和自动回购保持关闭；试运营卡时由平台双人审批发放。</small>

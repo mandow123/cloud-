@@ -1,4 +1,5 @@
 import type { HostingContractEvidence, HostingContractStatus, HostingDashboard, HostingDevice, HostingFeeQualificationSnapshot, HostingGpuModel, HostingSupplierFeePreview, HostingSupplierMonthlySettlement, HostingSupplierProfile } from "./hosting-v2.ts";
+import { formatCardHourDisplayMicros } from "./card-hours.ts";
 
 export type PublicHostingOffer = Readonly<{
   id: string;
@@ -215,8 +216,7 @@ export type SupplierEarningsDashboard = Readonly<{
 }>;
 
 export function formatCardHours(micros: number) {
-  if (!Number.isSafeInteger(micros) || micros < 0) return "—";
-  return (micros / 1_000_000).toLocaleString("zh-CN", { minimumFractionDigits: 0, maximumFractionDigits: 6 });
+  try { return formatCardHourDisplayMicros(micros); } catch { return "—"; }
 }
 
 export function formatHostingTime(value: string | null) {

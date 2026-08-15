@@ -181,7 +181,7 @@ export default function MethodologyPage() {
               查看日度模型行情
             </Link>
             <Link className="button button-secondary" href="/request">
-              发布需求
+              提交算力需求
             </Link>
           </div>
         </section>

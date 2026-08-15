@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { marketplaceErrorMessage } from "@/lib/client/marketplace-client";
+import { formatCardHourDisplayMicros } from "@/lib/card-hours";
 import {
   createCardHourPaymentIntent,
   getSupplyOrder,
@@ -71,7 +72,7 @@ export function SupplyOrderWorkspace({ orderId, role }: { orderId: string; role:
     setActionNotice("");
     try {
       const intent = await createCardHourPaymentIntent(order.id);
-      setActionNotice(`已扣减 ${intent.amountCardHours} 卡时，订单支付状态已由服务端确认。`);
+      setActionNotice(`已扣减 ${formatCardHourDisplayMicros(intent.amountMicros)} 卡时，订单支付状态已由服务端确认。`);
       await load();
     } catch (actionError) {
       setError(marketplaceErrorMessage(actionError, "无法完成卡时支付，请检查余额后重试。"));

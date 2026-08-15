@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { formatCardHourValue } from "@/lib/card-hours";
 
 export type HomeMarketSummary = {
   publishedAt: string;
@@ -87,7 +88,7 @@ export function LiveHomeMarketHero({
       },
       {
         label: "1 小时应付",
-        value: payableCardHours.toFixed(6),
+        value: formatCardHourValue(payableCardHours),
         note: "KAI 卡时",
       },
       { label: "固定兑换", value: "1.002", note: "人民币 / KAI 卡时" },

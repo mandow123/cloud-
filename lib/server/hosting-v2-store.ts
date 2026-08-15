@@ -8,6 +8,7 @@ import type {
   HostingDashboard,
   HostingDisputeCase,
   HostingDevice,
+  HostingDeviceRetirement,
   HostingDeviceInventory,
   HostingFeeSchedule,
   HostingGoldenLoopAudit,
@@ -59,6 +60,9 @@ export interface HostingV2Store {
   getAgentRegistration(organizationId: string, challengeId: string): Promise<HostingAgentRegistration | null>;
   registerDevice(challengeId: string, input: { displayName: string; deviceKeyId: string; devicePublicKey: string; agentVersion: string; inventory: HostingDeviceInventory; inventoryDigest: string }, context: HostingMutationContext): Promise<HostingDevice>;
   getDevice(id: string): Promise<HostingDevice | null>;
+  getDeviceRetirement(organizationId: string | null, deviceId: string): Promise<HostingDeviceRetirement | null>;
+  requestDeviceRetirement(organizationId: string | null, deviceId: string, input: { mode: "GRACEFUL" | "EMERGENCY"; expectedDeviceVersion: number; reasonCode: string; reason: string; evidenceDigest?: string | null }, context: HostingMutationContext): Promise<{ retirement: HostingDeviceRetirement; device: HostingDevice }>;
+  finalizeDeviceRetirement(deviceId: string, input: { expectedDeviceVersion: number; expectedRetirementVersion: number; evidenceDigest: string; finalizationReason: string }, context: HostingMutationContext): Promise<{ retirement: HostingDeviceRetirement; device: HostingDevice }>;
   acceptHeartbeat(deviceId: string, input: { sequence: number; inventoryDigest: string; capacityState: "ONLINE" | "BUSY" | "DRAINING" | "OFFLINE"; observedAt: string }, context: HostingMutationContext): Promise<HostingDevice>;
   queueVerification(organizationId: string, deviceId: string, context: HostingMutationContext): Promise<HostingAgentCommand>;
   createFeeSchedule(input: { platformFeeBps: number; referralRewardBps: number; activate: boolean; effectiveFrom: string }, context: HostingMutationContext): Promise<HostingFeeSchedule>;

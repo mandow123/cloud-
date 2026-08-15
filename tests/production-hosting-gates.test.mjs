@@ -17,6 +17,7 @@ const base = {
   KAI_ALIPAY_ENABLED: "0",
   KAI_HOSTING_V2: "0",
   KAI_HOSTING_V2_SETUP: "0",
+  KAI_HOSTING_DEVICE_RETIREMENT: "0",
 };
 const ROOT_HASH = `pbkdf2-sha256:310000:AAAAAAAAAAAAAAAAAAAAAA==:${"A".repeat(43)}=`;
 const APPROVER_HASH = `pbkdf2-sha256:310000:QkJCQkJCQkJCQkJCQkJCQg==:${"B".repeat(43)}=`;
@@ -71,6 +72,9 @@ test("Hosting V2 setup validates every production dependency without opening tra
   const validated = validateProductionEnvironment(setup);
   assert.equal(validated.hostingV2Enabled, false);
   assert.equal(validated.hostingV2SetupEnabled, true);
+  assert.equal(validated.hostingDeviceRetirementEnabled, false);
+  assert.equal(validateProductionEnvironment({ ...setup, KAI_HOSTING_DEVICE_RETIREMENT: "1" }).hostingDeviceRetirementEnabled, true);
+  rejection({ ...base, KAI_HOSTING_DEVICE_RETIREMENT: "1" }, "requires Hosting V2 setup");
   rejection({ ...base, KAI_HOSTING_V2_SETUP: "1" }, "KAI_HOSTING_APPROVED_IMAGES");
 });
 
@@ -79,11 +83,13 @@ test("production templates carry the rollback and payment gates into the contain
   const environment = readFileSync(new URL("../deploy/kai-cloud-app.env.example", import.meta.url), "utf8");
   assert.match(compose, /KAI_HOSTING_V2: "\$\{KAI_HOSTING_V2:-0\}"/u);
   assert.match(compose, /KAI_HOSTING_V2_SETUP: "\$\{KAI_HOSTING_V2_SETUP:-0\}"/u);
+  assert.match(compose, /KAI_HOSTING_DEVICE_RETIREMENT: "\$\{KAI_HOSTING_DEVICE_RETIREMENT:-0\}"/u);
   assert.match(compose, /KAI_ALIPAY_ENABLED: "\$\{KAI_ALIPAY_ENABLED:-0\}"/u);
   assert.match(compose, /KAI_ADMIN_APPROVER_USERNAME/u);
   assert.match(compose, /KAI_ADMIN_APPROVER_PASSWORD_HASH/u);
   assert.match(environment, /^KAI_HOSTING_V2=0$/mu);
   assert.match(environment, /^KAI_HOSTING_V2_SETUP=0$/mu);
+  assert.match(environment, /^KAI_HOSTING_DEVICE_RETIREMENT=0$/mu);
   assert.match(environment, /^KAI_ALIPAY_ENABLED=0$/mu);
   assert.match(environment, /^KAI_ADMIN_APPROVER_USERNAME=/mu);
   assert.match(environment, /^KAI_ADMIN_APPROVER_PASSWORD_HASH=/mu);

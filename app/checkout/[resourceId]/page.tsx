@@ -11,8 +11,8 @@ export async function generateMetadata({ params }: PurchasePageProps): Promise<M
   const { resourceId } = await params;
   const resource = getResourceById(resourceId);
   return resource
-    ? { title: `购买 ${resource.title}`, description: `查看 ${resource.title} 的参考单价并提交购买。` }
-    : { title: "资源不可购买" };
+    ? { title: `询价 ${resource.title}`, description: `查看 ${resource.title} 的目录参考价并提交询价意向。` }
+    : { title: "目录资源不存在" };
 }
 
 export default async function PurchasePage({ params }: PurchasePageProps) {

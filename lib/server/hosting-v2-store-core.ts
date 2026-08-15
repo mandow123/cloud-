@@ -1,4 +1,4 @@
-import { HOSTING_FEE_LEGACY_QUALIFICATION_MODEL, HOSTING_FEE_QUALIFICATION_MODEL, HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, hostingActualFeeBreakdown, hostingCardHourMicrosForSeconds, hostingCurrentCalendarMonth, hostingDefaultFeeTiers, hostingFeeBreakdown, hostingFeeRatesAreValid, hostingSelectFeeTier, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDisputeCase, type HostingFeeSchedule, type HostingFeeTier, type HostingGoldenLoopAudit, type HostingOffer, type HostingStopIncident, type HostingSupplierFeePreview, type HostingSupplierMonthlySettlement, type HostingSupplierProfile } from "../hosting-v2.ts";
+import { HOSTING_FEE_LEGACY_QUALIFICATION_MODEL, HOSTING_FEE_QUALIFICATION_MODEL, HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, hostingActualFeeBreakdown, hostingCardHourMicrosForSeconds, hostingCurrentCalendarMonth, hostingDefaultFeeTiers, hostingFeeBreakdown, hostingFeeRatesAreValid, hostingSelectFeeTier, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDeviceRetirement, type HostingDisputeCase, type HostingFeeSchedule, type HostingFeeTier, type HostingGoldenLoopAudit, type HostingOffer, type HostingStopIncident, type HostingSupplierFeePreview, type HostingSupplierMonthlySettlement, type HostingSupplierProfile } from "../hosting-v2.ts";
 import { HOSTING_V2_SCHEMA_COMPATIBILITY_VERSION, HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { assertHostingAgentWindow, hostingAgentCanonicalJson, hostingAgentDigest, verifyHostingAgentSignature } from "./hosting-agent-crypto.ts";
@@ -16,6 +16,7 @@ const VERIFY_TEST_NAMES = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "N
 const HOSTING_V2_MIN_AGENT_VERSION = "1.9.5";
 const HOSTING_V2_AUTOMATED_STOP_ATTEMPTS = 4;
 const DEVICE_RETIREMENT_EVENT_TYPES = ["DEVICE_RETIREMENT_REQUESTED", "DEVICE_CREDENTIAL_REVOKED", "DEVICE_RETIREMENT_FINALIZED"] as const;
+const DEVICE_RETIREMENT_REASON_CODES = ["SUPPLIER_REQUEST", "HARDWARE_FAILURE", "OWNERSHIP_CHANGE", "SECURITY_INCIDENT", "POLICY_VIOLATION", "ADMIN_EMERGENCY"] as const;
 const DEVICE_RETIREMENT_EVENT_SQL = `EXISTS(
   SELECT 1 FROM hosting_v2_events retirement
   WHERE retirement.entity_type='DEVICE' AND retirement.entity_id=hosting_v2_devices.id
@@ -216,6 +217,16 @@ function device(row: Row): HostingDevice {
     verificationEvidenceDigest: nullable(row, "verification_evidence_digest"), verifiedUntil: nullable(row, "verified_until"),
     lastSequence: number(row, "last_sequence"), lastSeenAt: nullable(row, "last_seen_at"), version: number(row, "version"),
     createdAt: value(row, "created_at"), updatedAt: value(row, "updated_at"),
+  };
+}
+
+function deviceRetirement(row: Row): HostingDeviceRetirement {
+  return {
+    id: value(row, "id"), deviceId: value(row, "device_id"), organizationId: value(row, "organization_id"),
+    mode: value(row, "mode") as HostingDeviceRetirement["mode"], status: value(row, "status") as HostingDeviceRetirement["status"],
+    reasonCode: value(row, "reason_code"), reason: value(row, "reason"), evidenceDigest: nullable(row, "evidence_digest"),
+    requestedBy: value(row, "requested_by"), requestedAt: value(row, "requested_at"), finalizedBy: nullable(row, "finalized_by"),
+    finalizedAt: nullable(row, "finalized_at"), version: number(row, "version"),
   };
 }
 
@@ -950,6 +961,181 @@ function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
     async getDevice(deviceId) {
       const row = await db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=?", [deviceId]);
       return row ? device(row) : null;
+    },
+
+    async getDeviceRetirement(organizationId, deviceId) {
+      const row = organizationId == null
+        ? await db.first<Row>("SELECT * FROM hosting_v2_device_retirements WHERE device_id=?", [deviceId])
+        : await db.first<Row>("SELECT * FROM hosting_v2_device_retirements WHERE device_id=? AND organization_id=?", [deviceId, organizationId]);
+      return row ? deviceRetirement(row) : null;
+    },
+
+    async requestDeviceRetirement(organizationId, deviceId, input, context) {
+      if ((input.mode === "GRACEFUL") !== (organizationId != null)) throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "供应主体只能申请受控退场，紧急撤权仅限 Root 管理员。 ");
+      if (input.mode !== "GRACEFUL" && input.mode !== "EMERGENCY") throw new ExchangeInputError("设备退场模式无效。", "mode");
+      if (!Number.isSafeInteger(input.expectedDeviceVersion) || input.expectedDeviceVersion < 1) throw new ExchangeInputError("设备版本无效。", "expectedDeviceVersion");
+      if (!DEVICE_RETIREMENT_REASON_CODES.includes(input.reasonCode as typeof DEVICE_RETIREMENT_REASON_CODES[number])) throw new ExchangeInputError("设备退场原因代码无效。", "reasonCode");
+      const allowedReasonCodes = input.mode === "GRACEFUL"
+        ? new Set(["SUPPLIER_REQUEST", "HARDWARE_FAILURE", "OWNERSHIP_CHANGE"])
+        : new Set(["SECURITY_INCIDENT", "POLICY_VIOLATION", "ADMIN_EMERGENCY"]);
+      if (!allowedReasonCodes.has(input.reasonCode)) throw new ExchangeInputError("设备退场模式与原因代码不匹配。", "reasonCode");
+      const reason = input.reason.normalize("NFKC").trim();
+      if (!/[\p{L}\p{N}]/u.test(reason) || reason.length < 8 || reason.length > 500) throw new ExchangeInputError("设备退场原因应为 8–500 个字符。", "reason");
+      const evidenceDigest = input.evidenceDigest?.trim().toLowerCase() || null;
+      if (evidenceDigest && !/^[a-f0-9]{64}$/u.test(evidenceDigest)) throw new ExchangeInputError("设备退场证据仅接受 64 位 SHA-256 摘要。", "evidenceDigest");
+      if (input.mode === "EMERGENCY" && !evidenceDigest) throw new ExchangeInputError("紧急撤权必须提交证据 SHA-256 摘要。", "evidenceDigest");
+
+      const replayed = await replay(db, context, "REQUEST_DEVICE_RETIREMENT");
+      if (replayed) {
+        const [retirementRow, deviceRow] = await Promise.all([
+          db.first<Row>("SELECT * FROM hosting_v2_device_retirements WHERE id=?", [replayed.entityId]),
+          db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=?", [deviceId]),
+        ]);
+        if (!retirementRow || !deviceRow || value(retirementRow, "device_id") !== deviceId
+          || (organizationId != null && value(retirementRow, "organization_id") !== organizationId)) {
+          throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "设备退场记录不存在。 ");
+        }
+        return { retirement: deviceRetirement(retirementRow), device: device(deviceRow) };
+      }
+
+      const current = organizationId == null
+        ? await db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=?", [deviceId])
+        : await db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=? AND organization_id=?", [deviceId, organizationId]);
+      if (!current) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "设备不存在或不属于当前供应主体。 ");
+      if (number(current, "version") !== input.expectedDeviceVersion) throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT", 409, "设备状态已变化，请刷新后重试。 ");
+      if (value(current, "status") === "REVOKED") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备凭据已经撤销。 ");
+      if (await db.first<Row>("SELECT id FROM hosting_v2_device_retirements WHERE device_id=?", [deviceId])) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备已经进入退场流程。 ");
+
+      const activeContract = await db.first<Row>(`SELECT id,status FROM hosting_v2_contracts
+        WHERE device_id=? AND status NOT IN ('CANCELLED','CLEANED','REFUNDED') ORDER BY created_at LIMIT 1`, [deviceId]);
+      if (input.mode === "GRACEFUL" && activeContract) {
+        throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备仍有未完成合同，请先停止服务并完成验收、退款或清理。 ");
+      }
+
+      const retirementId = id("hdrt");
+      const retirementStatus = input.mode === "EMERGENCY" ? "MANUAL_ACTION_REQUIRED" : "DRAINING";
+      const organizationGuard = organizationId == null ? "" : " AND organization_id=?";
+      const insertValues: unknown[] = [retirementId, input.mode, retirementStatus, input.reasonCode, reason, evidenceDigest, context.actorId, context.now, deviceId, input.expectedDeviceVersion];
+      if (organizationId != null) insertValues.push(organizationId);
+      const statements: HostingV2Sql[] = [
+        { sql: `INSERT INTO hosting_v2_device_retirements(
+            id,device_id,organization_id,mode,status,reason_code,reason,evidence_digest,requested_by,requested_at,version)
+          SELECT ?,id,organization_id,?,?,?,?,?,?,?,1 FROM hosting_v2_devices
+          WHERE id=? AND version=? AND status!='REVOKED'${organizationGuard}
+            ${input.mode === "GRACEFUL" ? "AND NOT EXISTS(SELECT 1 FROM hosting_v2_contracts c WHERE c.device_id=hosting_v2_devices.id AND c.status NOT IN ('CANCELLED','CLEANED','REFUNDED'))" : ""}`, values: insertValues },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        { sql: `UPDATE hosting_v2_devices SET status=?,verification_status='EXPIRED',verified_until=NULL,version=version+1,updated_at=?
+          WHERE id=? AND version=? AND status!='REVOKED'`, values: [input.mode === "EMERGENCY" ? "REVOKED" : "DRAINING", context.now, deviceId, input.expectedDeviceVersion] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        { sql: "UPDATE hosting_v2_offers SET status='SUSPENDED',version=version+1,updated_at=? WHERE device_id=? AND status IN ('DRAFT','PUBLISHED','RESERVED','PAUSED')", values: [context.now, deviceId] },
+      ];
+      if (input.mode === "EMERGENCY") {
+        statements.push({ sql: `UPDATE hosting_v2_agent_commands SET status='FAILED',error_code='DEVICE_CREDENTIAL_REVOKED',completed_at=?
+          WHERE device_id=? AND status IN ('PENDING','DELIVERED')`, values: [context.now, deviceId] });
+      } else {
+        statements.push({ sql: `UPDATE hosting_v2_agent_commands SET status='FAILED',error_code='DEVICE_RETIREMENT_REQUESTED',completed_at=?
+          WHERE device_id=? AND command_type IN ('VERIFY','PROVISION','START') AND status IN ('PENDING','DELIVERED')`, values: [context.now, deviceId] });
+      }
+      statements.push(
+        event(context, value(current, "organization_id"), "DEVICE", deviceId, "DEVICE_RETIREMENT_REQUESTED", { retirementId, mode: input.mode, reasonCode: input.reasonCode }),
+      );
+      if (input.mode === "EMERGENCY") statements.push(event(context, value(current, "organization_id"), "DEVICE", deviceId, "DEVICE_CREDENTIAL_REVOKED", { retirementId, reasonCode: input.reasonCode }));
+      statements.push(receipt(context, "REQUEST_DEVICE_RETIREMENT", "DEVICE_RETIREMENT", retirementId));
+      try {
+        await db.batch(statements);
+      } catch (error) {
+        const raceReplay = await replay(db, context, "REQUEST_DEVICE_RETIREMENT");
+        if (raceReplay) {
+          const [raceRetirement, raceDevice] = await Promise.all([
+            db.first<Row>("SELECT * FROM hosting_v2_device_retirements WHERE id=?", [raceReplay.entityId]),
+            db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=?", [deviceId]),
+          ]);
+          if (raceRetirement && raceDevice && value(raceRetirement, "device_id") === deviceId) return { retirement: deviceRetirement(raceRetirement), device: device(raceDevice) };
+        }
+        if (await db.first<Row>("SELECT id FROM hosting_v2_device_retirements WHERE device_id=?", [deviceId])) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备已经进入退场流程。 ");
+        const latestDevice = await db.first<Row>("SELECT version FROM hosting_v2_devices WHERE id=?", [deviceId]);
+        if (latestDevice && number(latestDevice, "version") !== input.expectedDeviceVersion) throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT", 409, "设备状态已变化，请刷新后重试。 ");
+        throw error;
+      }
+      const [retirementRow, deviceRow] = await Promise.all([
+        db.first<Row>("SELECT * FROM hosting_v2_device_retirements WHERE id=?", [retirementId]),
+        db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=?", [deviceId]),
+      ]);
+      if (!retirementRow || !deviceRow) throw new Error("HOSTING_DEVICE_RETIREMENT_REQUEST_FAILED");
+      return { retirement: deviceRetirement(retirementRow), device: device(deviceRow) };
+    },
+
+    async finalizeDeviceRetirement(deviceId, input, context) {
+      if (!Number.isSafeInteger(input.expectedDeviceVersion) || input.expectedDeviceVersion < 1
+        || !Number.isSafeInteger(input.expectedRetirementVersion) || input.expectedRetirementVersion < 1) {
+        throw new ExchangeInputError("设备或退场记录版本无效。", "expectedVersion");
+      }
+      const evidenceDigest = input.evidenceDigest.trim().toLowerCase();
+      if (!/^[a-f0-9]{64}$/u.test(evidenceDigest)) throw new ExchangeInputError("退场完成证据仅接受 64 位 SHA-256 摘要。", "evidenceDigest");
+      const finalizationReason = input.finalizationReason.normalize("NFKC").trim();
+      if (!/[\p{L}\p{N}]/u.test(finalizationReason) || finalizationReason.length < 8 || finalizationReason.length > 500) throw new ExchangeInputError("退场完成说明应为 8–500 个字符。", "finalizationReason");
+
+      const replayed = await replay(db, context, "FINALIZE_DEVICE_RETIREMENT");
+      if (replayed) {
+        const [retirementRow, deviceRow] = await Promise.all([
+          db.first<Row>("SELECT * FROM hosting_v2_device_retirements WHERE id=?", [replayed.entityId]),
+          db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=?", [deviceId]),
+        ]);
+        if (!retirementRow || !deviceRow || value(retirementRow, "device_id") !== deviceId) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "设备退场记录不存在。 ");
+        return { retirement: deviceRetirement(retirementRow), device: device(deviceRow) };
+      }
+
+      const retirementRow = await db.first<Row>("SELECT * FROM hosting_v2_device_retirements WHERE device_id=?", [deviceId]);
+      const deviceRow = await db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=?", [deviceId]);
+      if (!retirementRow || !deviceRow) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "设备退场记录不存在。 ");
+      if (number(retirementRow, "version") !== input.expectedRetirementVersion || number(deviceRow, "version") !== input.expectedDeviceVersion) throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT", 409, "设备退场状态已变化，请刷新后重试。 ");
+      if (!["DRAINING", "MANUAL_ACTION_REQUIRED"].includes(value(retirementRow, "status"))) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备退场已经完成。 ");
+      if (nullable(retirementRow, "evidence_digest") && nullable(retirementRow, "evidence_digest") !== evidenceDigest) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "退场证据摘要与已登记证据不一致。 ");
+      const [activeContract, activeCommand] = await Promise.all([
+        db.first<Row>("SELECT id FROM hosting_v2_contracts WHERE device_id=? AND status NOT IN ('CANCELLED','CLEANED','REFUNDED') LIMIT 1", [deviceId]),
+        db.first<Row>("SELECT id FROM hosting_v2_agent_commands WHERE device_id=? AND status IN ('PENDING','DELIVERED') LIMIT 1", [deviceId]),
+      ]);
+      if (activeContract || activeCommand) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备仍有关联合同或待执行命令，不能完成退场。 ");
+
+      const statements: HostingV2Sql[] = [
+        { sql: `UPDATE hosting_v2_devices SET status='REVOKED',verification_status='EXPIRED',verified_until=NULL,version=version+1,updated_at=?
+          WHERE id=? AND version=? AND status IN ('DRAINING','REVOKED')`, values: [context.now, deviceId, input.expectedDeviceVersion] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        { sql: `UPDATE hosting_v2_device_retirements SET status='FINALIZED',evidence_digest=COALESCE(evidence_digest,?),finalized_by=?,finalized_at=?,version=version+1
+          WHERE id=? AND device_id=? AND version=? AND status IN ('DRAINING','MANUAL_ACTION_REQUIRED')
+            AND (evidence_digest IS NULL OR evidence_digest=?)
+            AND NOT EXISTS(SELECT 1 FROM hosting_v2_contracts c WHERE c.device_id=? AND c.status NOT IN ('CANCELLED','CLEANED','REFUNDED'))
+            AND NOT EXISTS(SELECT 1 FROM hosting_v2_agent_commands cmd WHERE cmd.device_id=? AND cmd.status IN ('PENDING','DELIVERED'))`,
+          values: [evidenceDigest, context.actorId, context.now, value(retirementRow, "id"), deviceId, input.expectedRetirementVersion, evidenceDigest, deviceId, deviceId] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        { sql: "UPDATE hosting_v2_offers SET status='SUSPENDED',version=version+1,updated_at=? WHERE device_id=? AND status IN ('DRAFT','PUBLISHED','RESERVED','PAUSED')", values: [context.now, deviceId] },
+      ];
+      if (value(retirementRow, "mode") === "GRACEFUL") statements.push(event(context, value(retirementRow, "organization_id"), "DEVICE", deviceId, "DEVICE_CREDENTIAL_REVOKED", { retirementId: value(retirementRow, "id") }));
+      statements.push(
+        event(context, value(retirementRow, "organization_id"), "DEVICE", deviceId, "DEVICE_RETIREMENT_FINALIZED", { retirementId: value(retirementRow, "id"), finalizationReason }),
+        receipt(context, "FINALIZE_DEVICE_RETIREMENT", "DEVICE_RETIREMENT", value(retirementRow, "id")),
+      );
+      try {
+        await db.batch(statements);
+      } catch (error) {
+        const raceReplay = await replay(db, context, "FINALIZE_DEVICE_RETIREMENT");
+        if (raceReplay) {
+          const [raceRetirement, raceDevice] = await Promise.all([
+            db.first<Row>("SELECT * FROM hosting_v2_device_retirements WHERE id=?", [raceReplay.entityId]),
+            db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=?", [deviceId]),
+          ]);
+          if (raceRetirement && raceDevice && value(raceRetirement, "device_id") === deviceId) return { retirement: deviceRetirement(raceRetirement), device: device(raceDevice) };
+        }
+        const latestRetirement = await db.first<Row>("SELECT status,version FROM hosting_v2_device_retirements WHERE device_id=?", [deviceId]);
+        if (latestRetirement && value(latestRetirement, "status") === "FINALIZED") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备退场已经完成。 ");
+        throw error;
+      }
+      const [finalRetirement, finalDevice] = await Promise.all([
+        db.first<Row>("SELECT * FROM hosting_v2_device_retirements WHERE id=?", [value(retirementRow, "id")]),
+        db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=?", [deviceId]),
+      ]);
+      if (!finalRetirement || !finalDevice) throw new Error("HOSTING_DEVICE_RETIREMENT_FINALIZE_FAILED");
+      return { retirement: deviceRetirement(finalRetirement), device: device(finalDevice) };
     },
 
     async acceptHeartbeat(deviceId, input, context) {

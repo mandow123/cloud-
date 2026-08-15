@@ -423,6 +423,22 @@ export async function beginKaiIdentityLogin(request: Request, options: { env?: E
   return { location: authorization.toString(), transactionCookie: transactionCookie(request, await sealTransaction(transaction, config.secret), TRANSACTION_MAX_AGE_SECONDS, env) };
 }
 
+export async function kaiIdentityTransactionReturnTo(
+  request: Request,
+  options: { env?: Environment; now?: Date } = {},
+) {
+  try {
+    const env = options.env ?? environment();
+    const config = oidcConfiguration(env);
+    const cookieName = secureRequest(request, env) ? SECURE_TRANSACTION_COOKIE : DEVELOPMENT_TRANSACTION_COOKIE;
+    const sealed = cookieValue(request, cookieName);
+    if (!sealed) return "/member";
+    return (await openTransaction(sealed, config.secret, options.now ?? new Date())).returnTo;
+  } catch {
+    return "/member";
+  }
+}
+
 export async function completeKaiIdentityLogin(request: Request, options: { env?: Environment; fetcher?: typeof fetch; store?: AccountAuthStore; now?: Date } = {}): Promise<KaiIdentityCompletion> {
   const env = options.env ?? environment();
   const config = oidcConfiguration(env);

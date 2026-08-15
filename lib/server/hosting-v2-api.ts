@@ -5,7 +5,7 @@ import type { HostingMutationContext } from "./hosting-v2-store.ts";
 import { HOSTING_V2_AGENT_STALE_SECONDS, hostingActualFeeBreakdown, type HostingContract, type HostingContractEvidence, type HostingDevice, type HostingOffer } from "../hosting-v2.ts";
 import type { SupplierDeviceTask, SupplierDeviceWorkspace, SupplierDeviceWorkspaceRow, SupplierDeviceWorkspaceState } from "../hosting-v2-client.ts";
 
-export { requireHostingV2Enabled, requireHostingV2SetupEnabled } from "./hosting-v2-feature.ts";
+export { requireHostingV2DeviceRetirementEnabled, requireHostingV2Enabled, requireHostingV2SetupEnabled } from "./hosting-v2-feature.ts";
 
 export function hostingObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new AccountAuthError("HOSTING_VALIDATION_ERROR", 400, "提交内容必须是对象。 ");

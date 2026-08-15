@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import {
   formatCnyMicros,
   formatKaiDateTime,
-  formatKaiDecimal,
+  formatKaiSchDisplay,
   parseKaiStandardQuoteEnvelope,
   quotePresentationState,
   snapshotIsExpired,
@@ -114,9 +114,9 @@ export function KaiStandardMarket() {
                         <tr key={`${quote.productCode}:${quote.productVersionId}:${quote.region}:${quote.nativeUnitCode}`}>
                           <th scope="row">{quote.productLabel}<span className={styles.secondaryValue}>{quote.region} · {quote.productCode} · 版本 {quote.productVersionId}</span></th>
                           <td><span className={styles.primaryValue}>1 {quote.nativeUnitLabel}</span><span className={styles.secondaryValue}>{quote.nativeUnitCode}</span></td>
-                          <td><span className={styles.primaryValue}>{formatKaiDecimal(quote.p25KaiSch)} KAI-SCH</span></td>
-                          <td><span className={styles.primaryValue}>{formatKaiDecimal(quote.p50KaiSch)} KAI-SCH</span></td>
-                          <td><span className={styles.primaryValue}>{formatKaiDecimal(quote.p75KaiSch)} KAI-SCH</span></td>
+                          <td><span className={styles.primaryValue}>{formatKaiSchDisplay(quote.p25KaiSch)} KAI-SCH</span></td>
+                          <td><span className={styles.primaryValue}>{formatKaiSchDisplay(quote.p50KaiSch)} KAI-SCH</span></td>
+                          <td><span className={styles.primaryValue}>{formatKaiSchDisplay(quote.p75KaiSch)} KAI-SCH</span></td>
                           <td>{quote.sampleCount.toLocaleString("zh-CN")} 条<span className={styles.secondaryValue}>{formatKaiDateTime(quote.asOf)}</span>{quoteStale && <span className={styles.staleTag}>已过期</span>}</td>
                         </tr>
                       );
@@ -143,7 +143,7 @@ export function KaiStandardMarket() {
               <div className={styles.actions}>
                 <Link className={styles.primaryLink} href="/market/listings">购买在售资源</Link>
                 <Link className={styles.secondaryLink} href="/buyer/orders">我的采购订单</Link>
-                <Link className={styles.secondaryLink} href="/request?mode=rental">发布采购需求</Link>
+                <Link className={styles.secondaryLink} href="/request?mode=rental">提交算力需求</Link>
                 <Link className={styles.secondaryLink} href="/supply/new">登记可售容量</Link>
               </div>
             </aside>

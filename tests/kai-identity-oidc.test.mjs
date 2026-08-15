@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { AccountAuthError, resolveAccountSession } from "../lib/server/account-auth.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
-import { beginKaiIdentityLogin, clearKaiIdentityTransactionCookie, completeKaiIdentityLogin, KAI_IDENTITY_DISCOVERY, KAI_IDENTITY_ISSUER, KAI_IDENTITY_MODERN_DISCOVERY, KAI_IDENTITY_MODERN_ISSUER, probeKaiIdentityDiscovery } from "../lib/server/kai-identity-oidc.ts";
+import { beginKaiIdentityLogin, clearKaiIdentityTransactionCookie, completeKaiIdentityLogin, kaiIdentityTransactionReturnTo, KAI_IDENTITY_DISCOVERY, KAI_IDENTITY_ISSUER, KAI_IDENTITY_MODERN_DISCOVERY, KAI_IDENTITY_MODERN_ISSUER, probeKaiIdentityDiscovery } from "../lib/server/kai-identity-oidc.ts";
 import { readFileSync } from "node:fs";
 
 const encoder = new TextEncoder();
@@ -357,7 +357,15 @@ test("the browser login entry returns safely to the login page instead of exposi
 test("KAI Identity rejects a callback whose state does not match the sealed transaction", async () => {
   const { env, now, started, fetcher } = await fixture();
   const callback = new Request("http://localhost:3014/api/auth/kai/callback?code=one-time-code&state=wrong", { headers: { cookie: started.transactionCookie.split(";", 1)[0] } });
+  assert.equal(await kaiIdentityTransactionReturnTo(callback, { env, now }), "/member?view=wallet");
   await assert.rejects(completeKaiIdentityLogin(callback, { env, now, fetcher }), (error) => error instanceof AccountAuthError && error.code === "OIDC_STATE_INVALID");
+});
+
+test("the callback error redirect preserves the sealed safe return target", () => {
+  const route = readFileSync(new URL("../app/api/auth/kai/callback/route.ts", import.meta.url), "utf8");
+  assert.match(route, /kaiIdentityTransactionReturnTo\(request\)/u);
+  assert.match(route, /new URLSearchParams\(\{ returnTo, authError: code \}\)/u);
+  assert.match(route, /clearKaiIdentityTransactionCookie\(request\)/u);
 });
 
 test("production canonical HTTPS origin keeps the OIDC transaction cookie Secure behind a trusted proxy", async () => {

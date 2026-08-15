@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { isHostingSupplierProfileReady, type HostingSupplierProfile } from "@/lib/hosting-v2";
 import type { SupplierHostingDashboard } from "@/lib/hosting-v2-client";
 import { marketplaceErrorMessage, marketplaceGet } from "@/lib/client/marketplace-client";
+import { formatCardHourDisplayMicros } from "@/lib/card-hours";
 import styles from "./supply-console.module.css";
 
 const profileLabels: Record<HostingSupplierProfile["status"], string> = {
@@ -23,10 +24,7 @@ const profileBadgeClass: Partial<Record<HostingSupplierProfile["status"], string
 };
 
 function cardHours(micros: number) {
-  if (!Number.isSafeInteger(micros) || micros < 0) return "—";
-  const whole = Math.floor(micros / 1_000_000);
-  const fraction = String(micros % 1_000_000).padStart(6, "0").replace(/0+$/u, "");
-  return fraction ? `${whole}.${fraction}` : String(whole);
+  try { return formatCardHourDisplayMicros(micros); } catch { return "—"; }
 }
 
 function dateTime(value: string | null) {

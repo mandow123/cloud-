@@ -20,7 +20,7 @@ export default function HostingEarningsPage() {
         {[
           ["参考换算", "1 KAI = ¥1.002", "人民币仅作固定参考展示"],
           ["计量精度", "按秒", "最低租用三分钟"],
-          ["账本精度", "0.000001 KAI", "整数微卡时计算"],
+          ["页面精度", "0.01 KAI", "所有卡时金额统一显示两位"],
           ["扣减方式", "先锁定后结算", "余量释放或退款"],
         ].map(([term, value, note]) => <div className={styles.metric} key={term}><dt>{term}</dt><dd>{value}<small>{note}</small></dd></div>)}
       </dl>
@@ -29,7 +29,7 @@ export default function HostingEarningsPage() {
         <SectionHeader index="01 / FORMULA" title="实际用量如何计算" lead="订单成交时冻结卡时单价和费率版本，供应方后来改价不影响既有合同。" />
         <div className={styles.formula}>
           <code>实际扣减 = 向上取整（每 GPU 小时卡时价 × GPU 数量 × 实际秒数 ÷ 3600）</code>
-          <p>所有运算使用整数微卡时；不足 0.000001 KAI 标准卡时的部分向上取整。网站价 ¥31.20 的 H100 订单按固定参考换算为 31.137725 KAI 标准卡时。</p>
+          <p>所有运算仍使用整数微卡时精确记账，页面统一四舍五入显示两位。网站价 ¥31.20 的 H100 订单按固定参考换算后显示为 31.14 KAI 标准卡时。</p>
         </div>
       </section>
 

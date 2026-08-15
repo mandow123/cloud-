@@ -1,5 +1,5 @@
 import { AccountAuthError } from "@/lib/server/account-auth";
-import { clearKaiIdentityTransactionCookie, completeKaiIdentityLogin } from "@/lib/server/kai-identity-oidc";
+import { clearKaiIdentityTransactionCookie, completeKaiIdentityLogin, kaiIdentityTransactionReturnTo } from "@/lib/server/kai-identity-oidc";
 
 export const dynamic = "force-dynamic";
 
@@ -12,9 +12,10 @@ export async function GET(request: Request) {
     return new Response(null, { status: 303, headers });
   } catch (error) {
     const code = error instanceof AccountAuthError ? error.code : "KAI_IDENTITY_LOGIN_FAILED";
+    const returnTo = await kaiIdentityTransactionReturnTo(request);
     const headers = new Headers({
       "cache-control": "no-store",
-      location: `/login?authError=${encodeURIComponent(code)}`,
+      location: `/login?${new URLSearchParams({ returnTo, authError: code })}`,
     });
     headers.append("set-cookie", clearKaiIdentityTransactionCookie(request));
     return new Response(null, { status: 303, headers });

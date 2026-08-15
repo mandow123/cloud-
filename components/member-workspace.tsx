@@ -533,7 +533,7 @@ function BuyerRequests({
         <SectionIntro kicker="Buyer / Requests" title="购买申请与需求" description="登录后只显示当前交易主体创建的购买申请与需求；界面不会用预置记录替代加载或错误状态。" />
       </div>
       <CollectionStatus collection={collection} label="需求" onLoadMore={onLoadMore} onRetry={onRetry} />
-      {collection.status === "ready" && requests.length === 0 ? <EmptyState action="发布一条需求" description="当前会话还没有已发布需求。" href="/request" /> : null}
+      {collection.status === "ready" && requests.length === 0 ? <EmptyState action="提交一条需求" description="当前会话还没有已提交需求。" href="/request" /> : null}
       {requests.length > 0 ? <div className="grid gap-5 lg:grid-cols-2">
         {requests.map((request) => (
           <article className="border-t-2 border-[var(--accent)] bg-[var(--surface)] p-5" key={request.id}>
@@ -680,7 +680,7 @@ function MatchedDemands({
     <section aria-labelledby="matched-demands-title">
       <div id="matched-demands-title"><SectionIntro kicker="Supplier / Matching" title="可响应需求" description="来自服务器的匿名业务字段；不包含联系人或公司资料。" /></div>
       <CollectionStatus collection={collection} label="可响应需求" onLoadMore={onLoadMore} onRetry={onRetry} />
-      {collection.status === "ready" && requests.length === 0 ? <EmptyState action="发布一条需求" description="当前没有可响应的匿名市场需求。" href="/request" /> : null}
+      {collection.status === "ready" && requests.length === 0 ? <EmptyState action="提交一条需求" description="当前没有可响应的匿名市场需求。" href="/request" /> : null}
       {requests.length > 0 ? <div className="data-table-wrap">
         <table className="data-table">
           <caption className="sr-only">供应方匹配需求</caption>

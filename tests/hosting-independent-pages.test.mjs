@@ -80,7 +80,8 @@ test("hosting public styles use the shared light and dark design tokens", () => 
 
   const earnings = readFileSync("app/hosting/earnings/page.tsx", "utf8");
   assert.match(earnings, /¥31\.20/u);
-  assert.match(earnings, /31\.137725 KAI 标准卡时/u);
+  assert.match(earnings, /31\.14 KAI 标准卡时/u);
+  assert.doesNotMatch(earnings, /31\.137725 KAI 标准卡时/u);
 });
 
 test("hosting landing is a live front-to-back control plane instead of a static brochure", () => {

@@ -4,11 +4,31 @@ export const CARD_HOUR_TOPUP_BLOCK_MICROS = 5 * CARD_HOUR_MICROS;
 export const CARD_HOUR_TOPUP_BLOCK_CENTS = 501;
 export const CARD_HOUR_MAX_TOPUP = Math.floor(100_000_000 / CARD_HOUR_TOPUP_BLOCK_CENTS) * 5;
 
+const CARD_HOUR_DISPLAY_SCALE = 100n;
+const CARD_HOUR_DISPLAY_MICROS = BigInt(CARD_HOUR_MICROS) / CARD_HOUR_DISPLAY_SCALE;
+
+function groupedInteger(value: bigint) {
+  return value.toString().replace(/\B(?=(\d{3})+(?!\d))/gu, ",");
+}
+
 export function formatCardHourMicros(value: number) {
   if (!Number.isSafeInteger(value) || value < 0) throw new Error("CARD_HOUR_AMOUNT_INVALID");
   const whole = Math.floor(value / CARD_HOUR_MICROS);
   const fraction = String(value % CARD_HOUR_MICROS).padStart(6, "0").replace(/0+$/u, "");
   return fraction ? `${whole}.${fraction}` : String(whole);
+}
+
+export function formatCardHourDisplayMicros(value: number) {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error("CARD_HOUR_AMOUNT_INVALID");
+  const hundredths = (BigInt(value) + CARD_HOUR_DISPLAY_MICROS / 2n) / CARD_HOUR_DISPLAY_MICROS;
+  const whole = hundredths / CARD_HOUR_DISPLAY_SCALE;
+  const fraction = (hundredths % CARD_HOUR_DISPLAY_SCALE).toString().padStart(2, "0");
+  return `${groupedInteger(whole)}.${fraction}`;
+}
+
+export function formatCardHourValue(value: number) {
+  if (!Number.isFinite(value) || value < 0) throw new Error("CARD_HOUR_AMOUNT_INVALID");
+  return value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export function parseTopupCardHours(value: unknown) {

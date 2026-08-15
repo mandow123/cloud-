@@ -1,4 +1,4 @@
-import { formatKaiDateTime, formatKaiDecimal } from "@/lib/kai-standard-view-models";
+import { formatKaiDateTime, formatKaiDecimal, formatKaiSchDisplay } from "@/lib/kai-standard-view-models";
 import styles from "./kai-standard-pages.module.css";
 
 export type KaiStandardEquivalentLineProps = Readonly<{
@@ -29,7 +29,7 @@ export function KaiStandardEquivalentLine({
       </div>
       <div>
         <dt>{label}</dt>
-        <dd>{formatKaiDecimal(kaiSchAmount)} KAI-SCH</dd>
+        <dd>{formatKaiSchDisplay(kaiSchAmount)} KAI-SCH</dd>
         <small>只用于同一时点比较</small>
       </div>
       <div>

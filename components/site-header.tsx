@@ -15,8 +15,11 @@ export function SiteHeader() {
         <NavLinks />
         <div className="header-actions">
           <ThemeControl />
-          <Link className="button button-primary button-compact" href="/request">
-            发布算力需求
+          <Link className="button button-primary button-compact" href="/buy">
+            购买算力
+          </Link>
+          <Link className="button button-secondary button-compact" href="/request">
+            提交算力需求
           </Link>
           <PersonalMenu />
         </div>

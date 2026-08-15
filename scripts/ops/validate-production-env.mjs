@@ -157,6 +157,10 @@ export function validateProductionEnvironment(environment = process.env, { check
   if (environment.KAI_ALIPAY_ENABLED !== "0") errors.push("KAI_ALIPAY_ENABLED must remain exactly 0 during the trial rollout");
   if (environment.KAI_HOSTING_V2 !== "0" && environment.KAI_HOSTING_V2 !== "1") errors.push("KAI_HOSTING_V2 must be exactly 0 or 1");
   if (environment.KAI_HOSTING_V2_SETUP !== "0" && environment.KAI_HOSTING_V2_SETUP !== "1") errors.push("KAI_HOSTING_V2_SETUP must be exactly 0 or 1");
+  if (environment.KAI_HOSTING_DEVICE_RETIREMENT !== "0" && environment.KAI_HOSTING_DEVICE_RETIREMENT !== "1") errors.push("KAI_HOSTING_DEVICE_RETIREMENT must be exactly 0 or 1");
+  if (environment.KAI_HOSTING_DEVICE_RETIREMENT === "1" && environment.KAI_HOSTING_V2_SETUP !== "1" && environment.KAI_HOSTING_V2 !== "1") {
+    errors.push("KAI_HOSTING_DEVICE_RETIREMENT requires Hosting V2 setup or trading to be enabled");
+  }
   if (environment.KAI_HOSTING_V2 === "1" || environment.KAI_HOSTING_V2_SETUP === "1") {
     const rootUsername = environment.KAI_ADMIN_USERNAME ?? "";
     if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(rootUsername)) {
@@ -215,6 +219,7 @@ export function validateProductionEnvironment(environment = process.env, { check
     hstsEnabled: environment.KAI_ENABLE_HSTS === "1",
     hostingV2Enabled: environment.KAI_HOSTING_V2 === "1",
     hostingV2SetupEnabled: environment.KAI_HOSTING_V2_SETUP === "1" || environment.KAI_HOSTING_V2 === "1",
+    hostingDeviceRetirementEnabled: environment.KAI_HOSTING_DEVICE_RETIREMENT === "1",
     alipayEnabled: false,
     dbDirectory: environment.KAI_DB_DIR,
     marketDirectory: environment.KAI_MARKET_DATA_DIR,

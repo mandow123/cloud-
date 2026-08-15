@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     if (!write.admin.principal.roles.includes("ROOT")) throw new AccountAuthError("CARD_HOUR_GRANT_REQUEST_ROLE_REQUIRED", 403, "试运营卡时申请必须由 Root 管理员发起。 ");
     for (const field of ["requestedBy", "approvedBy", "status", "amountMicros", "payloadHash"]) if (field in write.body) throw new AccountAuthError("CARD_HOUR_ADMIN_FIELD_FORBIDDEN", 400, `${field} 只能由服务端生成。 `);
     const cardHours = write.body.cardHours;
-    if (!Number.isSafeInteger(cardHours) || Number(cardHours) < 1 || Number(cardHours) > 1_000_000) throw new AccountAuthError("CARD_HOUR_ADMIN_INPUT_INVALID", 400, "试运营发放数量必须是 1–1,000,000 的整数卡时。 ");
+    if (!Number.isSafeInteger(cardHours) || Number(cardHours) < 1 || Number(cardHours) > 1_000_000) throw new AccountAuthError("CARD_HOUR_ADMIN_INPUT_INVALID", 400, "试运营发放数量必须是 1.00–1,000,000.00 的整数卡时。 ");
     const organizationId = requiredText(write.body, "organizationId", 3, 200);
     const organization = await (await getAccountAuthStore()).getOrganization(organizationId);
     if (!organization || organization.status !== "ACTIVE" || organization.externalKey === "KAI:CLOUD:ROOT") throw new AccountAuthError("CARD_HOUR_GRANT_ORGANIZATION_NOT_FOUND", 404, "目标用户组织不存在或当前不可用。 ");
