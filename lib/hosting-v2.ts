@@ -71,7 +71,7 @@ const HOSTING_DEFAULT_PLATFORM_FEE_TIERS = [
 export const HOSTING_SUPPLIER_TYPES = ["INDIVIDUAL", "COMPANY", "IDC", "CLOUD_VENDOR"] as const;
 export type HostingSupplierType = (typeof HOSTING_SUPPLIER_TYPES)[number];
 
-export const HOSTING_GPU_MODELS = ["RTX_4090", "H100_80GB"] as const;
+export const HOSTING_GPU_MODELS = ["RTX_4090", "H100_80GB", "H100_94GB"] as const;
 export type HostingGpuModel = (typeof HOSTING_GPU_MODELS)[number];
 
 export type HostingSupplierProfile = Readonly<{

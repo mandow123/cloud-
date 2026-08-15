@@ -90,7 +90,7 @@ function seedDevice(db, { status, verificationStatus = "PASSED", deviceId = "had
     "Retirement Bridge 4090",
     `sha256:${"3".repeat(64)}`,
     "A".repeat(43),
-    "1.9.6",
+    "1.9.7",
     JSON.stringify(inventory()),
     `sha256:${"4".repeat(64)}`,
     status,

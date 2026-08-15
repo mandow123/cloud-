@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../guides.module.css";
 
-const HOST_AGENT_VERSION = "1.9.6";
+const HOST_AGENT_VERSION = "1.9.7";
 const AGENT_VERSION = HOST_AGENT_VERSION;
 const ARCHIVE = `kai-host-agent-${AGENT_VERSION}.tgz`;
 
@@ -36,7 +36,7 @@ export default function HostAgentGuidePage() {
         <section>
           <div className={styles.sectionLabel}>01 · REQUIREMENTS</div>
           <h2>准备一台首期支持的主机</h2>
-          <p className={styles.lead}>首期只接受 Ubuntu 上的单张 RTX 4090 或单张 H100，禁止 MIG 和多租户切片。机器必须具备 NVIDIA 驱动、Docker Engine、NVIDIA Container Toolkit、稳定公网地址和最多 200 个预留端口。</p>
+          <p className={styles.lead}>首期每个 Agent 只托管一张 RTX 4090 或 H100，禁止 MIG 和多租户切片。多卡服务器必须先用 `nvidia-smi` 明确选择一张物理卡；其余 GPU 不会被 Agent 使用。机器必须具备 NVIDIA 驱动、Docker Engine、NVIDIA Container Toolkit、稳定公网地址和最多 200 个预留端口。</p>
           <div className={styles.note}><strong>不会在普通云服务器上假装 GPU</strong><p>安装器会检查 `nvidia-smi`、Docker Unix Socket、Node.js 和 systemd；缺失任意一项都会退出，不会登记虚假设备。</p></div>
         </section>
 
@@ -50,7 +50,7 @@ export default function HostAgentGuidePage() {
         <section>
           <div className={styles.sectionLabel}>03 · PREFLIGHT & INSTALL</div>
           <h2>先做只读体检，再安装受限服务</h2>
-          <Command>{`sudo node ./src/preflight.mjs \\\n  --public-host "gpu.example.com" \\\n  --ssh-port-start "22000" \\\n  --ssh-port-end "22019" \\\n  --storage-path "/var/lib"\nsudo ./install.sh\nsudo -u kai-host-agent -- kai-host-agent doctor \\\n  --public-host "gpu.example.com" \\\n  --ssh-port-start "22000" \\\n  --ssh-port-end "22019"`}</Command>
+          <Command>{`nvidia-smi --query-gpu=uuid,name,memory.total --format=csv,noheader\nsudo node ./src/preflight.mjs \\\n  --public-host "gpu.example.com" \\\n  --ssh-port-start "22000" \\\n  --ssh-port-end "22019" \\\n  --gpu-uuid "GPU-从上一条命令复制" \\\n  --storage-path "/var/lib"\nsudo ./install.sh\nsudo -u kai-host-agent -- kai-host-agent doctor \\\n  --public-host "gpu.example.com" \\\n  --ssh-port-start "22000" \\\n  --ssh-port-end "22019" \\\n  --gpu-uuid "GPU-同一张物理卡"`}</Command>
           <p>体检不安装服务、不改配置，也不会启动容器；它只检查 Ubuntu、系统级 Node.js、单卡 GPU、Docker NVIDIA Runtime、可用容量和整段本机端口。输出中的 `controlPlaneReachability: PENDING` 是正常的，公网入口必须等配对后由 Cloud 发起一次性挑战复验。安装完成时，只有本机 root Actuator 会启动；联网的 Host Agent 仍保持停止。</p>
         </section>
 
@@ -62,14 +62,14 @@ export default function HostAgentGuidePage() {
             <li><span>2</span><div><h3>签发配对内容</h3><p>在“资源 → 登记新资源”签发一次性 JSON。它只在五分钟内有效，成功注册后立即失效。</p></div></li>
             <li><span>3</span><div><h3>通过私有文件配对</h3><p>把 JSON 放进 Agent 专属目录并设为 `0600`。Agent 会拒绝相对路径、软链接、其他所有者或可被组/其他用户读取的文件。</p></div></li>
           </ol>
-          <Command>{`sudo install -o kai-host-agent -g kai-host-agent -m 0600 pairing.json /var/lib/kai-host-agent/pairing.json\nsudo -u kai-host-agent -- kai-host-agent pair \\\n  --pairing-file /var/lib/kai-host-agent/pairing.json \\\n  --display-name "4090 工作站 01" \\\n  --public-host "gpu.example.com" \\\n  --ssh-port-start "22000" \\\n  --ssh-port-end "22019"\nsudo shred -u /var/lib/kai-host-agent/pairing.json\nsudo -u kai-host-agent -- kai-host-agent check-connection`}</Command>
+          <Command>{`sudo install -o kai-host-agent -g kai-host-agent -m 0600 pairing.json /var/lib/kai-host-agent/pairing.json\nsudo -u kai-host-agent -- kai-host-agent pair \\\n  --pairing-file /var/lib/kai-host-agent/pairing.json \\\n  --display-name "H100 服务器 01" \\\n  --public-host "gpu.example.com" \\\n  --ssh-port-start "22000" \\\n  --ssh-port-end "22019" \\\n  --gpu-uuid "GPU-同一张物理卡"\nsudo shred -u /var/lib/kai-host-agent/pairing.json\nsudo -u kai-host-agent -- kai-host-agent check-connection`}</Command>
           <p>只有最后一条命令返回 `connection.verified` 才表示 Cloud 已接受设备的第一条签名连接检查。此命令以 OFFLINE 状态报告，不会领取验真或租赁任务；网页会自动显示“连接已验证，等待启动服务”。</p>
         </section>
 
         <section>
           <div className={styles.sectionLabel}>05 · APPROVED IMAGE & START</div>
           <h2>配置平台批准的不可变镜像</h2>
-          <p>从供应商控制台复制完整的 `ghcr.io/...@sha256:...` 镜像摘要，先按摘要拉取，再写入 `/etc/kai-host-actuator.env`。`latest`、普通 tag 和任意第三方仓库都会被拒绝；验真会重新检查本机镜像的 RepoDigest。</p>
+          <p>从供应商控制台复制完整的 `ghcr.io/...@sha256:...` 镜像摘要，先按摘要拉取，再把 `KAI_HOSTING_APPROVED_IMAGES` 和配对时同一张卡的 `KAI_HOST_GPU_UUID` 写入 `/etc/kai-host-actuator.env`。`latest`、普通 tag 和任意第三方仓库都会被拒绝；未被 root 配置批准的 GPU 同样无法分配。</p>
           <Command>{`sudo docker pull "ghcr.io/mandow123/kai-cloud-gpu-workload@sha256:<平台显示的64位摘要>"\nsudoedit /etc/kai-host-actuator.env\nsudo systemctl restart kai-host-actuator\nsudo systemctl enable --now kai-host-agent\nsudo systemctl status kai-host-agent --no-pager`}</Command>
         </section>
 

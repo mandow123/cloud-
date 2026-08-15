@@ -54,7 +54,7 @@ async function controlPlaneChallenge(state, command) {
   };
 }
 
-export function defaultVerificationRunners(state, inventoryCollector = collectInventory) {
+export function defaultVerificationRunners(state, inventoryCollector = collectInventory, gpuCommand = execFile) {
   let inventoryPromise;
   const inventory = () => {
     inventoryPromise ??= inventoryCollector(state.inventoryConfig);
@@ -68,7 +68,9 @@ export function defaultVerificationRunners(state, inventoryCollector = collectIn
       return { gpuModel: current.gpuModel, gpuMemoryMiB: current.gpuMemoryMiB, inventoryDigest };
     },
     async CUDA_SMOKE() {
-      const { stdout } = await execFile("nvidia-smi", ["--query-gpu=compute_mode,pstate,temperature.gpu", "--format=csv,noheader,nounits"], { encoding: "utf8", timeout: 15_000, maxBuffer: 64 * 1024 });
+      const gpuUuid = state.inventoryConfig?.gpuUuid;
+      if (typeof gpuUuid !== "string" || !/^GPU-[A-Za-z0-9-]{3,80}$/u.test(gpuUuid)) throw verificationError("GPU_SELECTION_INVALID", "The paired GPU selection is missing or invalid.");
+      const { stdout } = await gpuCommand("nvidia-smi", ["--id", gpuUuid, "--query-gpu=compute_mode,pstate,temperature.gpu", "--format=csv,noheader,nounits"], { encoding: "utf8", timeout: 15_000, maxBuffer: 64 * 1024 });
       const rows = stdout.trim().split(/\r?\n/u).filter(Boolean);
       if (rows.length !== 1 || rows[0].split(",").length !== 3) throw verificationError("CUDA_DRIVER_PROBE_FAILED", "NVIDIA compute-mode probe returned an unexpected result.");
       return { method: "NVIDIA_SMI_COMPUTE_MODE", probeDigest: digestJson({ output: rows[0].trim() }) };

@@ -6,7 +6,7 @@ const CUDA_VERSION = /^\d{1,2}\.\d{1,2}$/u;
 const LOCAL_FIXTURE = /(?:^|[\s_-])(local|fixture|mock|simulat(?:ed|ion)?|fake)(?:[\s_-]|$)/iu;
 
 export function physicalGpuAudit(inventory: HostingDeviceInventory) {
-  const expectedMemory = inventory.gpuModel === "RTX_4090" ? 24_000 : inventory.gpuModel === "H100_80GB" ? 80_000 : null;
+  const expectedMemory = inventory.gpuModel === "RTX_4090" ? 24_000 : inventory.gpuModel === "H100_80GB" ? 80_000 : inventory.gpuModel === "H100_94GB" ? 90_000 : null;
   const simulated = inventory.publicHost.toLowerCase().endsWith(".invalid")
     || LOCAL_FIXTURE.test(inventory.driverVersion)
     || LOCAL_FIXTURE.test(inventory.cudaVersion)

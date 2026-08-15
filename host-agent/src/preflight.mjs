@@ -31,7 +31,7 @@ function storagePath(value) {
 }
 
 function parseOptions(args) {
-  const allowed = new Set(["public-host", "ssh-port-start", "ssh-port-end", "storage-path", "image"]);
+  const allowed = new Set(["public-host", "ssh-port-start", "ssh-port-end", "storage-path", "image", "gpu-uuid"]);
   const values = {};
   for (let index = 0; index < args.length; index += 1) {
     const item = args[index];
@@ -114,7 +114,7 @@ export async function runHostPreflight(input, {
     filesystemStat(inspectedStoragePath),
   ]);
 
-  const gpu = parseNvidiaInventory(gpuCsv.stdout, gpuBanner.stdout);
+  const gpu = parseNvidiaInventory(gpuCsv.stdout, gpuBanner.stdout, input.gpuUuid);
   const dockerVersion = dockerVersionOutput.stdout.trim();
   if (!/^\d+\.\d+(?:\.\d+)?(?:[-+._A-Za-z0-9]*)?$/u.test(dockerVersion)) throw fail("DOCKER_VERSION_INVALID", "Docker returned an invalid server version.");
   let runtimes;
@@ -162,6 +162,7 @@ async function main() {
     publicHost: options["public-host"],
     sshPortStart: options["ssh-port-start"],
     sshPortEnd: options["ssh-port-end"],
+    gpuUuid: options["gpu-uuid"],
     storagePath: options["storage-path"],
     image: options.image,
   });

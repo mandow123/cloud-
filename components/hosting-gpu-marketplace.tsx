@@ -51,7 +51,7 @@ export function HostingGpuMarketplace() {
       </section>
 
       <section className={styles.toolbar} aria-label="GPU 筛选">
-        <label><span>GPU 型号</span><select value={model} onChange={(event) => setModel(event.target.value)}><option value="ALL">全部型号</option><option value="RTX_4090">RTX 4090</option><option value="H100_80GB">H100 80GB</option></select></label>
+        <label><span>GPU 型号</span><select value={model} onChange={(event) => setModel(event.target.value)}><option value="ALL">全部型号</option><option value="RTX_4090">RTX 4090</option><option value="H100_80GB">H100 80GB</option><option value="H100_94GB">H100 94GB</option></select></label>
         <label><span>排序</span><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="PRICE">卡时价格优先</option><option value="WINDOW">可用窗口优先</option></select></label>
         <div className={styles.marketCount}><strong>{records.length}</strong><span>个当前可成交报价</span></div>
       </section>

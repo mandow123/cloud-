@@ -1,6 +1,6 @@
 # KAI Host Agent
 
-KAI Host Agent is the supplier-side device identity and control service for KAI Hosting V2. Version `1.9.6` in this checkpoint implements:
+KAI Host Agent is the supplier-side device identity and control service for KAI Hosting V2. Version `1.9.7` in this checkpoint implements:
 
 - contract-bound cleanup for partially provisioned or SSH-unreachable workloads, so failed delivery can be refunded and proven clean before relisting;
 
@@ -28,7 +28,7 @@ This checkpoint executes `VERIFY`, `PROVISION`, `START`, `STOP` and `CLEANUP` th
 - Node.js 24.15 or newer
 - NVIDIA driver with `nvidia-smi`
 - Docker Engine with NVIDIA Container Toolkit and the local Docker Unix socket
-- exactly one supported GPU for the first production profile
+- one explicitly selected physical GPU per Agent; multi-GPU hosts remain supported without exposing the other cards
 - stable public host and a reserved port range of at most 200 ports
 
 Before installation, run the packaged read-only preflight as root. It does not install services, edit configuration or start containers. Local port availability is not proof of public reachability; only the later one-time Cloud control-plane challenge can provide that evidence:
@@ -38,6 +38,7 @@ sudo node ./src/preflight.mjs \
   --public-host "gpu.example.com" \
   --ssh-port-start "22000" \
   --ssh-port-end "22019" \
+  --gpu-uuid "GPU-copy-from-nvidia-smi" \
   --storage-path "/var/lib"
 ```
 
@@ -55,7 +56,8 @@ sudo -u kai-host-agent -- kai-host-agent pair \
   --display-name "4090 工作站 01" \
   --public-host "gpu.example.com" \
   --ssh-port-start "22000" \
-  --ssh-port-end "22019"
+  --ssh-port-end "22019" \
+  --gpu-uuid "GPU-the-same-physical-card"
 ```
 
 After pairing succeeds, remove the one-time file and prove the signed heartbeat path before enabling the background service:

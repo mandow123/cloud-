@@ -14,6 +14,7 @@ import { writeState } from "../host-agent/src/state.mjs";
 const image = `ghcr.io/kai-cloud/cuda-pytorch@sha256:${"a".repeat(64)}`;
 const productionWorkloadImage = `ghcr.io/mandow123/kai-cloud-gpu-workload@sha256:${"b".repeat(64)}`;
 const publicKey = `ssh-ed25519 ${Buffer.alloc(51, 7).toString("base64")} actuator-test`;
+const gpuUuid = "GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 
 function request(overrides = {}) {
   return {
@@ -27,17 +28,20 @@ function request(overrides = {}) {
     sshPort: 22_000,
     memoryMiB: 65_536,
     gpuCount: 1,
+    gpuUuid,
     reservedSeconds: 3_600,
     ...overrides,
   };
 }
 
 test("root actuator accepts only immutable allowlisted KAI images and fixed provision fields", () => {
-  const environment = { KAI_HOSTING_APPROVED_IMAGES: image };
+  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_GPU_UUID: gpuUuid };
   assert.equal(parseProvisionRequest(request(), environment).image, image);
   assert.throws(() => parseProvisionRequest(request({ image: "ghcr.io/kai-cloud/cuda-pytorch:latest" }), environment), (error) => error.code === "IMAGE_NOT_APPROVED");
   assert.throws(() => parseProvisionRequest(request({ image: `ghcr.io/kai-cloud/other@sha256:${"b".repeat(64)}` }), environment), (error) => error.code === "IMAGE_NOT_APPROVED");
   assert.throws(() => parseProvisionRequest(request({ publicKey: `${publicKey}\ncommand=bad` }), environment), (error) => error.code === "PUBLIC_KEY_INVALID");
+  assert.throws(() => parseProvisionRequest(request({ gpuUuid: "GPU-another-card" }), environment), (error) => error.code === "GPU_NOT_APPROVED");
+  assert.throws(() => parseProvisionRequest(request(), { KAI_HOSTING_APPROVED_IMAGES: image }), (error) => error.code === "GPU_POLICY_INVALID");
   assert.throws(() => parseProvisionRequest(request({ operation: "SHELL" }), environment), (error) => error.code === "PROVISION_REQUEST_INVALID");
 });
 
@@ -55,7 +59,7 @@ test("root actuator exposes one exact Docker and NVIDIA Runtime readiness operat
 });
 
 test("root actuator proves every approved immutable workload image is locally present", async () => {
-  const environment = { KAI_HOSTING_APPROVED_IMAGES: productionWorkloadImage };
+  const environment = { KAI_HOSTING_APPROVED_IMAGES: productionWorkloadImage, KAI_HOST_GPU_UUID: gpuUuid };
   const calls = [];
   const request = { protocolVersion: 1, operation: "VERIFY_IMAGES", images: [productionWorkloadImage] };
   assert.deepEqual(parseVerifyImagesRequest(request, environment), request);
@@ -70,7 +74,7 @@ test("root actuator proves every approved immutable workload image is locally pr
 });
 
 test("root actuator accepts the exact production workload repository but not arbitrary owner images", () => {
-  const environment = { KAI_HOSTING_APPROVED_IMAGES: productionWorkloadImage };
+  const environment = { KAI_HOSTING_APPROVED_IMAGES: productionWorkloadImage, KAI_HOST_GPU_UUID: gpuUuid };
   assert.equal(parseProvisionRequest(request({ image: productionWorkloadImage }), environment).image, productionWorkloadImage);
   assert.throws(
     () => parseProvisionRequest(request({ image: `ghcr.io/mandow123/other@sha256:${"b".repeat(64)}` }), environment),
@@ -81,7 +85,7 @@ test("root actuator accepts the exact production workload repository but not arb
 test("PROVISION creates one constrained stopped container and replays from a root-owned manifest", async () => {
   const directory = await mkdtemp(join(tmpdir(), "kai-actuator-"));
   const calls = [];
-  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_ACTUATOR_STATE_DIR: directory };
+  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_GPU_UUID: gpuUuid, KAI_HOST_ACTUATOR_STATE_DIR: directory };
   const runDocker = async (args) => {
     calls.push(args);
     if (args[0] === "image") return { stdout: JSON.stringify([image]) };
@@ -94,7 +98,7 @@ test("PROVISION creates one constrained stopped container and replays from a roo
     assert.match(result.containerDigest, /^sha256:[a-f0-9]{64}$/u);
     assert.equal(calls.length, 2);
     const create = calls[1];
-    for (const required of ["--pull", "never", "--gpus", "device=0", "--read-only", "--user", "1000:1000", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--restart", "no"]) {
+    for (const required of ["--pull", "never", "--gpus", `device=${gpuUuid}`, "--read-only", "--user", "1000:1000", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--restart", "no"]) {
       assert.ok(create.includes(required), `missing constrained Docker argument: ${required}`);
     }
     assert.doesNotMatch(create.join(" "), /(?:^|\s)(?:sh|bash|sudo|--privileged)(?:\s|$)/u);
@@ -116,7 +120,7 @@ test("PROVISION creates one constrained stopped container and replays from a roo
 
 test("START opens only the provisioned container and replays one contract-bound command", async () => {
   const directory = await mkdtemp(join(tmpdir(), "kai-actuator-start-"));
-  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_ACTUATOR_STATE_DIR: directory };
+  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_GPU_UUID: gpuUuid, KAI_HOST_ACTUATOR_STATE_DIR: directory };
   const containerId = "b".repeat(64);
   let workloadName = "";
   let running = false;
@@ -164,7 +168,7 @@ test("START opens only the provisioned container and replays one contract-bound 
 
 test("STOP gracefully halts only the running contract container and records bounded runtime evidence", async () => {
   const directory = await mkdtemp(join(tmpdir(), "kai-actuator-stop-"));
-  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_ACTUATOR_STATE_DIR: directory };
+  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_GPU_UUID: gpuUuid, KAI_HOST_ACTUATOR_STATE_DIR: directory };
   const containerId = "b".repeat(64);
   let workloadName = "";
   let running = false;
@@ -210,7 +214,7 @@ test("STOP gracefully halts only the running contract container and records boun
 
 test("local watchdog persists lease expiry, stops offline workloads once and preserves exact runtime evidence", async () => {
   const directory = await mkdtemp(join(tmpdir(), "kai-actuator-watchdog-"));
-  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_ACTUATOR_STATE_DIR: directory };
+  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_GPU_UUID: gpuUuid, KAI_HOST_ACTUATOR_STATE_DIR: directory };
   const containerId = "b".repeat(64);
   let workloadName = "";
   let running = false;
@@ -250,7 +254,7 @@ test("local watchdog persists lease expiry, stops offline workloads once and pre
 
 test("CLEANUP removes the stopped container, temporary key and workspace before reuse", async () => {
   const directory = await mkdtemp(join(tmpdir(), "kai-actuator-cleanup-"));
-  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_ACTUATOR_STATE_DIR: directory };
+  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_GPU_UUID: gpuUuid, KAI_HOST_ACTUATOR_STATE_DIR: directory };
   const containerId = "b".repeat(64);
   let workloadName = "";
   let containerExists = false;
@@ -304,7 +308,7 @@ test("CLEANUP removes the stopped container, temporary key and workspace before 
 
 test("CLEANUP safely removes a partially provisioned workload before any instance was acknowledged", async () => {
   const directory = await mkdtemp(join(tmpdir(), "kai-actuator-failed-provision-"));
-  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_ACTUATOR_STATE_DIR: directory };
+  const environment = { KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOST_GPU_UUID: gpuUuid, KAI_HOST_ACTUATOR_STATE_DIR: directory };
   const containerId = "c".repeat(64);
   let workloadName = "";
   let containerExists = false;
@@ -357,7 +361,7 @@ test("non-root Host Agent passes PROVISION to the actuator without gaining conta
     type: "PROVISION",
     payload: { contractId: "hctr_actuator0001", image, publicKey, reservedSeconds: 3_600, gpuCount: 1 },
   };
-  const state = { inventory: { publicHost: "gpu.example.com", sshPortStart: 22_000, memoryMiB: 65_536 } };
+  const state = { inventory: { publicHost: "gpu.example.com", sshPortStart: 22_000, memoryMiB: 65_536 }, inventoryConfig: { gpuUuid } };
   let sent = null;
   const details = {
     protocolVersion: 1,
@@ -370,7 +374,8 @@ test("non-root Host Agent passes PROVISION to the actuator without gaining conta
   };
   const result = await provisionWorkload(command, state, { call: async (value) => { sent = value; return details; } });
   assert.equal(sent.operation, "PROVISION");
-  assert.deepEqual(Object.keys(sent).sort(), ["commandId", "contractId", "gpuCount", "image", "memoryMiB", "operation", "protocolVersion", "publicHost", "publicKey", "reservedSeconds", "sshPort"].sort());
+  assert.deepEqual(Object.keys(sent).sort(), ["commandId", "contractId", "gpuCount", "gpuUuid", "image", "memoryMiB", "operation", "protocolVersion", "publicHost", "publicKey", "reservedSeconds", "sshPort"].sort());
+  assert.equal(sent.gpuUuid, gpuUuid);
   assert.equal(result.outcome, "SUCCEEDED");
   assert.equal(result.evidenceDigest, digestJson(details));
   await assert.rejects(provisionWorkload({ ...command, type: "SHELL" }, state, { call: async () => details }), (error) => error.code === "PROVISION_COMMAND_INVALID");

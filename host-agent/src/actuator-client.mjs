@@ -71,7 +71,8 @@ export async function provisionWorkload(command, state, { call = callActuator } 
   if (fields.join(",") !== "contractId,gpuCount,image,publicKey,reservedSeconds" || payload.contractId !== command.contractId || payload.gpuCount !== 1 || !Number.isSafeInteger(payload.reservedSeconds) || payload.reservedSeconds < 180) {
     throw new AgentError("PROVISION_COMMAND_INVALID", "Provision command fields are invalid.");
   }
-  if (!inventory || typeof inventory.publicHost !== "string" || !Number.isSafeInteger(inventory.sshPortStart) || !Number.isSafeInteger(inventory.memoryMiB)) {
+  if (!inventory || typeof inventory.publicHost !== "string" || !Number.isSafeInteger(inventory.sshPortStart) || !Number.isSafeInteger(inventory.memoryMiB)
+    || typeof state?.inventoryConfig?.gpuUuid !== "string") {
     throw new AgentError("AGENT_UPGRADE_REQUIRED", "Paired inventory is missing; pair this Agent again before provisioning.");
   }
   const result = await call({
@@ -85,6 +86,7 @@ export async function provisionWorkload(command, state, { call = callActuator } 
     sshPort: inventory.sshPortStart,
     memoryMiB: inventory.memoryMiB,
     gpuCount: 1,
+    gpuUuid: state.inventoryConfig.gpuUuid,
     reservedSeconds: payload.reservedSeconds,
   });
   if (result.protocolVersion !== 1 || result.contractId !== command.contractId || result.image !== payload.image || result.endpointDisplay !== `${inventory.publicHost}:${inventory.sshPortStart}` || !/^sha256:[a-f0-9]{64}$/u.test(result.containerDigest) || !/^sha256:[a-f0-9]{64}$/u.test(result.workspaceDigest)) {

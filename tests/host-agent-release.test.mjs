@@ -9,7 +9,7 @@ import test from "node:test";
 import { buildHostAgentRelease } from "../scripts/ops/build-host-agent-release.mjs";
 
 const FIXED_REVISION = "0123456789abcdef0123456789abcdef01234567";
-const AGENT_VERSION = "1.9.6";
+const AGENT_VERSION = "1.9.7";
 const EXPECTED_RELEASE_FILES = [
   "README.md",
   "install.sh",
@@ -51,7 +51,7 @@ test("Host Agent release is deterministic, checksummed and contains only reviewe
     const entries = execFileSync("tar", ["-tzf", join(outputDirectory, first.archive)], { encoding: "utf8" }).trim().split("\n");
     assert.equal(entries.length, 18);
     for (const entry of entries) {
-      assert.match(entry, /^kai-host-agent-1\.9\.6\/[A-Za-z0-9._/-]+$/u);
+      assert.match(entry, /^kai-host-agent-1\.9\.7\/[A-Za-z0-9._/-]+$/u);
       assert.doesNotMatch(entry, /(?:^|\/)\.\.?\/|identity\.json|pairing\.json|\.env$/u);
     }
     assert.ok(entries.includes(`kai-host-agent-${AGENT_VERSION}/release-manifest.json`));

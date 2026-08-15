@@ -1,5 +1,5 @@
 import { dirname } from "node:path";
-import { collectInventory } from "./inventory.mjs";
+import { collectInventory, normalizeGpuUuid } from "./inventory.mjs";
 import {
   AgentError,
   assertHttpsEndpoint,
@@ -15,7 +15,7 @@ import { readState, stateFilePath, writeState } from "./state.mjs";
 import { cleanupWorkload, provisionWorkload, startWorkload, stopWorkload } from "./actuator-client.mjs";
 import { runVerification } from "./verify.mjs";
 
-export const AGENT_VERSION = "1.9.6";
+export const AGENT_VERSION = "1.9.7";
 
 function validatePairingBundle(value, options = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new AgentError("PAIRING_INVALID", "Pairing bundle must be a JSON object.");
@@ -85,6 +85,7 @@ export async function pairDevice({
   publicHost,
   sshPortStart,
   sshPortEnd,
+  gpuUuid,
   stateFile = stateFilePath(),
   allowInsecureLocal = false,
   inventoryCollector = collectInventory,
@@ -96,13 +97,16 @@ export async function pairDevice({
   if (name.length < 2 || name.length > 80) throw new AgentError("DISPLAY_NAME_INVALID", "Device display name must contain 2–80 characters.");
 
   const identity = await generateDeviceIdentity();
-  const requestedInventoryConfig = { publicHost, sshPortStart, sshPortEnd, storagePath: dirname(stateFile) };
-  const inventory = await inventoryCollector(requestedInventoryConfig);
+  const requestedInventoryConfig = { publicHost, sshPortStart, sshPortEnd, storagePath: dirname(stateFile), gpuUuid };
+  const collected = await inventoryCollector(requestedInventoryConfig, { includeBinding: true });
+  const inventory = collected?.inventory ?? collected;
+  const selectedGpuUuid = normalizeGpuUuid(collected?.selectedGpuUuid ?? gpuUuid);
   const inventoryConfig = {
     publicHost: inventory.publicHost,
     sshPortStart: inventory.sshPortStart,
     sshPortEnd: inventory.sshPortEnd,
     storagePath: requestedInventoryConfig.storagePath,
+    gpuUuid: selectedGpuUuid,
   };
   const inventoryDigest = digestJson(inventory);
   const window = proofWindow();

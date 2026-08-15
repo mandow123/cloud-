@@ -26,6 +26,7 @@ type BalancePayload = Readonly<{ balance: CardHourBalance }>;
 const MODEL_LABELS: Record<string, string> = {
   RTX_4090: "RTX 4090",
   H100_80GB: "H100 80GB",
+  H100_94GB: "H100 94GB",
 };
 
 function offerModel(value: string) {

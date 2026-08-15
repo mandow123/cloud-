@@ -58,7 +58,7 @@ async function publishedOffer(store, supplier, clock) {
     displayName: "预留测试 4090",
     deviceKeyId: `sha256:${"4".repeat(64)}`,
     devicePublicKey: "A".repeat(43),
-    agentVersion: "1.9.6",
+    agentVersion: "1.9.7",
     inventory: { hostnameDigest: `sha256:${"1".repeat(64)}`, gpuModel: "RTX_4090", gpuUuidDigest: `sha256:${"2".repeat(64)}`, gpuMemoryMiB: 24_576, driverVersion: "580.10", cudaVersion: "13.0", cpuModel: "AMD Ryzen 9 9950X", memoryMiB: 65_536, storageGiB: 2_048, publicHost: "reserve-gpu.example.com", sshPortStart: 24_000, sshPortEnd: 24_019 },
     inventoryDigest,
   }, mutation("agent-reserve", "reserve-device-register", "reserve-device-register-hash", now));

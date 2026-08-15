@@ -8,6 +8,7 @@ const execFile = promisify(execFileCallback);
 const IMAGE_PATTERN = /^ghcr\.io\/(?:kai-cloud\/cuda-pytorch|mandow123\/kai-cloud-gpu-workload)@sha256:[a-f0-9]{64}$/u;
 const ID_PATTERN = /^(?:hcmd|hctr)_[a-z0-9]{8,80}$/u;
 const PUBLIC_KEY_PATTERN = /^ssh-(?:ed25519|rsa) [A-Za-z0-9+/=]{40,8192}(?: [^\r\n]{1,120})?$/u;
+const GPU_UUID_PATTERN = /^GPU-[A-Za-z0-9-]{3,80}$/u;
 
 function fail(code, message, cause) {
   return new AgentError(code, message, cause ? { cause } : undefined);
@@ -19,6 +20,12 @@ function approvedImages(environment) {
     throw fail("IMAGE_POLICY_INVALID", "Actuator image policy is missing or invalid.");
   }
   return new Set(values);
+}
+
+function approvedGpuUuid(environment) {
+  const value = environment.KAI_HOST_GPU_UUID?.trim() || "";
+  if (!GPU_UUID_PATTERN.test(value)) throw fail("GPU_POLICY_INVALID", "Root-owned GPU UUID policy is missing or invalid.");
+  return value;
 }
 
 function assertExactKeys(input, expected, code) {
@@ -38,7 +45,7 @@ function stateRoot(environment) {
 export function parseProvisionRequest(value, environment = process.env) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail("PROVISION_REQUEST_INVALID", "Provision request must be an object.");
   const input = value;
-  assertExactKeys(input, ["protocolVersion", "operation", "commandId", "contractId", "image", "publicKey", "publicHost", "sshPort", "memoryMiB", "gpuCount", "reservedSeconds"], "PROVISION_REQUEST_INVALID");
+  assertExactKeys(input, ["protocolVersion", "operation", "commandId", "contractId", "image", "publicKey", "publicHost", "sshPort", "memoryMiB", "gpuCount", "gpuUuid", "reservedSeconds"], "PROVISION_REQUEST_INVALID");
   if (input.protocolVersion !== 1 || input.operation !== "PROVISION") throw fail("PROVISION_REQUEST_INVALID", "Provision protocol is unsupported.");
   if (typeof input.commandId !== "string" || !ID_PATTERN.test(input.commandId) || typeof input.contractId !== "string" || !ID_PATTERN.test(input.contractId)) throw fail("PROVISION_ID_INVALID", "Provision identifiers are invalid.");
   if (typeof input.image !== "string" || !IMAGE_PATTERN.test(input.image) || !approvedImages(environment).has(input.image)) throw fail("IMAGE_NOT_APPROVED", "Provision image is not in the root-owned allowlist.");
@@ -47,6 +54,8 @@ export function parseProvisionRequest(value, environment = process.env) {
   if (!Number.isSafeInteger(input.sshPort) || input.sshPort < 1024 || input.sshPort > 65535) throw fail("SSH_PORT_INVALID", "Provision SSH port is invalid.");
   if (!Number.isSafeInteger(input.memoryMiB) || input.memoryMiB < 8_192 || input.memoryMiB > 4_194_304) throw fail("MEMORY_LIMIT_INVALID", "Provision memory limit is invalid.");
   if (input.gpuCount !== 1) throw fail("GPU_COUNT_UNSUPPORTED", "Provisioning supports exactly one GPU.");
+  if (typeof input.gpuUuid !== "string" || !GPU_UUID_PATTERN.test(input.gpuUuid)) throw fail("GPU_UUID_INVALID", "Provision GPU UUID is invalid.");
+  if (input.gpuUuid !== approvedGpuUuid(environment)) throw fail("GPU_NOT_APPROVED", "Provision GPU is outside the root-owned device policy.");
   if (!Number.isSafeInteger(input.reservedSeconds) || input.reservedSeconds < 180 || input.reservedSeconds > 31 * 24 * 60 * 60) throw fail("LEASE_DURATION_INVALID", "Provision lease duration is invalid.");
   return {
     protocolVersion: 1,
@@ -59,6 +68,7 @@ export function parseProvisionRequest(value, environment = process.env) {
     sshPort: input.sshPort,
     memoryMiB: input.memoryMiB,
     gpuCount: 1,
+    gpuUuid: input.gpuUuid,
     reservedSeconds: input.reservedSeconds,
   };
 }
@@ -223,7 +233,7 @@ export async function executeProvision(value, {
       "--label", "kai.cloud.managed=true",
       "--label", `kai.cloud.contract-digest=${digestJson({ contractId: request.contractId })}`,
       "--pull", "never",
-      "--gpus", "device=0",
+      "--gpus", `device=${request.gpuUuid}`,
       "--network", "bridge",
       "--publish", `${request.sshPort}:2222/tcp`,
       "--read-only",

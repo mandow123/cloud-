@@ -48,14 +48,19 @@ test("runtime canonical JSON, digest and Ed25519 signatures match the server pro
   assert.throws(() => assertHttpsEndpoint("http://supplier.localhost.example.com/api/v2/agent/register", { allowInsecureLocal: true }), (error) => error.code === "HTTPS_REQUIRED");
 });
 
-test("NVIDIA inventory parser accepts one supported GPU and rejects ambiguous hosts", () => {
+test("NVIDIA inventory parser accepts one supported GPU and requires an exact UUID on multi-GPU hosts", () => {
   assert.deepEqual(
     parseNvidiaInventory("GPU-uuid, NVIDIA GeForce RTX 4090, 24576, 580.10\n", "NVIDIA-SMI 580.10 CUDA Version: 13.0"),
     { uuid: "GPU-uuid", gpuModel: "RTX_4090", gpuMemoryMiB: 24_576, driverVersion: "580.10", cudaVersion: "13.0" },
   );
   assert.equal(parseNvidiaInventory("GPU-h100, NVIDIA H100 80GB HBM3, 81559, 580.10", "CUDA Version: 13.0").gpuModel, "H100_80GB");
-  assert.throws(() => parseNvidiaInventory("GPU-a, RTX 4090, 24576, 580.10\nGPU-b, RTX 4090, 24576, 580.10", "CUDA Version: 13.0"), (error) => error.code === "GPU_COUNT_UNSUPPORTED");
-  assert.throws(() => parseNvidiaInventory("GPU-a, RTX 3090, 24576, 580.10", "CUDA Version: 13.0"), (error) => error.code === "GPU_MODEL_UNSUPPORTED");
+  assert.equal(parseNvidiaInventory("GPU-h100-nvl, NVIDIA H100 NVL, 95830, 580.10", "CUDA Version: 13.0").gpuModel, "H100_94GB");
+  const multiGpu = "GPU-card-a, NVIDIA H100 80GB HBM3, 81559, 580.10\nGPU-card-b, NVIDIA H100 80GB HBM3, 95830, 580.10";
+  assert.throws(() => parseNvidiaInventory(multiGpu, "CUDA Version: 13.0"), (error) => error.code === "GPU_SELECTION_REQUIRED");
+  assert.equal(parseNvidiaInventory(multiGpu, "CUDA Version: 13.0", "GPU-card-b").uuid, "GPU-card-b");
+  assert.equal(parseNvidiaInventory(multiGpu, "CUDA Version: 13.0", "GPU-card-b").gpuMemoryMiB, 95_830);
+  assert.throws(() => parseNvidiaInventory(multiGpu, "CUDA Version: 13.0", "GPU-missing"), (error) => error.code === "GPU_UUID_NOT_FOUND");
+  assert.throws(() => parseNvidiaInventory("GPU-card-a, RTX 3090, 24576, 580.10", "CUDA Version: 13.0"), (error) => error.code === "GPU_MODEL_UNSUPPORTED");
 });
 
 test("pairing files must be absolute private regular files and never symbolic links", async () => {
@@ -120,6 +125,18 @@ test("non-root verification accepts only exact image evidence from the root actu
   assert.deepEqual(request, { protocolVersion: 1, operation: "VERIFY_IMAGES", images });
   assert.equal(result.allPresent, true);
   await assert.rejects(verifyWorkloadImages(images, { call: async () => ({ protocolVersion: 1, scope: "APPROVED_WORKLOAD_IMAGES", images: [], allPresent: true }) }), (error) => error.code === "ACTUATOR_RESULT_INVALID");
+});
+
+test("CUDA verification queries only the GPU UUID bound during pairing", async () => {
+  const calls = [];
+  const state = { inventoryConfig: { gpuUuid: "GPU-selected-card" } };
+  const runners = defaultVerificationRunners(state, async () => inventory, async (file, args) => {
+    calls.push([file, ...args]);
+    return { stdout: "Default, P0, 31\n" };
+  });
+  const result = await runners.CUDA_SMOKE();
+  assert.equal(result.method, "NVIDIA_SMI_COMPUTE_MODE");
+  assert.deepEqual(calls, [["nvidia-smi", "--id", "GPU-selected-card", "--query-gpu=compute_mode,pstate,temperature.gpu", "--format=csv,noheader,nounits"]]);
 });
 
 test("VERIFY runs only the fixed seven probes and binds every result to signed evidence", async () => {
@@ -219,13 +236,14 @@ test("pairing and heartbeat persist a private 0600 identity and send server-veri
         registerEndpoint: "http://127.0.0.1:3014/api/v2/agent/register",
         challengeId: "hac_runtime_challenge_000001",
         nonce: "runtimeNonceValue000001",
-        minimumAgentVersion: "1.9.6",
+        minimumAgentVersion: "1.9.7",
         expiresAt: new Date(Date.now() + 300_000).toISOString(),
       },
       displayName: "4090 工作站 01",
       publicHost: inventory.publicHost.toUpperCase(),
       sshPortStart: inventory.sshPortStart,
       sshPortEnd: inventory.sshPortEnd,
+      gpuUuid: "GPU-real",
       stateFile,
       allowInsecureLocal: true,
       inventoryCollector: async () => inventory,
@@ -324,6 +342,6 @@ test("installer is offline, non-root at runtime and systemd-hardened", async () 
   assert.match(installer, /kai-host-actuator\.service/u);
   assert.match(runtime, /check-connection/u);
   assert.match(runtime, /readPairingFile/u);
-  assert.equal(packageJson.version, "1.9.6");
+  assert.equal(packageJson.version, "1.9.7");
   assert.equal(packageJson.dependencies, undefined);
 });

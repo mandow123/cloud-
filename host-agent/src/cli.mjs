@@ -84,6 +84,7 @@ async function main() {
       publicHost: input["public-host"],
       sshPortStart: input["ssh-port-start"],
       sshPortEnd: input["ssh-port-end"],
+      gpuUuid: input["gpu-uuid"],
     });
     log("pairing.completed", { deviceId: result.deviceId, gpuModel: result.inventory.gpuModel });
     return;
@@ -104,6 +105,7 @@ async function main() {
       publicHost: input["public-host"],
       sshPortStart: input["ssh-port-start"],
       sshPortEnd: input["ssh-port-end"],
+      gpuUuid: input["gpu-uuid"],
       storagePath: dirname(stateFilePath()),
     });
     log("doctor.passed", {

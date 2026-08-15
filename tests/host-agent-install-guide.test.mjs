@@ -9,6 +9,8 @@ test("public Host Agent guide uses verified downloads and never recommends pipin
   assert.match(guide, /sha256sum --check/u);
   assert.match(guide, /less release-manifest\.json/u);
   assert.match(guide, /sudo node \.\/src\/preflight\.mjs/u);
+  assert.match(guide, /nvidia-smi --query-gpu=uuid,name,memory\.total/u);
+  assert.match(guide, /--gpu-uuid/u);
   assert.match(guide, /controlPlaneReachability: PENDING/u);
   assert.match(guide, /sudo -u kai-host-agent -- kai-host-agent doctor/u);
   assert.match(guide, /sudo -u kai-host-agent -- kai-host-agent pair/u);

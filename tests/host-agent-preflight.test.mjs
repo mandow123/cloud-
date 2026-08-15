@@ -76,6 +76,21 @@ test("preflight may run before an approved workload digest is available but neve
   assert.equal(fixture.calls.some((call) => call[0] === "/usr/bin/docker" && call[1] === "image"), false);
 });
 
+test("preflight selects one exact H100 UUID on an eight-GPU host", async () => {
+  const rows = Array.from({ length: 8 }, (_, index) => `GPU-h100-${index}, NVIDIA H100 80GB HBM3, 95830, 580.173.02`).join("\n");
+  const fixture = dependencies({
+    runCommand: async (file, args) => file === "nvidia-smi" && args.length > 0
+      ? { stdout: `${rows}\n` }
+      : file === "nvidia-smi"
+        ? { stdout: "NVIDIA-SMI 580.173.02 CUDA Version: 13.0\n" }
+        : args[0] === "version" ? { stdout: "28.0.4\n" } : { stdout: '{"nvidia":{}}\n' },
+  });
+  await assert.rejects(runHostPreflight({ publicHost: "gpu.example.com", sshPortStart: 22000, sshPortEnd: 22019 }, fixture.values), (error) => error.code === "GPU_SELECTION_REQUIRED");
+  const selected = await runHostPreflight({ publicHost: "gpu.example.com", sshPortStart: 22000, sshPortEnd: 22019, gpuUuid: "GPU-h100-6" }, fixture.values);
+  assert.equal(selected.gpu.model, "H100_94GB");
+  assert.equal(selected.gpu.memoryMiB, 95_830);
+});
+
 test("preflight rejects insufficient authority, user-scoped Node and mutable images before host mutation", async () => {
   const input = { publicHost: "gpu.example.com", sshPortStart: 22000, sshPortEnd: 22019 };
   await assert.rejects(runHostPreflight(input, dependencies({ effectiveUid: () => 1000 }).values), (error) => error.code === "ROOT_REQUIRED");
