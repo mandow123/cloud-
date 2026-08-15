@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   const context = beginApiRequest(request);
   let actor: MarketplaceActor | undefined;
   try {
-    requireExchangeRole(request, "supplier");
+    await requireExchangeRole(request, "supplier");
     const authorization = await authorizeMarketplaceRequest(request);
     actor = authorization.actor;
     const items = await (await getExchangeStore()).listCommissionAccruals(actor.id);

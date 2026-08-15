@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const context = beginApiRequest(request); let actor: MarketplaceActor | undefined;
   try {
-    supplyWorkspaceRole(request, ["supplier"]); const authorization = await authorizeMarketplaceRequest(request); actor = authorization.actor;
+    await supplyWorkspaceRole(request, ["supplier"]); const authorization = await authorizeMarketplaceRequest(request); actor = authorization.actor;
     const store = await getSupplyStore(); const poolSummaries = await store.listPools(actor.id);
     const memberGroups = await Promise.all(poolSummaries.map(async ({ pool, policy }) => {
       const [items, windows] = await Promise.all([store.listMembers(actor!.id, pool.id), store.listAvailability(actor!.id, pool.id)]);

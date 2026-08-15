@@ -5,6 +5,8 @@ import test from "node:test";
 import { AccountAuthError, createAccountSession } from "../lib/server/account-auth.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
 import { requireTradingAccountSession } from "../lib/server/entity-ownership.ts";
+import { requireExchangeRole } from "../lib/server/exchange-auth.ts";
+import { supplyWorkspaceRole } from "../lib/server/supply-api.ts";
 
 test("new demands, supply offers and orders require the formal trading account guard", () => {
   const guardedRoutes = [
@@ -47,6 +49,65 @@ test("pending memberships cannot create trading records", async () => {
     await assert.rejects(
       requireTradingAccountSession(request),
       (error) => error instanceof AccountAuthError && error.status === 403 && error.code === "TRADING_SUBJECT_INACTIVE",
+    );
+  } finally {
+    globalThis.__kaiAccountAuthStorePromise = previous;
+    if (previousLegacyGuard === undefined) delete process.env.KAI_ALLOW_LEGACY_ANON_WRITES;
+    else process.env.KAI_ALLOW_LEGACY_ANON_WRITES = previousLegacyGuard;
+    store.close();
+  }
+});
+
+test("a browser workspace-role header cannot grant or revoke trading authority", async () => {
+  const store = await createSqliteAccountAuthStore(":memory:");
+  const now = new Date();
+  const previous = globalThis.__kaiAccountAuthStorePromise;
+  const previousLegacyGuard = process.env.KAI_ALLOW_LEGACY_ANON_WRITES;
+  globalThis.__kaiAccountAuthStorePromise = Promise.resolve(store);
+  delete process.env.KAI_ALLOW_LEGACY_ANON_WRITES;
+  try {
+    const forged = new Request("http://localhost/api/v1/resources", {
+      headers: { "x-kai-workspace-role": "supplier" },
+    });
+    await assert.rejects(
+      requireExchangeRole(forged, "supplier"),
+      (error) => error instanceof AccountAuthError && error.status === 401,
+    );
+    await assert.rejects(
+      supplyWorkspaceRole(forged, ["supplier"]),
+      (error) => error instanceof AccountAuthError && error.status === 401,
+    );
+
+    const identity = await store.resolveOrCreateIdentity({
+      provider: "EMAIL",
+      tenantKey: "EXTERNAL",
+      subject: "workspace-view-trader",
+      displayName: "Workspace View Trader",
+      normalizedEmail: "workspace-view@example.com",
+      organizationExternalKey: "EMAIL:workspace-view-trader",
+      organizationName: "Workspace View Organization",
+      verifiedAt: now.toISOString(),
+    });
+    await store.activateMembership(identity.membership.id, [], now.toISOString());
+    const active = await store.resolveOrCreateIdentity({
+      provider: "EMAIL",
+      tenantKey: "EXTERNAL",
+      subject: "workspace-view-trader",
+      displayName: "Workspace View Trader",
+      normalizedEmail: "workspace-view@example.com",
+      organizationExternalKey: "EMAIL:workspace-view-trader",
+      organizationName: "Workspace View Organization",
+      verifiedAt: now.toISOString(),
+    });
+    const issued = await createAccountSession(new Request("http://localhost/api/auth/email/verify"), active, "EMAIL_OTP", { store, now });
+    const cookie = issued.cookie.split(";")[0];
+
+    assert.equal(await requireExchangeRole(new Request("http://localhost/api/v1/resources", { headers: { cookie } }), "supplier"), "supplier");
+    assert.equal(
+      await supplyWorkspaceRole(new Request("http://localhost/api/v1/resources", {
+        headers: { cookie, "x-kai-workspace-role": "ops" },
+      }), ["supplier"]),
+      "supplier",
     );
   } finally {
     globalThis.__kaiAccountAuthStorePromise = previous;

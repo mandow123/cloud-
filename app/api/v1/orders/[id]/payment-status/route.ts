@@ -1,9 +1,9 @@
 import { alipayReadiness } from "@/lib/server/alipay-live";
 import { apiErrorResponse, beginApiRequest, jsonResponse } from "@/lib/server/api-guard";
-import { ExchangeDomainError } from "@/lib/server/exchange-errors";
 import { authorizeMarketplaceRequest } from "@/lib/server/marketplace-auth";
 import { getSupplyStore } from "@/lib/server/supply-store";
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
+import { supplyWorkspaceRole } from "@/lib/server/supply-api";
 
 export const dynamic = "force-dynamic";
 
@@ -11,10 +11,7 @@ export async function GET(request: Request, contextValue: { params: Promise<{ id
   const context = beginApiRequest(request);
   let actor: MarketplaceActor | undefined;
   try {
-    const role = request.headers.get("x-kai-workspace-role");
-    if (role !== "buyer" && role !== "supplier") {
-      throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "支付状态仅允许订单双方读取。");
-    }
+    const role = await supplyWorkspaceRole(request, ["buyer", "supplier"]);
     const authorization = await authorizeMarketplaceRequest(request);
     actor = authorization.actor;
     const { id } = await contextValue.params;

@@ -22,7 +22,7 @@ export async function POST(request: Request, contextValue: { params: Promise<{ i
   let actor: MarketplaceActor | undefined;
   try {
     const account = await requireTradingAccountSession(request);
-    requireExchangeRole(request, "supplier");
+    await requireExchangeRole(request, "supplier");
     const authorization = await authorizeMarketplaceRequest(request);
     actor = authorization.actor;
     prepareWrite(request, actor);

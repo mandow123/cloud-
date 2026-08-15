@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   let actor: MarketplaceActor | undefined;
   try {
     const account = await requireTradingAccountSession(request);
-    requireExchangeRole(request, "buyer");
+    await requireExchangeRole(request, "buyer");
     const authorization = await authorizeMarketplaceRequest(request);
     actor = authorization.actor;
     prepareWrite(request, actor);

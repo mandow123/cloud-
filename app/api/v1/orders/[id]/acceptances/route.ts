@@ -20,7 +20,7 @@ export async function POST(request: Request, contextValue: { params: Promise<{ i
   const context = beginApiRequest(request);
   let actor: MarketplaceActor | undefined;
   try {
-    requireExchangeRole(request, "buyer");
+    await requireExchangeRole(request, "buyer");
     const authorization = await authorizeMarketplaceRequest(request);
     actor = authorization.actor;
     prepareWrite(request, actor);

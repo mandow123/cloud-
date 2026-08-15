@@ -24,7 +24,7 @@ export async function POST(request: Request, contextValue: { params: Promise<{ i
   try {
     const account = await requireTradingAccountSession(request);
     if (!account) throw new AccountAuthError("ACCOUNT_AUTH_REQUIRED", 401, "请先登录交易账户。 ");
-    requireExchangeRole(request, "buyer");
+    await requireExchangeRole(request, "buyer");
     const authorization = await authorizeMarketplaceRequest(request);
     actor = authorization.actor;
     prepareWrite(request, actor);

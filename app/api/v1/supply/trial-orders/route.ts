@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   const context = beginApiRequest(request); let actor: MarketplaceActor | undefined;
   try {
     const account = await requireTradingAccountSession(request);
-    supplyWorkspaceRole(request, ["buyer"]); const authorization = await authorizeMarketplaceRequest(request); actor = authorization.actor;
+    await supplyWorkspaceRole(request, ["buyer"]); const authorization = await authorizeMarketplaceRequest(request); actor = authorization.actor;
     prepareWrite(request, actor); await persistMarketplaceSession(authorization); const input = parseTrialOrder(await readJsonBody(request));
     const idempotencyKey = requireIdempotencyKey(request);
     const result = await (await getSupplyStore()).createTrialOrder({ actorId: actor.id, idempotencyKey, payloadHash: await mutationHash(input) }, input);
