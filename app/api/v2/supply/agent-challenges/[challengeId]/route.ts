@@ -20,6 +20,7 @@ export async function GET(request: Request, contextValue: { params: Promise<{ ch
       challengeId: record.challenge.id,
       expiresAt: record.challenge.expiresAt,
       consumedAt: record.challenge.consumedAt,
+      revokedAt: record.challenge.revokedAt,
       device: record.device ? {
         id: record.device.id,
         displayName: record.device.displayName,

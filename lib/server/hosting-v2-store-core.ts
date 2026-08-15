@@ -183,9 +183,15 @@ function challenge(row: Row): HostingAgentChallenge {
   return {
     id: value(row, "id"), organizationId: value(row, "organization_id"), accountId: value(row, "account_id"),
     nonce: value(row, "nonce"), minimumAgentVersion: value(row, "minimum_agent_version"), expiresAt: value(row, "expires_at"),
-    consumedAt: nullable(row, "consumed_at"), createdAt: value(row, "created_at"),
+    consumedAt: nullable(row, "consumed_at"), revokedAt: nullable(row, "revoked_at"), createdAt: value(row, "created_at"),
   };
 }
+
+const agentChallengeProjection = `SELECT c.*,
+  (SELECT e.occurred_at FROM hosting_v2_events e
+    WHERE e.entity_type='AGENT_CHALLENGE' AND e.entity_id=c.id AND e.event_type='AGENT_CHALLENGE_REVOKED'
+    ORDER BY e.occurred_at DESC LIMIT 1) AS revoked_at
+  FROM hosting_v2_agent_challenges c`;
 
 function device(row: Row): HostingDevice {
   return {
@@ -813,7 +819,7 @@ function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       if (!profileRow || value(profileRow, "status") !== "APPROVED" || !nullable(profileRow, "agreement_version") || !nullable(profileRow, "evidence_digest")) throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "供应主体完成协议签署和有证据审核后才能登记设备。");
       const replayed = await replay(db, context, "ISSUE_AGENT_CHALLENGE");
       if (replayed) {
-        const row = await db.first<Row>("SELECT * FROM hosting_v2_agent_challenges WHERE id=?", [replayed.entityId]);
+        const row = await db.first<Row>(`${agentChallengeProjection} WHERE c.id=?`, [replayed.entityId]);
         if (!row) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "设备登记挑战不存在。");
         return challenge(row);
       }
@@ -824,18 +830,63 @@ function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         event(context, account.activeOrganization.id, "AGENT_CHALLENGE", recordId, "AGENT_CHALLENGE_ISSUED"),
         receipt(context, "ISSUE_AGENT_CHALLENGE", "AGENT_CHALLENGE", recordId),
       ]);
-      const row = await db.first<Row>("SELECT * FROM hosting_v2_agent_challenges WHERE id=?", [recordId]);
+      const row = await db.first<Row>(`${agentChallengeProjection} WHERE c.id=?`, [recordId]);
       if (!row) throw new Error("HOSTING_AGENT_CHALLENGE_CREATE_FAILED");
       return challenge(row);
     },
 
+    async revokeAgentChallenge(organizationId, challengeId, context) {
+      const replayed = await replay(db, context, "REVOKE_AGENT_CHALLENGE");
+      if (replayed) {
+        const row = await db.first<Row>(`${agentChallengeProjection} WHERE c.id=? AND c.organization_id=?`, [replayed.entityId, organizationId]);
+        if (!row) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "设备登记挑战不存在。");
+        return challenge(row);
+      }
+      const current = await db.first<Row>(`${agentChallengeProjection} WHERE c.id=? AND c.organization_id=?`, [challengeId, organizationId]);
+      if (!current) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "设备登记挑战不存在或不属于当前组织。");
+      if (nullable(current, "revoked_at")) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备登记挑战已经废弃。");
+      if (nullable(current, "consumed_at")) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备登记挑战已被 Agent 使用，不能再废弃。");
+
+      const eventId = id("hve");
+      const results = await db.batch([
+        {
+          sql: "UPDATE hosting_v2_agent_challenges SET consumed_at=? WHERE id=? AND organization_id=? AND consumed_at IS NULL",
+          values: [context.now, challengeId, organizationId],
+        },
+        {
+          sql: `INSERT INTO hosting_v2_events(id,organization_id,entity_type,entity_id,event_type,actor_id,payload_digest,metadata_json,occurred_at)
+            SELECT ?,c.organization_id,'AGENT_CHALLENGE',c.id,'AGENT_CHALLENGE_REVOKED',?,?,?,?
+            FROM hosting_v2_agent_challenges c
+            WHERE c.id=? AND c.organization_id=? AND c.consumed_at=?
+              AND NOT EXISTS(SELECT 1 FROM hosting_v2_agent_registrations r WHERE r.challenge_id=c.id)
+              AND NOT EXISTS(SELECT 1 FROM hosting_v2_events e WHERE e.entity_type='AGENT_CHALLENGE' AND e.entity_id=c.id AND e.event_type='AGENT_CHALLENGE_REVOKED')`,
+          values: [eventId, context.actorId, context.payloadHash, JSON.stringify({}), context.now, challengeId, organizationId, context.now],
+        },
+        {
+          sql: `INSERT INTO hosting_v2_command_receipts(actor_id,idempotency_key,command_type,payload_hash,entity_type,entity_id,created_at)
+            SELECT ?,?,'REVOKE_AGENT_CHALLENGE',?,'AGENT_CHALLENGE',entity_id,?
+            FROM hosting_v2_events WHERE id=?`,
+          values: [context.actorId, context.idempotencyKey, context.payloadHash, context.now, eventId],
+        },
+      ]);
+      if (results[0]?.changes !== 1 || results[1]?.changes !== 1 || results[2]?.changes !== 1) {
+        const latest = await db.first<Row>(`${agentChallengeProjection} WHERE c.id=? AND c.organization_id=?`, [challengeId, organizationId]);
+        if (latest && nullable(latest, "revoked_at")) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备登记挑战已经废弃。");
+        if (latest && nullable(latest, "consumed_at")) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备登记挑战已被 Agent 使用，不能再废弃。");
+        throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备登记挑战已经废弃。");
+      }
+      const row = await db.first<Row>(`${agentChallengeProjection} WHERE c.id=? AND c.organization_id=?`, [challengeId, organizationId]);
+      if (!row || !nullable(row, "revoked_at")) throw new Error("HOSTING_AGENT_CHALLENGE_REVOKE_FAILED");
+      return challenge(row);
+    },
+
     async getAgentChallenge(challengeId) {
-      const row = await db.first<Row>("SELECT * FROM hosting_v2_agent_challenges WHERE id=?", [challengeId]);
+      const row = await db.first<Row>(`${agentChallengeProjection} WHERE c.id=?`, [challengeId]);
       return row ? challenge(row) : null;
     },
 
     async getAgentRegistration(organizationId, challengeId) {
-      const challengeRow = await db.first<Row>("SELECT * FROM hosting_v2_agent_challenges WHERE id=? AND organization_id=?", [challengeId, organizationId]);
+      const challengeRow = await db.first<Row>(`${agentChallengeProjection} WHERE c.id=? AND c.organization_id=?`, [challengeId, organizationId]);
       if (!challengeRow) return null;
       const deviceRow = await db.first<Row>(`SELECT d.* FROM hosting_v2_agent_registrations r
         JOIN hosting_v2_devices d ON d.id=r.device_id
@@ -853,16 +904,17 @@ function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       if (!agentVersionAtLeast(input.agentVersion, HOSTING_V2_MIN_AGENT_VERSION)) {
         throw new ExchangeDomainError("HOSTING_AGENT_UPGRADE_REQUIRED", 409, `Host Agent 需要升级到 ${HOSTING_V2_MIN_AGENT_VERSION} 或更高版本。`);
       }
-      const challengeRow = await db.first<Row>("SELECT * FROM hosting_v2_agent_challenges WHERE id=?", [challengeId]);
-      if (!challengeRow || challengeRow.consumed_at != null || Date.parse(value(challengeRow, "expires_at")) < Date.parse(context.now)) {
-        throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 410, "设备登记挑战已过期或已使用。");
+      const challengeRow = await db.first<Row>(`${agentChallengeProjection} WHERE c.id=?`, [challengeId]);
+      if (!challengeRow || challengeRow.consumed_at != null || challengeRow.revoked_at != null || Date.parse(value(challengeRow, "expires_at")) < Date.parse(context.now)) {
+        throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 410, "设备登记挑战已过期、已使用或已废弃。");
       }
       const profileRow = await db.first<Row>("SELECT status,agreement_version,evidence_digest FROM hosting_v2_supplier_profiles WHERE organization_id=?", [value(challengeRow, "organization_id")]);
       if (!profileRow || value(profileRow, "status") !== "APPROVED" || !nullable(profileRow, "agreement_version") || !nullable(profileRow, "evidence_digest")) throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "供应主体当前缺少有效协议或审核证据，不能登记设备。");
       const recordId = id("had");
       await db.batch([
         { sql: `INSERT INTO hosting_v2_devices(id,organization_id,account_id,display_name,device_key_id,device_public_key,agent_version,inventory_json,inventory_digest,status,verification_status,last_sequence,last_seen_at,version,created_at,updated_at)
-          SELECT ?,organization_id,account_id,?,?,?,?,?,?,'ONLINE','NOT_RUN',0,NULL,1,?,? FROM hosting_v2_agent_challenges WHERE id=? AND consumed_at IS NULL AND expires_at>=?`, values: [recordId, input.displayName, input.deviceKeyId, input.devicePublicKey, input.agentVersion, JSON.stringify(input.inventory), input.inventoryDigest, context.now, context.now, challengeId, context.now] },
+          SELECT ?,organization_id,account_id,?,?,?,?,?,?,'ONLINE','NOT_RUN',0,NULL,1,?,? FROM hosting_v2_agent_challenges c
+          WHERE c.id=? AND consumed_at IS NULL AND expires_at>=?`, values: [recordId, input.displayName, input.deviceKeyId, input.devicePublicKey, input.agentVersion, JSON.stringify(input.inventory), input.inventoryDigest, context.now, context.now, challengeId, context.now] },
         { sql: `INSERT INTO hosting_v2_agent_registrations(challenge_id,device_id,organization_id,registered_at)
           VALUES(?,?,(SELECT organization_id FROM hosting_v2_devices WHERE id=?),?)`, values: [challengeId, recordId, recordId, context.now] },
         { sql: "UPDATE hosting_v2_agent_challenges SET consumed_at=? WHERE id=? AND consumed_at IS NULL", values: [context.now, challengeId] },

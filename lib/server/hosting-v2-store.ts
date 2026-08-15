@@ -54,6 +54,7 @@ export interface HostingV2Store {
   listProfiles(): Promise<HostingSupplierProfile[]>;
   reviewProfile(organizationId: string, input: { decision: "APPROVE" | "REJECT" | "SUSPEND"; expectedVersion: number; reviewNote: string; evidenceDigest?: string | null }, context: HostingMutationContext): Promise<HostingSupplierProfile>;
   issueAgentChallenge(account: AccountSessionContext, context: HostingMutationContext): Promise<HostingAgentChallenge>;
+  revokeAgentChallenge(organizationId: string, challengeId: string, context: HostingMutationContext): Promise<HostingAgentChallenge>;
   getAgentChallenge(id: string): Promise<HostingAgentChallenge | null>;
   getAgentRegistration(organizationId: string, challengeId: string): Promise<HostingAgentRegistration | null>;
   registerDevice(challengeId: string, input: { displayName: string; deviceKeyId: string; devicePublicKey: string; agentVersion: string; inventory: HostingDeviceInventory; inventoryDigest: string }, context: HostingMutationContext): Promise<HostingDevice>;

@@ -21,7 +21,7 @@ function agentRegistrationEndpoint() {
 }
 
 type PairingDevice = Pick<HostingDevice, "id" | "displayName" | "agentVersion" | "status" | "verificationStatus" | "lastSequence" | "lastSeenAt"> & Readonly<{ gpuModel: HostingDevice["inventory"]["gpuModel"] }>;
-type PairingStatus = Readonly<{ challengeId: string; expiresAt: string; consumedAt: string | null; device: PairingDevice | null }>;
+type PairingStatus = Readonly<{ challengeId: string; expiresAt: string; consumedAt: string | null; revokedAt: string | null; device: PairingDevice | null }>;
 
 const templates = [
   { id: "personal-gpu", code: "01", title: "个人 GPU", description: "单台 Ubuntu 主机，首期支持 1× RTX 4090 或 H100。", enabled: true },
@@ -39,7 +39,9 @@ export function SupplyResourceRegistration() {
   const [pairedDevice, setPairedDevice] = useState<PairingDevice | null>(null);
   const [pairingExpired, setPairingExpired] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const issueKey = useRef<string | null>(null);
+  const revokeKey = useRef<string | null>(null);
   const connectionVerified = Boolean(pairedDevice && pairedDevice.lastSequence > 0);
   const agentOnline = Boolean(connectionVerified && pairedDevice && ["ONLINE", "VERIFIED"].includes(pairedDevice.status));
 
@@ -67,7 +69,13 @@ export function SupplyResourceRegistration() {
     const check = async () => {
       try {
         const result = await marketplaceGet<{ record: PairingStatus }>(`/api/v2/supply/agent-challenges/${encodeURIComponent(challenge.id)}`);
-        if (!cancelled && result.record.device) {
+        if (!cancelled && result.record.revokedAt) {
+          setChallenge(null);
+          setPairedDevice(null);
+          setPairingExpired(false);
+          revokeKey.current = null;
+          setNotice("这份配对凭证已在服务器废弃，不能再用于登记设备。");
+        } else if (!cancelled && result.record.device) {
           setPairedDevice(result.record.device);
           setError(null);
         } else if (!cancelled && Date.parse(result.record.expiresAt) <= Date.now()) {
@@ -92,7 +100,7 @@ export function SupplyResourceRegistration() {
   }, null, 2) : "", [challenge]);
 
   async function issueChallenge() {
-    setBusy(true); setError(null); setCopied(false); setPairedDevice(null); setPairingExpired(false);
+    setBusy(true); setError(null); setNotice(null); setCopied(false); setPairedDevice(null); setPairingExpired(false);
     try {
       issueKey.current ??= createIdempotencyKey("agent-pairing");
       const result = await marketplacePost<HostingAgentChallenge>("/api/v2/supply/agent-challenges", {}, issueKey.current);
@@ -100,6 +108,30 @@ export function SupplyResourceRegistration() {
       setChallenge(result.record);
     } catch (cause) {
       setError(marketplaceErrorMessage(cause, "一次性配对凭证签发失败。"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeChallenge() {
+    if (!challenge) return;
+    setBusy(true); setError(null); setNotice(null);
+    try {
+      revokeKey.current ??= createIdempotencyKey("agent-pairing-revoke");
+      await marketplacePost<HostingAgentChallenge>(
+        `/api/v2/supply/agent-challenges/${encodeURIComponent(challenge.id)}/revoke`,
+        {},
+        revokeKey.current,
+      );
+      setChallenge(null);
+      setPairedDevice(null);
+      setPairingExpired(false);
+      setCopied(false);
+      issueKey.current = null;
+      revokeKey.current = null;
+      setNotice("配对凭证已在服务器废弃，旧文件不能再登记设备。");
+    } catch (cause) {
+      setError(marketplaceErrorMessage(cause, "配对凭证废弃失败，请不要继续分发这份文件。"));
     } finally {
       setBusy(false);
     }
@@ -137,12 +169,13 @@ export function SupplyResourceRegistration() {
       </div>
 
       {error ? <div className={`${styles.message} ${styles.messageError}`} role="alert">{error}</div> : null}
+      {notice ? <div className={styles.message} role="status">{notice}</div> : null}
       {!approved ? <div className={styles.warningBox}>只有审核通过的供应主体才能签发配对凭证。请先完成供应商审核。</div> : null}
 
       <div className={styles.resourceCards} aria-label="资源接入模板">
         {templates.map((template) => (
           <article className={`${styles.resourceCard} ${selected === template.id ? styles.resourceCardSelected : ""}`} key={template.id}>
-            <button aria-pressed={selected === template.id} disabled={!template.enabled} onClick={() => { setSelected(template.id); setChallenge(null); setPairedDevice(null); setPairingExpired(false); issueKey.current = null; }} type="button">
+            <button aria-pressed={selected === template.id} disabled={!template.enabled || Boolean(challenge && !pairedDevice)} onClick={() => { setSelected(template.id); setChallenge(null); setPairedDevice(null); setPairingExpired(false); issueKey.current = null; revokeKey.current = null; }} type="button">
               <span>{template.code}</span><h2>{template.title}</h2><p>{template.description}</p>
             </button>
           </article>
@@ -184,7 +217,7 @@ export function SupplyResourceRegistration() {
               <div className={styles.actionRow}>
                 <button className={styles.actionButton} onClick={downloadBundle} type="button">下载私有配对文件</button>
                 <button className={styles.actionButton} onClick={() => void copyBundle()} type="button">{copied ? "已复制" : "复制配对内容"}</button>
-                {!pairedDevice ? <button className={styles.secondaryAction} onClick={() => { setChallenge(null); setPairedDevice(null); setPairingExpired(false); issueKey.current = null; }} type="button">废弃这份凭证</button> : null}
+                {!pairedDevice ? <button className={styles.secondaryAction} disabled={busy} onClick={() => void revokeChallenge()} type="button">{busy ? "正在废弃…" : "废弃这份凭证"}</button> : null}
               </div>
               {agentOnline && pairedDevice ? (
                 <div className={styles.connectionSuccess} role="status">

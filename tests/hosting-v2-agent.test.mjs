@@ -241,7 +241,11 @@ test("agent routes require signed device proofs and never accept workspace roles
   assert.match(readFileSync(agentRoutes[2], "utf8"), /\["VERIFY", "STOP", "CLEANUP"\]/u);
   assert.match(readFileSync(agentRoutes[3], "utf8"), /HOSTING_V2_TRADING_DISABLED/u);
 
-  for (const path of ["app/api/v2/supply/agent-challenges/route.ts", "app/api/v2/supply/devices/[deviceId]/verify/route.ts"]) {
+  for (const path of [
+    "app/api/v2/supply/agent-challenges/route.ts",
+    "app/api/v2/supply/agent-challenges/[challengeId]/revoke/route.ts",
+    "app/api/v2/supply/devices/[deviceId]/verify/route.ts",
+  ]) {
     const source = readFileSync(path, "utf8");
     assert.match(source, /requireTradingAccountSession\(request\)/u);
     assert.ok(source.indexOf("assertAccountAuthSameOrigin(request)") < source.indexOf("requireTradingAccountSession(request)"));

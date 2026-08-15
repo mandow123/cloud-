@@ -67,6 +67,9 @@ test("resource registration issues a short-lived server challenge without client
   assert.match(source, /下载私有配对文件/u);
   assert.match(source, /废弃这份凭证/u);
   assert.doesNotMatch(source, /废弃页面中的凭证/u);
+  assert.match(source, /`\/api\/v2\/supply\/agent-challenges\/\$\{encodeURIComponent\(challenge\.id\)\}\/revoke`/u);
+  assert.match(source, /await marketplacePost<HostingAgentChallenge>/u);
+  assert.match(source, /旧文件不能再登记设备/u);
   assert.match(source, /`\/api\/v2\/supply\/agent-challenges\/\$\{encodeURIComponent\(challenge\.id\)\}`/u);
   assert.match(source, /window\.setInterval\(\(\) => \{ void check\(\); \}, 3_000\)/u);
   assert.match(source, /进入设备验真/u);

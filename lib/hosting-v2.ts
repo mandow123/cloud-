@@ -105,6 +105,7 @@ export type HostingAgentChallenge = Readonly<{
   minimumAgentVersion: string;
   expiresAt: string;
   consumedAt: string | null;
+  revokedAt: string | null;
   createdAt: string;
 }>;
 

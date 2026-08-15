@@ -19,6 +19,7 @@ import { PUT as saveSupplierProfile } from "../app/api/v2/supply/profile/route.t
 import { POST as submitSupplierProfile } from "../app/api/v2/supply/profile/submit/route.ts";
 import { POST as issueAgentChallenge } from "../app/api/v2/supply/agent-challenges/route.ts";
 import { GET as getAgentChallengeStatus } from "../app/api/v2/supply/agent-challenges/[challengeId]/route.ts";
+import { POST as revokeAgentChallenge } from "../app/api/v2/supply/agent-challenges/[challengeId]/revoke/route.ts";
 import { POST as registerHostAgent } from "../app/api/v2/agent/register/route.ts";
 import { POST as acceptHostAgentHeartbeat } from "../app/api/v2/agent/devices/[deviceId]/heartbeat/route.ts";
 import { POST as completeHostAgentCommandRoute } from "../app/api/v2/agent/devices/[deviceId]/commands/[commandId]/complete/route.ts";
@@ -269,6 +270,43 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     const submitted = await json(await submitSupplierProfile(browserRequest(supplier, "/api/v2/supply/profile/submit", "POST", { expectedVersion: 1, agreementAccepted: true }, "golden-profile-submit")), 200);
     assert.equal(submitted.record.status, "SUBMITTED");
     await hosting.reviewProfile(supplier.context.activeOrganization.id, { decision: "APPROVE", expectedVersion: 2, reviewNote: "内部真实 GPU 黄金闭环验收", evidenceDigest: "c".repeat(64) }, mutation("golden-admin-reviewer", "golden-profile-approve", now));
+
+    const disposableChallenge = await json(await issueAgentChallenge(browserRequest(supplier, "/api/v2/supply/agent-challenges", "POST", {}, "golden-agent-challenge-disposable")), 201);
+    const revoked = await json(await revokeAgentChallenge(
+      browserRequest(supplier, `/api/v2/supply/agent-challenges/${disposableChallenge.record.id}/revoke`, "POST", {}, "golden-agent-challenge-revoke"),
+      { params: Promise.resolve({ challengeId: disposableChallenge.record.id }) },
+    ), 200);
+    assert.equal(revoked.record.id, disposableChallenge.record.id);
+    assert.ok(revoked.record.revokedAt);
+    const revokeReplay = await json(await revokeAgentChallenge(
+      browserRequest(supplier, `/api/v2/supply/agent-challenges/${disposableChallenge.record.id}/revoke`, "POST", {}, "golden-agent-challenge-revoke"),
+      { params: Promise.resolve({ challengeId: disposableChallenge.record.id }) },
+    ), 200);
+    assert.equal(revokeReplay.record.revokedAt, revoked.record.revokedAt);
+    const revokedStatus = await json(await getAgentChallengeStatus(
+      browserRead(supplier, `/api/v2/supply/agent-challenges/${disposableChallenge.record.id}`),
+      { params: Promise.resolve({ challengeId: disposableChallenge.record.id }) },
+    ), 200);
+    assert.equal(revokedStatus.record.revokedAt, revoked.record.revokedAt);
+    assert.equal(revokedStatus.record.device, null);
+    await assert.rejects(pairDevice({
+      bundle: {
+        version: 1,
+        registerEndpoint: `${ORIGIN}/api/v2/agent/register`,
+        challengeId: disposableChallenge.record.id,
+        nonce: disposableChallenge.record.nonce,
+        minimumAgentVersion: disposableChallenge.record.minimumAgentVersion,
+        expiresAt: disposableChallenge.record.expiresAt,
+      },
+      displayName: "已废弃凭证不应登记",
+      publicHost: "revoked-gpu.example.com",
+      sshPortStart: 27_020,
+      sshPortEnd: 27_039,
+      stateFile: join(directory, "revoked-host-agent", "identity.json"),
+      allowInsecureLocal: true,
+      inventoryCollector: async () => ({ ...inventory(), publicHost: "revoked-gpu.example.com", sshPortStart: 27_020, sshPortEnd: 27_039 }),
+      post: hostAgentPost,
+    }), (error) => error instanceof AgentError && error.code === "EXCHANGE_STATE_CONFLICT");
 
     const challenge = await json(await issueAgentChallenge(browserRequest(supplier, "/api/v2/supply/agent-challenges", "POST", {}, "golden-agent-challenge")), 201);
     const agentStateFile = join(directory, "golden-host-agent", "identity.json");
