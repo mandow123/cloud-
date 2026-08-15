@@ -26,7 +26,7 @@ export interface HostingV2DatabaseAdapter {
   first<T>(sql: string, values?: readonly unknown[]): Promise<T | null>;
   all<T>(sql: string, values?: readonly unknown[]): Promise<T[]>;
   batch(items: readonly HostingV2Sql[]): Promise<Array<{ changes: number }>>;
-  ensureSchema(statements: readonly string[], version: number): Promise<void>;
+  ensureSchema(statements: readonly string[], version: number, compatibleThrough?: number): Promise<void>;
 }
 
 export type HostingMutationContext = Readonly<{ actorId: string; idempotencyKey: string; payloadHash: string; now: string }>;

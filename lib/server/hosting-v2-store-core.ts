@@ -1,5 +1,5 @@
 import { HOSTING_FEE_LEGACY_QUALIFICATION_MODEL, HOSTING_FEE_QUALIFICATION_MODEL, HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, hostingActualFeeBreakdown, hostingCardHourMicrosForSeconds, hostingCurrentCalendarMonth, hostingDefaultFeeTiers, hostingFeeBreakdown, hostingFeeRatesAreValid, hostingSelectFeeTier, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDisputeCase, type HostingFeeSchedule, type HostingFeeTier, type HostingGoldenLoopAudit, type HostingOffer, type HostingStopIncident, type HostingSupplierFeePreview, type HostingSupplierMonthlySettlement, type HostingSupplierProfile } from "../hosting-v2.ts";
-import { HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
+import { HOSTING_V2_SCHEMA_COMPATIBILITY_VERSION, HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { assertHostingAgentWindow, hostingAgentCanonicalJson, hostingAgentDigest, verifyHostingAgentSignature } from "./hosting-agent-crypto.ts";
 import { assertHostingV2ApprovedImage, HOSTING_V2_OCI_IMAGE_PATTERN, hostingV2ApprovedImages } from "./hosting-v2-image-policy.ts";
@@ -15,6 +15,20 @@ const id = (prefix: string) => `${prefix}_${crypto.randomUUID().replaceAll("-", 
 const VERIFY_TEST_NAMES = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "WORKLOAD_IMAGE", "PORT_REACHABILITY"] as const;
 const HOSTING_V2_MIN_AGENT_VERSION = "1.9.5";
 const HOSTING_V2_AUTOMATED_STOP_ATTEMPTS = 4;
+const DEVICE_RETIREMENT_EVENT_TYPES = ["DEVICE_RETIREMENT_REQUESTED", "DEVICE_CREDENTIAL_REVOKED", "DEVICE_RETIREMENT_FINALIZED"] as const;
+const DEVICE_RETIREMENT_EVENT_SQL = `EXISTS(
+  SELECT 1 FROM hosting_v2_events retirement
+  WHERE retirement.entity_type='DEVICE' AND retirement.entity_id=hosting_v2_devices.id
+    AND retirement.event_type IN ('DEVICE_RETIREMENT_REQUESTED','DEVICE_CREDENTIAL_REVOKED','DEVICE_RETIREMENT_FINALIZED')
+)`;
+
+async function hasDeviceRetirementEvent(db: HostingV2DatabaseAdapter, deviceId: string) {
+  const row = await db.first<{ found: number }>(`SELECT EXISTS(
+    SELECT 1 FROM hosting_v2_events
+    WHERE entity_type='DEVICE' AND entity_id=? AND event_type IN (${DEVICE_RETIREMENT_EVENT_TYPES.map(() => "?").join(",")})
+  ) AS found`, [deviceId, ...DEVICE_RETIREMENT_EVENT_TYPES]);
+  return Number(row?.found ?? 0) === 1;
+}
 
 function agentVersionAtLeast(valueToCheck: string, minimum: string) {
   const parse = (value: string) => {
@@ -471,7 +485,7 @@ async function supplierMonthlySettlementReadModel(db: HostingV2DatabaseAdapter, 
 }
 
 export async function createHostingV2Store(db: HostingV2DatabaseAdapter): Promise<HostingV2Store> {
-  await db.ensureSchema(hostingV2SchemaStatements, HOSTING_V2_SCHEMA_VERSION);
+  await db.ensureSchema(hostingV2SchemaStatements, HOSTING_V2_SCHEMA_VERSION, HOSTING_V2_SCHEMA_COMPATIBILITY_VERSION);
   const store = {} as HostingV2Store;
   Object.assign(store, createReadinessMethods(db), createProfileMethods(db), createDeviceMethods(db), createMarketMethods(db));
   return store;
@@ -493,7 +507,14 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
             AND NOT EXISTS(SELECT 1 FROM hosting_v2_agent_commands a WHERE a.contract_id=c.id AND a.command_type='CLEANUP' AND a.status IN ('PENDING','DELIVERED','SUCCEEDED'))`),
         db.first<{ count: number }>("SELECT COUNT(*) AS count FROM hosting_v2_contracts WHERE status='CLEANING'"),
       ]);
-      if (Number(migration?.version ?? 0) !== HOSTING_V2_SCHEMA_VERSION) throw new Error("HOSTING_V2_SCHEMA_MISMATCH");
+      const schemaVersion = Number(migration?.version ?? 0);
+      if (schemaVersion < HOSTING_V2_SCHEMA_VERSION || schemaVersion > HOSTING_V2_SCHEMA_COMPATIBILITY_VERSION) throw new Error("HOSTING_V2_SCHEMA_MISMATCH");
+      if (schemaVersion === 14) {
+        // Merely inserting a version marker is not a valid future schema. This
+        // projection deliberately references every bridge-critical field so a
+        // malformed or non-additive migration remains fail-closed.
+        await db.first("SELECT device_id,organization_id,mode,status,requested_at,finalized_at FROM hosting_v2_device_retirements LIMIT 1");
+      }
       await db.first("SELECT tier_code FROM hosting_v2_lifetime_fee_tiers LIMIT 1");
       const invalidFeeVolume = await db.first<Row>(`SELECT supplier_organization_id
         FROM hosting_v2_supplier_fee_volume_events
@@ -502,7 +523,7 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
         LIMIT 1`);
       if (invalidFeeVolume) throw new Error("HOSTING_FEE_VOLUME_AUDIT_INVALID");
       return {
-        schemaVersion: HOSTING_V2_SCHEMA_VERSION,
+        schemaVersion,
         integrity: "ok" as const,
         activeFeeScheduleId: feeRow ? value(feeRow, "id") : null,
         approvedSupplierCount: Number(suppliers?.count ?? 0),
@@ -932,16 +953,29 @@ function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
     },
 
     async acceptHeartbeat(deviceId, input, context) {
-      const current = await db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=?", [deviceId]);
+      const current = await db.first<Row>(`SELECT *,${DEVICE_RETIREMENT_EVENT_SQL} AS retirement_requested
+        FROM hosting_v2_devices WHERE id=?`, [deviceId]);
       if (!current || value(current, "status") === "REVOKED") throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "设备不存在或已撤销。");
       if (input.sequence <= number(current, "last_sequence")) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "心跳序列已经使用。");
       const inventoryChanged = input.inventoryDigest !== value(current, "inventory_digest");
+      const retirementRequested = number(current, "retirement_requested") === 1;
       const protectedStatus = ["VERIFYING", "BUSY", "DRAINING"].includes(value(current, "status"));
-      const nextStatus = input.capacityState === "OFFLINE" ? "OFFLINE" : inventoryChanged ? "ONLINE" : protectedStatus ? value(current, "status") : value(current, "verification_status") === "PASSED" ? "VERIFIED" : "ONLINE";
+      const nextStatus = retirementRequested ? "DRAINING" : input.capacityState === "OFFLINE" ? "OFFLINE" : inventoryChanged ? "ONLINE" : protectedStatus ? value(current, "status") : value(current, "verification_status") === "PASSED" ? "VERIFIED" : "ONLINE";
       await db.batch([
         { sql: "INSERT INTO hosting_v2_agent_heartbeats(id,device_id,sequence,inventory_digest,capacity_state,payload_digest,observed_at,received_at) VALUES(?,?,?,?,?,?,?,?)", values: [id("hhb"), deviceId, input.sequence, input.inventoryDigest, input.capacityState, context.payloadHash, input.observedAt, context.now] },
-        { sql: "UPDATE hosting_v2_devices SET status=?,verification_status=CASE WHEN ? THEN 'EXPIRED' ELSE verification_status END,verified_until=CASE WHEN ? THEN NULL ELSE verified_until END,last_sequence=?,last_seen_at=?,version=version+1,updated_at=? WHERE id=? AND last_sequence<?", values: [nextStatus, inventoryChanged ? 1 : 0, inventoryChanged ? 1 : 0, input.sequence, input.observedAt, context.now, deviceId, input.sequence] },
-        ...(inventoryChanged ? [{ sql: "UPDATE hosting_v2_offers SET status='SUSPENDED',version=version+1,updated_at=? WHERE device_id=? AND status IN ('PUBLISHED','PAUSED')", values: [context.now, deviceId] } satisfies HostingV2Sql] : []),
+        { sql: `UPDATE hosting_v2_devices SET
+            status=CASE WHEN ${DEVICE_RETIREMENT_EVENT_SQL} THEN 'DRAINING' ELSE ? END,
+            verification_status=CASE WHEN ? OR ${DEVICE_RETIREMENT_EVENT_SQL} THEN 'EXPIRED' ELSE verification_status END,
+            verified_until=CASE WHEN ? OR ${DEVICE_RETIREMENT_EVENT_SQL} THEN NULL ELSE verified_until END,
+            last_sequence=?,last_seen_at=?,version=version+1,updated_at=?
+          WHERE id=? AND status!='REVOKED' AND last_sequence<?`, values: [nextStatus, inventoryChanged ? 1 : 0, inventoryChanged ? 1 : 0, input.sequence, input.observedAt, context.now, deviceId, input.sequence] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        { sql: `UPDATE hosting_v2_offers SET status='SUSPENDED',version=version+1,updated_at=?
+          WHERE device_id=? AND status IN ('PUBLISHED','PAUSED') AND (? OR EXISTS(
+            SELECT 1 FROM hosting_v2_events retirement
+            WHERE retirement.entity_type='DEVICE' AND retirement.entity_id=hosting_v2_offers.device_id
+              AND retirement.event_type IN ('DEVICE_RETIREMENT_REQUESTED','DEVICE_CREDENTIAL_REVOKED','DEVICE_RETIREMENT_FINALIZED')
+          ))`, values: [context.now, deviceId, inventoryChanged ? 1 : 0] },
         event(context, value(current, "organization_id"), "DEVICE", deviceId, inventoryChanged ? "DEVICE_INVENTORY_CHANGED" : "DEVICE_HEARTBEAT", { sequence: input.sequence, capacityState: input.capacityState }),
       ]);
       const row = await db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=?", [deviceId]);
@@ -956,14 +990,17 @@ function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         if (!row) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "验真任务不存在。");
         return command(row);
       }
-      const current = await db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=? AND organization_id=?", [deviceId, organizationId]);
-      if (!current || !["ONLINE", "VERIFIED"].includes(value(current, "status"))) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备需在线后才能验真。");
+      const current = await db.first<Row>(`SELECT *,${DEVICE_RETIREMENT_EVENT_SQL} AS retirement_requested
+        FROM hosting_v2_devices WHERE id=? AND organization_id=?`, [deviceId, organizationId]);
+      if (!current || !["ONLINE", "VERIFIED"].includes(value(current, "status")) || number(current, "retirement_requested") === 1) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备需在线且未进入退场后才能验真。");
       if (!nullable(current, "last_seen_at") || Date.parse(value(current, "last_seen_at")) < Date.parse(context.now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备尚未发送有效心跳，不能开始验真。");
       const commandId = id("hcmd");
       const approvedImages = [...hostingV2ApprovedImages()].sort();
       await db.batch([
         { sql: "INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at) VALUES(?,?,NULL,'VERIFY',?,'PENDING',0,?)", values: [commandId, deviceId, JSON.stringify({ expectedInventoryDigest: value(current, "inventory_digest"), tests: [...VERIFY_TEST_NAMES], approvedImages, reachabilityChallenge: crypto.randomUUID().replaceAll("-", "") }), context.now] },
-        { sql: "UPDATE hosting_v2_devices SET status='VERIFYING',verification_status='PENDING',version=version+1,updated_at=? WHERE id=?", values: [context.now, deviceId] },
+        { sql: `UPDATE hosting_v2_devices SET status='VERIFYING',verification_status='PENDING',version=version+1,updated_at=?
+          WHERE id=? AND status IN ('ONLINE','VERIFIED') AND NOT ${DEVICE_RETIREMENT_EVENT_SQL}`, values: [context.now, deviceId] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
         event(context, organizationId, "DEVICE", deviceId, "DEVICE_VERIFICATION_QUEUED", { commandId }),
         receipt(context, "QUEUE_VERIFICATION", "AGENT_COMMAND", commandId),
       ]);
@@ -1257,7 +1294,12 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         }
         await db.batch([
           { sql: "UPDATE hosting_v2_contracts SET status='CANCELLED',version=version+1,updated_at=? WHERE id=? AND status IN ('RESERVED','CARD_HOURS_HELD','PAID')", values: [context.now, contractId] },
-          { sql: "UPDATE hosting_v2_offers SET status='PUBLISHED',version=version+1,updated_at=? WHERE id=? AND status='RESERVED'", values: [context.now, value(current, "offer_id")] },
+          { sql: `UPDATE hosting_v2_offers SET status=CASE WHEN EXISTS(
+              SELECT 1 FROM hosting_v2_events retirement
+              WHERE retirement.entity_type='DEVICE' AND retirement.entity_id=hosting_v2_offers.device_id
+                AND retirement.event_type IN ('DEVICE_RETIREMENT_REQUESTED','DEVICE_CREDENTIAL_REVOKED','DEVICE_RETIREMENT_FINALIZED')
+            ) THEN 'SUSPENDED' ELSE 'PUBLISHED' END,version=version+1,updated_at=?
+            WHERE id=? AND status='RESERVED'`, values: [context.now, value(current, "offer_id")] },
           event(context, value(current, "buyer_organization_id"), "CONTRACT", contractId, "CONTRACT_CANCELLED", { reason: reason.trim() }),
           receipt(context, "CANCEL_CONTRACT", "CONTRACT", contractId),
         ]);
@@ -1276,15 +1318,31 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       }
       const current = await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=? AND buyer_organization_id=?", [contractId, buyerOrganizationId]);
       if (!current || value(current, "status") !== "CARD_HOURS_HELD") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同未锁定卡时或已经提交公钥。");
-      const deviceRow = await db.first<Row>("SELECT agent_version FROM hosting_v2_devices WHERE id=?", [value(current, "device_id")]);
+      const deviceRow = await db.first<Row>(`SELECT *,${DEVICE_RETIREMENT_EVENT_SQL} AS retirement_requested
+        FROM hosting_v2_devices WHERE id=?`, [value(current, "device_id")]);
       if (!deviceRow || !agentVersionAtLeast(value(deviceRow, "agent_version"), HOSTING_V2_MIN_AGENT_VERSION)) throw new ExchangeDomainError("HOSTING_AGENT_UPGRADE_REQUIRED", 409, `Host Agent 需要升级到 ${HOSTING_V2_MIN_AGENT_VERSION} 或更高版本。`);
+      const staleCutoff = new Date(Date.parse(context.now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000).toISOString();
+      if (value(deviceRow, "status") !== "VERIFIED" || value(deviceRow, "verification_status") !== "PASSED"
+        || Date.parse(nullable(deviceRow, "verified_until") ?? "") <= Date.parse(context.now)
+        || Date.parse(nullable(deviceRow, "last_seen_at") ?? "") < Date.parse(staleCutoff)
+        || number(deviceRow, "retirement_requested") === 1) {
+        throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备已离线、验真失效或正在退场，不能下发开通任务。");
+      }
       if (!/^ssh-(?:ed25519|rsa) [A-Za-z0-9+/=]{40,8192}(?: [^\r\n]{1,120})?$/u.test(input.publicKey.trim())) throw new ExchangeInputError("请提交有效的 OpenSSH 公钥。", "publicKey");
       if (!/^SHA256:[A-Za-z0-9+/]{20,64}$/u.test(input.fingerprint)) throw new ExchangeInputError("SSH 公钥指纹无效。", "fingerprint");
       const commandId = id("hcmd");
       const snapshot = json<HostingContract["snapshot"]>(current, "snapshot_json");
       const payload = { contractId, image: snapshot.approvedImage, publicKey: input.publicKey.trim(), reservedSeconds: number(current, "reserved_seconds"), gpuCount: 1 };
       await db.batch([
-        { sql: "UPDATE hosting_v2_contracts SET status='PROVISIONING',ssh_public_key_fingerprint=?,version=version+1,updated_at=? WHERE id=? AND status='CARD_HOURS_HELD'", values: [input.fingerprint, context.now, contractId] },
+        { sql: `UPDATE hosting_v2_contracts SET status='PROVISIONING',ssh_public_key_fingerprint=?,version=version+1,updated_at=?
+          WHERE id=? AND status='CARD_HOURS_HELD' AND EXISTS(
+            SELECT 1 FROM hosting_v2_devices d WHERE d.id=hosting_v2_contracts.device_id
+              AND d.status='VERIFIED' AND d.verification_status='PASSED' AND d.verified_until>? AND d.last_seen_at>=?
+              AND NOT EXISTS(SELECT 1 FROM hosting_v2_events retirement
+                WHERE retirement.entity_type='DEVICE' AND retirement.entity_id=d.id
+                  AND retirement.event_type IN ('DEVICE_RETIREMENT_REQUESTED','DEVICE_CREDENTIAL_REVOKED','DEVICE_RETIREMENT_FINALIZED'))
+          )`, values: [input.fingerprint, context.now, contractId, context.now, staleCutoff] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
         { sql: "INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at) VALUES(?,?,?,'PROVISION',?,'PENDING',0,?)", values: [commandId, value(current, "device_id"), contractId, JSON.stringify(payload), context.now] },
         event(context, buyerOrganizationId, "CONTRACT", contractId, "PROVISIONING_QUEUED", { commandId, publicKeyFingerprint: input.fingerprint }),
         receipt(context, "ATTACH_SSH_KEY", "AGENT_COMMAND", commandId),
@@ -1305,6 +1363,14 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       if (!current || value(current, "status") !== "READY") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "实例尚未准备完成。");
       const endpointDisplay = nullable(current, "endpoint_display");
       if (!endpointDisplay) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "实例连接入口尚未准备完成。");
+      const startDevice = await db.first<Row>(`SELECT *,${DEVICE_RETIREMENT_EVENT_SQL} AS retirement_requested
+        FROM hosting_v2_devices WHERE id=?`, [value(current, "device_id")]);
+      const staleCutoff = new Date(Date.parse(context.now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000).toISOString();
+      if (!startDevice || value(startDevice, "status") !== "BUSY"
+        || Date.parse(nullable(startDevice, "last_seen_at") ?? "") < Date.parse(staleCutoff)
+        || number(startDevice, "retirement_requested") === 1) {
+        throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备已离线或正在退场，不能启动实例。");
+      }
       const queued = await db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE contract_id=? AND command_type='START' AND status IN ('PENDING','DELIVERED') ORDER BY created_at DESC LIMIT 1", [contractId]);
       if (queued) {
         await db.batch([receipt(context, "START_CONTRACT", "AGENT_COMMAND", value(queued, "id"))]);
@@ -1312,7 +1378,14 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       }
       const commandId = id("hcmd");
       await db.batch([
-        { sql: "INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at) VALUES(?,?,?,'START',?,'PENDING',0,?)", values: [commandId, value(current, "device_id"), contractId, JSON.stringify({ contractId, endpointDisplay }), context.now] },
+        { sql: `INSERT INTO hosting_v2_agent_commands(id,device_id,contract_id,command_type,payload_json,status,attempt,created_at)
+          SELECT ?,c.device_id,c.id,'START',?,'PENDING',0,? FROM hosting_v2_contracts c
+          JOIN hosting_v2_devices d ON d.id=c.device_id
+          WHERE c.id=? AND c.status='READY' AND d.status='BUSY' AND d.last_seen_at>=?
+            AND NOT EXISTS(SELECT 1 FROM hosting_v2_events retirement
+              WHERE retirement.entity_type='DEVICE' AND retirement.entity_id=d.id
+                AND retirement.event_type IN ('DEVICE_RETIREMENT_REQUESTED','DEVICE_CREDENTIAL_REVOKED','DEVICE_RETIREMENT_FINALIZED'))`, values: [commandId, JSON.stringify({ contractId, endpointDisplay }), context.now, contractId, staleCutoff] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
         event(context, buyerOrganizationId, "CONTRACT", contractId, "START_QUEUED", { commandId }),
         receipt(context, "START_CONTRACT", "AGENT_COMMAND", commandId),
       ]);
@@ -1352,8 +1425,14 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
     },
 
     async pollCommand(deviceId, now, allowedTypes) {
-      if (allowedTypes && allowedTypes.length === 0) return null;
-      if (!allowedTypes || allowedTypes.includes("STOP")) {
+      const deviceState = await db.first<Row>("SELECT status FROM hosting_v2_devices WHERE id=?", [deviceId]);
+      if (!deviceState || value(deviceState, "status") === "REVOKED") throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "设备不存在或已撤销。");
+      const drainingTypes = ["STOP", "CLEANUP"] as const;
+      const effectiveAllowedTypes = value(deviceState, "status") === "DRAINING"
+        ? drainingTypes.filter((type) => !allowedTypes || allowedTypes.includes(type))
+        : allowedTypes;
+      if (effectiveAllowedTypes && effectiveAllowedTypes.length === 0) return null;
+      if (!effectiveAllowedTypes || effectiveAllowedTypes.includes("STOP")) {
         const expired = await db.first<Row>(`SELECT id,supplier_organization_id,started_at,reserved_seconds
           FROM hosting_v2_contracts
           WHERE device_id=? AND status='IN_SERVICE' AND started_at IS NOT NULL
@@ -1378,10 +1457,14 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         }
       }
       const leaseCutoff = new Date(Date.parse(now) - 60_000).toISOString();
-      const typeFilter = allowedTypes ? ` AND command_type IN (${allowedTypes.map(() => "?").join(",")})` : "";
-      const current = await db.first<Row>(`SELECT * FROM hosting_v2_agent_commands WHERE device_id=?${typeFilter} AND (status='PENDING' OR (status='DELIVERED' AND delivered_at<?)) ORDER BY created_at LIMIT 1`, [deviceId, ...(allowedTypes ?? []), leaseCutoff]);
+      const typeFilter = effectiveAllowedTypes ? ` AND command_type IN (${effectiveAllowedTypes.map(() => "?").join(",")})` : "";
+      const current = await db.first<Row>(`SELECT * FROM hosting_v2_agent_commands WHERE device_id=?${typeFilter} AND (status='PENDING' OR (status='DELIVERED' AND delivered_at<?)) ORDER BY created_at LIMIT 1`, [deviceId, ...(effectiveAllowedTypes ?? []), leaseCutoff]);
       if (!current) return null;
-      await db.batch([{ sql: "UPDATE hosting_v2_agent_commands SET status='DELIVERED',attempt=attempt+1,delivered_at=? WHERE id=? AND (status='PENDING' OR (status='DELIVERED' AND delivered_at<?))", values: [now, value(current, "id"), leaseCutoff] }]);
+      const leased = await db.batch([{ sql: `UPDATE hosting_v2_agent_commands SET status='DELIVERED',attempt=attempt+1,delivered_at=?
+        WHERE id=? AND (status='PENDING' OR (status='DELIVERED' AND delivered_at<?))
+          AND EXISTS(SELECT 1 FROM hosting_v2_devices d WHERE d.id=? AND d.status!='REVOKED'
+            AND (d.status!='DRAINING' OR hosting_v2_agent_commands.command_type IN ('STOP','CLEANUP')))`, values: [now, value(current, "id"), leaseCutoff, deviceId] }]);
+      if (leased[0]?.changes !== 1) return null;
       const row = await db.first<Row>("SELECT * FROM hosting_v2_agent_commands WHERE id=?", [value(current, "id")]);
       return row ? command(row) : null;
     },
@@ -1392,12 +1475,17 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         db.first<Row>("SELECT * FROM hosting_v2_devices WHERE id=?", [deviceId]),
       ]);
       if (!commandRow || !deviceRow) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "设备任务不存在。");
+      const type = value(commandRow, "command_type") as HostingAgentCommand["type"];
+      const retirementRequested = await hasDeviceRetirementEvent(db, deviceId);
+      if (value(deviceRow, "status") === "REVOKED") throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "设备不存在或已撤销。");
+      if ((value(deviceRow, "status") === "DRAINING" || retirementRequested) && type !== "STOP" && type !== "CLEANUP") {
+        throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备退场中，只能完成停止或清理任务。");
+      }
       if (["SUCCEEDED", "FAILED"].includes(value(commandRow, "status"))) {
         if (nullable(commandRow, "evidence_digest") !== input.evidenceDigest || value(commandRow, "status") !== input.outcome) throw new ExchangeIdempotencyConflictError();
         const existingContract = commandRow.contract_id ? await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [value(commandRow, "contract_id")]) : null;
         return { command: command(commandRow), contract: existingContract ? contract(existingContract) : null, device: device(deviceRow) };
       }
-      const type = value(commandRow, "command_type") as HostingAgentCommand["type"];
       const success = input.outcome === "SUCCEEDED";
       if (!success && (!input.errorCode || !/^[A-Z0-9_:-]{3,80}$/u.test(input.errorCode))) throw new ExchangeInputError("失败任务必须包含有效诊断码。", "errorCode");
       const commandPayload = json<Record<string, unknown>>(commandRow, "payload_json");
@@ -1435,7 +1523,18 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       if (type === "STOP" && success) assertSuccessfulStopDetails(input.details, commandPayload, context.now, Boolean(recoveredStopFailureRow));
       if (type === "CLEANUP" && success) assertSuccessfulCleanupDetails(input.details, commandPayload, context.now);
       const statements: HostingV2Sql[] = [
-        { sql: "UPDATE hosting_v2_agent_commands SET status=?,evidence_digest=?,error_code=?,completed_at=? WHERE id=? AND status IN ('PENDING','DELIVERED')", values: [input.outcome, input.evidenceDigest, input.errorCode ?? null, context.now, commandId] },
+        { sql: `UPDATE hosting_v2_agent_commands SET status=?,evidence_digest=?,error_code=?,completed_at=?
+          WHERE id=? AND status IN ('PENDING','DELIVERED') AND EXISTS(
+            SELECT 1 FROM hosting_v2_devices d WHERE d.id=? AND d.status!='REVOKED'
+              AND (hosting_v2_agent_commands.command_type IN ('STOP','CLEANUP') OR (
+                d.status!='DRAINING' AND NOT EXISTS(
+                  SELECT 1 FROM hosting_v2_events retirement
+                  WHERE retirement.entity_type='DEVICE' AND retirement.entity_id=d.id
+                    AND retirement.event_type IN ('DEVICE_RETIREMENT_REQUESTED','DEVICE_CREDENTIAL_REVOKED','DEVICE_RETIREMENT_FINALIZED')
+                )
+              ))
+          )`, values: [input.outcome, input.evidenceDigest, input.errorCode ?? null, context.now, commandId, deviceId] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
         ...(transportAttestation ? [transportAttestation] : []),
       ];
       const contractId = nullable(commandRow, "contract_id");
@@ -1443,7 +1542,11 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       if (type === "VERIFY") {
         const verifiedUntil = new Date(Date.parse(context.now) + 24 * 60 * 60_000).toISOString();
         if (success) statements.push({ sql: "INSERT INTO hosting_v2_verification_proofs(command_id,device_id,agent_evidence_digest,control_plane_reachability_digest,public_host,public_port,recorded_at) VALUES(?,?,?,?,?,?,?)", values: [commandId, deviceId, input.evidenceDigest, input.controlPlaneReachabilityDigest!, deviceInventory.publicHost, deviceInventory.sshPortStart, context.now] });
-        statements.push({ sql: "UPDATE hosting_v2_devices SET status=?,verification_status=?,verification_evidence_digest=?,verified_until=?,version=version+1,updated_at=? WHERE id=?", values: [success ? "VERIFIED" : "ONLINE", success ? "PASSED" : "FAILED", input.evidenceDigest, success ? verifiedUntil : null, context.now, deviceId] });
+        statements.push(
+          { sql: `UPDATE hosting_v2_devices SET status=?,verification_status=?,verification_evidence_digest=?,verified_until=?,version=version+1,updated_at=?
+            WHERE id=? AND status='VERIFYING' AND NOT ${DEVICE_RETIREMENT_EVENT_SQL}`, values: [success ? "VERIFIED" : "ONLINE", success ? "PASSED" : "FAILED", input.evidenceDigest, success ? verifiedUntil : null, context.now, deviceId] },
+          { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        );
         if (!success) statements.push({ sql: "UPDATE hosting_v2_offers SET status='SUSPENDED',version=version+1,updated_at=? WHERE device_id=? AND status IN ('PUBLISHED','PAUSED')", values: [context.now, deviceId] });
       } else if (contractId) {
         const currentContract = await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [contractId]);
@@ -1534,8 +1637,17 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
               ) OR EXISTS(SELECT 1 FROM hosting_v2_delivery_failures f WHERE f.contract_id=hosting_v2_contracts.id AND f.status='CLEANING')
               THEN 'REFUNDED' ELSE 'CLEANED' END,version=version+1,updated_at=? WHERE id=? AND status='CLEANING'`, values: [context.now, contractId] },
             ...(deliveryFailureRow ? [{ sql: "UPDATE hosting_v2_delivery_failures SET status='CLEANED',cleaned_at=? WHERE contract_id=? AND status='CLEANING'", values: [String(input.details?.cleanedAt), contractId] } satisfies HostingV2Sql] : []),
-            { sql: "UPDATE hosting_v2_devices SET status=?,verification_status=?,verified_until=?,version=version+1,updated_at=? WHERE id=?", values: [verificationFresh ? "VERIFIED" : "ONLINE", verificationFresh ? "PASSED" : "EXPIRED", verificationFresh ? nullable(deviceRow, "verified_until") : null, context.now, deviceId] },
-            { sql: "UPDATE hosting_v2_offers SET status=?,version=version+1,updated_at=? WHERE id=? AND status IN ('RESERVED','SUSPENDED')", values: [verificationFresh ? "PUBLISHED" : "SUSPENDED", context.now, value(currentContract, "offer_id")] },
+            { sql: `UPDATE hosting_v2_devices SET
+                status=CASE WHEN ${DEVICE_RETIREMENT_EVENT_SQL} THEN 'DRAINING' ELSE ? END,
+                verification_status=CASE WHEN ${DEVICE_RETIREMENT_EVENT_SQL} THEN 'EXPIRED' ELSE ? END,
+                verified_until=CASE WHEN ${DEVICE_RETIREMENT_EVENT_SQL} THEN NULL ELSE ? END,
+                version=version+1,updated_at=? WHERE id=? AND status!='REVOKED'`, values: [verificationFresh ? "VERIFIED" : "ONLINE", verificationFresh ? "PASSED" : "EXPIRED", verificationFresh ? nullable(deviceRow, "verified_until") : null, context.now, deviceId] },
+            { sql: `UPDATE hosting_v2_offers SET status=CASE WHEN EXISTS(
+                SELECT 1 FROM hosting_v2_events retirement
+                WHERE retirement.entity_type='DEVICE' AND retirement.entity_id=hosting_v2_offers.device_id
+                  AND retirement.event_type IN ('DEVICE_RETIREMENT_REQUESTED','DEVICE_CREDENTIAL_REVOKED','DEVICE_RETIREMENT_FINALIZED')
+              ) THEN 'SUSPENDED' ELSE ? END,version=version+1,updated_at=?
+              WHERE id=? AND status IN ('RESERVED','SUSPENDED')`, values: [verificationFresh ? "PUBLISHED" : "SUSPENDED", context.now, value(currentContract, "offer_id")] },
           );
         }
       }

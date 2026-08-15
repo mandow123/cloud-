@@ -19,7 +19,7 @@ export async function POST(request: Request, contextValue: { params: Promise<{ d
     const { deviceId } = await contextValue.params;
     const store = await getHostingV2Store();
     const device = await store.getDevice(deviceId);
-    if (!device) throw new AccountAuthError("AGENT_DEVICE_INVALID", 403, "设备凭据无效。 ");
+    if (!device || device.status === "REVOKED") throw new AccountAuthError("AGENT_DEVICE_INVALID", 403, "设备凭据无效。 ");
     const proof = parseAgentProof(body);
     const requestNonce = agentString(body, "requestNonce", 16, 128);
     if (!/^[A-Za-z0-9_-]+$/u.test(requestNonce)) throw new AccountAuthError("AGENT_FIELD_INVALID", 400, "requestNonce 格式无效。 ");
@@ -45,7 +45,9 @@ export async function POST(request: Request, contextValue: { params: Promise<{ d
         }
       }
     }
-    const allowedTypes = isHostingV2Enabled() ? undefined : ["VERIFY", "STOP", "CLEANUP"] as const;
+    const allowedTypes = device.status === "DRAINING"
+      ? ["STOP", "CLEANUP"] as const
+      : isHostingV2Enabled() ? undefined : ["VERIFY", "STOP", "CLEANUP"] as const;
     return jsonResponse({ command: await store.pollCommand(deviceId, now, allowedTypes) }, 200, undefined, context);
   } catch (error) {
     return apiErrorResponse(hostingAgentHttpError(error), undefined, context);

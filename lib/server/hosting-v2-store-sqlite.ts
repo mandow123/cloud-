@@ -32,12 +32,12 @@ function adapter(db: DatabaseSync): HostingV2DatabaseAdapter {
         throw error;
       }
     },
-    async ensureSchema(statements, version) {
+    async ensureSchema(statements, version, compatibleThrough = version) {
       db.exec("BEGIN IMMEDIATE");
       try {
         for (const sql of statements) db.prepare(sql).run();
         const row = db.prepare("SELECT MAX(version) version FROM hosting_v2_schema_migrations").get() as { version?: number | null } | undefined;
-        if (row?.version != null && Number(row.version) > version) throw new Error("HOSTING_V2_SCHEMA_TOO_NEW");
+        if (row?.version != null && Number(row.version) > compatibleThrough) throw new Error("HOSTING_V2_SCHEMA_TOO_NEW");
         db.prepare("INSERT OR IGNORE INTO hosting_v2_schema_migrations(version,applied_at) VALUES(?,?)").run(version, new Date().toISOString());
         db.exec("COMMIT");
       } catch (error) {

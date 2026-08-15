@@ -11,10 +11,10 @@ function adapter(db: D1): HostingV2DatabaseAdapter {
     async first<T>(sql: string, values: readonly unknown[] = []) { return prepared(db, sql, values).first<T>(); },
     async all<T>(sql: string, values: readonly unknown[] = []) { return (await prepared(db, sql, values).all<T>()).results ?? []; },
     async batch(items: readonly HostingV2Sql[]) { return (await db.batch(items.map((item) => prepared(db, item.sql, item.values)))).map((result) => ({ changes: Number(result.meta?.changes ?? 0) })); },
-    async ensureSchema(statements, version) {
+    async ensureSchema(statements, version, compatibleThrough = version) {
       await db.batch(statements.map((sql) => db.prepare(sql)));
       const row = await db.prepare("SELECT MAX(version) version FROM hosting_v2_schema_migrations").first<{ version: number | null }>();
-      if (row?.version != null && Number(row.version) > version) throw new Error("HOSTING_V2_SCHEMA_TOO_NEW");
+      if (row?.version != null && Number(row.version) > compatibleThrough) throw new Error("HOSTING_V2_SCHEMA_TOO_NEW");
       await db.prepare("INSERT OR IGNORE INTO hosting_v2_schema_migrations(version,applied_at) VALUES(?,?)").bind(version, new Date().toISOString()).run();
     },
   };

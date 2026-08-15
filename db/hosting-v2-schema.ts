@@ -1,4 +1,9 @@
 export const HOSTING_V2_SCHEMA_VERSION = 13;
+// The schema-13 bridge is the only rollback target allowed after the planned
+// additive device-retirement migration. It never writes version 14 itself,
+// but it can safely read that exact additive schema while preserving all
+// retirement guards.
+export const HOSTING_V2_SCHEMA_COMPATIBILITY_VERSION = 14;
 
 export const hostingV2SchemaStatements = [
   `CREATE TABLE IF NOT EXISTS hosting_v2_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`,

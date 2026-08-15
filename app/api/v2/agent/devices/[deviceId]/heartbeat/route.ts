@@ -16,7 +16,7 @@ export async function POST(request: Request, contextValue: { params: Promise<{ d
     const { deviceId } = await contextValue.params;
     const store = await getHostingV2Store();
     const device = await store.getDevice(deviceId);
-    if (!device) throw new AccountAuthError("AGENT_DEVICE_INVALID", 403, "设备凭据无效。 ");
+    if (!device || device.status === "REVOKED") throw new AccountAuthError("AGENT_DEVICE_INVALID", 403, "设备凭据无效。 ");
     const proof = parseAgentProof(body);
     const sequence = agentInteger(body, "sequence", 1, Number.MAX_SAFE_INTEGER);
     const inventoryDigest = agentDigest(body, "inventoryDigest");

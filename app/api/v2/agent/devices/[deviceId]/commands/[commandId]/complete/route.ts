@@ -20,9 +20,12 @@ export async function POST(request: Request, contextValue: { params: Promise<{ d
     const { deviceId, commandId } = await contextValue.params;
     const store = await getHostingV2Store();
     const device = await store.getDevice(deviceId);
-    if (!device) throw new AccountAuthError("AGENT_DEVICE_INVALID", 403, "设备凭据无效。 ");
+    if (!device || device.status === "REVOKED") throw new AccountAuthError("AGENT_DEVICE_INVALID", 403, "设备凭据无效。 ");
     const command = await store.getCommand(deviceId, commandId);
     if (!command) throw new AccountAuthError("AGENT_COMMAND_INVALID", 404, "设备任务不存在。 ");
+    if (device.status === "DRAINING" && command.type !== "STOP" && command.type !== "CLEANUP") {
+      throw new AccountAuthError("AGENT_DEVICE_DRAINING", 409, "设备退场中，只能完成停止或清理任务。 ");
+    }
     if (!isHostingV2Enabled() && command.type !== "VERIFY" && command.type !== "STOP" && command.type !== "CLEANUP") {
       throw new AccountAuthError("HOSTING_V2_TRADING_DISABLED", 503, "预上线配置模式不能完成新的开通或启动任务。 ");
     }
