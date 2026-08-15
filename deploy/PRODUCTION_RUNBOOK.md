@@ -117,6 +117,17 @@ npm run ops:image:promote -- \
 
 Hosting V2 试运营固定使用管理员双人审批发放卡时，`KAI_ALIPAY_ENABLED` 必须保持 `0`；即使主机残留完整商户凭据也不能创建付款单。申请账号使用唯一 Root，审批账号使用独立的 `KAI_ADMIN_APPROVER_USERNAME` 与 `KAI_ADMIN_APPROVER_PASSWORD_HASH`，两个用户名、密码和实际操作者都必须不同；审批账号只获得卡时审批和只读审计权限。先设置 `KAI_HOSTING_V2_SETUP=1`、`KAI_HOSTING_V2=0` 进入预上线配置模式，仅完成供应商审核、费率、Agent 配对、设备验真和挂牌草稿；公开市场、租用、开通、启动、扣减和结算仍由服务端拒绝。设备退场接口使用独立开关 `KAI_HOSTING_DEVICE_RETIREMENT`，默认必须保持 `0`，完成 Root 应急撤权和受控退场演练后才可在 Setup 或交易模式下开启。配置模式只允许 Agent 执行验真，以及既有实例的停止与清理收尾，不能领取新的开通或启动命令。启用 `KAI_HOSTING_V2=1` 前必须配置 KAI Identity、不可变交付镜像和供应协议版本，并在隔离入口完成供应商审批、有效费率、在线 Host Agent、三分钟计量及清理演练。`/api/ready` 会逐项报告供应身份、Agent、费率、卡时账本、镜像、协议、计量、清理和支付宝关闭状态，任一关键项失败时新版本不得接入流量。
 
+每次状态推进都必须运行生产 Hosting 闸门，并把单行 JSON 结果存入发布记录。四个阶段不可跳级：
+
+```bash
+KAI_HOSTING_VERIFY_STAGE=SETUP npm run ops:hosting:verify
+KAI_HOSTING_VERIFY_STAGE=AGENT_CONNECTED npm run ops:hosting:verify
+KAI_HOSTING_VERIFY_STAGE=INTERNAL_TRIAL npm run ops:hosting:verify
+KAI_HOSTING_VERIFY_STAGE=MARKET npm run ops:hosting:verify
+```
+
+`SETUP` 要求公开交易关闭且尚无在线 Agent；`AGENT_CONNECTED` 要求至少一台真实 Agent 在线，但仍保持公开交易关闭；`INTERNAL_TRIAL` 要求所有交易依赖就绪且没有 DRAINING、清理失败或清理中的订单；`MARKET` 在此基础上还要求公开 `/api/v2/offers` 至少存在一条经过验真、可成交的 GPU 报价。发布时应同时设置 `KAI_HOSTING_VERIFY_RELEASE=<完整提交 SHA>`，防止校验到旧容器。脚本只读取公开 JSON，不接收 Cookie、密钥或管理员凭据。
+
 KAI Identity 上游修复后，在 Cloud 源码目录运行 `npm run ops:identity:validate`。只有工具返回 `OIDC_DISCOVERY_READY` 才能继续登录验收；308、任意重定向、非 JSON、Issuer 或端点不一致都视为未修复。该检查不携带 Client ID、Cookie、授权码或其他凭据。随后用全新隐私窗口发起一次完整登录，确认授权码被 Cloud 回调兑换并建立普通用户会话。
 
 重构后的 Identity 固定使用 `https://auth.kai.com/api/auth` 和机密 Web Client。管理员只在服务器创建 `0600 root:root` 的 JSON 文件，字段严格为 `clientId`、`clientSecret`；密钥不得进入聊天、工单、Shell 参数或日志。运行 `npm run ops:identity:configure -- --env-file /etc/kai-cloud/kai-cloud-app.env --credential-file /root/kai-cloud-identity-client.json --confirm CONFIGURE_KAI_IDENTITY_WEB_CLIENT` 会先校验新 Discovery，再原子替换四项 OIDC 配置并生成带 UTC 时间的 `.pre-identity-*` 回退文件。之后仍必须依次运行生产环境门禁、`ops:identity:validate`、Compose 健康启动和真实浏览器回调验收。任一步失败都恢复该回退文件并重新创建应用容器，不能用 SPA Client、伪造 Secret 或关闭服务端换码认证绕过。

@@ -25,7 +25,8 @@
     "ops:admin:configure-finance": "node scripts/ops/configure-finance-approver.mjs",
     "ops:image:promote": "node scripts/ops/promote-release.mjs",
     "ops:image:validate": "node scripts/ops/validate-local-image.mjs",
-    "ops:hosting:local-agent": "node scripts/ops/run-local-host-agent-acceptance.mjs"
+    "ops:hosting:local-agent": "node scripts/ops/run-local-host-agent-acceptance.mjs",
+    "ops:hosting:verify": "node scripts/ops/verify-hosting-production-readiness.mjs"
   },
   "dependencies": {
     "alipay-sdk": "^4.14.0",
