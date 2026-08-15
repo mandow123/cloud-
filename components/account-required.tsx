@@ -12,26 +12,51 @@ type AccountSession = {
 
 export function AccountRequired({ children, purpose, redirectOnSignedOut = false }: { children: ReactNode; purpose: string; redirectOnSignedOut?: boolean }) {
   const [session, setSession] = useState<AccountSession | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [loadVersion, setLoadVersion] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
+    let cancelled = false;
+    const timeout = window.setTimeout(() => controller.abort(), 12_000);
     const redirectToLogin = () => {
       const returnTo = window.location.pathname + window.location.search;
       window.location.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`);
     };
     fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store", signal: controller.signal })
-      .then(async (response) => response.ok ? response.json() as Promise<AccountSession> : { authenticated: false })
+      .then(async (response) => {
+        if (response.ok) return response.json() as Promise<AccountSession>;
+        if (response.status === 401 || response.status === 403) return { authenticated: false };
+        throw new Error("ACCOUNT_SESSION_UNAVAILABLE");
+      })
       .then((nextSession) => {
+        if (cancelled) return;
         setSession(nextSession);
         if (!nextSession.authenticated && redirectOnSignedOut) redirectToLogin();
       })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setSession({ authenticated: false });
-        if (redirectOnSignedOut) redirectToLogin();
-      });
-    return () => controller.abort();
-  }, [redirectOnSignedOut]);
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      })
+      .finally(() => window.clearTimeout(timeout));
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [loadVersion, redirectOnSignedOut]);
+
+  if (loadError) {
+    return (
+      <section className="account-gate" aria-labelledby="account-session-error-title">
+        <p className="kicker">ACCOUNT CHECK INTERRUPTED</p>
+        <h2 id="account-session-error-title">暂时无法确认登录状态</h2>
+        <p>页面没有收到统一账号会话结果。不会把网络异常误判成退出登录，也不会在状态不明时开放购买或供应操作。</p>
+        <button className="button button-primary" onClick={() => { setSession(null); setLoadError(false); setLoadVersion((current) => current + 1); }} type="button">
+          重新检查登录状态
+        </button>
+      </section>
+    );
+  }
 
   if (session === null) {
     return <div className="account-gate" role="status">正在核对账户与交易主体…</div>;
