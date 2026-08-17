@@ -4,25 +4,26 @@ import { BuyerOrderList } from "@/components/buyer-order-list";
 import { HostingContractList } from "@/components/hosting-contract-list";
 import { MemberWorkspace } from "@/components/member-workspace";
 import { PersonalCenterOverview } from "@/components/personal-center-overview";
-import { CardHourAccountPanel } from "@/components/card-hour-account-panel";
+import { LegacyMemberAssetRedirect } from "@/components/legacy-member-asset-redirect";
 import { isHostingV2Enabled } from "@/lib/server/hosting-v2-feature";
 
 export const metadata: Metadata = {
   title: "个人中心",
-  description: "管理 KAI Cloud 卡时、购买记录、资源对比、回购、租金收益与邀请佣金。",
+  description: "管理 KAI Cloud 个人资料、资源对比、需求与订单。",
 };
 
 export default function MemberPage() {
   const hostingV2Enabled = isHostingV2Enabled();
   return (
     <>
+      <LegacyMemberAssetRedirect />
       <header className="border-b border-[var(--border)] bg-[var(--info-bg)]">
         <div className="shell py-12 sm:py-16">
           <p className="kicker">Personal & transaction workspace</p>
           <div className="grid items-end gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
             <div>
               <h1 className="m-0 max-w-4xl text-4xl leading-tight sm:text-5xl">个人中心与交易工作台</h1>
-              <p className="section-lead">查看卡时余额、购买记录、资源对比、回购、租金收益和邀请佣金，并继续管理需求与供应流程。</p>
+              <p className="section-lead">查看个人资料、资源对比、需求和订单；卡时余额、明细与收益已集中到“我的资产”。</p>
             </div>
             <div className="border-l-2 border-[var(--accent)] pl-5 text-sm text-[var(--text)]">
               <strong className="block text-[var(--ink)]">账户与交易主体严格分离</strong>
@@ -33,7 +34,6 @@ export default function MemberPage() {
       </header>
       <div className="shell py-12 sm:py-16">
         <PersonalCenterOverview />
-        <CardHourAccountPanel />
         <MemberWorkspace />
         <section className="mt-16 scroll-mt-28" id="orders">
           <AccountRequired purpose="查看个人订单">

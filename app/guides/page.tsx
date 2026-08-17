@@ -59,7 +59,7 @@ export default function GuidesPage() {
             <ol className={styles.steps}>
               <Step number="1" title="选择模板">进入 GPU 市场，保留默认的 PyTorch + CUDA 模板，或按任务更换镜像与连接方式。</Step>
               <Step number="2" title="筛选资源">按 GPU 型号、显存、区域、资源等级和连接方式缩小范围。</Step>
-              <Step number="3" title="查看卡时价格">资源卡主价格统一显示为 KAI 标准卡时 / GPU / 小时；人民币只作为固定换算参考。</Step>
+              <Step number="3" title="查看卡时价格">资源卡主价格统一显示为 KAI 标准卡时 / GPU / 小时；法币充值说明仅在“我的资产 → 充值卡时”（/member/assets#topup）展示。</Step>
               <Step number="4" title="创建租约">确认 GPU 数量、时长和预计卡时，创建 TEST 租约。平台会锁定容量并要求供应方确认。</Step>
               <Step number="5" title="领取并连接">交付包通过核验后，领取一次性连接信息，由平台先做连接检查，再进入服务时间窗。</Step>
             </ol>
@@ -126,7 +126,7 @@ export default function GuidesPage() {
           <section id="card-hours">
             <div className={styles.sectionLabel}>07 · KAI STANDARD HOURS</div>
             <h2>卡时与测试结算</h2>
-            <p>网站中的市场价格、订单预计支付和供应方应收都优先使用 KAI 标准卡时。固定参考为 1 KAI 标准卡时 = ¥1.002。当前本地闭环只记录 TEST 支付与测试结算，<strong>fundsMoved 永远为 false</strong>；真实充值、扣减与变现保持关闭。</p>
+            <p>网站中的市场价格、订单预计支付和供应方应收统一使用 KAI 标准卡时，并以两位小数展示。法币充值说明仅在“我的资产 → 充值卡时”（/member/assets#topup）展示。当前本地闭环只记录 TEST 支付与测试结算，<strong>fundsMoved 永远为 false</strong>；真实充值、扣减与变现保持关闭。</p>
             <div className={styles.settlementCard}>
               <div><span>成交卡时</span><strong>Gross</strong></div>
               <div><span>未交付 / 争议抵扣</span><strong>Credits</strong></div>

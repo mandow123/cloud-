@@ -57,7 +57,7 @@ function migratedDatabase() {
   return db;
 }
 
-test("device retirement migration is additive, mirrored and registered as schema 14", () => {
+test("device retirement migration remains additive and registered in the current schema", () => {
   assert.equal(localMigration, hostedMigration);
   assert.match(localMigration, /CREATE TABLE IF NOT EXISTS hosting_v2_device_retirements/u);
   assert.match(localMigration, /device_id TEXT NOT NULL UNIQUE/u);
@@ -72,8 +72,8 @@ test("device retirement migration is additive, mirrored and registered as schema
   assert.match(localMigration, /VALUES\(14,datetime\('now'\)\)/u);
   assert.doesNotMatch(localMigration, /\bDROP\b|\bDELETE\s+FROM\b|\bALTER\s+TABLE\s+\w+\s+DROP\b/iu);
 
-  assert.equal(HOSTING_V2_SCHEMA_VERSION, 14);
-  assert.equal(HOSTING_V2_SCHEMA_COMPATIBILITY_VERSION, 14);
+  assert.equal(HOSTING_V2_SCHEMA_VERSION, 15);
+  assert.equal(HOSTING_V2_SCHEMA_COMPATIBILITY_VERSION, 15);
   const runtimeSchema = hostingV2SchemaStatements.join("\n");
   assert.match(runtimeSchema, /CREATE TABLE IF NOT EXISTS hosting_v2_device_retirements/u);
   assert.match(runtimeSchema, /hosting_v2_device_retirement_status_guard/u);

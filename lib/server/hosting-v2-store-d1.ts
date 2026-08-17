@@ -1,3 +1,4 @@
+import { assertHostingV2SchemaCompatible } from "../../db/hosting-v2-schema.ts";
 import { createHostingV2Store } from "./hosting-v2-store-core.ts";
 import type { HostingV2DatabaseAdapter, HostingV2Sql } from "./hosting-v2-store.ts";
 
@@ -14,7 +15,7 @@ function adapter(db: D1): HostingV2DatabaseAdapter {
     async ensureSchema(statements, version, compatibleThrough = version) {
       await db.batch(statements.map((sql) => db.prepare(sql)));
       const row = await db.prepare("SELECT MAX(version) version FROM hosting_v2_schema_migrations").first<{ version: number | null }>();
-      if (row?.version != null && Number(row.version) > compatibleThrough) throw new Error("HOSTING_V2_SCHEMA_TOO_NEW");
+      assertHostingV2SchemaCompatible(row?.version, compatibleThrough);
       await db.prepare("INSERT OR IGNORE INTO hosting_v2_schema_migrations(version,applied_at) VALUES(?,?)").bind(version, new Date().toISOString()).run();
     },
   };

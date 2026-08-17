@@ -197,6 +197,14 @@ export type HostingOffer = Readonly<{
   updatedAt: string;
 }>;
 
+export type HostingPublicOffer = HostingOffer & Readonly<{
+  verificationSummary: Readonly<{
+    status: "PASSED";
+    checks: readonly ["GPU_IDENTITY", "WORKLOAD_IMAGE", "PORT_REACHABILITY"];
+  }>;
+  verifiedUntil: string;
+}>;
+
 export type HostingContractStatus =
   | "RESERVED"
   | "CARD_HOURS_HELD"
@@ -222,6 +230,7 @@ export type HostingContract = Readonly<{
   supplierOrganizationId: string;
   feeScheduleId: string;
   snapshot: Readonly<{
+    offerVersion: number;
     title: string;
     gpuModel: HostingGpuModel;
     region: string;

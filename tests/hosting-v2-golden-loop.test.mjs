@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { createAccountSession } from "../lib/server/account-auth.ts";
 import { hostingCurrentCalendarMonth, hostingDefaultFeeTiers } from "../lib/hosting-v2.ts";
+import { accessGatewayLeaseId } from "../lib/server/access-gateway-client.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
 import { getCardHourStore } from "../lib/server/card-hour-store.ts";
 import { getHostingV2Store } from "../lib/server/hosting-v2-store.ts";
@@ -28,6 +30,7 @@ import { GET as getSupplyPolicy } from "../app/api/v2/supply/policy/route.ts";
 import { POST as createSupplyOffer } from "../app/api/v2/supply/offers/route.ts";
 import { POST as changeSupplyOfferStatus } from "../app/api/v2/supply/offers/[offerId]/status/route.ts";
 import { GET as listPublicOffers } from "../app/api/v2/offers/route.ts";
+import { GET as getPublicOffer } from "../app/api/v2/offers/[offerId]/route.ts";
 import { GET as listBuyerContracts, POST as reserveBuyerContract } from "../app/api/v2/contracts/route.ts";
 import { GET as getBuyerContract } from "../app/api/v2/contracts/[contractId]/route.ts";
 import { POST as attachBuyerSshKey } from "../app/api/v2/contracts/[contractId]/ssh-key/route.ts";
@@ -192,7 +195,7 @@ async function hostAgentPost(url, body, options = {}) {
     headers: {
       accept: "application/json",
       "content-type": "application/json",
-      "user-agent": "KAI-Host-Agent/1.9.7",
+      "user-agent": "KAI-Host-Agent/1.11.0",
       ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
     },
     body: JSON.stringify(body),
@@ -212,6 +215,19 @@ async function hostAgentPost(url, body, options = {}) {
   return payload;
 }
 
+async function commandCompletionRequest(privateKeyPkcs8, deviceId, commandId, input) {
+  const proof = await signedProof(privateKeyPkcs8, "COMPLETE_COMMAND", deviceId, { commandId, ...input });
+  return new Request(`${ORIGIN}/api/v2/agent/devices/${deviceId}/commands/${commandId}/complete`, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "user-agent": "KAI-Host-Agent/1.11.0",
+    },
+    body: JSON.stringify({ ...input, ...proof }),
+  });
+}
+
 test("fresh supplier and buyer browsers complete the real three-minute GPU lifecycle through V2 APIs", async () => {
   const directory = mkdtempSync(join(tmpdir(), "kai-hosting-golden-loop-"));
   const databasePath = join(directory, "kai-cloud.sqlite");
@@ -223,6 +239,9 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
   const previousAccount = globalThis.__kaiAccountAuthStorePromise;
   const previousCardHours = globalThis.__kaiCardHourStorePromise;
   const previousMarketplace = globalThis.__kaiMarketplaceStorePromise;
+  const previousGatewayUrl = process.env.KAI_ACCESS_GATEWAY_CONTROL_URL;
+  const previousGatewayToken = process.env.KAI_ACCESS_GATEWAY_CONTROL_TOKEN;
+  const previousFetch = globalThis.fetch;
   process.env.KAI_DB_DIR = directory;
   process.env.KAI_HOSTING_V2 = "1";
   process.env.KAI_ENVIRONMENT = "LOCAL";
@@ -400,15 +419,25 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     const publicBefore = await json(await listPublicOffers(new Request(`${ORIGIN}/api/v2/offers`)), 200);
     assert.equal(publicBefore.records.length, 1);
     assert.equal("deviceId" in publicBefore.records[0], false);
+    const publicDetail = await json(await getPublicOffer(new Request(`${ORIGIN}/api/v2/offers/${published.record.id}`), { params: Promise.resolve({ offerId: published.record.id }) }), 200);
+    assert.equal(publicDetail.record.dataClass, "LIVE_INVENTORY");
+    assert.equal(publicDetail.record.version, published.record.version);
+    assert.equal(publicDetail.record.verificationSummary.status, "PASSED");
+    assert.equal("deviceId" in publicDetail.record, false);
 
     const grant = await cardHours.requestTrialGrant({ organizationId: buyer.context.activeOrganization.id, amountMicros: 1_000_000, reason: "黄金闭环买家试运行卡时", requestedBy: "golden-grant-requester", idempotencyKey: "golden-trial-grant", payloadHash: "golden-trial-grant-hash", now });
     await cardHours.decideTrialGrant({ grantId: grant.id, decision: "APPROVE", approvedBy: "golden-grant-approver", payloadHash: "golden-trial-approval-hash", now });
     const referral = await cardHours.dashboard(referrer.context.activeOrganization.id, now);
     await cardHours.attachReferral({ account: buyer.context, code: referral.referral.code, now });
 
-    const reservation = await json(await reserveBuyerContract(browserRequest(buyer, "/api/v2/contracts", "POST", { offerId: published.record.id, reservedSeconds: 180 }, "golden-contract-reserve")), 201);
+    const staleReservation = await json(await reserveBuyerContract(browserRequest(buyer, "/api/v2/contracts", "POST", { offerId: published.record.id, offerVersion: publicDetail.record.version - 1, reservedSeconds: 180 }, "golden-contract-stale")), 409);
+    assert.equal(staleReservation.error.code, "EXCHANGE_VERSION_CONFLICT");
+    const reservation = await json(await reserveBuyerContract(browserRequest(buyer, "/api/v2/contracts", "POST", { offerId: published.record.id, offerVersion: publicDetail.record.version, reservedSeconds: 180 }, "golden-contract-reserve")), 201);
     assert.equal(reservation.record.status, "CARD_HOURS_HELD");
     assert.equal(reservation.record.heldMicros, 180_000);
+    assert.equal(reservation.record.snapshot.offerVersion, publicDetail.record.version);
+    const unavailableDetail = await json(await getPublicOffer(new Request(`${ORIGIN}/api/v2/offers/${published.record.id}`), { params: Promise.resolve({ offerId: published.record.id }) }), 404);
+    assert.equal(unavailableDetail.error.code, "EXCHANGE_NOT_FOUND");
     const buyerContracts = await json(await listBuyerContracts(browserRead(buyer, "/api/v2/contracts")), 200);
     assert.equal(buyerContracts.records.length, 1);
     assert.equal("deviceId" in buyerContracts.records[0], false);
@@ -421,9 +450,106 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     assert.equal(ssh.record.status, "PROVISIONING");
     const provisionCommand = await hosting.pollCommand(device.id, new Date().toISOString());
     assert.equal(provisionCommand.type, "PROVISION");
+    const gatewayLeaseId = accessGatewayLeaseId(contractId);
+    const gatewayCalls = [];
+    process.env.KAI_ACCESS_GATEWAY_CONTROL_URL = "https://gateway-control.example.test";
+    process.env.KAI_ACCESS_GATEWAY_CONTROL_TOKEN = "gateway-control-token-for-golden-loop-tests-0001";
+    globalThis.fetch = async (url, init = {}) => {
+      const target = new URL(String(url));
+      gatewayCalls.push({ pathname: target.pathname, method: init.method ?? "GET" });
+      if (target.pathname === "/v1/leases" && init.method === "POST") {
+        const request = JSON.parse(String(init.body));
+        return Response.json({
+          version: 1,
+          leaseId: gatewayLeaseId,
+          deviceId: device.id,
+          contractId,
+          expiresAt: request.expiresAt,
+          buyerEndpoint: "gateway-buyer.example.com:24422",
+          buyerAccess: { version: 1, leaseId: gatewayLeaseId, token: "B".repeat(48), expiresAt: new Date(Date.now() + 5 * 60_000).toISOString() },
+          agentTunnel: { host: "gateway-agent.example.com", port: 24423, ticket: "T".repeat(48) },
+        }, { status: 201 });
+      }
+      if (target.pathname === `/v1/leases/${gatewayLeaseId}/buyer-tokens` && init.method === "POST") {
+        return Response.json({ version: 1, leaseId: gatewayLeaseId, token: "A".repeat(48), expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(), buyerEndpoint: "gateway-buyer.example.com:24422" }, { status: 201 });
+      }
+      if (target.pathname === `/v1/leases/${gatewayLeaseId}/status` && init.method === "GET") {
+        return Response.json({ version: 1, leaseId: gatewayLeaseId, status: "ACTIVE", authenticatedAgentSlots: 1, activeConnections: 0, expiresAt: new Date(Date.now() + 5 * 60_000).toISOString() });
+      }
+      if (target.pathname === `/v1/leases/${gatewayLeaseId}` && init.method === "DELETE") {
+        return Response.json({ version: 1, leaseId: gatewayLeaseId, status: "REVOKED" });
+      }
+      throw new Error(`Unexpected Access Gateway request: ${init.method ?? "GET"} ${target.pathname}`);
+    };
     const provisionedAt = new Date().toISOString();
     const provisionEvidence = provisionDetails(contractId, process.env.KAI_HOSTING_APPROVED_IMAGES, provisionedAt);
     await completeHostAgentCommand(provisionCommand, { outcome: "SUCCEEDED", evidenceDigest: digestJson(provisionEvidence), details: provisionEvidence }, { stateFile: agentStateFile, allowInsecureLocal: true, post: hostAgentPost });
+    assert.equal((await hosting.gatewayBinding(contractId))?.status, "LEASE_CREATED");
+    await completeHostAgentCommand(provisionCommand, { outcome: "SUCCEEDED", evidenceDigest: digestJson(provisionEvidence), details: provisionEvidence }, { stateFile: agentStateFile, allowInsecureLocal: true, post: hostAgentPost });
+    assert.equal((await hosting.gatewayBinding(contractId))?.status, "SLOT_CONFIRMED");
+    assert.deepEqual(gatewayCalls.map(({ pathname, method }) => ({ pathname, method })), [
+      { pathname: "/v1/leases", method: "POST" },
+      { pathname: `/v1/leases/${gatewayLeaseId}/status`, method: "GET" },
+    ]);
+
+    gatewayCalls.length = 0;
+    const failedReplayDetails = { protocolVersion: 1, commandType: "PROVISION", reason: "contradictory terminal replay" };
+    const failedReplayInput = { outcome: "FAILED", evidenceDigest: digestJson(failedReplayDetails), errorCode: "PROVISION_REPLAY_FAILED", details: failedReplayDetails };
+    const succeededToFailedReplay = await json(await completeHostAgentCommandRoute(
+      await commandCompletionRequest(paired.state.privateKeyPkcs8, device.id, provisionCommand.id, failedReplayInput),
+      { params: Promise.resolve({ deviceId: device.id, commandId: provisionCommand.id }) },
+    ), 409);
+    assert.equal(succeededToFailedReplay.error.code, "IDEMPOTENCY_CONFLICT");
+    assert.equal(gatewayCalls.length, 0, "SUCCEEDED -> FAILED terminal replay must not touch Access Gateway");
+
+    const consistentReplayInput = { outcome: "SUCCEEDED", evidenceDigest: digestJson(provisionEvidence), errorCode: null, details: provisionEvidence };
+    const consistentReplay = await json(await completeHostAgentCommandRoute(
+      await commandCompletionRequest(paired.state.privateKeyPkcs8, device.id, provisionCommand.id, consistentReplayInput),
+      { params: Promise.resolve({ deviceId: device.id, commandId: provisionCommand.id }) },
+    ), 200);
+    assert.equal(consistentReplay.command.status, "SUCCEEDED");
+    assert.equal(consistentReplay.command.evidenceDigest, consistentReplayInput.evidenceDigest);
+    assert.equal(gatewayCalls.length, 0, "consistent terminal replay must return the stored result without touching Access Gateway");
+
+    const failedCommandId = "hcmd_failedterminalreplay01";
+    const storedFailedDetails = { protocolVersion: 1, commandType: "PROVISION", reason: "stored terminal failure" };
+    const storedFailedDigest = digestJson(storedFailedDetails);
+    const terminalSeed = new DatabaseSync(databasePath);
+    terminalSeed.prepare(`INSERT INTO hosting_v2_agent_commands(
+      id,device_id,contract_id,command_type,payload_json,status,attempt,evidence_digest,error_code,created_at,delivered_at,completed_at
+    ) VALUES(?,?,?,'PROVISION',?,'FAILED',1,?,?,?,?,?)`).run(
+      failedCommandId,
+      device.id,
+      contractId,
+      JSON.stringify({ contractId, image: process.env.KAI_HOSTING_APPROVED_IMAGES }),
+      storedFailedDigest,
+      "PROVISION_STORED_FAILED",
+      provisionedAt,
+      provisionedAt,
+      provisionedAt,
+    );
+    terminalSeed.prepare("UPDATE hosting_v2_devices SET status='DRAINING' WHERE id=?").run(device.id);
+    terminalSeed.close();
+    const failedToSucceededResponse = await completeHostAgentCommandRoute(
+      await commandCompletionRequest(paired.state.privateKeyPkcs8, device.id, failedCommandId, consistentReplayInput),
+      { params: Promise.resolve({ deviceId: device.id, commandId: failedCommandId }) },
+    );
+    const terminalRestore = new DatabaseSync(databasePath);
+    terminalRestore.prepare("UPDATE hosting_v2_devices SET status='BUSY' WHERE id=?").run(device.id);
+    terminalRestore.close();
+    const failedToSucceededReplay = await json(failedToSucceededResponse, 409);
+    assert.equal(failedToSucceededReplay.error.code, "IDEMPOTENCY_CONFLICT");
+    assert.equal(gatewayCalls.length, 0, "FAILED -> SUCCEEDED terminal replay must not touch Access Gateway");
+
+    const readyList = await json(await listBuyerContracts(browserRead(buyer, "/api/v2/contracts")), 200);
+    assert.equal(readyList.records[0].endpointDisplay, null);
+    assert.doesNotMatch(JSON.stringify(readyList), /golden-loop-gpu\.example\.com:27000|gateway-control-token/u);
+    assert.equal(gatewayCalls.length, 0, "buyer contract history must not mint Gateway access");
+    const readyDetail = await json(await getBuyerContract(browserRead(buyer, `/api/v2/contracts/${contractId}`), { params: Promise.resolve({ contractId }) }), 200);
+    assert.equal(readyDetail.record.status, "READY");
+    assert.equal(readyDetail.record.endpointDisplay, "gateway-buyer.example.com:24422");
+    assert.deepEqual(readyDetail.accessGateway, { version: 1, endpoint: "gateway-buyer.example.com:24422", leaseId: gatewayLeaseId, token: "A".repeat(48), expiresAt: readyDetail.accessGateway.expiresAt, handshake: "JSON_LINE_V1" });
+    assert.doesNotMatch(JSON.stringify(readyDetail), /golden-loop-gpu\.example\.com:27000/u);
 
     const start = await json(await startBuyerContract(browserRequest(buyer, `/api/v2/contracts/${contractId}/start`, "POST", {}, "golden-contract-start"), { params: Promise.resolve({ contractId }) }), 202);
     const startCommand = await hosting.pollCommand(device.id, new Date().toISOString());
@@ -462,10 +588,16 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     assert.equal((await hosting.getDevice(device.id)).status, "VERIFIED");
 
     const buyerDetail = await json(await getBuyerContract(browserRead(buyer, `/api/v2/contracts/${contractId}`), { params: Promise.resolve({ contractId }) }), 200);
+    assert.equal(buyerDetail.record.endpointDisplay, null);
+    assert.equal("accessGateway" in buyerDetail, false);
+    assert.doesNotMatch(JSON.stringify(buyerDetail), /golden-loop-gpu\.example\.com:27000/u);
     assert.equal(buyerDetail.record.evidence.instance.status, "CLEANED");
     assert.equal(buyerDetail.record.evidence.metering.serverMeasuredSeconds, 180);
     assert.deepEqual({ container: buyerDetail.record.evidence.cleanup.containerRemoved, key: buyerDetail.record.evidence.cleanup.authorizedKeyRemoved, workspace: buyerDetail.record.evidence.cleanup.workspaceRemoved }, { container: true, key: true, workspace: true });
     assert.equal("supplierOrganizationId" in buyerDetail.record, false);
+    const buyerHistory = await json(await listBuyerContracts(browserRead(buyer, "/api/v2/contracts")), 200);
+    assert.ok(buyerHistory.records.every((record) => record.endpointDisplay === null));
+    assert.doesNotMatch(JSON.stringify(buyerHistory), /golden-loop-gpu\.example\.com:27000|accessGateway/u);
 
     const supplierDetail = await json(await getSupplierContract(browserRead(supplier, `/api/v2/supply/contracts/${contractId}`), { params: Promise.resolve({ contractId }) }), 200);
     assert.equal(supplierDetail.record.evidence.cleanup.evidenceDigest, cleanupEvidenceDigest);
@@ -496,7 +628,7 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     const publicAfter = await json(await listPublicOffers(new Request(`${ORIGIN}/api/v2/offers`)), 200);
     assert.equal(publicAfter.records.length, 1, "cleaned and freshly verified inventory must become sellable again");
     const operations = await hosting.readiness(cleanedAt);
-    assert.equal(operations.schemaVersion, 14);
+    assert.equal(operations.schemaVersion, 15);
     assert.match(operations.activeFeeScheduleId, /^hfee_/u);
     assert.deepEqual({
       approvedSupplierCount: operations.approvedSupplierCount,
@@ -529,6 +661,9 @@ test("fresh supplier and buyer browsers complete the real three-minute GPU lifec
     if (previousEnvironment === undefined) delete process.env.KAI_ENVIRONMENT; else process.env.KAI_ENVIRONMENT = previousEnvironment;
     if (previousLocalAcceptance === undefined) delete process.env.KAI_HOSTING_LOCAL_ACCEPTANCE; else process.env.KAI_HOSTING_LOCAL_ACCEPTANCE = previousLocalAcceptance;
     if (previousLegacyWrites === undefined) delete process.env.KAI_ALLOW_LEGACY_ANON_WRITES; else process.env.KAI_ALLOW_LEGACY_ANON_WRITES = previousLegacyWrites;
+    if (previousGatewayUrl === undefined) delete process.env.KAI_ACCESS_GATEWAY_CONTROL_URL; else process.env.KAI_ACCESS_GATEWAY_CONTROL_URL = previousGatewayUrl;
+    if (previousGatewayToken === undefined) delete process.env.KAI_ACCESS_GATEWAY_CONTROL_TOKEN; else process.env.KAI_ACCESS_GATEWAY_CONTROL_TOKEN = previousGatewayToken;
+    globalThis.fetch = previousFetch;
     rmSync(directory, { recursive: true, force: true });
   }
 });

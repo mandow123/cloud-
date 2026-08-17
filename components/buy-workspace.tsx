@@ -9,7 +9,6 @@ import type {
   PublicHostingReadiness,
 } from "@/lib/hosting-v2-client";
 import { formatHostingTime } from "@/lib/hosting-v2-client";
-import type { ResourceListing } from "@/lib/types";
 import styles from "./buy-workspace.module.css";
 
 const COMPARE_STORAGE_KEY = "kai-cloud-live-offer-compare-v1";
@@ -95,18 +94,7 @@ function offerSearchText(offer: PublicHostingOffer) {
     .toLocaleLowerCase("zh-CN");
 }
 
-function catalogSearchText(listing: ResourceListing) {
-  return [
-    listing.title,
-    listing.region,
-    listing.deliveryForm,
-    listing.summary,
-    listing.supplierName,
-    ...listing.tags,
-  ].join(" ").toLocaleLowerCase("zh-CN");
-}
-
-export function BuyWorkspace({ catalogListings }: { catalogListings: readonly ResourceListing[] }) {
+export function BuyWorkspace() {
   const [readiness, setReadiness] = useState<PublicHostingReadiness | null>(null);
   const [offers, setOffers] = useState<PublicHostingOffer[] | null>(null);
   const [balance, setBalance] = useState<CardHourBalance | null>(null);
@@ -212,13 +200,6 @@ export function BuyWorkspace({ catalogListings }: { catalogListings: readonly Re
   const comparedOffers = compareIds
     .map((id) => (offers ?? []).find((offer) => offer.id === id))
     .filter((offer): offer is PublicHostingOffer => Boolean(offer));
-  const catalogSuggestions = useMemo(() => {
-    const matched = normalizedQuery
-      ? catalogListings.filter((listing) => catalogSearchText(listing).includes(normalizedQuery))
-      : catalogListings.filter((listing) => listing.featured);
-    return matched.slice(0, 4);
-  }, [catalogListings, normalizedQuery]);
-
   const marketReady = Boolean(readiness?.enabled && readiness.ready);
 
   function toggleCompare(id: string) {
@@ -262,12 +243,12 @@ export function BuyWorkspace({ catalogListings }: { catalogListings: readonly Re
           <div>
             <p className={styles.eyebrow}>SIGNED-IN BUYER WORKSPACE</p>
             <h1>购买算力</h1>
-            <p>只展示后端当前返回、经过验真且可成交的 GPU 报价；卡时余额来自当前登录交易主体。</p>
+            <p>登录后核对真实 GPU 报价、卡时余额并进入结账；资源发现与需求提交在独立目录中完成。</p>
           </div>
           <nav className={styles.routeLinks} aria-label="购买工作台快捷入口">
             <Link href="/gpu">GPU 市场</Link>
             <Link href="/member#orders">我的订单</Link>
-            <Link href="/member#card-hours">卡时账户</Link>
+            <Link href="/member/assets">卡时账户</Link>
             <Link href="/resources">资源目录</Link>
             <Link href="/campaigns/dgx-spark">DGX Spark 专项</Link>
           </nav>
@@ -294,7 +275,7 @@ export function BuyWorkspace({ catalogListings }: { catalogListings: readonly Re
             <small>订单处理中已锁定，不计入可用余额</small>
           </div>
           <div className={styles.statusActions}>
-            <Link className="button button-secondary" href="/member#card-hours">管理卡时</Link>
+            <Link className="button button-secondary" href="/member/assets">管理卡时</Link>
             {(marketError || balanceError) && <button className="button button-secondary" type="button" onClick={reload}>重新读取</button>}
           </div>
         </section>
@@ -353,21 +334,6 @@ export function BuyWorkspace({ catalogListings }: { catalogListings: readonly Re
           )}
         </section>
 
-        <section className={styles.catalog} aria-labelledby="catalog-title">
-          <div className={styles.sectionHeading}>
-            <div><p className={styles.eyebrow}>CATALOG FOR INQUIRY ONLY</p><h2 id="catalog-title">没有实时供给？按目录提交询价</h2></div>
-            <Link href="/resources">浏览全部目录 →</Link>
-          </div>
-          <div className={styles.catalogNotice}><strong>目录资源需平台核验，不是即时库存。</strong><span>目录仅帮助说明需求与参考口径；实际供应、价格、交付与合同条件以平台核验和供应方确认为准。</span></div>
-          <div className={styles.catalogList}>
-            {catalogSuggestions.map((listing) => (
-              <article key={listing.id}>
-                <div><span>{listing.region} · {listing.deliveryForm}</span><h3>{listing.title}</h3></div>
-                <div className={styles.catalogActions}><Link href={`/resources/${encodeURIComponent(listing.id)}`}>查看目录</Link><Link href={`/request?listing=${encodeURIComponent(listing.id)}`}>按此模板提交询价</Link></div>
-              </article>
-            ))}
-          </div>
-        </section>
       </div>
     </div>
   );

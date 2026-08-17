@@ -82,12 +82,14 @@ test("production templates carry the rollback and payment gates into the contain
   const compose = readFileSync(new URL("../deploy/compose.production.yml", import.meta.url), "utf8");
   const environment = readFileSync(new URL("../deploy/kai-cloud-app.env.example", import.meta.url), "utf8");
   assert.match(compose, /KAI_HOSTING_V2: "\$\{KAI_HOSTING_V2:-0\}"/u);
+  assert.match(compose, /KAI_MARKET_V1: "\$\{KAI_MARKET_V1:-1\}"/u);
   assert.match(compose, /KAI_HOSTING_V2_SETUP: "\$\{KAI_HOSTING_V2_SETUP:-0\}"/u);
   assert.match(compose, /KAI_HOSTING_DEVICE_RETIREMENT: "\$\{KAI_HOSTING_DEVICE_RETIREMENT:-0\}"/u);
   assert.match(compose, /KAI_ALIPAY_ENABLED: "\$\{KAI_ALIPAY_ENABLED:-0\}"/u);
   assert.match(compose, /KAI_ADMIN_APPROVER_USERNAME/u);
   assert.match(compose, /KAI_ADMIN_APPROVER_PASSWORD_HASH/u);
   assert.match(environment, /^KAI_HOSTING_V2=0$/mu);
+  assert.match(environment, /^KAI_MARKET_V1=1$/mu);
   assert.match(environment, /^KAI_HOSTING_V2_SETUP=0$/mu);
   assert.match(environment, /^KAI_HOSTING_DEVICE_RETIREMENT=0$/mu);
   assert.match(environment, /^KAI_ALIPAY_ENABLED=0$/mu);

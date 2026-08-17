@@ -9,6 +9,8 @@ export async function GET(request: Request) {
     const { snapshot, source } = await readMarketSnapshot();
     if (new URL(request.url).searchParams.get("summary") === "1") {
       return jsonResponse({
+        dataClass: "MARKET_REFERENCE",
+        version: snapshot.schemaVersion,
         summary: {
           publishedAt: snapshot.publishedAt,
           quoteCount: snapshot.quotes.length,
@@ -21,7 +23,7 @@ export async function GET(request: Request) {
         servedAt: new Date().toISOString(),
       }, 200, undefined, context);
     }
-    return jsonResponse({ snapshot, source, servedAt: new Date().toISOString() }, 200, undefined, context);
+    return jsonResponse({ dataClass: "MARKET_REFERENCE", version: snapshot.schemaVersion, snapshot, source, servedAt: new Date().toISOString() }, 200, undefined, context);
   } catch {
     return jsonResponse({ error: { code: "MARKET_UNAVAILABLE", message: "行情快照暂时不可用。", requestId: context.requestId } }, 503, undefined, { ...context, errorCode: "MARKET_UNAVAILABLE", errorName: "MarketSnapshotError" });
   }

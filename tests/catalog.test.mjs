@@ -67,7 +67,9 @@ test("all ten business aliases map to valid category, deal and unit values", () 
 
 test("every listing quote declares price range, scope, freshness and reference status", () => {
   for (const listing of resourceListings) {
+    assert.equal(listing.dataClass, "STATIC_SAMPLE");
     const quote = listing.quote;
+    assert.equal(quote.dataClass, "MARKET_REFERENCE");
     assert.equal(quote.currency, "CNY");
     assert.ok(PRICING_UNITS.includes(quote.pricingUnit));
     assert.equal(quote.pricingUnit, listing.pricingUnit);
@@ -95,6 +97,7 @@ test("market series provide deterministic 90-day quartiles for four categories",
     RESOURCE_CATEGORIES,
   );
   for (const series of marketSeries) {
+    assert.equal(series.dataClass, "MARKET_REFERENCE");
     assert.equal(series.points.length, 90);
     assert.equal(series.points[0].date, "2026-05-04");
     assert.equal(series.points.at(-1).date, "2026-08-01");

@@ -3,6 +3,9 @@ import { formatCardHourDisplayMicros } from "./card-hours.ts";
 
 export type PublicHostingOffer = Readonly<{
   id: string;
+  dataClass: "LIVE_INVENTORY";
+  source: "HOSTING_V2";
+  version: number;
   title: string;
   gpuModel: HostingGpuModel;
   region: string;
@@ -12,10 +15,14 @@ export type PublicHostingOffer = Readonly<{
   availableUntil: string;
   approvedImage: string;
   termsVersion: string;
+  verificationSummary: Readonly<{
+    status: "PASSED";
+    checks: readonly ["GPU_IDENTITY", "WORKLOAD_IMAGE", "PORT_REACHABILITY"];
+  }>;
+  verifiedUntil: string;
   pricing: Readonly<{
     assetCode: "KAI_CREDIT_HOUR";
     cardHourMicrosPerGpuHour: number;
-    cnyReferenceRate: "1.002";
   }>;
 }>;
 
@@ -54,6 +61,7 @@ export type BuyerHostingContract = Readonly<{
   id: string;
   offerId: string;
   snapshot: Readonly<{
+    offerVersion: number;
     title: string;
     gpuModel: HostingGpuModel;
     region: string;
@@ -200,7 +208,7 @@ export type SupplierEarningsLedgerEntry = Readonly<{
 
 export type SupplierEarningsDashboard = Readonly<{
   assetCode: "KAI_CREDIT_HOUR";
-  rate: Readonly<{ cardHours: "1"; cny: "1.002" }>;
+  rate: Readonly<{ cardHours: "1" }>;
   balance: Readonly<{ availableMicros: number; heldMicros: number }>;
   income: Readonly<{
     rentalPendingMicros: number;

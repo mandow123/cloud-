@@ -90,6 +90,11 @@ function validPositive(value: string) {
   return Number.isFinite(parsed) && parsed > 0;
 }
 
+function validCardHourAmount(value: string) {
+  const normalized = value.trim();
+  return /^\d{1,9}(?:\.\d{1,2})?$/u.test(normalized) && Number(normalized) > 0;
+}
+
 function durationConfig(unit: PricingUnit) {
   if (unit === "百万 Token") {
     return {
@@ -334,7 +339,9 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
     if (!validPositive(swap.wantedQuantity)) nextErrors.wantedQuantity = "期望数量必须大于 0。";
     if (swap.wantedDescription.trim().length < 8) nextErrors.wantedDescription = "请用至少 8 个字描述期望资源。";
     if (!swap.region) nextErrors.region = "请选择期望撮合区域。";
-    if (swap.cashDirection !== "none" && !validPositive(swap.cashAmount)) nextErrors.cashAmount = "补差金额必须大于 0。";
+    if (swap.cashDirection !== "none" && !validCardHourAmount(swap.cashAmount)) {
+      nextErrors.cashAmount = "补差上限必须是大于 0 且最多两位小数的 KAI 标准卡时。";
+    }
     if (!swap.consent) nextErrors.consent = "请确认服务器提交说明。";
 
     setSwapErrors(nextErrors);
@@ -670,7 +677,7 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
                     <ErrorText id="swap-region-error">{swapErrors.region}</ErrorText>
                   </label>
                   <label className={fieldLabelClass}>
-                    现金补差
+                    卡时补差
                     <select
                       aria-describedby={swapErrors.cashDirection ? "swap-cash-direction-error" : undefined}
                       aria-invalid={Boolean(swapErrors.cashDirection)}
@@ -687,7 +694,7 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
                   </label>
                   {swap.cashDirection !== "none" ? (
                     <label className={fieldLabelClass}>
-                      补差上限（人民币元）
+                      补差上限（KAI 标准卡时）
                       <input
                         aria-describedby={swapErrors.cashAmount ? "swap-cash-amount-error" : undefined}
                         aria-invalid={Boolean(swapErrors.cashAmount)}
@@ -695,6 +702,9 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
                         id="swap-cash-amount"
                         inputMode="decimal"
                         min="0.01"
+                        onBlur={() => {
+                          if (validCardHourAmount(swap.cashAmount)) updateSwap("cashAmount", Number(swap.cashAmount).toFixed(2));
+                        }}
                         onChange={(event) => updateSwap("cashAmount", event.target.value)}
                         step="0.01"
                         type="number"
@@ -724,7 +734,7 @@ export function RequestWorkbench({ initialMode = "rental", initialPrefill }: Req
         <ul className="mt-4 grid gap-3 pl-5 text-sm text-[var(--text)]">
           <li>业务字段会保存到 KAI Cloud 服务器，会员中心可再次读取。</li>
           <li>不要填写姓名、手机号、公司机密、账号或访问密钥。</li>
-          <li>市场参考报价不是要约，具体价格与交付条件以询价确认为准。</li>
+          <li>目录参考条件不是要约；正式报价与补差上限只使用两位小数的 KAI 标准卡时。</li>
         </ul>
         {initialPrefill?.title ? (
           <div className="mt-5 border-t border-[var(--border)] pt-4 text-sm">

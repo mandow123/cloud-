@@ -107,8 +107,8 @@ export async function verifyHostingProduction({
       signal: AbortSignal.timeout(15_000),
       headers: { accept: "application/json" },
     }), "Public Hosting offers");
-    invariant(Array.isArray(offers.items) && offers.items.length >= 1, "MARKET stage has no verified public GPU offer");
-    return Object.freeze({ ...result, publicOfferCount: offers.items.length });
+    invariant(Array.isArray(offers.records) && offers.records.length >= 1, "MARKET stage has no verified public GPU offer");
+    return Object.freeze({ ...result, publicOfferCount: offers.records.length });
   }
   return result;
 }

@@ -14,8 +14,24 @@ export function isLocalHostingAcceptance(environment: Environment = typeof proce
     && environment.KAI_HOSTING_LOCAL_ACCEPTANCE === "1";
 }
 
+// Product audit 2026-08-17: production trading stays closed until the V2
+// double-entry hold/release/refund rail, reconciliation health checks and
+// pending-income reversal workflow are implemented and separately approved.
+export const HOSTING_FINANCIAL_RAIL_STATUS = "CLOSED_PENDING_LEDGER_V2" as const;
+
+export function isHostingFinancialRailReady() {
+  return false;
+}
+
 export async function requireHostingV2TransactionCapability() {
   if (isLocalHostingAcceptance()) return;
+  if (!isHostingFinancialRailReady()) {
+    throw new AccountAuthError(
+      "HOSTING_FINANCIAL_RAIL_CLOSED",
+      503,
+      "算力交易资金链路正在完成双式账本、退款与收益冲正验收，当前仅开放市场浏览。 ",
+    );
+  }
   try {
     const environment: Environment = typeof process === "undefined" ? {} : process.env;
     const now = new Date().toISOString();
@@ -36,6 +52,7 @@ export async function requireHostingV2TransactionCapability() {
       kaiIdentityLoginAudited,
       adminPasswordAvailable: Boolean(environment.KAI_ADMIN_USERNAME?.trim() && environment.KAI_ADMIN_PASSWORD_HASH?.startsWith("pbkdf2-sha256:")),
       financeApprovalAvailable: Boolean(environment.KAI_ADMIN_APPROVER_USERNAME?.trim() && environment.KAI_ADMIN_APPROVER_PASSWORD_HASH?.startsWith("pbkdf2-sha256:")),
+      financialRailReady: isHostingFinancialRailReady(),
       alipay: alipayReadiness(environment),
     }));
   } catch (error) {

@@ -23,7 +23,7 @@ const commonGroups: NavGroup[] = [
     paths: ["/gpu", "/resources", "/market"],
     items: [
       { href: "/gpu", label: "GPU 租赁", description: "筛选、比较并启动 GPU 实例" },
-      { href: "/resources", label: "全部资源", description: "浏览 GPU、模型与基础设施资源" },
+      { href: "/resources", label: "参考目录", description: "浏览 GPU、模型与基础设施参考方案并提交询价" },
       { href: "/market", label: "市场行情", description: "查看 KAI 标准卡时与市场快照" },
     ],
   },

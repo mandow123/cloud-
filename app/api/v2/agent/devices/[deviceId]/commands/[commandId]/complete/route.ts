@@ -8,6 +8,7 @@ import { isHostingV2Enabled } from "@/lib/server/hosting-v2-feature";
 import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
 import { reconcileFailedHostingDelivery } from "@/lib/server/hosting-delivery-failure-service";
 import { reconcileFailedHostingStop } from "@/lib/server/hosting-stop-recovery-service";
+import { prepareHostingGatewayCommand } from "@/lib/server/hosting-access-gateway";
 
 export const dynamic = "force-dynamic";
 
@@ -23,12 +24,6 @@ export async function POST(request: Request, contextValue: { params: Promise<{ d
     if (!device || device.status === "REVOKED") throw new AccountAuthError("AGENT_DEVICE_INVALID", 403, "设备凭据无效。 ");
     const command = await store.getCommand(deviceId, commandId);
     if (!command) throw new AccountAuthError("AGENT_COMMAND_INVALID", 404, "设备任务不存在。 ");
-    if (device.status === "DRAINING" && command.type !== "STOP" && command.type !== "CLEANUP") {
-      throw new AccountAuthError("AGENT_DEVICE_DRAINING", 409, "设备退场中，只能完成停止或清理任务。 ");
-    }
-    if (!isHostingV2Enabled() && command.type !== "VERIFY" && command.type !== "STOP" && command.type !== "CLEANUP") {
-      throw new AccountAuthError("HOSTING_V2_TRADING_DISABLED", 503, "预上线配置模式不能完成新的开通或启动任务。 ");
-    }
     const proof = parseAgentProof(body);
     const outcome = agentString(body, "outcome", 6, 9);
     if (outcome !== "SUCCEEDED" && outcome !== "FAILED") throw new AccountAuthError("AGENT_FIELD_INVALID", 400, "outcome 无效。 ");
@@ -42,15 +37,6 @@ export async function POST(request: Request, contextValue: { params: Promise<{ d
     const fields = { commandId, outcome, evidenceDigest, errorCode, details };
     await verifyExistingDeviceProof(device, "COMPLETE_COMMAND", fields, proof);
     const commandAlreadyTerminal = command.status === "SUCCEEDED" || command.status === "FAILED";
-    if (commandAlreadyTerminal && command.status === "FAILED" && outcome === "SUCCEEDED" && command.errorCode?.startsWith("AGENT_PUBLIC_")) {
-      const result = await store.completeCommand(deviceId, commandId, { outcome: "FAILED", evidenceDigest: command.evidenceDigest!, errorCode: command.errorCode }, {
-        actorId: `agent:${deviceId}`,
-        idempotencyKey: `command:${commandId}:FAILED`,
-        payloadHash: await hostingAgentDigest({ operation: "CONTROL_PLANE_VERIFICATION_REPLAY", deviceId, commandId, evidenceDigest: command.evidenceDigest, errorCode: command.errorCode }),
-        now: new Date().toISOString(),
-      });
-      return jsonResponse(result, 200, undefined, context);
-    }
     if (commandAlreadyTerminal) {
       const result = await store.completeCommand(deviceId, commandId, { outcome, evidenceDigest, errorCode, details }, {
         actorId: `agent:${deviceId}`,
@@ -61,7 +47,19 @@ export async function POST(request: Request, contextValue: { params: Promise<{ d
       const recoveredAt = new Date().toISOString();
       const recovery = await reconcileFailedHostingDelivery(result.command, recoveredAt);
       const stopRecovery = await reconcileFailedHostingStop(result.command, recoveredAt);
-      return jsonResponse(recovery ? { ...result, contract: recovery.cleanup.contract, recovery: { billingStatus: String(recovery.refund.record.status), cleanupCommandId: recovery.cleanup.command.id } } : stopRecovery ? { ...result, contract: stopRecovery.contract, stopRecovery: { commandId: stopRecovery.command?.id ?? null, exhausted: stopRecovery.exhausted } } : result, 200, undefined, context);
+      const terminalResult = recovery ? { ...result, contract: recovery.cleanup.contract, recovery: { billingStatus: String(recovery.refund.record.status), cleanupCommandId: recovery.cleanup.command.id } } : stopRecovery ? { ...result, contract: stopRecovery.contract, stopRecovery: { commandId: stopRecovery.command?.id ?? null, exhausted: stopRecovery.exhausted } } : result;
+      return jsonResponse(terminalResult, 200, undefined, context);
+    }
+    if (device.status === "DRAINING" && command.type !== "STOP" && command.type !== "CLEANUP") {
+      throw new AccountAuthError("AGENT_DEVICE_DRAINING", 409, "设备退场中，只能完成停止或清理任务。 ");
+    }
+    if (!isHostingV2Enabled() && command.type !== "VERIFY" && command.type !== "STOP" && command.type !== "CLEANUP") {
+      throw new AccountAuthError("HOSTING_V2_TRADING_DISABLED", 503, "预上线配置模式不能完成新的开通或启动任务。 ");
+    }
+    const gatewayCompletedAt = new Date().toISOString();
+    const accessGateway = await prepareHostingGatewayCommand({ store, command, device, outcome, now: gatewayCompletedAt });
+    if (command.type === "PROVISION" && outcome === "SUCCEEDED" && accessGateway && !accessGateway.readyForContract) {
+      return jsonResponse({ command, device, accessGateway, completionPending: true }, 202, undefined, context);
     }
     let controlPlaneReachabilityDigest: string | undefined;
     if (command.type === "VERIFY" && outcome === "SUCCEEDED") {
@@ -92,7 +90,8 @@ export async function POST(request: Request, contextValue: { params: Promise<{ d
     });
     const recovery = await reconcileFailedHostingDelivery(result.command, completedAt);
     const stopRecovery = await reconcileFailedHostingStop(result.command, completedAt);
-    return jsonResponse(recovery ? { ...result, contract: recovery.cleanup.contract, recovery: { billingStatus: String(recovery.refund.record.status), cleanupCommandId: recovery.cleanup.command.id } } : stopRecovery ? { ...result, contract: stopRecovery.contract, stopRecovery: { commandId: stopRecovery.command?.id ?? null, exhausted: stopRecovery.exhausted } } : result, 200, undefined, context);
+    const completedResult = recovery ? { ...result, contract: recovery.cleanup.contract, recovery: { billingStatus: String(recovery.refund.record.status), cleanupCommandId: recovery.cleanup.command.id } } : stopRecovery ? { ...result, contract: stopRecovery.contract, stopRecovery: { commandId: stopRecovery.command?.id ?? null, exhausted: stopRecovery.exhausted } } : result;
+    return jsonResponse(accessGateway ? { ...completedResult, accessGateway } : completedResult, 200, undefined, context);
   } catch (error) {
     return apiErrorResponse(hostingAgentHttpError(error), undefined, context);
   }

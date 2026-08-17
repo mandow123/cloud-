@@ -210,7 +210,7 @@ test("supplier APIs scope contracts, sanitize projections and expose immutable l
   const collection = readFileSync("app/api/v2/supply/contracts/route.ts", "utf8");
   const detail = readFileSync("app/api/v2/supply/contracts/[contractId]/route.ts", "utf8");
   const helper = readFileSync("lib/server/hosting-v2-api.ts", "utf8");
-  const view = helper.slice(helper.indexOf("export function hostingSupplierContractClientView"), helper.indexOf("export function hostingSupplierOfferClientView"));
+  const view = helper.slice(helper.indexOf("export function hostingSupplierContractClientView"), helper.indexOf("export function hostingSettlementClientView"));
   assert.match(collection, /contract\.supplierOrganizationId === account\.activeOrganization\.id/u);
   assert.match(detail, /contract\.supplierOrganizationId !== account\.activeOrganization\.id/u);
   assert.doesNotMatch(view, /buyerOrganizationId|buyerAccountId|feeScheduleId/u);
@@ -218,7 +218,8 @@ test("supplier APIs scope contracts, sanitize projections and expose immutable l
 
   const earnings = readFileSync("app/api/v2/supply/earnings/route.ts", "utf8");
   assert.match(earnings, /getCardHourStore\(\)/u);
-  assert.match(earnings, /dashboard\.ledger\.map\(safeLedgerEntry\)/u);
+  assert.match(earnings, /hostingSupplierEarningsClientView\(dashboard, feePreview, monthlySettlement, updatedAt\)/u);
+  assert.match(helper, /dashboard\.ledger\.map\(safeSupplierLedgerEntry\)/u);
   assert.match(earnings, /requireTradingAccountSession\(request\)/u);
 });
 

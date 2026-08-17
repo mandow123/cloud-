@@ -79,7 +79,7 @@ test("hosting public styles use the shared light and dark design tokens", () => 
   assert.doesNotMatch(css, /#[0-9a-f]{3,8}/iu);
 
   const earnings = readFileSync("app/hosting/earnings/page.tsx", "utf8");
-  assert.match(earnings, /¥31\.20/u);
+  assert.doesNotMatch(earnings, /人民币|¥|1\.002/u);
   assert.match(earnings, /31\.14 KAI 标准卡时/u);
   assert.doesNotMatch(earnings, /31\.137725 KAI 标准卡时/u);
 });

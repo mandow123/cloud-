@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
-import { CatalogPurchase } from "@/components/catalog-purchase";
+import { notFound, permanentRedirect } from "next/navigation";
 import { getResourceById } from "@/lib/data";
 
 type PurchasePageProps = {
@@ -11,7 +10,7 @@ export async function generateMetadata({ params }: PurchasePageProps): Promise<M
   const { resourceId } = await params;
   const resource = getResourceById(resourceId);
   return resource
-    ? { title: `询价 ${resource.title}`, description: `查看 ${resource.title} 的目录参考价并提交询价意向。` }
+    ? { title: `提交 ${resource.title} 算力需求`, description: `基于 ${resource.title} 的历史参考档案提交算力需求。` }
     : { title: "目录资源不存在" };
 }
 
@@ -19,5 +18,12 @@ export default async function PurchasePage({ params }: PurchasePageProps) {
   const { resourceId } = await params;
   const resource = getResourceById(resourceId);
   if (!resource) notFound();
-  return <CatalogPurchase resource={resource} />;
+  permanentRedirect(`/request?${new URLSearchParams({
+    listing: resource.id,
+    mode: resource.dealModes[0],
+    category: resource.category,
+    unit: resource.pricingUnit,
+    title: resource.title,
+    region: resource.region,
+  }).toString()}`);
 }

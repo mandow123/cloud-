@@ -15,7 +15,7 @@ export function SiteHeader() {
         <NavLinks />
         <div className="header-actions">
           <ThemeControl />
-          <Link className="button button-primary button-compact" href="/buy">
+          <Link className="button button-primary button-compact" href="/gpu">
             购买算力
           </Link>
           <Link className="button button-secondary button-compact" href="/request">

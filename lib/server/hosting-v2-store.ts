@@ -14,6 +14,7 @@ import type {
   HostingGoldenLoopAudit,
   HostingGpuModel,
   HostingOffer,
+  HostingPublicOffer,
   HostingSupplierProfile,
   HostingSupplierFeePreview,
   HostingSupplierMonthlySettlement,
@@ -31,6 +32,22 @@ export interface HostingV2DatabaseAdapter {
 }
 
 export type HostingMutationContext = Readonly<{ actorId: string; idempotencyKey: string; payloadHash: string; now: string }>;
+
+export type HostingGatewayBinding = Readonly<{
+  contractId: string;
+  deviceId: string;
+  leaseId: string;
+  mode: "ACCESS_GATEWAY";
+  status: "LEASE_CREATED" | "SLOT_CONFIRMED" | "REVOCATION_REQUIRED" | "REVOKED";
+  buyerEndpoint: string;
+  expiresAt: string;
+  lastErrorCode: string | null;
+  createdAt: string;
+  slotConfirmedAt: string | null;
+  revocationRequiredAt: string | null;
+  revokedAt: string | null;
+  updatedAt: string;
+}>;
 
 export type HostingV2OperationalSnapshot = Readonly<{
   schemaVersion: number;
@@ -71,9 +88,10 @@ export interface HostingV2Store {
   supplierMonthlySettlement(organizationId: string, now: string): Promise<HostingSupplierMonthlySettlement>;
   createOffer(organizationId: string, input: { deviceId: string; title: string; gpuModel: HostingGpuModel; region: string; cardHourMicrosPerGpuHour: number; minRentalSeconds: number; maxRentalSeconds: number; availableFrom: string; availableUntil: string; approvedImage: string; termsVersion: string }, context: HostingMutationContext): Promise<HostingOffer>;
   updateOfferStatus(organizationId: string, offerId: string, input: { status: "PUBLISHED" | "PAUSED" | "UNLISTED"; expectedVersion: number }, context: HostingMutationContext): Promise<HostingOffer>;
-  listPublicOffers(now: string): Promise<HostingOffer[]>;
+  listPublicOffers(now: string): Promise<HostingPublicOffer[]>;
+  getPublicOffer(id: string, now: string): Promise<HostingPublicOffer | null>;
   getOffer(id: string): Promise<HostingOffer | null>;
-  reserveContract(account: AccountSessionContext, offerId: string, reservedSeconds: number, heldMicros: number, context: HostingMutationContext): Promise<HostingContract>;
+  reserveContract(account: AccountSessionContext, offerId: string, offerVersion: number, reservedSeconds: number, context: HostingMutationContext): Promise<HostingContract>;
   markContractHeld(buyerOrganizationId: string, contractId: string, context: HostingMutationContext): Promise<HostingContract>;
   attachSshKey(buyerOrganizationId: string, contractId: string, input: { publicKey: string; fingerprint: string }, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand }>;
   requestContractStart(buyerOrganizationId: string, contractId: string, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand }>;
@@ -84,6 +102,11 @@ export interface HostingV2Store {
   queueDisputeCleanup(proposalId: string, context: HostingMutationContext): Promise<{ contract: HostingContract; command: HostingAgentCommand }>;
   contractForViewer(organizationId: string, contractId: string): Promise<HostingContract | null>;
   contractEvidenceForViewer(organizationId: string, contractId: string): Promise<HostingContractEvidence | null>;
+  gatewayBinding(contractId: string): Promise<HostingGatewayBinding | null>;
+  recordGatewayLease(input: { contractId: string; deviceId: string; leaseId: string; buyerEndpoint: string; expiresAt: string }, now: string): Promise<HostingGatewayBinding>;
+  markGatewaySlotConfirmed(contractId: string, now: string): Promise<HostingGatewayBinding>;
+  markGatewayRevocationRequired(contractId: string, errorCode: string, now: string): Promise<HostingGatewayBinding>;
+  markGatewayRevoked(contractId: string, now: string): Promise<HostingGatewayBinding>;
   expiredAcceptanceForDevice(deviceId: string, now: string): Promise<HostingContract | null>;
   failedDeliveryForDevice(deviceId: string): Promise<HostingAgentCommand | null>;
   failedStopForDevice(deviceId: string): Promise<HostingAgentCommand | null>;

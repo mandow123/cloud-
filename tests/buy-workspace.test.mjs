@@ -6,10 +6,12 @@ import test from "node:test";
 const ROOT = join(import.meta.dirname, "..");
 const read = (path) => readFileSync(join(ROOT, path), "utf8");
 
-test("/buy is a signed-in buyer workspace with a hard login redirect", () => {
+test("/buy keeps a signed-in rollback workspace behind the KAI_MARKET_V1 redirect", () => {
   const page = read("app/buy/page.tsx");
+  assert.match(page, /if \(isMarketV1Enabled\(\)\) redirect\(PRODUCT_PATHS\.gpu\)/u);
   assert.match(page, /<AccountRequired[^>]+purpose="进入购买算力工作台"[^>]+redirectOnSignedOut/u);
-  assert.match(page, /<BuyWorkspace catalogListings=\{resourceListings\}/u);
+  assert.match(page, /<BuyWorkspace \/>/u);
+  assert.doesNotMatch(page, /resourceListings/u);
 });
 
 test("the primary purchase list is driven only by readiness and real offers", () => {
@@ -26,7 +28,7 @@ test("the primary purchase list is driven only by readiness and real offers", ()
 test("card-hour amounts keep two decimal places and the workspace links related buyer routes", () => {
   const workspace = read("components/buy-workspace.tsx");
   assert.match(workspace, /formatCardHourDisplayMicros/u);
-  for (const href of ["/gpu", "/member#orders", "/member#card-hours", "/resources"]) {
+  for (const href of ["/gpu", "/member#orders", "/member/assets", "/resources"]) {
     assert.match(workspace, new RegExp(`href=["']${href.replaceAll("/", "\\/")}["']`, "u"));
   }
 });
@@ -47,12 +49,12 @@ test("minimum card-hour hold uses exact integer arithmetic", () => {
   assert.doesNotMatch(workspace, /Math\.ceil\(offer\.pricing\.cardHourMicrosPerGpuHour/u);
 });
 
-test("static catalog entries are clearly inquiry-only and never presented as inventory", () => {
+test("/buy contains only live offers while discovery remains a separate route", () => {
   const workspace = read("components/buy-workspace.tsx");
-  assert.match(workspace, /目录资源需平台核验，不是即时库存/u);
-  assert.match(workspace, /href=\{`\/request\?listing=\$\{encodeURIComponent\(listing\.id\)\}`\}/u);
-  assert.match(workspace, /href=\{`\/resources\/\$\{encodeURIComponent\(listing\.id\)\}`\}/u);
-  assert.doesNotMatch(workspace, /href=\{`\/checkout\/\$\{encodeURIComponent\(listing\.id\)\}`\}/u);
+  assert.match(workspace, /资源发现与需求提交在独立目录中完成/u);
+  assert.match(workspace, /href="\/resources"/u);
+  assert.doesNotMatch(workspace, /ResourceListing|catalogSuggestions|catalogListings/u);
+  assert.doesNotMatch(workspace, /\/checkout\//u);
 });
 
 test("the new responsive module uses only shared design tokens", () => {

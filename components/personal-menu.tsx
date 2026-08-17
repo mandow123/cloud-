@@ -393,13 +393,13 @@ function PersonalMenuContent({
           <AvatarIcon />
           <div>
             <strong>登录后查看个人业务</strong>
-            <p>集中查看卡时、购买记录、回购、收益与邀请奖励。</p>
+            <p>集中查看卡时资产、购买记录、收益与邀请奖励。</p>
           </div>
         </div>
         <Link
           className={styles.primaryLink}
           data-personal-menu-initial-focus
-          href="/login?returnTo=%2Fmember"
+          href="/login?returnTo=%2Fmember%2Fassets"
           onClick={onNavigate}
         >
           <span>登录</span><span aria-hidden="true">→</span>
@@ -410,12 +410,13 @@ function PersonalMenuContent({
 
   const profile = summary.profile;
   const entries: SummaryEntry[] = [
-    { href: "/member#card-hours", label: "卡时账户" },
-    { href: "/member#purchases", label: "购买记录", showCount: true, value: (summary.counts?.purchaseRequests ?? 0) + (summary.counts?.orders ?? 0) },
+    { href: "/member/assets", label: "我的资产" },
+    { href: "/member/assets#card-hour-ledger", label: "卡时明细" },
+    { href: "/member/assets#purchases", label: "购买记录", showCount: true, value: (summary.counts?.purchaseRequests ?? 0) + (summary.counts?.orders ?? 0) },
     { href: "/member#compare", label: "我的对比", showCount: true, value: compareCount },
-    { href: "/member#buybacks", label: "我的回购" },
-    { href: "/member#income", label: "租金与佣金" },
-    { href: "/member#referrals", label: "邀请奖励" },
+    { href: "/member/assets#income", label: "收益" },
+    { href: "/member/assets#topup", label: "卡时充值" },
+    { href: "/member/assets#referrals", label: "邀请奖励" },
   ];
 
   return (

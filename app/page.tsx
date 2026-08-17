@@ -2,17 +2,16 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LiveHomeMarketHero } from "@/components/live-home-market-hero";
 import { resourceListings, serviceAliases } from "@/lib/data";
-import { formatPrice } from "@/lib/market";
 import { marketIndexChange, readMarketSnapshot } from "@/lib/server/market-snapshot";
 import type { ResourceCategory, ResourceListing } from "@/lib/types";
 
 export const metadata: Metadata = {
   title: "让算力，抵达每一个需要它的时刻",
-  description: "连接可信算力供给与真实需求，以 KAI 卡时统一购买 GPU、模型、Token、云主机与企业容量。",
+  description: "进入真实 GPU 市场，或通过参考目录发现其他算力方案并提交需求；成交统一使用 KAI 卡时。",
 };
 
 const quickActions = [
-  { code: "01", title: "租 GPU", copy: "H20、A800 等卡时与服务器时", href: "/resources?category=gpu&deal=rental" },
+  { code: "01", title: "租 GPU", copy: "只看验真有效、当前可成交的 GPU 报价", href: "/gpu" },
   { code: "02", title: "买 Token", copy: "逐模型比较输入、缓存与输出价", href: "/market#model-token-market" },
   { code: "03", title: "找机柜", copy: "整机柜、功率与预留容量", href: "/resources?category=rack_capacity" },
   { code: "04", title: "做置换", copy: "我可提供 / 我需要双边撮合", href: "/request?mode=swap" },
@@ -30,7 +29,6 @@ const quoteRows = HOMEPAGE_QUOTE_CATEGORIES.map((category) => {
   if (!listing) throw new Error(`Homepage quote missing for category: ${category}`);
   return listing;
 });
-const homepageGpuQuote = quoteRows[0];
 
 function pricingScope(listing: ResourceListing) {
   const { quote } = listing;
@@ -92,10 +90,6 @@ export default async function Home() {
           indexChange1d: snapshot.index.change1d,
           indexChange7d: marketIndexChange(snapshot, 7),
           indexChange30d: snapshot.index.change30d,
-          gpuP50: homepageGpuQuote.quote.median,
-          gpuCurrency: homepageGpuQuote.quote.currency,
-          gpuPricingUnit: homepageGpuQuote.pricingUnit,
-          gpuResourceTitle: homepageGpuQuote.title,
         }}
       />
 
@@ -103,8 +97,8 @@ export default async function Home() {
         <div className="section-top">
           <div>
             <p className="kicker">Market snapshot</p>
-            <h2 className="section-heading" id="market-snapshot-title">今日关键报价</h2>
-            <p className="section-lead">四类资源均直接引用统一目录，价格、口径和时效可追溯到具体资源。</p>
+            <h2 className="section-heading" id="market-snapshot-title">历史目录参考</h2>
+            <p className="section-lead">以下 4 项来自 24 条平台初始化样本，报价有效期均已结束；仅用于理解资源类型和提交需求，不代表现货或可成交报价。</p>
           </div>
           <Link className="button button-secondary" href="/market">全部行情</Link>
         </div>
@@ -116,7 +110,7 @@ export default async function Home() {
         >
           <table className="data-table snapshot-table">
             <thead>
-              <tr><th>资源 / 编号</th><th>地区</th><th className="num">市场参考报价</th><th>税费 / 电费 / 网络</th><th>样本 / 时效</th><th><span className="sr-only">操作</span></th></tr>
+              <tr><th>资源 / 编号</th><th>地区</th><th>数据状态</th><th>历史口径</th><th>样本 / 时效</th><th><span className="sr-only">操作</span></th></tr>
             </thead>
             <tbody>
               {quoteRows.map((listing) => (
@@ -126,10 +120,7 @@ export default async function Home() {
                     <span className="snapshot-resource-id">{listing.id}</span>
                   </th>
                   <td>{listing.region}</td>
-                  <td className="snapshot-price num">
-                    <span className="snapshot-currency">{listing.quote.currency}</span>
-                    {formatPrice(listing.quote.median, listing.pricingUnit)}
-                  </td>
+                  <td><strong>历史初始化样本</strong><span className="snapshot-detail">报价已过期 · 不可直接购买</span></td>
                   <td>
                     <strong>{pricingScope(listing)}</strong>
                     <span className="snapshot-detail">{publicScopeNote(listing.quote.scopeNote)}</span>
@@ -145,7 +136,7 @@ export default async function Home() {
             </tbody>
           </table>
         </div>
-        <p className="data-footnote">市场参考报价 · 具体以询价确认为准 · 每日北京时间 06:00 更新 · 平台初始化样本，供应商接入后核验更新</p>
+        <p className="data-footnote">24 条初始化样本报价均已过期，不代表现货、库存或可成交报价；真实 GPU 报价仅在 /gpu 展示。</p>
       </section>
 
       <section className="quick-decision" aria-labelledby="quick-decision-title">
@@ -155,7 +146,7 @@ export default async function Home() {
               <p className="kicker">START FROM THE WORKLOAD</p>
               <h2 className="section-heading" id="quick-decision-title">从你的任务开始</h2>
             </div>
-            <p>先看可交易资源，再按任务筛选；价格、交付和卡时结算使用同一份订单快照。</p>
+            <p>GPU 交易进入 /gpu；其他品类先从目录发现方案，再提交算力需求由平台核验。</p>
           </div>
           <div className="quick-grid">
             {quickActions.map((item) => (

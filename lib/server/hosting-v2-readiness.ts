@@ -2,6 +2,7 @@ import type { AlipayReadiness } from "./alipay-live.ts";
 import { AccountAuthError } from "./account-auth.ts";
 import { hostingV2ApprovedImages, hostingV2CurrentTermsVersion } from "./hosting-v2-image-policy.ts";
 import type { HostingV2OperationalSnapshot } from "./hosting-v2-store.ts";
+import { accessGatewayCapability } from "./access-gateway-client.ts";
 
 type StorageCheck = Readonly<{ ready: boolean; errorCode?: string }>;
 type CapabilityCheck = Readonly<{ ready: boolean; failClosed: true; reason?: string }>;
@@ -19,8 +20,10 @@ export type HostingV2CapabilityReadiness = Readonly<{
     trialGrantRequest: CapabilityCheck;
     trialGrantApproval: CapabilityCheck;
     agentDelivery: CapabilityCheck;
+    accessGateway: CapabilityCheck;
     feeSchedule: CapabilityCheck;
     cardHourLedger: CapabilityCheck;
+    financialRail: CapabilityCheck;
     approvedImages: CapabilityCheck & Readonly<{ count: number }>;
     supplierTerms: CapabilityCheck;
     metering: CapabilityCheck;
@@ -54,6 +57,7 @@ export function evaluateHostingV2Capability(input: {
   kaiIdentityLoginAudited: boolean;
   adminPasswordAvailable: boolean;
   financeApprovalAvailable: boolean;
+  financialRailReady?: boolean;
   alipay: AlipayReadiness;
 }): HostingV2CapabilityReadiness {
   const enabled = ["1", "true"].includes((input.environment.KAI_HOSTING_V2 ?? "").trim().toLowerCase());
@@ -82,6 +86,7 @@ export function evaluateHostingV2Capability(input: {
       ? "KAI_IDENTITY_LOGIN_EVIDENCE_MISSING"
       : "HOSTING_APPROVED_SUPPLIER_MISSING";
   const agentReady = (operations?.activeAgentCount ?? 0) > 0;
+  const gateway = accessGatewayCapability(input.environment);
   const feeReady = Boolean(operations?.activeFeeScheduleId);
   const cleanupReady = hostingStorageReady
     && (operations?.drainingDeviceCount ?? 0) === 0
@@ -93,8 +98,10 @@ export function evaluateHostingV2Capability(input: {
     trialGrantRequest: check(input.adminPasswordAvailable, "HOSTING_ROOT_ADMIN_NOT_READY"),
     trialGrantApproval: check(input.financeApprovalAvailable, "HOSTING_FINANCE_APPROVER_NOT_READY"),
     agentDelivery: check(agentReady, "HOSTING_ACTIVE_AGENT_MISSING"),
+    accessGateway: check(gateway.natClosedLoop, gateway.reason ?? "ACCESS_GATEWAY_NOT_READY"),
     feeSchedule: check(feeReady, "HOSTING_ACTIVE_FEE_MISSING"),
     cardHourLedger: check(cardHourStorageReady, input.cardHourStorage.errorCode ?? "CARD_HOUR_STORAGE_NOT_READY"),
+    financialRail: check(input.financialRailReady === true, "HOSTING_FINANCIAL_RAIL_CLOSED"),
     approvedImages: { ...check(imagesReady, "HOSTING_APPROVED_IMAGE_POLICY_MISSING"), count: approvedImageCount },
     supplierTerms: check(termsReady, "HOSTING_TERMS_POLICY_MISSING"),
     metering: check(hostingStorageReady && cardHourStorageReady && agentReady, "HOSTING_METERING_NOT_READY"),

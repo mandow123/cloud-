@@ -4,8 +4,8 @@ import { ResourceExplorer } from "@/components/resource-explorer";
 import { resourceListings } from "@/lib/data";
 
 export const metadata: Metadata = {
-  title: "算力资源市场",
-  description: "筛选并比较 GPU、Token、模型、整机柜容量与云厂商资源。",
+  title: "算力资源目录",
+  description: "发现并比较 GPU、Token、模型、整机柜容量与云厂商参考方案，再提交算力需求。",
 };
 
 function ResourceExplorerFallback() {

@@ -1,6 +1,16 @@
 # KAI Host Agent
 
-KAI Host Agent is the supplier-side device identity and control service for KAI Hosting V2. Version `1.9.7` in this checkpoint implements:
+## 堡垒机 / NAT 设备
+
+Host Agent 1.10 起可使用 KAI Access Gateway。订单容器仍只监听供应商机器的回环/受控 Docker 映射端口，Agent 使用订单租约文件主动建立 TLS 1.3 出站连接：
+
+```bash
+sudo -u kai-host-agent kai-host-agent gateway --bundle-file /var/lib/kai-host-agent/gateway/<lease-id>.json
+```
+
+租约文件由 KAI 控制面签发，权限必须为 `0600 kai-host-agent:kai-host-agent`。文件包含合同级随机 ticket，但不包含宿主机 SSH 私钥；不得通过聊天、命令行参数或日志传递。到期或平台撤销后，网关入口立即失效。
+
+KAI Host Agent is the supplier-side device identity and control service for KAI Hosting V2. Version `1.11.0` in this checkpoint implements:
 
 - contract-bound cleanup for partially provisioned or SSH-unreachable workloads, so failed delivery can be refunded and proven clean before relisting;
 

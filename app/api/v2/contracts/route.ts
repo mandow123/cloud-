@@ -24,6 +24,7 @@ export async function POST(request: Request) {
     const result = await reserveHostingContract({
       account,
       offerId: hostingString(body, "offerId", 20, 100),
+      offerVersion: hostingInteger(body, "offerVersion", 1),
       reservedSeconds: hostingInteger(body, "reservedSeconds", 180),
       mutation,
     });

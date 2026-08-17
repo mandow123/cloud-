@@ -5,6 +5,7 @@ import { getCardHourStore } from "./card-hour-store.ts";
 import { ExchangeDomainError } from "./exchange-errors.ts";
 import type { HostingMutationContext, HostingV2Store } from "./hosting-v2-store.ts";
 import { getHostingV2Store } from "./hosting-v2-store.ts";
+import { revokeHostingGatewayBeforeCancellation } from "./hosting-access-gateway.ts";
 
 type Dependencies = Readonly<{ hosting: HostingV2Store; cardHours: CardHourStore }>;
 
@@ -32,14 +33,13 @@ async function compensateReservation(input: { account: AccountSessionContext; co
 export async function reserveHostingContract(input: {
   account: AccountSessionContext;
   offerId: string;
+  offerVersion: number;
   reservedSeconds: number;
   mutation: HostingMutationContext;
 }, injected?: Dependencies) {
   const stores = await dependencies(injected);
-  const offer = await stores.hosting.getOffer(input.offerId);
-  if (!offer) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "GPU 挂牌不存在。");
-  const heldMicros = hostingCardHourMicrosForSeconds(offer.cardHourMicrosPerGpuHour, input.reservedSeconds);
-  const contract = await stores.hosting.reserveContract(input.account, input.offerId, input.reservedSeconds, heldMicros, input.mutation);
+  const contract = await stores.hosting.reserveContract(input.account, input.offerId, input.offerVersion, input.reservedSeconds, input.mutation);
+  const heldMicros = contract.heldMicros;
   if (["CANCELLED", "FAILED", "DISPUTED", "REFUNDED", "CLEANED"].includes(contract.status)) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "该预留已经终止，请重新选择资源。");
   try {
     const holdPayloadHash = await internalHash({ operation: "HOLD_HOSTING_ORDER", contractId: contract.id, heldMicros });
@@ -65,6 +65,7 @@ export async function cancelHostingContract(input: {
   const current = await stores.hosting.contractForViewer(input.account.activeOrganization.id, input.contractId);
   if (!current) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "租赁合同不存在。");
   if (current.buyerOrganizationId !== input.account.activeOrganization.id) throw new ExchangeDomainError("EXCHANGE_OWNERSHIP_FORBIDDEN", 403, "只有采购方可以取消本次预留。");
+  await revokeHostingGatewayBeforeCancellation(stores.hosting, input.contractId, "CONTRACT_CANCELLED", input.mutation.now);
   const contract = await stores.hosting.cancelContract(input.contractId, input.reason, input.mutation);
   let hold: Record<string, unknown> | null = null;
   try {

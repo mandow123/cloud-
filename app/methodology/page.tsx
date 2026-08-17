@@ -112,7 +112,7 @@ export default function MethodologyPage() {
             ))}
           </div>
           <p className="mt-6 border-l-2 border-[var(--accent)] pl-4 text-sm leading-6 text-[var(--text)]">
-            <strong className="text-[var(--ink)]">KAI 模型调用成本指数</strong>使用固定模型篮子、固定输入输出比例与缓存命中假设，基期设为 100，只表达日度成本变化；它不是跨模型人民币均价，也不是任何一个模型的可成交报价。
+            <strong className="text-[var(--ink)]">KAI 模型调用成本指数</strong>使用固定模型篮子、固定输入输出比例与缓存命中假设，基期设为 100，只表达日度成本变化；它不是跨模型成交均价，也不是任何一个模型的可成交报价。
           </p>
         </section>
 

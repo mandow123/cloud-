@@ -40,6 +40,7 @@ services:
       KAI_DGX_SPARK_ESTIMATED_SHIPPING_MONTHS: "${KAI_DGX_SPARK_ESTIMATED_SHIPPING_MONTHS:-}"
       KAI_DGX_SPARK_PRICE_CARD_HOURS_MICROS: "${KAI_DGX_SPARK_PRICE_CARD_HOURS_MICROS:-}"
       KAI_DGX_SPARK_PURCHASE_PATH: "${KAI_DGX_SPARK_PURCHASE_PATH:-}"
+      KAI_MARKET_V1: "${KAI_MARKET_V1:-1}"
       KAI_HOSTING_V2: "${KAI_HOSTING_V2:-0}"
       KAI_HOSTING_V2_SETUP: "${KAI_HOSTING_V2_SETUP:-0}"
       KAI_HOSTING_DEVICE_RETIREMENT: "${KAI_HOSTING_DEVICE_RETIREMENT:-0}"
@@ -56,6 +57,8 @@ services:
       KAI_SUPPLY_OPS_TOKEN: "${KAI_SUPPLY_OPS_TOKEN:-}"
       KAI_SSH_PROVISIONER_URL: "${KAI_SSH_PROVISIONER_URL:-}"
       KAI_SSH_PROVISIONER_TOKEN: "${KAI_SSH_PROVISIONER_TOKEN:-}"
+      KAI_ACCESS_GATEWAY_CONTROL_URL: "${KAI_ACCESS_GATEWAY_CONTROL_URL:-}"
+      KAI_ACCESS_GATEWAY_CONTROL_TOKEN: "${KAI_ACCESS_GATEWAY_CONTROL_TOKEN:-}"
     ports:
       - "127.0.0.1:${KAI_APP_PORT:-3051}:3000"
     volumes:
@@ -86,6 +89,67 @@ services:
       interval: 30s
       timeout: 5s
       start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  access-gateway:
+    profiles: ["gateway"]
+    image: "${KAI_IMAGE:?KAI_IMAGE must be an immutable repository@sha256 digest}"
+    pull_policy: always
+    restart: unless-stopped
+    init: true
+    user: "1000:1000"
+    read_only: true
+    entrypoint: ["node", "access-gateway/src/cli.mjs"]
+    environment:
+      KAI_GATEWAY_DB_PATH: /app/gateway/kai-access-gateway.sqlite
+      KAI_GATEWAY_CONTROL_TOKEN: "${KAI_ACCESS_GATEWAY_CONTROL_TOKEN:?KAI_ACCESS_GATEWAY_CONTROL_TOKEN is required}"
+      KAI_GATEWAY_TICKET_PEPPER: "${KAI_GATEWAY_TICKET_PEPPER:?KAI_GATEWAY_TICKET_PEPPER is required}"
+      KAI_GATEWAY_PUBLIC_HOST: "${KAI_GATEWAY_PUBLIC_HOST:?KAI_GATEWAY_PUBLIC_HOST is required}"
+      KAI_GATEWAY_CONTROL_HOST: 0.0.0.0
+      KAI_GATEWAY_CONTROL_PORT: "7080"
+      KAI_GATEWAY_TUNNEL_HOST: 0.0.0.0
+      KAI_GATEWAY_TUNNEL_PORT: "${KAI_GATEWAY_TUNNEL_PORT:-7443}"
+      KAI_GATEWAY_BUYER_HOST: 0.0.0.0
+      KAI_GATEWAY_PUBLIC_PORT_START: "${KAI_GATEWAY_PUBLIC_PORT_START:-22000}"
+      KAI_GATEWAY_PUBLIC_PORT_END: "${KAI_GATEWAY_PUBLIC_PORT_END:-22999}"
+      KAI_GATEWAY_TLS_CERT: /run/kai-gateway-tls/tls.crt
+      KAI_GATEWAY_TLS_KEY: /run/kai-gateway-tls/tls.key
+    ports:
+      - "${KAI_GATEWAY_TUNNEL_PORT:-7443}:${KAI_GATEWAY_TUNNEL_PORT:-7443}"
+      - "${KAI_GATEWAY_PUBLIC_PORT_START:-22000}-${KAI_GATEWAY_PUBLIC_PORT_END:-22999}:${KAI_GATEWAY_PUBLIC_PORT_START:-22000}-${KAI_GATEWAY_PUBLIC_PORT_END:-22999}"
+    volumes:
+      - type: bind
+        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3051}/gateway"
+        target: /app/gateway
+      - type: bind
+        source: "${KAI_GATEWAY_TLS_DIR:-/etc/kai-cloud/gateway-tls}"
+        target: /run/kai-gateway-tls
+        read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: 0.5
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 16384
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:7080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
       retries: 3
     logging:
       driver: json-file

@@ -11,6 +11,7 @@ import { getAdminOperationsStore } from "./admin-store.ts";
 import { getExchangeStore } from "./exchange-store.ts";
 import { getCardHourStore } from "./card-hour-store.ts";
 import { evaluateHostingV2Capability } from "./hosting-v2-readiness.ts";
+import { isHostingFinancialRailReady } from "./hosting-v2-transaction-gate.ts";
 import { isHostingV2ConfigurationEnabled } from "./hosting-v2-feature.ts";
 import { getHostingV2Store } from "./hosting-v2-store.ts";
 import { isKaiIdentityConfigured, probeKaiIdentityDiscovery } from "./kai-identity-oidc.ts";
@@ -147,6 +148,7 @@ export async function evaluateReadiness(){
     kaiIdentityLoginAudited,
     adminPasswordAvailable:capabilities.adminPasswordLogin.available,
     financeApprovalAvailable:capabilities.financeApprovalLogin.available,
+    financialRailReady:isHostingFinancialRailReady(),
     alipay:alipayReadiness(environment),
   });
   const ready=market.ready&&Object.values(storage).every((item)=>item.ready)&&hostingV2.ready;

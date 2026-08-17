@@ -26,7 +26,9 @@
     "ops:image:promote": "node scripts/ops/promote-release.mjs",
     "ops:image:validate": "node scripts/ops/validate-local-image.mjs",
     "ops:hosting:local-agent": "node scripts/ops/run-local-host-agent-acceptance.mjs",
-    "ops:hosting:verify": "node scripts/ops/verify-hosting-production-readiness.mjs"
+    "ops:hosting:access-acceptance": "node scripts/ops/verify-supplier-access-capability.mjs --simulation",
+    "ops:hosting:verify": "node scripts/ops/verify-hosting-production-readiness.mjs",
+    "gateway:start": "node access-gateway/src/cli.mjs"
   },
   "dependencies": {
     "alipay-sdk": "^4.14.0",

@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
+import { assertHostingV2SchemaCompatible } from "../db/hosting-v2-schema.ts";
 import { createSqliteHostingV2Store } from "../lib/server/hosting-v2-store-sqlite.ts";
 
 const NOW = "2026-08-15T04:00:00.000Z";
 const VERIFIED_UNTIL = "2026-08-16T04:00:00.000Z";
 const APPROVED_IMAGE = process.env.KAI_HOSTING_APPROVED_IMAGES;
+const GATEWAY_MIGRATION = readFileSync(new URL("../drizzle/0029_hosting_gateway_bindings.sql", import.meta.url), "utf8");
 
 function mutation(key) {
   return {
@@ -42,7 +44,7 @@ function temporaryDatabase(prefix) {
   return { directory, path: join(directory, "hosting.sqlite") };
 }
 
-function seedMigrationVersion(path, version, { retirementTable = false } = {}) {
+function seedMigrationVersion(path, version, { retirementTable = false, gatewayTable = false } = {}) {
   const db = new DatabaseSync(path);
   db.exec("CREATE TABLE hosting_v2_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)");
   db.prepare("INSERT INTO hosting_v2_schema_migrations(version,applied_at) VALUES(13,?)").run(NOW);
@@ -63,7 +65,8 @@ function seedMigrationVersion(path, version, { retirementTable = false } = {}) {
       version INTEGER NOT NULL DEFAULT 1
     )`);
   }
-  if (version !== 13) db.prepare("INSERT INTO hosting_v2_schema_migrations(version,applied_at) VALUES(?,?)").run(version, NOW);
+  if (gatewayTable) db.exec(GATEWAY_MIGRATION);
+  if (version !== 13) db.prepare("INSERT OR IGNORE INTO hosting_v2_schema_migrations(version,applied_at) VALUES(?,?)").run(version, NOW);
   db.close();
 }
 
@@ -90,7 +93,7 @@ function seedDevice(db, { status, verificationStatus = "PASSED", deviceId = "had
     "Retirement Bridge 4090",
     `sha256:${"3".repeat(64)}`,
     "A".repeat(43),
-    "1.9.7",
+    "1.11.0",
     JSON.stringify(inventory()),
     `sha256:${"4".repeat(64)}`,
     status,
@@ -184,18 +187,34 @@ function cleanupDetails() {
   };
 }
 
-test("schema14 runtime safely upgrades a schema13 bridge database and creates the additive retirement table", async () => {
-  const state = temporaryDatabase("kai-hosting-retirement-schema13-");
-  seedMigrationVersion(state.path, 13);
+test("schema15 runtime safely upgrades a schema14 bridge database with the additive Gateway binding migration", async () => {
+  const state = temporaryDatabase("kai-hosting-gateway-schema14-");
+  seedMigrationVersion(state.path, 14, { retirementTable: true });
+  const before = new DatabaseSync(state.path);
+  before.prepare(`INSERT INTO hosting_v2_device_retirements(
+    id,device_id,organization_id,mode,status,reason_code,reason,requested_by,requested_at,version
+  ) VALUES(?,?,?,?,?,?,?,?,?,1)`).run(
+    "hdrt_bridge_preserved",
+    "had_bridge_preserved",
+    "org_bridge_preserved",
+    "GRACEFUL",
+    "DRAINING",
+    "SUPPLIER_REQUEST",
+    "Preserve this schema-14 record during the additive upgrade.",
+    "acct_bridge_preserved",
+    NOW,
+  );
+  before.close();
   const store = await createSqliteHostingV2Store(state.path);
   try {
     const snapshot = await store.readiness(NOW);
-    assert.equal(snapshot.schemaVersion, 14);
+    assert.equal(snapshot.schemaVersion, 15);
     const db = new DatabaseSync(state.path);
-    assert.equal(db.prepare("SELECT MAX(version) version FROM hosting_v2_schema_migrations").get().version, 14);
-    const columns = db.prepare("PRAGMA table_info(hosting_v2_device_retirements)").all().map((row) => row.name);
-    for (const field of ["device_id", "organization_id", "mode", "status", "requested_at", "finalized_at"]) {
-      assert.ok(columns.includes(field), `missing bridge-critical field ${field}`);
+    assert.equal(db.prepare("SELECT MAX(version) version FROM hosting_v2_schema_migrations").get().version, 15);
+    assert.equal(db.prepare("SELECT COUNT(*) count FROM hosting_v2_device_retirements WHERE id='hdrt_bridge_preserved'").get().count, 1);
+    const columns = db.prepare("PRAGMA table_info(hosting_v2_gateway_bindings)").all().map((row) => row.name);
+    for (const field of ["contract_id", "device_id", "lease_id", "mode", "status", "buyer_endpoint", "expires_at", "updated_at"]) {
+      assert.ok(columns.includes(field), `missing Gateway binding field ${field}`);
     }
     db.close();
   } finally {
@@ -204,17 +223,22 @@ test("schema14 runtime safely upgrades a schema13 bridge database and creates th
   }
 });
 
-test("schema14 runtime accepts an already migrated additive retirement database", async () => {
-  const state = temporaryDatabase("kai-hosting-retirement-schema14-");
-  seedMigrationVersion(state.path, 14, { retirementTable: true });
+test("schema15 runtime accepts an already migrated additive Gateway binding database", async () => {
+  const state = temporaryDatabase("kai-hosting-gateway-schema15-");
+  seedMigrationVersion(state.path, 15, { retirementTable: true, gatewayTable: true });
   let store;
   try {
     store = await createSqliteHostingV2Store(state.path);
     const snapshot = await store.readiness(NOW);
-    assert.equal(snapshot.schemaVersion, 14);
+    assert.equal(snapshot.schemaVersion, 15);
     const db = new DatabaseSync(state.path);
-    assert.equal(db.prepare("SELECT MAX(version) version FROM hosting_v2_schema_migrations").get().version, 14);
+    assert.equal(db.prepare("SELECT MAX(version) version FROM hosting_v2_schema_migrations").get().version, 15);
     assert.equal(db.prepare("SELECT COUNT(*) count FROM hosting_v2_device_retirements").get().count, 0);
+    assert.equal(db.prepare("SELECT COUNT(*) count FROM hosting_v2_gateway_bindings").get().count, 0);
+    const triggerNames = db.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'hosting_v2_gateway_binding_%'").all().map((row) => row.name);
+    for (const trigger of ["hosting_v2_gateway_binding_identity_immutable", "hosting_v2_gateway_binding_status_forward_only", "hosting_v2_gateway_binding_immutable_delete"]) {
+      assert.ok(triggerNames.includes(trigger), `missing migrated Gateway trigger ${trigger}`);
+    }
     db.close();
   } finally {
     store?.close();
@@ -222,13 +246,16 @@ test("schema14 runtime accepts an already migrated additive retirement database"
   }
 });
 
-test("schema13 bridge rejects an unknown schema15 database", async () => {
-  const state = temporaryDatabase("kai-hosting-retirement-schema15-");
-  seedMigrationVersion(state.path, 15, { retirementTable: true });
+test("schema14 compatibility guard rejects an unknown schema15 database", async () => {
+  const state = temporaryDatabase("kai-hosting-gateway-future-schema15-");
+  seedMigrationVersion(state.path, 15, { retirementTable: true, gatewayTable: true });
   try {
-    await assert.rejects(
-      createSqliteHostingV2Store(state.path),
-      (error) => error instanceof Error && /HOSTING_V2_SCHEMA_(?:TOO_NEW|MISMATCH)/u.test(error.message),
+    const db = new DatabaseSync(state.path);
+    const observed = db.prepare("SELECT MAX(version) version FROM hosting_v2_schema_migrations").get().version;
+    db.close();
+    assert.throws(
+      () => assertHostingV2SchemaCompatible(observed, 14),
+      /HOSTING_V2_SCHEMA_TOO_NEW/u,
     );
   } finally {
     rmSync(state.directory, { recursive: true, force: true });

@@ -89,7 +89,7 @@ test("MARKET stage verifies a real public offer response while earlier stages do
   const fetchImpl = async (url) => {
     calls.push(url);
     if (url.endsWith("/api/ready")) return Response.json(snapshot("MARKET"));
-    if (url.endsWith("/api/v2/offers")) return Response.json({ items: [{ id: "hofr_verified" }] });
+    if (url.endsWith("/api/v2/offers")) return Response.json({ records: [{ id: "hofr_verified" }], count: 1, updatedAt: new Date().toISOString() });
     return new Response(null, { status: 404 });
   };
   const result = await verifyHostingProduction({
@@ -105,7 +105,7 @@ test("MARKET stage verifies a real public offer response while earlier stages do
     verifyHostingProduction({
       origin: "https://cloud.kai.com",
       stage: "MARKET",
-      fetchImpl: async (url) => url.endsWith("/api/ready") ? Response.json(snapshot("MARKET")) : Response.json({ items: [] }),
+      fetchImpl: async (url) => url.endsWith("/api/ready") ? Response.json(snapshot("MARKET")) : Response.json({ records: [], count: 0, updatedAt: new Date().toISOString() }),
     }),
     /no verified public GPU offer/u,
   );

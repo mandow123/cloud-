@@ -119,6 +119,7 @@ const requiredFiles = [
   "src/inventory.mjs",
   "src/preflight.mjs",
   "src/doctor.mjs",
+  "src/gateway-client.mjs",
   "src/protocol.mjs",
   "src/state.mjs",
   "src/verify.mjs",
@@ -180,6 +181,7 @@ install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/state.mjs" "$STAGING_RELE
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/inventory.mjs" "$STAGING_RELEASE/src/inventory.mjs"
 install -o root -g root -m 0755 "$AGENT_SOURCE_DIR/src/preflight.mjs" "$STAGING_RELEASE/src/preflight.mjs"
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/doctor.mjs" "$STAGING_RELEASE/src/doctor.mjs"
+install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/gateway-client.mjs" "$STAGING_RELEASE/src/gateway-client.mjs"
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/client.mjs" "$STAGING_RELEASE/src/client.mjs"
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/verify.mjs" "$STAGING_RELEASE/src/verify.mjs"
 install -o root -g root -m 0644 "$AGENT_SOURCE_DIR/src/actuator.mjs" "$STAGING_RELEASE/src/actuator.mjs"

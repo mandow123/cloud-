@@ -85,24 +85,31 @@ test("supplier identity requires a successful KAI Identity login audit in additi
 });
 
 test("internal Agent trial becomes ready only with identity, policy, fee, ledger and cleanup safety", () => {
-  const environment = { KAI_HOSTING_V2: "1", KAI_HOSTING_APPROVED_IMAGES: image, KAI_HOSTING_TERMS_VERSION: "KAI_HOSTING_TERMS_2026_08" };
-  const ready = evaluateHostingV2Capability({ environment, hostingStorage: storage, cardHourStorage: storage, operations, kaiIdentityAvailable: true, kaiIdentityLoginAudited: true, adminPasswordAvailable: true, financeApprovalAvailable: true, alipay: alipayClosed });
+  const environment = {
+    KAI_HOSTING_V2: "1",
+    KAI_HOSTING_APPROVED_IMAGES: image,
+    KAI_HOSTING_TERMS_VERSION: "KAI_HOSTING_TERMS_2026_08",
+    KAI_ACCESS_GATEWAY_CONTROL_URL: "http://access-gateway:7080",
+    KAI_ACCESS_GATEWAY_CONTROL_TOKEN: "test-control-token-that-is-at-least-32-characters",
+  };
+  const ready = evaluateHostingV2Capability({ environment, hostingStorage: storage, cardHourStorage: storage, operations, kaiIdentityAvailable: true, kaiIdentityLoginAudited: true, adminPasswordAvailable: true, financeApprovalAvailable: true, financialRailReady: true, alipay: alipayClosed });
   assert.equal(ready.ready, true);
   assert.equal(ready.fundingMode, "ADMIN_DUAL_CONTROL_TRIAL_GRANTS");
   assert.equal(ready.checks.approvedImages.count, 1);
   assert.equal(ready.checks.metering.ready, true);
+  assert.equal(ready.checks.accessGateway.ready, true);
   assert.equal(ready.checks.cleanup.ready, true);
   assert.equal(ready.checks.alipayClosed.ready, true);
   assert.doesNotThrow(() => requireHostingV2TransactionReady(ready));
   assert.equal("activeFeeScheduleId" in ready.operations, false, "public readiness must not expose internal fee identifiers");
   assert.equal(ready.operations.activeFeeScheduleConfigured, true);
 
-  const cleanupFailure = evaluateHostingV2Capability({ environment, hostingStorage: storage, cardHourStorage: storage, operations: { ...operations, activeAgentCount: 0, drainingDeviceCount: 1, failedCleanupCount: 1, cleaningContractCount: 1 }, kaiIdentityAvailable: true, kaiIdentityLoginAudited: true, adminPasswordAvailable: true, financeApprovalAvailable: true, alipay: alipayClosed });
+  const cleanupFailure = evaluateHostingV2Capability({ environment, hostingStorage: storage, cardHourStorage: storage, operations: { ...operations, activeAgentCount: 0, drainingDeviceCount: 1, failedCleanupCount: 1, cleaningContractCount: 1 }, kaiIdentityAvailable: true, kaiIdentityLoginAudited: true, adminPasswordAvailable: true, financeApprovalAvailable: true, financialRailReady: true, alipay: alipayClosed });
   assert.equal(cleanupFailure.ready, false);
   assert.equal(cleanupFailure.checks.agentDelivery.ready, false);
   assert.equal(cleanupFailure.checks.cleanup.ready, false);
 
-  const accidentalPaymentEnablement = evaluateHostingV2Capability({ environment, hostingStorage: storage, cardHourStorage: storage, operations, kaiIdentityAvailable: true, kaiIdentityLoginAudited: true, adminPasswordAvailable: true, financeApprovalAvailable: true, alipay: { ...alipayClosed, enabled: true, configured: true, canCreatePayment: true, missing: [] } });
+  const accidentalPaymentEnablement = evaluateHostingV2Capability({ environment, hostingStorage: storage, cardHourStorage: storage, operations, kaiIdentityAvailable: true, kaiIdentityLoginAudited: true, adminPasswordAvailable: true, financeApprovalAvailable: true, financialRailReady: true, alipay: { ...alipayClosed, enabled: true, configured: true, canCreatePayment: true, missing: [] } });
   assert.equal(accidentalPaymentEnablement.ready, false);
   assert.equal(accidentalPaymentEnablement.checks.alipayClosed.reason, "ALIPAY_MUST_REMAIN_DISABLED_DURING_TRIAL");
 });

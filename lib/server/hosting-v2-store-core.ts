@@ -1,10 +1,10 @@
-import { HOSTING_FEE_LEGACY_QUALIFICATION_MODEL, HOSTING_FEE_QUALIFICATION_MODEL, HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, hostingActualFeeBreakdown, hostingCardHourMicrosForSeconds, hostingCurrentCalendarMonth, hostingDefaultFeeTiers, hostingFeeBreakdown, hostingFeeRatesAreValid, hostingSelectFeeTier, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDeviceRetirement, type HostingDisputeCase, type HostingFeeSchedule, type HostingFeeTier, type HostingGoldenLoopAudit, type HostingOffer, type HostingStopIncident, type HostingSupplierFeePreview, type HostingSupplierMonthlySettlement, type HostingSupplierProfile } from "../hosting-v2.ts";
+import { HOSTING_FEE_LEGACY_QUALIFICATION_MODEL, HOSTING_FEE_QUALIFICATION_MODEL, HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, hostingActualFeeBreakdown, hostingCardHourMicrosForSeconds, hostingCurrentCalendarMonth, hostingDefaultFeeTiers, hostingFeeBreakdown, hostingFeeRatesAreValid, hostingSelectFeeTier, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDeviceRetirement, type HostingDisputeCase, type HostingFeeSchedule, type HostingFeeTier, type HostingGoldenLoopAudit, type HostingOffer, type HostingPublicOffer, type HostingStopIncident, type HostingSupplierFeePreview, type HostingSupplierMonthlySettlement, type HostingSupplierProfile } from "../hosting-v2.ts";
 import { HOSTING_V2_SCHEMA_COMPATIBILITY_VERSION, HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { assertHostingAgentWindow, hostingAgentCanonicalJson, hostingAgentDigest, verifyHostingAgentSignature } from "./hosting-agent-crypto.ts";
 import { assertHostingV2ApprovedImage, HOSTING_V2_OCI_IMAGE_PATTERN, hostingV2ApprovedImages } from "./hosting-v2-image-policy.ts";
 import { gpuTradingEligibility, physicalGpuAudit } from "./hosting-v2-audit-policy.ts";
-import type { HostingMutationContext, HostingV2DatabaseAdapter, HostingV2Sql, HostingV2Store } from "./hosting-v2-store.ts";
+import type { HostingGatewayBinding, HostingMutationContext, HostingV2DatabaseAdapter, HostingV2Sql, HostingV2Store } from "./hosting-v2-store.ts";
 
 type Row = Record<string, unknown>;
 const value = (row: Row, key: string) => String(row[key]);
@@ -13,7 +13,7 @@ const number = (row: Row, key: string) => Number(row[key]);
 const json = <T>(row: Row, key: string) => JSON.parse(value(row, key)) as T;
 const id = (prefix: string) => `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
 const VERIFY_TEST_NAMES = ["GPU_IDENTITY", "CUDA_SMOKE", "MEMORY", "STORAGE", "NETWORK", "WORKLOAD_IMAGE", "PORT_REACHABILITY"] as const;
-const HOSTING_V2_MIN_AGENT_VERSION = "1.9.7";
+const HOSTING_V2_MIN_AGENT_VERSION = "1.11.0";
 const HOSTING_V2_AUTOMATED_STOP_ATTEMPTS = 4;
 const DEVICE_RETIREMENT_EVENT_TYPES = ["DEVICE_RETIREMENT_REQUESTED", "DEVICE_CREDENTIAL_REVOKED", "DEVICE_RETIREMENT_FINALIZED"] as const;
 const DEVICE_RETIREMENT_REASON_CODES = ["SUPPLIER_REQUEST", "HARDWARE_FAILURE", "OWNERSHIP_CHANGE", "SECURITY_INCIDENT", "POLICY_VIOLATION", "ADMIN_EMERGENCY"] as const;
@@ -243,6 +243,17 @@ function offer(row: Row): HostingOffer {
   };
 }
 
+function publicOffer(row: Row): HostingPublicOffer {
+  return {
+    ...offer(row),
+    verificationSummary: {
+      status: "PASSED",
+      checks: ["GPU_IDENTITY", "WORKLOAD_IMAGE", "PORT_REACHABILITY"],
+    },
+    verifiedUntil: value(row, "device_verified_until"),
+  };
+}
+
 function contract(row: Row): HostingContract {
   const rawSnapshot = json<HostingContract["snapshot"]>(row, "snapshot_json");
   const snapshot = {
@@ -334,6 +345,15 @@ function disputeCaseByProposal(db: HostingV2DatabaseAdapter, proposalId: string)
 
 function command(row: Row): HostingAgentCommand {
   return { id: value(row, "id"), deviceId: value(row, "device_id"), contractId: nullable(row, "contract_id"), type: value(row, "command_type") as HostingAgentCommand["type"], payload: json(row, "payload_json"), status: value(row, "status") as HostingAgentCommand["status"], attempt: number(row, "attempt"), evidenceDigest: nullable(row, "evidence_digest"), errorCode: nullable(row, "error_code"), createdAt: value(row, "created_at"), deliveredAt: nullable(row, "delivered_at"), completedAt: nullable(row, "completed_at") };
+}
+
+function gatewayBinding(row: Row): HostingGatewayBinding {
+  return {
+    contractId: value(row, "contract_id"), deviceId: value(row, "device_id"), leaseId: value(row, "lease_id"), mode: "ACCESS_GATEWAY",
+    status: value(row, "status") as HostingGatewayBinding["status"], buyerEndpoint: value(row, "buyer_endpoint"), expiresAt: value(row, "expires_at"),
+    lastErrorCode: nullable(row, "last_error_code"), createdAt: value(row, "created_at"), slotConfirmedAt: nullable(row, "slot_confirmed_at"),
+    revocationRequiredAt: nullable(row, "revocation_required_at"), revokedAt: nullable(row, "revoked_at"), updatedAt: value(row, "updated_at"),
+  };
 }
 
 function cleanupIncident(row: Row): HostingCleanupIncident {
@@ -498,8 +518,68 @@ async function supplierMonthlySettlementReadModel(db: HostingV2DatabaseAdapter, 
 export async function createHostingV2Store(db: HostingV2DatabaseAdapter): Promise<HostingV2Store> {
   await db.ensureSchema(hostingV2SchemaStatements, HOSTING_V2_SCHEMA_VERSION, HOSTING_V2_SCHEMA_COMPATIBILITY_VERSION);
   const store = {} as HostingV2Store;
-  Object.assign(store, createReadinessMethods(db), createProfileMethods(db), createDeviceMethods(db), createMarketMethods(db));
+  Object.assign(store, createReadinessMethods(db), createProfileMethods(db), createDeviceMethods(db), createMarketMethods(db), createGatewayMethods(db));
   return store;
+}
+
+function createGatewayMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Store> {
+  const read = async (contractId: string) => {
+    const row = await db.first<Row>("SELECT * FROM hosting_v2_gateway_bindings WHERE contract_id=?", [contractId]);
+    return row ? gatewayBinding(row) : null;
+  };
+  const required = async (contractId: string) => {
+    const binding = await read(contractId);
+    if (!binding) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同缺少 Access Gateway 绑定证明。");
+    return binding;
+  };
+  return {
+    gatewayBinding: read,
+    async recordGatewayLease(input, now) {
+      const existing = await read(input.contractId);
+      if (existing) {
+        if (existing.deviceId !== input.deviceId || existing.leaseId !== input.leaseId || existing.buyerEndpoint !== input.buyerEndpoint || existing.expiresAt !== input.expiresAt) {
+          throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同 Access Gateway 绑定与既有不可变记录冲突。");
+        }
+        if (existing.status === "REVOKED") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "已撤权的合同 Access Gateway 绑定不能重新启用。");
+        return existing;
+      }
+      await db.batch([{
+        sql: `INSERT INTO hosting_v2_gateway_bindings(contract_id,device_id,lease_id,mode,status,buyer_endpoint,expires_at,created_at,updated_at)
+          SELECT ?,?,?,'ACCESS_GATEWAY','LEASE_CREATED',?,?,?,? WHERE EXISTS(
+            SELECT 1 FROM hosting_v2_contracts WHERE id=? AND device_id=? AND status='PROVISIONING'
+          )`,
+        values: [input.contractId, input.deviceId, input.leaseId, input.buyerEndpoint, input.expiresAt, now, now, input.contractId, input.deviceId],
+      }]);
+      return required(input.contractId);
+    },
+    async markGatewaySlotConfirmed(contractId, now) {
+      const current = await required(contractId);
+      if (current.status === "REVOKED" || current.status === "REVOCATION_REQUIRED") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "合同 Access Gateway 已进入撤权流程。");
+      if (current.status !== "SLOT_CONFIRMED") await db.batch([{
+        sql: "UPDATE hosting_v2_gateway_bindings SET status='SLOT_CONFIRMED',slot_confirmed_at=?,last_error_code=NULL,updated_at=? WHERE contract_id=? AND status='LEASE_CREATED'",
+        values: [now, now, contractId],
+      }]);
+      return required(contractId);
+    },
+    async markGatewayRevocationRequired(contractId, errorCode, now) {
+      await required(contractId);
+      await db.batch([{
+        sql: `UPDATE hosting_v2_gateway_bindings SET status='REVOCATION_REQUIRED',last_error_code=?,revocation_required_at=COALESCE(revocation_required_at,?),updated_at=?
+          WHERE contract_id=? AND status!='REVOKED'`,
+        values: [errorCode.slice(0, 80), now, now, contractId],
+      }]);
+      return required(contractId);
+    },
+    async markGatewayRevoked(contractId, now) {
+      await required(contractId);
+      await db.batch([{
+        sql: `UPDATE hosting_v2_gateway_bindings SET status='REVOKED',last_error_code=NULL,revoked_at=COALESCE(revoked_at,?),updated_at=?
+          WHERE contract_id=? AND status!='REVOKED'`,
+        values: [now, now, contractId],
+      }]);
+      return required(contractId);
+    },
+  };
 }
 
 function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Store> {
@@ -1328,7 +1408,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
     async listPublicOffers(now) {
       const cutoff = new Date(Date.parse(now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000).toISOString();
       const approvedImages = hostingV2ApprovedImages();
-      return (await db.all<Row>(`SELECT o.*,d.agent_version device_agent_version,d.inventory_json,
+      return (await db.all<Row>(`SELECT o.*,d.agent_version device_agent_version,d.inventory_json,d.verified_until device_verified_until,
           (SELECT cmd.payload_json FROM hosting_v2_verification_proofs proof JOIN hosting_v2_agent_commands cmd ON cmd.id=proof.command_id
            WHERE proof.device_id=d.id AND proof.agent_evidence_digest=d.verification_evidence_digest ORDER BY proof.recorded_at DESC LIMIT 1) AS verification_payload_json
         FROM hosting_v2_offers o JOIN hosting_v2_devices d ON d.id=o.device_id JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id
@@ -1337,7 +1417,24 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         .filter((row) => gpuTradingEligibility(rowInventory(row)).passed
           && agentVersionAtLeast(value(row, "device_agent_version"), HOSTING_V2_MIN_AGENT_VERSION)
           && approvedImages.has(value(row, "approved_image")) && verificationAllowsImage(row, value(row, "approved_image")))
-        .map(offer);
+        .map(publicOffer);
+    },
+
+    async getPublicOffer(offerId, now) {
+      const cutoff = new Date(Date.parse(now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000).toISOString();
+      const approvedImages = hostingV2ApprovedImages();
+      const row = await db.first<Row>(`SELECT o.*,d.agent_version device_agent_version,d.inventory_json,d.verified_until device_verified_until,
+          (SELECT cmd.payload_json FROM hosting_v2_verification_proofs proof JOIN hosting_v2_agent_commands cmd ON cmd.id=proof.command_id
+           WHERE proof.device_id=d.id AND proof.agent_evidence_digest=d.verification_evidence_digest ORDER BY proof.recorded_at DESC LIMIT 1) AS verification_payload_json
+        FROM hosting_v2_offers o JOIN hosting_v2_devices d ON d.id=o.device_id JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id
+        WHERE o.id=? AND o.status='PUBLISHED' AND p.status='APPROVED' AND p.agreement_version IS NOT NULL AND p.evidence_digest IS NOT NULL AND o.available_from<=? AND o.available_until>? AND d.status='VERIFIED' AND d.verification_status='PASSED' AND d.verified_until>? AND d.last_seen_at>=?
+        LIMIT 1`, [offerId, now, now, now, cutoff]);
+      if (!row
+        || !gpuTradingEligibility(rowInventory(row)).passed
+        || !agentVersionAtLeast(value(row, "device_agent_version"), HOSTING_V2_MIN_AGENT_VERSION)
+        || !approvedImages.has(value(row, "approved_image"))
+        || !verificationAllowsImage(row, value(row, "approved_image"))) return null;
+      return publicOffer(row);
     },
 
     async getOffer(offerId) {
@@ -1345,7 +1442,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       return row ? offer(row) : null;
     },
 
-    async reserveContract(account, offerId, reservedSeconds, heldMicros, context) {
+    async reserveContract(account, offerId, offerVersion, reservedSeconds, context) {
       const replayed = await replay(db, context, "RESERVE_CONTRACT");
       if (replayed) {
         const row = await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [replayed.entityId]);
@@ -1360,19 +1457,21 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         JOIN hosting_v2_fee_schedules f ON f.id=o.fee_schedule_id
         JOIN hosting_v2_devices d ON d.id=o.device_id
         JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id
-        WHERE o.id=? AND o.status='PUBLISHED' AND p.status='APPROVED' AND p.agreement_version IS NOT NULL AND p.evidence_digest IS NOT NULL AND o.available_from<=? AND o.available_until>? AND d.status='VERIFIED' AND d.verification_status='PASSED' AND d.verified_until>? AND d.last_seen_at>=?`, [offerId, context.now, context.now, context.now, staleCutoff]);
-      if (!row) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源已不可租用，请刷新市场。");
+        WHERE o.id=? AND o.version=? AND o.status='PUBLISHED' AND p.status='APPROVED' AND p.agreement_version IS NOT NULL AND p.evidence_digest IS NOT NULL AND o.available_from<=? AND o.available_until>? AND d.status='VERIFIED' AND d.verification_status='PASSED' AND d.verified_until>? AND d.last_seen_at>=?`, [offerId, offerVersion, context.now, context.now, context.now, staleCutoff]);
+      if (!row) throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT", 409, "报价版本已变化或资源已不可租用，请刷新市场。");
       if (!gpuTradingEligibility(rowInventory(row)).passed) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源未通过真实物理 GPU 审计，请刷新市场。");
       if (!agentVersionAtLeast(value(row, "device_agent_version"), HOSTING_V2_MIN_AGENT_VERSION)) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源交付组件正在升级，请刷新市场。");
       if (!hostingV2ApprovedImages().has(value(row, "approved_image")) || !verificationAllowsImage(row, value(row, "approved_image"))) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源工作负载镜像尚未通过当前验真，请刷新市场。");
       if (value(row, "organization_id") === account.activeOrganization.id) throw new ExchangeDomainError("EXCHANGE_OWNERSHIP_FORBIDDEN", 403, "供应方不能购买自己的资源。");
       if (!Number.isInteger(reservedSeconds) || reservedSeconds < number(row, "min_rental_seconds") || reservedSeconds > number(row, "max_rental_seconds")) throw new ExchangeInputError("租用时长不在挂牌范围内。", "reservedSeconds");
+      const heldMicros = hostingCardHourMicrosForSeconds(number(row, "card_hour_micros_per_gpu_hour"), reservedSeconds);
       const feePreview = await supplierFeePreviewForSchedule(db, value(row, "organization_id"), value(row, "fee_schedule_id"), context.now);
       if (feePreview.tierCode == null || feePreview.platformFeeBps == null || feePreview.referralRewardBps == null) {
         throw new ExchangeDomainError("HOSTING_FEE_TIERS_UNAVAILABLE", 503, "成交费率阶梯尚未配置，成交保持关闭。");
       }
       const recordId = id("hctr");
       const snapshot = {
+        offerVersion,
         title: value(row, "title"), gpuModel: value(row, "gpu_model"), region: value(row, "region"),
         cardHourMicrosPerGpuHour: number(row, "card_hour_micros_per_gpu_hour"), approvedImage: value(row, "approved_image"), termsVersion: value(row, "terms_version"),
         platformFeeBps: feePreview.platformFeeBps,
@@ -1387,13 +1486,28 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         },
         acceptanceWindowSeconds: HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS,
       };
-      await db.batch([
-        { sql: `INSERT INTO hosting_v2_contracts(id,offer_id,device_id,buyer_organization_id,buyer_account_id,supplier_organization_id,fee_schedule_id,snapshot_json,reserved_seconds,held_micros,status,idempotency_key,payload_hash,version,created_at,updated_at)
-          SELECT ?,id,device_id,?,?,?,?,?,?,?,'RESERVED',?,?,1,?,? FROM hosting_v2_offers WHERE id=? AND status='PUBLISHED'`, values: [recordId, account.activeOrganization.id, account.account.id, value(row, "organization_id"), value(row, "fee_schedule_id"), JSON.stringify(snapshot), reservedSeconds, heldMicros, context.idempotencyKey, context.payloadHash, context.now, context.now, offerId] },
-        { sql: "UPDATE hosting_v2_offers SET status='RESERVED',version=version+1,updated_at=? WHERE id=? AND status='PUBLISHED' AND EXISTS(SELECT 1 FROM hosting_v2_contracts WHERE id=?)", values: [context.now, offerId, recordId] },
-        event(context, account.activeOrganization.id, "CONTRACT", recordId, "CONTRACT_RESERVED", { offerId, reservedSeconds, heldMicros }),
-        receipt(context, "RESERVE_CONTRACT", "CONTRACT", recordId),
-      ]);
+      try {
+        await db.batch([
+          { sql: `INSERT INTO hosting_v2_contracts(id,offer_id,device_id,buyer_organization_id,buyer_account_id,supplier_organization_id,fee_schedule_id,snapshot_json,reserved_seconds,held_micros,status,idempotency_key,payload_hash,version,created_at,updated_at)
+            SELECT ?,id,device_id,?,?,?,?,?,?,?,'RESERVED',?,?,1,?,? FROM hosting_v2_offers WHERE id=? AND version=? AND status='PUBLISHED'`, values: [recordId, account.activeOrganization.id, account.account.id, value(row, "organization_id"), value(row, "fee_schedule_id"), JSON.stringify(snapshot), reservedSeconds, heldMicros, context.idempotencyKey, context.payloadHash, context.now, context.now, offerId, offerVersion] },
+          { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+          { sql: "UPDATE hosting_v2_offers SET status='RESERVED',version=version+1,updated_at=? WHERE id=? AND version=? AND status='PUBLISHED' AND EXISTS(SELECT 1 FROM hosting_v2_contracts WHERE id=?)", values: [context.now, offerId, offerVersion, recordId] },
+          { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+          event(context, account.activeOrganization.id, "CONTRACT", recordId, "CONTRACT_RESERVED", { offerId, offerVersion, reservedSeconds, heldMicros }),
+          receipt(context, "RESERVE_CONTRACT", "CONTRACT", recordId),
+        ]);
+      } catch (error) {
+        const raceReplay = await replay(db, context, "RESERVE_CONTRACT");
+        if (raceReplay) {
+          const replayedRow = await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [raceReplay.entityId]);
+          if (replayedRow) return contract(replayedRow);
+        }
+        const latest = await db.first<Row>("SELECT version,status FROM hosting_v2_offers WHERE id=?", [offerId]);
+        if (!latest || number(latest, "version") !== offerVersion || value(latest, "status") !== "PUBLISHED") {
+          throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT", 409, "报价版本已变化或资源已被预留，请刷新市场。");
+        }
+        throw error;
+      }
       const created = await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [recordId]);
       if (!created) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源刚刚被其他订单预留，请重新选择。");
       return contract(created);
@@ -1662,15 +1776,15 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       ]);
       if (!commandRow || !deviceRow) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "设备任务不存在。");
       const type = value(commandRow, "command_type") as HostingAgentCommand["type"];
-      const retirementRequested = await hasDeviceRetirementEvent(db, deviceId);
-      if (value(deviceRow, "status") === "REVOKED") throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "设备不存在或已撤销。");
-      if ((value(deviceRow, "status") === "DRAINING" || retirementRequested) && type !== "STOP" && type !== "CLEANUP") {
-        throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备退场中，只能完成停止或清理任务。");
-      }
       if (["SUCCEEDED", "FAILED"].includes(value(commandRow, "status"))) {
         if (nullable(commandRow, "evidence_digest") !== input.evidenceDigest || value(commandRow, "status") !== input.outcome) throw new ExchangeIdempotencyConflictError();
         const existingContract = commandRow.contract_id ? await db.first<Row>("SELECT * FROM hosting_v2_contracts WHERE id=?", [value(commandRow, "contract_id")]) : null;
         return { command: command(commandRow), contract: existingContract ? contract(existingContract) : null, device: device(deviceRow) };
+      }
+      const retirementRequested = await hasDeviceRetirementEvent(db, deviceId);
+      if (value(deviceRow, "status") === "REVOKED") throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "设备不存在或已撤销。");
+      if ((value(deviceRow, "status") === "DRAINING" || retirementRequested) && type !== "STOP" && type !== "CLEANUP") {
+        throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备退场中，只能完成停止或清理任务。");
       }
       const success = input.outcome === "SUCCEEDED";
       if (!success && (!input.errorCode || !/^[A-Z0-9_:-]{3,80}$/u.test(input.errorCode))) throw new ExchangeInputError("失败任务必须包含有效诊断码。", "errorCode");

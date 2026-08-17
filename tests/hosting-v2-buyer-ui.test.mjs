@@ -28,9 +28,10 @@ test("GPU public routes use the real Hosting V2 buyer flow on separate pages", (
   assert.doesNotMatch(market, /<main/u);
 });
 
-test("checkout only submits the selected offer and requested duration", () => {
+test("checkout locks the selected public offer version and requested duration", () => {
   const checkout = read("components/hosting-offer-checkout.tsx");
-  assert.match(checkout, /marketplacePost<BuyerHostingContract>\("\/api\/v2\/contracts", \{ offerId: offer\.id, reservedSeconds \}/u);
+  assert.match(checkout, /marketplaceGet<\{ record: PublicHostingOffer \}>\(`\/api\/v2\/offers\/\$\{encodeURIComponent\(offerId\)\}`\)/u);
+  assert.match(checkout, /marketplacePost<BuyerHostingContract>\("\/api\/v2\/contracts", \{ offerId: offer\.id, offerVersion: offer\.version, reservedSeconds \}/u);
   assert.doesNotMatch(checkout, /\{ offerId: offer\.id, reservedSeconds, (?:heldMicros|price|supplierOrganizationId|deviceId)/u);
   assert.match(checkout, /router\.push\(`\/gpu\/contracts\/\$\{encodeURIComponent\(result\.record\.id\)\}`\)/u);
   assert.doesNotMatch(checkout, /<main/u);

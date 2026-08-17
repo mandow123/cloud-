@@ -501,6 +501,94 @@
   background: var(--surface-muted);
 }
 
+.accessBlock {
+  display: grid;
+  gap: 18px;
+  border: 1px solid var(--border-strong);
+  border-top: 3px solid var(--accent);
+  padding: 24px;
+  background: var(--surface);
+}
+
+.accessBlock h3,
+.accessBlock p {
+  margin: 6px 0 0;
+}
+
+.accessBlock p {
+  max-width: 760px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.accessBlock > .primary {
+  width: fit-content;
+}
+
+.accessSteps {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+  list-style: none;
+}
+
+.accessSteps li {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--border);
+  padding: 16px 0;
+}
+
+.accessSteps li > span {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.accessSteps li > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.accessSteps small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.accessSteps code {
+  overflow-x: auto;
+  color: var(--text);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.accessSteps a,
+.accessSteps button,
+.regenerateAccess {
+  border: 1px solid var(--border-strong);
+  padding: 9px 12px;
+  background: var(--surface-muted);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.regenerateAccess {
+  width: fit-content;
+  border: 0;
+  padding-left: 0;
+  background: transparent;
+  color: var(--accent);
+}
+
 .actionBlock h3,
 .successBlock h3,
 .actionBlock p,
@@ -689,6 +777,16 @@
   .cancelBar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .accessSteps li {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .accessSteps li > a,
+  .accessSteps li > button {
+    grid-column: 2;
+    width: fit-content;
   }
 }
 

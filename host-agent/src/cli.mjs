@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { dirname } from "node:path";
-import { AGENT_VERSION, checkConnection, heartbeat, pairDevice, processOneCommand, resumePairing } from "./client.mjs";
+import { AGENT_VERSION, checkConnection, heartbeat, pairDevice, processOneCommand, resumeGatewayBindings, resumePairing } from "./client.mjs";
 import { runDoctor } from "./doctor.mjs";
+import { readGatewayBundle, runGatewayPool } from "./gateway-client.mjs";
 import { AgentError } from "./protocol.mjs";
 import { readPairingFile, readState, stateFilePath } from "./state.mjs";
 
@@ -48,6 +49,8 @@ async function runService() {
   process.on("SIGTERM", () => { stopping = true; });
   process.on("SIGINT", () => { stopping = true; });
   log("agent.started", { version: AGENT_VERSION });
+  const resumedGateways = await resumeGatewayBindings({ onError: (error, contractId) => log("gateway.resume_failed", { contractId, code: error instanceof AgentError ? error.code : "GATEWAY_RESUME_FAILED" }) });
+  if (resumedGateways.length) log("gateway.resumed", { count: resumedGateways.length });
   while (!stopping) {
     try {
       const result = await heartbeat();
@@ -125,12 +128,31 @@ async function main() {
     await runService();
     return;
   }
+  if (command === "gateway") {
+    const input = options(args);
+    if (!input["bundle-file"] || Object.keys(input).some((key) => key !== "bundle-file")) throw new AgentError("ARGUMENT_INVALID", "gateway requires only --bundle-file.");
+    const bundle = await readGatewayBundle(input["bundle-file"]);
+    let stopping = false;
+    let waitingLogged = false;
+    const pool = await runGatewayPool(bundle, {
+      onWaiting: () => {
+        if (!waitingLogged) { waitingLogged = true; log("gateway.ready", { leaseId: bundle.leaseId, expiresAt: bundle.expiresAt }); }
+      },
+      onError: (error) => log("gateway.connection_failed", { leaseId: bundle.leaseId, code: error instanceof AgentError ? error.code : "GATEWAY_FAILED" }),
+    });
+    const stop = () => { stopping = true; };
+    process.on("SIGTERM", stop); process.on("SIGINT", stop);
+    while (!stopping && Date.parse(bundle.expiresAt) > Date.now()) await new Promise((resolve) => setTimeout(resolve, 1_000));
+    await pool.stop();
+    log("gateway.stopped", { leaseId: bundle.leaseId });
+    return;
+  }
   if (command === "show-state") {
     const state = await readState();
     log("state.summary", { status: state.status, deviceId: state.deviceId ?? null, lastSequence: state.lastSequence ?? 0, pairedAt: state.pairedAt ?? null });
     return;
   }
-  process.stdout.write("KAI Host Agent\n\nCommands: pair, resume-pair, check-connection, doctor, run, show-state, version\n");
+  process.stdout.write("KAI Host Agent\n\nCommands: pair, resume-pair, check-connection, doctor, gateway, run, show-state, version\n");
 }
 
 main().catch(fail);

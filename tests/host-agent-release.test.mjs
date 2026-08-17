@@ -9,7 +9,7 @@ import test from "node:test";
 import { buildHostAgentRelease } from "../scripts/ops/build-host-agent-release.mjs";
 
 const FIXED_REVISION = "0123456789abcdef0123456789abcdef01234567";
-const AGENT_VERSION = "1.9.7";
+const AGENT_VERSION = "1.11.0";
 const EXPECTED_RELEASE_FILES = [
   "README.md",
   "install.sh",
@@ -25,6 +25,7 @@ const EXPECTED_RELEASE_FILES = [
   "src/inventory.mjs",
   "src/preflight.mjs",
   "src/doctor.mjs",
+  "src/gateway-client.mjs",
   "src/protocol.mjs",
   "src/state.mjs",
   "src/verify.mjs",
@@ -49,9 +50,9 @@ test("Host Agent release is deterministic, checksummed and contains only reviewe
     assert.equal(await readFile(join(outputDirectory, `${first.archive}.sha256`), "utf8"), `${first.sha256}  ${first.archive}\n`);
 
     const entries = execFileSync("tar", ["-tzf", join(outputDirectory, first.archive)], { encoding: "utf8" }).trim().split("\n");
-    assert.equal(entries.length, 18);
+    assert.equal(entries.length, 19);
     for (const entry of entries) {
-      assert.match(entry, /^kai-host-agent-1\.9\.7\/[A-Za-z0-9._/-]+$/u);
+      assert.match(entry, /^kai-host-agent-1\.11\.0\/[A-Za-z0-9._/-]+$/u);
       assert.doesNotMatch(entry, /(?:^|\/)\.\.?\/|identity\.json|pairing\.json|\.env$/u);
     }
     assert.ok(entries.includes(`kai-host-agent-${AGENT_VERSION}/release-manifest.json`));
@@ -65,7 +66,7 @@ test("Host Agent release is deterministic, checksummed and contains only reviewe
     assert.equal(manifest.schemaVersion, "kai-host-agent-release/1");
     assert.equal(manifest.version, AGENT_VERSION);
     assert.equal(manifest.revision, FIXED_REVISION);
-    assert.equal(manifest.files.length, 17);
+    assert.equal(manifest.files.length, 18);
     assert.deepEqual(manifest.files.map((file) => file.path).sort(), EXPECTED_RELEASE_FILES);
     assert.equal(new Set(manifest.files.map((file) => file.path)).size, EXPECTED_RELEASE_FILES.length);
     assert.equal(manifest.files.some((file) => /identity|pairing/u.test(file.path)), false);

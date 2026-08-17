@@ -19,6 +19,8 @@ import {
   type MarketplaceRequestRecord,
   type MarketplaceSupplierQuoteRecord,
 } from "@/lib/marketplace";
+import { cnyCentsToCardHourMicros, formatCardHourDisplayMicros } from "@/lib/card-hours";
+import { hostingCnyReferenceCents } from "@/lib/hosting-v2";
 import type { ResourceCategory, ResourceListing } from "@/lib/types";
 
 type MemberRole = "buyer" | "supplier";
@@ -44,6 +46,7 @@ type CollectionState<T> = {
 const WATCHLIST_KEY = "kai-cloud-watchlist-v1";
 const ROLE_KEY = "kai-cloud-role-v1";
 const DEFAULT_WATCHLIST_IDS = resourceListings.slice(0, 3).map((listing) => listing.id);
+const MAX_LEGACY_UNIT_PRICE_CENTS = 100_000_000;
 
 const categoryLabel: Record<ResourceCategory, string> = {
   gpu: "GPU 算力",
@@ -65,13 +68,30 @@ function readStringArray(key: string, fallback: string[]) {
   }
 }
 
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("zh-CN", {
-    style: "currency",
-    currency: "CNY",
-    minimumFractionDigits: value < 10 ? 2 : 0,
-    maximumFractionDigits: value < 10 ? 2 : 0,
-  }).format(value);
+function legacyUnitPriceCents(value: number) {
+  if (!Number.isFinite(value) || value < 0) throw new Error("LEGACY_UNIT_PRICE_INVALID");
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/u.exec(String(value));
+  if (!match) throw new Error("LEGACY_UNIT_PRICE_INVALID");
+  const cents = BigInt(match[1]) * 100n + BigInt((match[2] ?? "").padEnd(2, "0") || "0");
+  if (cents > BigInt(MAX_LEGACY_UNIT_PRICE_CENTS)) throw new Error("LEGACY_UNIT_PRICE_INVALID");
+  return Number(cents);
+}
+
+function formatLegacyUnitPriceCardHours(value: number) {
+  try {
+    const cents = legacyUnitPriceCents(value);
+    return formatCardHourDisplayMicros(cents === 0 ? 0 : cnyCentsToCardHourMicros(cents));
+  } catch {
+    return "—";
+  }
+}
+
+function parseCardHourInputMicros(value: string) {
+  const match = /^(\d{1,8})(?:\.(\d{1,2}))?$/u.exec(value.trim());
+  if (!match) return null;
+  const micros = BigInt(match[1]) * 1_000_000n + BigInt((match[2] ?? "").padEnd(2, "0") || "0") * 10_000n;
+  if (micros <= 0n || micros > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+  return Number(micros);
 }
 
 function shortDate(value: string) {
@@ -273,16 +293,19 @@ export function MemberWorkspace() {
     event.preventDefault();
     if (quoteLockRef.current) return;
     const nextErrors: Partial<Record<keyof QuoteValues, string>> = {};
-    const price = Number(quoteValues.unitPrice);
+    const priceMicros = parseCardHourInputMicros(quoteValues.unitPrice);
+    const legacyPriceCents = priceMicros === null ? null : hostingCnyReferenceCents(priceMicros);
     const validDays = Number(quoteValues.validDays);
     if (!selectedDemand) nextErrors.demandId = "请选择匹配需求。";
-    if (!Number.isFinite(price) || price <= 0) nextErrors.unitPrice = "请输入大于 0 的报价单价。";
+    if (priceMicros === null || legacyPriceCents === null || legacyPriceCents < 1 || legacyPriceCents > MAX_LEGACY_UNIT_PRICE_CENTS) {
+      nextErrors.unitPrice = "请输入大于 0、最多两位小数且在当前支持范围内的 KAI 标准卡时单价。";
+    }
     if (!quoteValues.leadTime) nextErrors.leadTime = "请选择交付周期。";
     if (!Number.isInteger(validDays) || validDays < 1 || validDays > 90) nextErrors.validDays = "有效期应为 1–90 天。";
     if (quoteValues.scopeNote.trim().length < 8) nextErrors.scopeNote = "请用至少 8 个字说明费用口径。";
     if (!quoteValues.consent) nextErrors.consent = "请确认服务器提交说明。";
     setQuoteErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0 || !selectedDemand) {
+    if (Object.keys(nextErrors).length > 0 || !selectedDemand || legacyPriceCents === null) {
       window.requestAnimationFrame(() => quoteFormRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus());
       return;
     }
@@ -297,7 +320,7 @@ export function MemberWorkspace() {
         "/api/quotes",
         {
           demandId: selectedDemand.id,
-          unitPrice: price,
+          unitPrice: legacyPriceCents / 100,
           leadTime: quoteValues.leadTime,
           validDays,
           scopeNote: quoteValues.scopeNote.trim(),
@@ -504,7 +527,7 @@ function BuyerWatchlist({ listings, onRemove }: { listings: ResourceListing[]; o
               <h3 className="mb-1 mt-4 text-lg">{listing.title}</h3>
               <p className="m-0 text-sm text-[var(--text)]">{listing.region} · {listing.deliveryForm}</p>
               <p className="mt-4 font-mono text-lg font-semibold text-[var(--ink)]">
-                {formatCurrency(listing.quote.median)} <span className="text-xs font-normal text-[var(--muted)]">/ {listing.pricingUnit}</span>
+                {formatLegacyUnitPriceCardHours(listing.quote.median)} <span className="text-xs font-normal text-[var(--muted)]">KAI 标准卡时 / {listing.pricingUnit}</span>
               </p>
               <Link className="mt-4 inline-block text-sm font-semibold text-[var(--accent)] underline" href={`/resources/${listing.id}`}>
                 查看资源详情
@@ -601,7 +624,7 @@ function BuyerQuotes({
             <h3 className="mb-1 mt-4 text-lg">{quote.demandTitle}</h3>
             <p className="m-0 font-mono text-xs text-[var(--muted)]">{quote.id}</p>
             <p className="my-5 font-mono text-3xl font-semibold text-[var(--ink)]">
-              {formatCurrency(quote.standardizedUnitPrice)} <span className="text-sm font-normal text-[var(--muted)]">/ {quote.pricingUnit}</span>
+              {formatLegacyUnitPriceCardHours(quote.standardizedUnitPrice)} <span className="text-sm font-normal text-[var(--muted)]">KAI 标准卡时 / {quote.pricingUnit}</span>
             </p>
             <dl className="grid gap-2 border-y border-[var(--border)] py-4 text-xs">
               <div className="flex justify-between gap-4"><dt>交付窗口</dt><dd className="text-[var(--ink)]">{quote.deliveryWindow}</dd></div>
@@ -721,7 +744,7 @@ function SupplierQuoteForm({
       <form className="border-t-2 border-[var(--accent)] bg-[var(--surface)] p-5 sm:p-7" noValidate onSubmit={onSubmit} ref={formRef}>
         <div className="grid gap-5 md:grid-cols-2">
           <label className={labelClass}>匹配需求<select aria-describedby={errors.demandId ? "quote-demand-error" : undefined} aria-invalid={Boolean(errors.demandId)} className={inputClass} disabled={requests.length === 0} id="quote-demand" onChange={(event) => onUpdate("demandId", event.target.value)} value={selectedDemand?.id ?? ""}><option value="">{requests.length === 0 ? "暂无可响应需求" : "请选择"}</option>{requests.map((request) => <option key={request.id} value={request.id}>{request.id} · {request.title}</option>)}</select><FieldError error={errors.demandId} id="quote-demand-error" /></label>
-          <label className={labelClass}>报价单价（人民币 / {selectedDemand?.pricingUnit ?? "单位"}）<input aria-describedby={errors.unitPrice ? "quote-price-error" : undefined} aria-invalid={Boolean(errors.unitPrice)} className={inputClass} id="quote-price" inputMode="decimal" min="0.01" onChange={(event) => onUpdate("unitPrice", event.target.value)} step="0.01" type="number" value={values.unitPrice} /><FieldError error={errors.unitPrice} id="quote-price-error" /></label>
+          <label className={labelClass}>报价单价（KAI 标准卡时 / {selectedDemand?.pricingUnit ?? "对应单位"}）<span className="text-xs font-normal text-[var(--muted)]">最多两位小数</span><input aria-describedby={errors.unitPrice ? "quote-price-error" : undefined} aria-invalid={Boolean(errors.unitPrice)} className={inputClass} id="quote-price" inputMode="decimal" maxLength={11} onChange={(event) => onUpdate("unitPrice", event.target.value)} pattern="[0-9]{1,8}([.][0-9]{1,2})?" placeholder="例如：12.50" type="text" value={values.unitPrice} /><FieldError error={errors.unitPrice} id="quote-price-error" /></label>
           <label className={labelClass}>交付周期<select aria-describedby={errors.leadTime ? "quote-lead-error" : undefined} aria-invalid={Boolean(errors.leadTime)} className={inputClass} id="quote-lead" onChange={(event) => onUpdate("leadTime", event.target.value)} value={values.leadTime}><option value="">请选择</option>{marketplaceQuoteLeadTimes.map((leadTime) => <option key={leadTime}>{leadTime}</option>)}</select><FieldError error={errors.leadTime} id="quote-lead-error" /></label>
           <label className={labelClass}>报价有效期（天）<input aria-describedby={errors.validDays ? "quote-valid-error" : undefined} aria-invalid={Boolean(errors.validDays)} className={inputClass} id="quote-valid" max="90" min="1" onChange={(event) => onUpdate("validDays", event.target.value)} type="number" value={values.validDays} /><FieldError error={errors.validDays} id="quote-valid-error" /></label>
           <label className={`${labelClass} md:col-span-2`}>费用与服务口径<textarea aria-describedby={errors.scopeNote ? "quote-scope-error" : undefined} aria-invalid={Boolean(errors.scopeNote)} className={`${inputClass} min-h-24 resize-y`} id="quote-scope" onChange={(event) => onUpdate("scopeNote", event.target.value)} placeholder="例如：报价含税含电，公网流量另计，目标 SLA 99.9%" value={values.scopeNote} /><FieldError error={errors.scopeNote} id="quote-scope-error" /></label>
@@ -750,7 +773,7 @@ function ResponseLog({
       <div id="response-log-title"><SectionIntro kicker="Supplier / Raw quote log" title="我的原始报价" description="只读取当前供应方会话提交的原始报价；这些字段不会原样公开给需求方。" /></div>
       <CollectionStatus collection={collection} label="原始报价" onLoadMore={onLoadMore} onRetry={onRetry} />
       {collection.status === "ready" && responses.length === 0 ? <EmptyState description="当前会话尚未提交原始报价。使用上方表单完成一条响应流程。" /> : null}
-      {responses.length > 0 ? <div className="data-table-wrap"><table className="data-table"><caption className="sr-only">供应方原始报价响应记录</caption><thead><tr><th scope="col">响应编号</th><th scope="col">需求</th><th scope="col">单价</th><th scope="col">交付</th><th scope="col">状态</th></tr></thead><tbody>{responses.map((response) => <tr key={response.id}><th className="font-mono text-xs text-[var(--ink)]" scope="row">{response.id}</th><td>{response.demandTitle}</td><td>{formatCurrency(response.unitPrice)} / {response.pricingUnit}</td><td>{response.leadTime} · 有效至 {shortDate(response.validUntil)}</td><td>{response.status}</td></tr>)}</tbody></table></div> : null}
+      {responses.length > 0 ? <div className="data-table-wrap"><table className="data-table"><caption className="sr-only">供应方原始报价响应记录</caption><thead><tr><th scope="col">响应编号</th><th scope="col">需求</th><th scope="col">单价</th><th scope="col">交付</th><th scope="col">状态</th></tr></thead><tbody>{responses.map((response) => <tr key={response.id}><th className="font-mono text-xs text-[var(--ink)]" scope="row">{response.id}</th><td>{response.demandTitle}</td><td>{formatLegacyUnitPriceCardHours(response.unitPrice)} KAI 标准卡时 / {response.pricingUnit}</td><td>{response.leadTime} · 有效至 {shortDate(response.validUntil)}</td><td>{response.status}</td></tr>)}</tbody></table></div> : null}
     </section>
   );
 }

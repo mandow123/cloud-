@@ -90,27 +90,9 @@ const SOURCE_STYLES: Record<ModelPriceSourceStatus, string> = {
 const fieldClass =
   "min-h-11 w-full border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--ink)]";
 
-function formatCnyPrice(value: number | null) {
+function formatDirectoryCardHours(value: number | null) {
   if (value === null || !Number.isFinite(value)) return "—";
-  return new Intl.NumberFormat("zh-CN", {
-    minimumFractionDigits: value < 1 ? 3 : value < 100 ? 2 : 0,
-    maximumFractionDigits: value < 1 ? 4 : value < 100 ? 2 : 0,
-  }).format(value);
-}
-
-function formatOriginalPrice(value: number | null | undefined, currency: string) {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
-  try {
-    return new Intl.NumberFormat("zh-CN", {
-      style: "currency",
-      currency,
-      currencyDisplay: "code",
-      minimumFractionDigits: value < 1 ? 3 : 2,
-      maximumFractionDigits: value < 1 ? 4 : 2,
-    }).format(value);
-  } catch {
-    return `${currency} ${formatCnyPrice(value)}`;
-  }
+  return (value / 1.002).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function formatDateTime(value: string) {
@@ -133,7 +115,7 @@ function formatIndexChange(value: number | null | undefined) {
 }
 
 function priceStatusLabel(value: number | null) {
-  return value === null ? "未公布或不适用" : "人民币标准化价格";
+  return value === null ? "未公布或不适用" : "KAI 卡时目录参考值";
 }
 
 function quoteVariantLabel(quote: ModelTokenPriceQuote) {
@@ -168,7 +150,7 @@ function FreshnessBadge({ quote }: { quote: ModelTokenPriceQuote }) {
     </span>
   ) : (
     <span className="inline-flex min-h-8 items-center border border-[var(--border)] bg-[var(--success-bg)] px-2 py-1 text-xs font-semibold text-[var(--success)]">
-      已通过自动校验
+      数据格式校验通过
     </span>
   );
 }
@@ -190,10 +172,10 @@ function CapabilityTags({ categories }: { categories: readonly ModelCapability[]
 
 function OriginalPriceLine({ quote }: { quote: ModelTokenPriceQuote }) {
   return (
-    <span className="grid gap-1 text-xs tabular-nums text-[var(--muted)]">
-      <span>输入 {formatOriginalPrice(quote.originalInputPerMillion, quote.originalCurrency)}</span>
-      <span>缓存 {formatOriginalPrice(quote.originalCachedInputPerMillion, quote.originalCurrency)}</span>
-      <span>输出 {formatOriginalPrice(quote.originalOutputPerMillion, quote.originalCurrency)}</span>
+    <span className="grid gap-1 text-xs text-[var(--muted)]">
+      <span>原始来源数据已保留</span>
+      <span>仅展示卡时标准化目录值</span>
+      <span>不作为可成交报价</span>
     </span>
   );
 }
@@ -303,7 +285,7 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
             主流模型 Token 分项行情
           </h2>
           <p className="mt-3 mb-0 max-w-3xl text-sm leading-6 text-[var(--text)]">
-            每个模型按服务档位、上下文档位、输入、缓存输入和输出分别报价，并保留原币种与来源状态。人民币价格统一为“元 / 百万 Token”，不可用字段以“—”表示。市场参考报价，具体以询价确认为准。
+            每个模型按服务档位、上下文档位、输入、缓存输入和输出展示公开目录价，统一换算为“KAI 卡时 / 百万 Token”，并保留来源状态；不可用字段以“—”表示。这些价格档位不是 KAI 已核验算力资源、库存或可成交报价。
           </p>
           <p className="mt-4 mb-0 inline-flex border border-[var(--border-strong)] bg-[var(--success-bg)] px-3 py-2 text-xs font-semibold text-[var(--success)]">
             每日 06:00（北京时间）更新 · 失败时保留上一版，不发布半表
@@ -337,7 +319,7 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
             {indexDirection === null
               ? "历史样本积累中，暂无完整 30 日变化。"
               : `该指数仅表达固定模型篮子相对基期 100 的成本${indexDirection}趋势。`}
-            该指数不是跨模型人民币均价，也不能替代任一模型的实际报价。
+            该指数不是跨模型成交均价，也不能替代任一模型的实际报价。
           </p>
           <p className="mt-2 mb-0 text-xs text-[var(--muted)]">
             基期 {index.baseDate} · 更新 {formatDateTime(index.updatedAt)}
@@ -403,7 +385,7 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
               writeFilters({ freshness: value });
             }} value={freshness}>
               <option value="all">全部状态</option>
-              <option value="validated">已通过自动校验</option>
+              <option value="validated">数据格式校验通过</option>
               <option value="official">官方审核基线</option>
               <option value="review">需人工复核</option>
             </select>
@@ -419,7 +401,7 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
         </div>
         <p className="mt-4 mb-0 text-xs text-[var(--muted)]" aria-live="polite">
           显示 {filteredQuotes.length} 个价格档 · {modelCount} 个具体模型 · {supplierCount} 家厂商
-          {` · ${validatedCount} 条自动校验 · ${officialCount} 条官方基线 · ${reviewCount} 条人工复核`}
+          {` · ${validatedCount} 条格式校验 · ${officialCount} 条官方基线 · ${reviewCount} 条人工复核`}
         </p>
       </div>
 
@@ -440,10 +422,10 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
                 <tr>
                   <th scope="col">厂商 / 模型</th>
                   <th scope="col">范围 / 分类</th>
-                  <th className="num" scope="col">输入<br />元 / 百万 Token</th>
-                  <th className="num" scope="col">缓存输入<br />元 / 百万 Token</th>
-                  <th className="num" scope="col">输出<br />元 / 百万 Token</th>
-                  <th scope="col">原币种 / 百万 Token</th>
+                  <th className="num" scope="col">输入<br />KAI 卡时 / 百万 Token</th>
+                  <th className="num" scope="col">缓存输入<br />KAI 卡时 / 百万 Token</th>
+                  <th className="num" scope="col">输出<br />KAI 卡时 / 百万 Token</th>
+                  <th scope="col">来源数据说明</th>
                   <th scope="col">来源 / 更新时间</th>
                 </tr>
               </thead>
@@ -509,10 +491,10 @@ export function ModelPriceBoard({ quotes, index, className = "" }: ModelPriceBoa
                   <MobilePrice label="缓存输入" value={quote.cachedInputCnyPerMillion} bordered />
                   <MobilePrice label="输出" value={quote.outputCnyPerMillion} />
                 </dl>
-                <p className="mt-2 mb-0 text-center text-xs text-[var(--muted)]">人民币元 / 百万 Token</p>
+                <p className="mt-2 mb-0 text-center text-xs text-[var(--muted)]">KAI 卡时 / 百万 Token · 目录参考</p>
                 <div className="mt-5 grid gap-4 sm:grid-cols-2">
                   <div>
-                    <p className="m-0 text-xs font-semibold text-[var(--ink)]">原币种 / 百万 Token</p>
+                    <p className="m-0 text-xs font-semibold text-[var(--ink)]">来源数据说明</p>
                     <div className="mt-2"><OriginalPriceLine quote={quote} /></div>
                   </div>
                   <div>
@@ -548,7 +530,7 @@ function PriceCell({ value }: { value: number | null }) {
   return (
     <td className="num min-w-36">
       <span className="font-mono text-xl font-semibold tabular-nums text-[var(--ink)]" title={priceStatusLabel(value)}>
-        {formatCnyPrice(value)}
+        {formatDirectoryCardHours(value)}
       </span>
     </td>
   );
@@ -559,7 +541,7 @@ function MobilePrice({ label, value, bordered = false }: { label: string; value:
     <div className={`min-w-0 px-2 py-4 ${bordered ? "border-x border-[var(--border)]" : ""}`}>
       <dt className="text-xs text-[var(--muted)]">{label}</dt>
       <dd className="mt-1 truncate font-mono text-lg font-semibold tabular-nums text-[var(--ink)]" title={priceStatusLabel(value)}>
-        {formatCnyPrice(value)}
+        {formatDirectoryCardHours(value)}
       </dd>
     </div>
   );

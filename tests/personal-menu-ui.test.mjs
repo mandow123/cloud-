@@ -41,9 +41,11 @@ test("the member workspace exposes GPU contracts through the same personal order
 
 test("signed-in and signed-out personal actions stay buyer-facing", async () => {
   const menu = await source("components/personal-menu.tsx");
-  for (const label of ["登录后查看个人业务", "卡时账户", "购买记录", "我的对比", "我的回购", "租金与佣金", "邀请奖励"]) {
+  for (const label of ["登录后查看个人业务", "我的资产", "卡时明细", "购买记录", "我的对比", "收益", "卡时充值", "邀请奖励"]) {
     assert.match(menu, new RegExp(label, "u"));
   }
+  assert.match(menu, /href:\s*"\/member\/assets"/u);
+  assert.doesNotMatch(menu, /我的回购|#buybacks/u);
   assert.doesNotMatch(menu, /href="\/admin|运营管理|管理员/u);
   assert.doesNotMatch(menu, /<button[^>]*>[\s\S]{0,80}(?:立即支付|去支付|付款)/u);
   assert.match(menu, /支付服务尚未就绪/u);

@@ -47,7 +47,7 @@ export function HostingGpuMarketplace() {
       </header>
 
       <section className={styles.rateBar} aria-label="市场计价说明">
-        <span>固定参考：1 KAI 标准卡时 = ¥1.002</span><span>最低租用 3 分钟 · 按秒计量 · 余额先锁定</span>
+        <span>统一计价：KAI 标准卡时 / GPU 小时</span><span>最低租用 3 分钟 · 按秒计量 · 余额先锁定</span>
       </section>
 
       <section className={styles.toolbar} aria-label="GPU 筛选">

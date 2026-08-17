@@ -26,6 +26,7 @@ const releaseFiles = Object.freeze([
   ["src/inventory.mjs", 0o644],
   ["src/preflight.mjs", 0o755],
   ["src/doctor.mjs", 0o644],
+  ["src/gateway-client.mjs", 0o644],
   ["src/protocol.mjs", 0o644],
   ["src/state.mjs", 0o644],
   ["src/verify.mjs", 0o644],

@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ResourceDetailActions } from "@/components/resource-detail-actions";
 import { getResourceById, resourceListings } from "@/lib/data";
-import { formatPrice } from "@/lib/market";
 import type { DealMode, ResourceCategory } from "@/lib/types";
 
 const CATEGORY_LABELS: Record<ResourceCategory, string> = {
@@ -32,8 +31,8 @@ export async function generateMetadata({ params }: ResourceDetailPageProps): Pro
   const resource = getResourceById(id);
   if (!resource) return { title: "资源未找到" };
   return {
-    title: `${resource.title} · 资源详情`,
-    description: `${resource.summary} 市场参考报价，具体以询价确认为准。`,
+    title: `${resource.title} · 历史参考档案`,
+    description: `${resource.summary} 历史初始化样本，仅用于资源发现和提交需求。`,
   };
 }
 
@@ -59,7 +58,7 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
       <div className="border-b border-[var(--border)] bg-[var(--surface)]">
         <div className="shell py-4">
           <nav className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]" aria-label="面包屑导航">
-            <Link className="underline decoration-[var(--border-strong)] underline-offset-4 hover:text-[var(--accent)]" href="/resources">资源市场</Link>
+            <Link className="underline decoration-[var(--border-strong)] underline-offset-4 hover:text-[var(--accent)]" href="/resources">资源目录</Link>
             <span aria-hidden="true">/</span>
             <span>{CATEGORY_LABELS[resource.category]}</span>
             <span aria-hidden="true">/</span>
@@ -89,19 +88,15 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
           <div className="border-t-2 border-[var(--accent)] bg-[var(--info-bg)] p-5 sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="m-0 text-xs font-semibold tracking-wide text-[var(--muted)]">市场参考报价</p>
-                <p className="mt-2 mb-0 text-3xl font-semibold tabular-nums text-[var(--ink)]">
-                  {formatPrice(resource.quote.median, resource.pricingUnit)}
-                </p>
+                <p className="m-0 text-xs font-semibold tracking-wide text-[var(--muted)]">目录数据状态</p>
+                <p className="mt-2 mb-0 text-2xl font-semibold text-[var(--warning)]">历史初始化样本</p>
               </div>
-              <span className="border border-[var(--border-strong)] bg-[var(--surface)] px-2 py-1 text-xs font-semibold text-[var(--warning)]">询价后确认</span>
+              <span className="border border-[var(--border-strong)] bg-[var(--surface)] px-2 py-1 text-xs font-semibold text-[var(--warning)]">报价已过期</span>
             </div>
             <dl className="mt-6 grid grid-cols-2 gap-5 border-t border-[var(--border)] pt-5">
               <div>
-                <dt className="text-xs text-[var(--muted)]">参考区间</dt>
-                <dd className="mt-1 text-sm font-semibold tabular-nums text-[var(--ink)]">
-                  {formatPrice(resource.quote.rangeMin, resource.pricingUnit)} – {formatPrice(resource.quote.rangeMax, resource.pricingUnit)}
-                </dd>
+                <dt className="text-xs text-[var(--muted)]">交易状态</dt>
+                <dd className="mt-1 text-sm font-semibold text-[var(--ink)]">不可直接购买</dd>
               </div>
               <div>
                 <dt className="text-xs text-[var(--muted)]">样本量</dt>
@@ -121,11 +116,11 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
       </section>
 
       <div className="shell py-10 sm:py-12">
-        <aside className="market-notice mb-10" aria-label="市场报价说明">
+        <aside className="market-notice mb-10" aria-label="目录数据说明">
           <p className="m-0">
-            <strong>重要说明：</strong>{resource.quote.disclaimer} 资源档案、容量与样本当前为平台初始化数据，供应方接入后核验。
+            <strong>重要说明：</strong>该记录为平台历史初始化样本，报价有效期已经结束，不代表实时库存、现货或可成交报价。提交需求后，平台会重新核验供给、卡时价格与交付条件。
           </p>
-          <p className="m-0 whitespace-nowrap font-semibold text-[var(--warning)]">市场参考报价 · 询价后确认</p>
+          <p className="m-0 whitespace-nowrap font-semibold text-[var(--warning)]">历史样本 · 不可直接购买</p>
         </aside>
 
         <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -176,12 +171,12 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
 
             <section aria-labelledby="pricing-scope-title">
               <div className="mb-5 border-b border-[var(--border-strong)] pb-3">
-                <p className="kicker">Pricing scope</p>
-                <h2 id="pricing-scope-title" className="m-0 text-2xl text-[var(--ink)]">计价口径</h2>
+                <p className="kicker">Historical scope</p>
+                <h2 id="pricing-scope-title" className="m-0 text-2xl text-[var(--ink)]">历史数据口径</h2>
               </div>
               <div className="border-t-2 border-[var(--accent)] bg-[var(--surface)]">
                 <dl className="grid sm:grid-cols-2">
-                  <div className="border-b border-[var(--border)] p-5 sm:border-r"><dt className="text-xs text-[var(--muted)]">币种与单位</dt><dd className="mt-2 font-semibold text-[var(--ink)]">人民币（CNY）/ {resource.pricingUnit}</dd></div>
+                  <div className="border-b border-[var(--border)] p-5 sm:border-r"><dt className="text-xs text-[var(--muted)]">历史计价单位</dt><dd className="mt-2 font-semibold text-[var(--ink)]">{resource.pricingUnit}</dd></div>
                   <div className="border-b border-[var(--border)] p-5"><dt className="text-xs text-[var(--muted)]">税费</dt><dd className="mt-2 font-semibold text-[var(--ink)]">{yesNo(resource.quote.taxIncluded, "报价已含税", "报价未含税")}</dd></div>
                   <div className="border-b border-[var(--border)] p-5 sm:border-r"><dt className="text-xs text-[var(--muted)]">电力</dt><dd className="mt-2 font-semibold text-[var(--ink)]">{yesNo(resource.quote.energyIncluded, "已含基础电力", "不含电力费用")}</dd></div>
                   <div className="border-b border-[var(--border)] p-5"><dt className="text-xs text-[var(--muted)]">网络</dt><dd className="mt-2 font-semibold text-[var(--ink)]">{yesNo(resource.quote.networkIncluded, "已含基础网络", "不含网络费用")}</dd></div>
@@ -192,7 +187,7 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
                 </div>
               </div>
               <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
-                最终价格会受期限、资源数量、并发、网络、电力、税费与交付条件影响。页面展示市场参考报价，具体以询价确认为准。
+                上述字段只用于解释历史样本口径，不构成价格、库存或交付承诺。正式成交报价仅以重新核验后生成的 KAI 卡时订单快照为准。
               </p>
             </section>
 
@@ -234,7 +229,7 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
         </div>
 
         <div className="mt-14 border-t border-[var(--border)] pt-5">
-          <Link className="text-sm font-semibold text-[var(--accent)] underline underline-offset-4" href="/resources">← 返回资源市场继续比较</Link>
+          <Link className="text-sm font-semibold text-[var(--accent)] underline underline-offset-4" href="/resources">← 返回资源目录继续比较</Link>
         </div>
       </div>
     </div>

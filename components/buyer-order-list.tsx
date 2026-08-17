@@ -4,17 +4,17 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { ExchangeOrder } from "@/lib/exchange";
 import { formatCapacityHours, formatRateUnits } from "@/lib/capacity-display";
+import { cnyCentsToCardHourMicros, formatCardHourDisplayMicros } from "@/lib/card-hours";
 import { exchangeGet, marketplaceErrorMessage } from "@/lib/client/marketplace-client";
 
 type ListResponse<T> = { items: T[]; count: number };
 
-function money(cents: number) {
-  return new Intl.NumberFormat("zh-CN", {
-    style: "currency",
-    currency: "CNY",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(cents / 100);
+function orderCardHours(cents: number) {
+  try {
+    return formatCardHourDisplayMicros(cnyCentsToCardHourMicros(cents));
+  } catch {
+    return "—";
+  }
 }
 
 function nextAction(order: ExchangeOrder) {
@@ -80,7 +80,7 @@ export function BuyerOrderList() {
         <div className="mt-8 border-y border-[var(--border)] bg-[var(--info-bg)] p-7">
           <h2 className="m-0 text-2xl">还没有容量订单</h2>
           <p>从已核验的在售资源中选择数量和连续服务时间，提交后会出现在这里。</p>
-          <Link className="button button-primary min-h-12 w-full justify-center sm:w-auto" href="/market/listings">查看在售容量</Link>
+          <Link className="button button-primary min-h-12 w-full justify-center sm:w-auto" href="/gpu">查看 GPU 市场</Link>
         </div>
       ) : null}
 
@@ -95,8 +95,9 @@ export function BuyerOrderList() {
                 <p className="mb-0 mt-1 text-sm">{new Date(order.startAt).toLocaleString("zh-CN")} 至 {new Date(order.endAt).toLocaleString("zh-CN")}</p>
               </div>
               <div className="lg:text-right">
-                <span className="block text-sm">订单金额</span>
-                <strong className="font-mono text-3xl text-[var(--ink)]">{money(order.totalAmountCents)}</strong>
+                <span className="block text-sm">订单卡时</span>
+                <strong className="font-mono text-3xl text-[var(--ink)]">{orderCardHours(order.totalAmountCents)}</strong>
+                <span className="block text-xs text-[var(--muted)]">KAI 标准卡时</span>
               </div>
               <Link className="button button-primary min-h-12 w-full justify-center lg:w-auto" href={`/buyer/orders/${encodeURIComponent(order.id)}`}>{nextAction(order)}</Link>
             </article>

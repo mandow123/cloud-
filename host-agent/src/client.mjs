@@ -11,11 +11,56 @@ import {
   signPayload,
   signedProof,
 } from "./protocol.mjs";
-import { readState, stateFilePath, writeState } from "./state.mjs";
+import { gatewayBindingsFilePath, readGatewayBindings, readState, removeGatewayBinding, saveGatewayBinding, stateFilePath, writeState } from "./state.mjs";
 import { cleanupWorkload, provisionWorkload, startWorkload, stopWorkload } from "./actuator-client.mjs";
 import { runVerification } from "./verify.mjs";
+import { runGatewayPool, validateGatewayBundle } from "./gateway-client.mjs";
 
-export const AGENT_VERSION = "1.9.7";
+export const AGENT_VERSION = "1.11.0";
+const gatewayPools = new Map();
+
+async function activateGatewayBinding(contractId, bundle, controls = {}) {
+  const validated = validateGatewayBundle(bundle);
+  await saveGatewayBinding(contractId, validated, controls.bindingsFile);
+  const previous = gatewayPools.get(contractId);
+  await previous?.stop();
+  let markReady;
+  const ready = new Promise((resolve) => { markReady = resolve; });
+  const pool = await runGatewayPool(validated, {
+    allowPlaintextLocal: controls.allowInsecureLocal,
+    onWaiting: markReady,
+    onError: controls.onError,
+  });
+  gatewayPools.set(contractId, pool);
+  let timer;
+  try {
+    await Promise.race([
+      ready,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new AgentError("GATEWAY_READY_TIMEOUT", "Gateway Agent slot was not confirmed in time.")), controls.readyTimeoutMs ?? 20_000); }),
+    ]);
+  } finally { clearTimeout(timer); }
+  return pool;
+}
+
+export async function resumeGatewayBindings({ allowInsecureLocal = false, bindingsFile, onError } = {}) {
+  const bindings = await readGatewayBindings(bindingsFile);
+  const resumed = [];
+  for (const entry of bindings) {
+    try {
+      if (!entry || typeof entry.contractId !== "string") throw new AgentError("GATEWAY_BINDINGS_INVALID", "Gateway binding contract is invalid.");
+      const bundle = validateGatewayBundle(entry.bundle);
+      await activateGatewayBinding(entry.contractId, bundle, { allowInsecureLocal, bindingsFile, onError });
+      resumed.push(entry.contractId);
+    } catch (error) { onError?.(error, entry?.contractId ?? null); }
+  }
+  return resumed;
+}
+
+export async function stopGatewayBindings() {
+  const pools = [...gatewayPools.values()];
+  gatewayPools.clear();
+  await Promise.allSettled(pools.map((pool) => pool.stop()));
+}
 
 function validatePairingBundle(value, options = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new AgentError("PAIRING_INVALID", "Pairing bundle must be a JSON object.");
@@ -237,7 +282,8 @@ export async function completeCommand(command, result, { stateFile = stateFilePa
   return post(url, { outcome: fields.outcome, evidenceDigest: fields.evidenceDigest, errorCode: fields.errorCode, details: fields.details, ...proof }, { allowInsecureLocal, timeoutMs: 30_000 });
 }
 
-export async function processOneCommand({ stateFile = stateFilePath(), allowInsecureLocal = false, post = apiPost, verifier, provisioner, starter, stopper, cleaner } = {}) {
+export async function processOneCommand({ stateFile = stateFilePath(), bindingsFile, allowInsecureLocal = false, post = apiPost, verifier, provisioner, starter, stopper, cleaner } = {}) {
+  const gatewayBindingsFile = bindingsFile ?? gatewayBindingsFilePath(stateFile);
   const polled = await pollCommand({ stateFile, allowInsecureLocal, post });
   if (!polled.command) return null;
   let result;
@@ -263,7 +309,19 @@ export async function processOneCommand({ stateFile = stateFilePath(), allowInse
     result = { outcome: "FAILED", evidenceDigest: digestJson(details), errorCode: code, details };
   }
   try {
-    const response = await completeCommand(polled.command, result, { stateFile, allowInsecureLocal, post });
+    let response = await completeCommand(polled.command, result, { stateFile, allowInsecureLocal, post });
+    const gatewayResult = response?.accessGateway;
+    if (polled.command.type === "PROVISION" && result.outcome === "SUCCEEDED" && gatewayResult?.action === "CREATED") {
+      await activateGatewayBinding(polled.command.contractId, gatewayResult.agentBundle, { allowInsecureLocal, bindingsFile: gatewayBindingsFile });
+      response = await completeCommand(polled.command, result, { stateFile, allowInsecureLocal, post });
+      if (response?.accessGateway?.action !== "SLOT_CONFIRMED") throw new AgentError("GATEWAY_READY_NOT_CONFIRMED", "Control plane did not confirm the authenticated Gateway slot.");
+    }
+    if ((polled.command.type === "CLEANUP" || result.outcome === "FAILED") && polled.command.contractId) {
+      const pool = gatewayPools.get(polled.command.contractId);
+      await pool?.stop();
+      gatewayPools.delete(polled.command.contractId);
+      await removeGatewayBinding(polled.command.contractId, gatewayBindingsFile);
+    }
     return { command: polled.command, result, response };
   } finally {
     await result.closeReachability?.();

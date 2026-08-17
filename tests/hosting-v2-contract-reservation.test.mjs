@@ -58,7 +58,7 @@ async function publishedOffer(store, supplier, clock) {
     displayName: "预留测试 4090",
     deviceKeyId: `sha256:${"4".repeat(64)}`,
     devicePublicKey: "A".repeat(43),
-    agentVersion: "1.9.7",
+    agentVersion: "1.11.0",
     inventory: { hostnameDigest: `sha256:${"1".repeat(64)}`, gpuModel: "RTX_4090", gpuUuidDigest: `sha256:${"2".repeat(64)}`, gpuMemoryMiB: 24_576, driverVersion: "580.10", cudaVersion: "13.0", cpuModel: "AMD Ryzen 9 9950X", memoryMiB: 65_536, storageGiB: 2_048, publicHost: "reserve-gpu.example.com", sshPortStart: 24_000, sshPortEnd: 24_019 },
     inventoryDigest,
   }, mutation("agent-reserve", "reserve-device-register", "reserve-device-register-hash", now));
@@ -88,11 +88,13 @@ test("GPU reservation locks exact card-hours once and cancellation releases them
     const grant = await cardHours.requestTrialGrant({ organizationId: buyer.activeOrganization.id, amountMicros: 10_000_000, reason: "内部 GPU 预留闭环验收", requestedBy: "admin-grant-requester", idempotencyKey: "reserve-trial-grant", payloadHash: "reserve-trial-grant-hash", now });
     await cardHours.decideTrialGrant({ grantId: grant.id, decision: "APPROVE", approvedBy: "admin-grant-approver", payloadHash: "reserve-trial-approval-hash", now });
 
-    const reservationInput = { account: buyer, offerId: offer.id, reservedSeconds: 180, mutation: mutation(buyer.account.id, "buyer-reserve-0001", "buyer-reserve-hash", now) };
+    await assert.rejects(reserveHostingContract({ account: buyer, offerId: offer.id, offerVersion: offer.version - 1, reservedSeconds: 180, mutation: mutation(buyer.account.id, "buyer-reserve-stale", "buyer-reserve-stale-hash", now) }, stores), (error) => error.code === "EXCHANGE_VERSION_CONFLICT" && error.status === 409);
+    const reservationInput = { account: buyer, offerId: offer.id, offerVersion: offer.version, reservedSeconds: 180, mutation: mutation(buyer.account.id, "buyer-reserve-0001", "buyer-reserve-hash", now) };
     const reserved = await reserveHostingContract(reservationInput, stores);
     assert.equal(reserved.contract.status, "CARD_HOURS_HELD");
     assert.equal(reserved.heldMicros, 180_000);
     assert.equal(reserved.replayed, false);
+    assert.equal(reserved.contract.snapshot.offerVersion, offer.version);
     assert.deepEqual(reserved.contract.snapshot.feeQualification, {
       model: "LIFETIME_SUPPLIER_SETTLED_GROSS_V1",
       tierCode: "STARTER",
@@ -117,7 +119,8 @@ test("GPU reservation locks exact card-hours once and cancellation releases them
     assert.deepEqual((await cardHours.dashboard(buyer.activeOrganization.id, now)).balance, { availableMicros: 10_000_000, heldMicros: 0, lifetimeTopupMicros: 10_000_000, lifetimeSpentMicros: 0 });
     assert.equal((await hosting.listPublicOffers(now)).length, 1);
 
-    await assert.rejects(reserveHostingContract({ account: emptyBuyer, offerId: offer.id, reservedSeconds: 180, mutation: mutation(emptyBuyer.account.id, "empty-buyer-reserve", "empty-buyer-reserve-hash", now) }, stores), (error) => error.code === "CARD_HOUR_BALANCE_INSUFFICIENT");
+    const republishedAfterCancel = await hosting.getPublicOffer(offer.id, now);
+    await assert.rejects(reserveHostingContract({ account: emptyBuyer, offerId: offer.id, offerVersion: republishedAfterCancel.version, reservedSeconds: 180, mutation: mutation(emptyBuyer.account.id, "empty-buyer-reserve", "empty-buyer-reserve-hash", now) }, stores), (error) => error.code === "CARD_HOUR_BALANCE_INSUFFICIENT");
     assert.equal((await cardHours.dashboard(emptyBuyer.activeOrganization.id, now)).balance.heldMicros, 0);
     assert.equal((await hosting.listPublicOffers(now)).length, 1, "failed card-hour hold must republish the GPU offer");
 
@@ -135,7 +138,8 @@ test("GPU reservation locks exact card-hours once and cancellation releases them
     seedHistory("volume_future", supplier.activeOrganization.id, "history-future", "SETTLEMENT", 9_000_000_000_000, new Date(Date.parse(now) + 1_000).toISOString());
     history.close();
 
-    const provisionReservation = await reserveHostingContract({ account: buyer, offerId: offer.id, reservedSeconds: 180, mutation: mutation(buyer.account.id, "buyer-reserve-provision", "buyer-reserve-provision-hash", now) }, stores);
+    const republishedAfterFailedHold = await hosting.getPublicOffer(offer.id, now);
+    const provisionReservation = await reserveHostingContract({ account: buyer, offerId: offer.id, offerVersion: republishedAfterFailedHold.version, reservedSeconds: 180, mutation: mutation(buyer.account.id, "buyer-reserve-provision", "buyer-reserve-provision-hash", now) }, stores);
     assert.deepEqual(provisionReservation.contract.snapshot.feeQualification, {
       model: "LIFETIME_SUPPLIER_SETTLED_GROSS_V1",
       tierCode: "STRATEGIC",
@@ -178,6 +182,14 @@ test("buyer contract APIs use formal ownership and hide supplier infrastructure 
   const view = apiHelpers.slice(apiHelpers.indexOf("export function hostingContractClientView"), apiHelpers.indexOf("export function hostingSupplierContractClientView"));
   assert.doesNotMatch(view, /deviceId|supplierOrganizationId|buyerAccountId|feeScheduleId/u);
   assert.match(view, /heldMicros/u);
+  assert.match(view, /endpointDisplay: null/u);
+  assert.doesNotMatch(view, /contract\.endpointDisplay/u);
+
+  const buyerDetail = readFileSync(routes[1], "utf8");
+  assert.match(buyerDetail, /\["READY", "IN_SERVICE"\]\.includes\(contract\.status\)/u);
+  assert.match(buyerDetail, /binding\?\.status === "SLOT_CONFIRMED"/u);
+  assert.match(buyerDetail, /issueBuyerAccess\(contract\.id\)/u);
+  assert.match(buyerDetail, /return jsonResponse\(\{ record \}, 200/u);
 });
 
 test("buyer UI only offers direct cancellation before provisioning begins", () => {

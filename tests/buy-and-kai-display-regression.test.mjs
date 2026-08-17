@@ -24,17 +24,18 @@ function walk(directory) {
 
 test("desktop header presents purchase and demand as adjacent, distinct actions", () => {
   const header = source("components/site-header.tsx");
-  const buyHref = header.indexOf('href="/buy"');
+  const buyHref = header.indexOf('href="/gpu"');
   const buyLabel = header.indexOf("购买算力", buyHref);
   const requestHref = header.indexOf('href="/request"', buyLabel);
   const requestLabel = header.indexOf("提交算力需求", requestHref);
 
-  assert.ok(buyHref >= 0, "the desktop header must link to /buy");
-  assert.ok(buyLabel > buyHref, "the /buy action must be labelled 购买算力");
+  assert.ok(buyHref >= 0, "the desktop header must link to the canonical /gpu market");
+  assert.ok(buyLabel > buyHref, "the /gpu action must be labelled 购买算力");
   assert.ok(requestHref > buyLabel, "提交算力需求 must immediately follow the purchase action");
   assert.ok(requestLabel > requestHref, "the /request action must be labelled 提交算力需求");
   assert.doesNotMatch(header, /发布算力需求/u);
-  assert.match(header, /button-primary[\s\S]*href="\/buy"[\s\S]*购买算力[\s\S]*button-secondary[\s\S]*href="\/request"[\s\S]*提交算力需求/u);
+  assert.match(header, /button-primary[\s\S]*href="\/gpu"[\s\S]*购买算力[\s\S]*button-secondary[\s\S]*href="\/request"[\s\S]*提交算力需求/u);
+  assert.doesNotMatch(header, /href="\/buy"/u);
 });
 
 test("mobile navigation keeps both purchase and demand entry points usable", () => {
@@ -42,7 +43,8 @@ test("mobile navigation keeps both purchase and demand entry points usable", () 
   const css = source("app/kai-cloud.css");
 
   assert.match(mobile, /<nav[^>]+className="mobile-demand-cta"[^>]+aria-label="购买与需求操作"/u);
-  assert.match(mobile, /pathname !== "\/buy"[\s\S]*href="\/buy"[\s\S]*购买算力/u);
+  assert.match(mobile, /pathname !== "\/gpu"[\s\S]*href="\/gpu"[\s\S]*购买算力/u);
+  assert.doesNotMatch(mobile, /href="\/buy"/u);
   assert.match(mobile, /pathname !== "\/request"[\s\S]*href="\/request"[\s\S]*提交算力需求/u);
   assert.doesNotMatch(mobile, /发布算力需求/u);
   assert.match(css, /\.mobile-demand-cta\s*\{\s*display:\s*none;/u);
@@ -51,12 +53,13 @@ test("mobile navigation keeps both purchase and demand entry points usable", () 
   assert.match(css, /\.mobile-request-cta\s*\{[\s\S]*background:/u);
 });
 
-test("/buy is login-protected and reads only real purchase readiness, balance, and offers", () => {
+test("/buy redirects to the canonical market when KAI_MARKET_V1 is enabled and preserves the gated rollback workspace", () => {
   const buyPage = source("app/buy/page.tsx");
   const buyWorkspace = source("components/buy-workspace.tsx");
   const accountGate = source("components/account-required.tsx");
   const combined = `${buyPage}\n${buyWorkspace}`;
 
+  assert.match(buyPage, /if \(isMarketV1Enabled\(\)\) redirect\(PRODUCT_PATHS\.gpu\)/u);
   assert.match(combined, /<AccountRequired[^>]+redirectOnSignedOut(?:=\{true\})?/u);
   assert.match(combined, /\/api\/auth\/session|AccountRequired/u);
   assert.match(combined, /\/api\/ready/u, "the buy workspace must fail closed when purchase services are not ready");
@@ -85,18 +88,15 @@ test("the offer checkout uses the same exact card-hour calculation as the server
 
 test("the static resource directory is inquiry-only, not a fake purchase flow", () => {
   const explorer = source("components/resource-explorer.tsx");
-  const inquiry = source("components/catalog-purchase.tsx");
   const checkoutPage = source("app/checkout/[resourceId]/page.tsx");
 
-  assert.equal((explorer.match(/className=\{purchaseStyles\.purchaseLink\}/gu) ?? []).length, 2);
-  assert.equal((explorer.match(/<span>提交询价<\/span>/gu) ?? []).length, 2);
+  assert.equal((explorer.match(/<span>提交需求<\/span>/gu) ?? []).length, 2);
   assert.doesNotMatch(explorer, /<span>购买<\/span>/u);
-  assert.match(inquiry, /本页不创建成交订单/u);
-  assert.match(inquiry, /不锁库存、不扣卡时/u);
-  assert.match(inquiry, /登录后提交询价/u);
-  assert.match(inquiry, /正在提交…"\s*:\s*"提交询价"/u);
-  assert.doesNotMatch(inquiry, /登录后提交购买|提交购买/u);
-  assert.match(checkoutPage, /title:\s*`询价/u);
+  assert.doesNotMatch(explorer, /\/checkout\//u);
+  assert.match(explorer, /directoryRequestHref/u);
+  assert.match(explorer, /报价已过期/u);
+  assert.match(checkoutPage, /permanentRedirect\(`\/request\?/u);
+  assert.doesNotMatch(checkoutPage, /CatalogPurchase/u);
 });
 
 test("all user-facing card-hour formatters emit exactly two decimals while the fixed exchange rate stays 1.002", () => {

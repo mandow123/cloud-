@@ -21,10 +21,10 @@ export function HostingOfferCheckout({ offerId }: { offerId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    void marketplaceGet<{ records: PublicHostingOffer[] }>("/api/v2/offers")
+    void marketplaceGet<{ record: PublicHostingOffer }>(`/api/v2/offers/${encodeURIComponent(offerId)}`)
       .then((result) => {
         if (cancelled) return;
-        const current = result.records.find((item) => item.id === offerId) ?? null;
+        const current = result.record;
         setOffer(current);
         if (current) setMinutes(Math.ceil(current.minRentalSeconds / 60));
         else setError("该报价不存在、已被预留或已经停止发布。");
@@ -49,7 +49,7 @@ export function HostingOfferCheckout({ offerId }: { offerId: string }) {
     setBusy(true); setError(null); setLoginRequired(false);
     try {
       requestKey.current ??= createIdempotencyKey("hosting-reserve");
-      const result = await marketplacePost<BuyerHostingContract>("/api/v2/contracts", { offerId: offer.id, reservedSeconds }, requestKey.current, 20_000);
+      const result = await marketplacePost<BuyerHostingContract>("/api/v2/contracts", { offerId: offer.id, offerVersion: offer.version, reservedSeconds }, requestKey.current, 20_000);
       requestKey.current = null;
       router.push(`/gpu/contracts/${encodeURIComponent(result.record.id)}`);
     } catch (cause) {
@@ -63,7 +63,6 @@ export function HostingOfferCheckout({ offerId }: { offerId: string }) {
 
   const minMinutes = Math.ceil(offer.minRentalSeconds / 60);
   const maxMinutes = Math.floor(offer.maxRentalSeconds / 60);
-  const cny = heldMicros === null ? null : heldMicros / 1_000_000 * 1.002;
   return (
     <div className={styles.market}>
       <header className={styles.detailHeader}><div><Link href="/gpu">← GPU 市场</Link><p className={styles.eyebrow}>LOCK A VERIFIED OFFER</p><h1>确认资源与卡时锁定</h1></div><span className={styles.statusPill}>报价可成交</span></header>
@@ -81,7 +80,7 @@ export function HostingOfferCheckout({ offerId }: { offerId: string }) {
           <h2>租用配置</h2>
           <label><span>租用分钟数</span><input min={minMinutes} max={maxMinutes} step={1} type="number" value={minutes} onChange={(event) => setMinutes(Number(event.target.value))} /></label>
           <small>允许 {minMinutes}–{maxMinutes} 分钟；实际按秒计量，最低计费 3 分钟。</small>
-          <dl className={styles.quoteList}><div><dt>网站价</dt><dd>{formatCardHours(offer.pricing.cardHourMicrosPerGpuHour)} 卡时 / GPU 小时</dd></div><div><dt>预估锁定</dt><dd>{heldMicros === null ? "—" : `${formatCardHours(heldMicros)} KAI 标准卡时`}</dd></div><div><dt>人民币参考</dt><dd>{cny === null ? "—" : `约 ¥${cny.toFixed(2)}`}</dd></div></dl>
+          <dl className={styles.quoteList}><div><dt>网站价</dt><dd>{formatCardHours(offer.pricing.cardHourMicrosPerGpuHour)} 卡时 / GPU 小时</dd></div><div><dt>预估锁定</dt><dd>{heldMicros === null ? "—" : `${formatCardHours(heldMicros)} KAI 标准卡时`}</dd></div><div><dt>结算规则</dt><dd>实际按秒计量 · 多退少补</dd></div></dl>
           <button className={styles.primary} disabled={busy || heldMicros === null || !Number.isSafeInteger(minutes) || minutes < minMinutes || minutes > maxMinutes} onClick={() => void reserve()} type="button">{busy ? "正在锁定卡时…" : "锁定卡时并创建合同"}</button>
           {error ? <p className={styles.inlineError} role="alert">{error}</p> : null}
           {loginRequired ? <Link className={styles.loginLink} href={`/login?returnTo=${encodeURIComponent(`/gpu/offers/${offer.id}`)}`}>登录或注册后继续</Link> : null}

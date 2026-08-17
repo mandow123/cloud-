@@ -3,6 +3,7 @@ import { apiErrorResponse, beginApiRequest, jsonResponse, readJsonBody } from "@
 import { requireTradingAccountSession } from "@/lib/server/entity-ownership";
 import { hostingContractClientView, hostingMutationContext, hostingObject, requireHostingV2Enabled } from "@/lib/server/hosting-v2-api";
 import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
+import { requireHostingV2TransactionCapability } from "@/lib/server/hosting-v2-transaction-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ export async function POST(request: Request, contextValue: { params: Promise<{ c
   const context = beginApiRequest(request);
   try {
     requireHostingV2Enabled();
+    await requireHostingV2TransactionCapability();
     assertAccountAuthSameOrigin(request);
     const account = await requireTradingAccountSession(request);
     if (!account) throw new AccountAuthError("ACCOUNT_AUTH_REQUIRED", 401, "请先登录账户。 ");

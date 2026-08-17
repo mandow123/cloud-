@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { mkdirSync } from "node:fs";
+import { assertHostingV2SchemaCompatible } from "../../db/hosting-v2-schema.ts";
 import { createHostingV2Store } from "./hosting-v2-store-core.ts";
 import type { HostingV2DatabaseAdapter, HostingV2Sql } from "./hosting-v2-store.ts";
 
@@ -37,7 +38,7 @@ function adapter(db: DatabaseSync): HostingV2DatabaseAdapter {
       try {
         for (const sql of statements) db.prepare(sql).run();
         const row = db.prepare("SELECT MAX(version) version FROM hosting_v2_schema_migrations").get() as { version?: number | null } | undefined;
-        if (row?.version != null && Number(row.version) > compatibleThrough) throw new Error("HOSTING_V2_SCHEMA_TOO_NEW");
+        assertHostingV2SchemaCompatible(row?.version, compatibleThrough);
         db.prepare("INSERT OR IGNORE INTO hosting_v2_schema_migrations(version,applied_at) VALUES(?,?)").run(version, new Date().toISOString());
         db.exec("COMMIT");
       } catch (error) {

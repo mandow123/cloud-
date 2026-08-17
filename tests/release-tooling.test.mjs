@@ -103,7 +103,7 @@ test("registry, application, and systemd templates enforce bounded immutable ope
   assert.match(registryCompose, /\/opt\/kai-cloud-registry/);
   assert.match(registryConfig, /certificate: \/certs\/registry\.crt/);
   assert.match(registryConfig, /path: \/auth\/htpasswd/);
-  assert.equal((productionCompose.match(/pull_policy: always/g) ?? []).length, 3);
+  assert.equal((productionCompose.match(/pull_policy: always/g) ?? []).length, 4);
   assert.match(Dockerfile, /ARG KAI_RELEASE_SHA/);
   assert.match(Dockerfile, /org\.opencontainers\.image\.revision="\$\{KAI_RELEASE_SHA\}"/);
   assert.match(Dockerfile, /\/app\/drizzle \.\/drizzle/);

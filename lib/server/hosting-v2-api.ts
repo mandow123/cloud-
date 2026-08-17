@@ -1,9 +1,11 @@
 import { AccountAuthError, assertAccountAuthSameOrigin } from "./account-auth.ts";
 import { mutationHash, prepareWrite, requireIdempotencyKey } from "./api-guard.ts";
+import type { CardHourDashboard } from "./card-hour-store.ts";
 import { authorizeMarketplaceRequest, persistMarketplaceSession } from "./marketplace-auth.ts";
 import type { HostingMutationContext } from "./hosting-v2-store.ts";
-import { HOSTING_V2_AGENT_STALE_SECONDS, hostingActualFeeBreakdown, type HostingContract, type HostingContractEvidence, type HostingDevice, type HostingOffer } from "../hosting-v2.ts";
+import { HOSTING_V2_AGENT_STALE_SECONDS, hostingActualFeeBreakdown, type HostingContract, type HostingContractEvidence, type HostingDevice, type HostingOffer, type HostingPublicOffer, type HostingSupplierFeePreview, type HostingSupplierMonthlySettlement } from "../hosting-v2.ts";
 import type { SupplierDeviceTask, SupplierDeviceWorkspace, SupplierDeviceWorkspaceRow, SupplierDeviceWorkspaceState } from "../hosting-v2-client.ts";
+import { accessGatewayCapability } from "./access-gateway-client.ts";
 
 export { requireHostingV2DeviceRetirementEnabled, requireHostingV2Enabled, requireHostingV2SetupEnabled } from "./hosting-v2-feature.ts";
 
@@ -29,18 +31,72 @@ export function hostingBoolean(input: Record<string, unknown>, field: string) {
   return input[field];
 }
 
+function hostingFeeQualificationClientView(value: HostingContract["snapshot"]["feeQualification"]) {
+  if (!value) return null;
+  const base = {
+    model: value.model,
+    tierCode: value.tierCode,
+    qualifyingVolumeMicros: value.qualifyingVolumeMicros,
+    platformFeeBps: value.platformFeeBps,
+    referralRewardBps: value.referralRewardBps,
+  };
+  return value.model === "LIFETIME_SUPPLIER_SETTLED_GROSS_V1"
+    ? { ...base, asOf: value.asOf }
+    : { ...base, period: { key: value.period.key, startAt: value.period.startAt, endAt: value.period.endAt, timeZone: value.period.timeZone } };
+}
+
+function hostingContractSnapshotClientView(snapshot: HostingContract["snapshot"]) {
+  return {
+    offerVersion: snapshot.offerVersion,
+    title: snapshot.title,
+    gpuModel: snapshot.gpuModel,
+    region: snapshot.region,
+    cardHourMicrosPerGpuHour: snapshot.cardHourMicrosPerGpuHour,
+    approvedImage: snapshot.approvedImage,
+    termsVersion: snapshot.termsVersion,
+    platformFeeBps: snapshot.platformFeeBps,
+    referralRewardBps: snapshot.referralRewardBps,
+    feeQualification: hostingFeeQualificationClientView(snapshot.feeQualification),
+    acceptanceWindowSeconds: snapshot.acceptanceWindowSeconds,
+  };
+}
+
+export function hostingPublicOfferClientView(offer: HostingPublicOffer) {
+  return {
+    id: offer.id,
+    dataClass: "LIVE_INVENTORY" as const,
+    source: "HOSTING_V2" as const,
+    version: offer.version,
+    title: offer.title,
+    gpuModel: offer.gpuModel,
+    region: offer.region,
+    minRentalSeconds: offer.minRentalSeconds,
+    maxRentalSeconds: offer.maxRentalSeconds,
+    availableFrom: offer.availableFrom,
+    availableUntil: offer.availableUntil,
+    approvedImage: offer.approvedImage,
+    termsVersion: offer.termsVersion,
+    verificationSummary: offer.verificationSummary,
+    verifiedUntil: offer.verifiedUntil,
+    pricing: {
+      assetCode: "KAI_CREDIT_HOUR" as const,
+      cardHourMicrosPerGpuHour: offer.cardHourMicrosPerGpuHour,
+    },
+  };
+}
+
 export function hostingContractClientView(contract: HostingContract, evidence?: HostingContractEvidence) {
   return {
     id: contract.id,
     offerId: contract.offerId,
-    snapshot: contract.snapshot,
+    snapshot: hostingContractSnapshotClientView(contract.snapshot),
     reservedSeconds: contract.reservedSeconds,
     measuredSeconds: contract.measuredSeconds,
     heldMicros: contract.heldMicros,
     settledMicros: contract.settledMicros,
     status: contract.status,
     sshPublicKeyFingerprint: contract.sshPublicKeyFingerprint,
-    endpointDisplay: contract.endpointDisplay,
+    endpointDisplay: null,
     startedAt: contract.startedAt,
     stoppedAt: contract.stoppedAt,
     acceptedAt: contract.acceptedAt,
@@ -52,6 +108,7 @@ export function hostingContractClientView(contract: HostingContract, evidence?: 
 }
 
 export function hostingSupplierContractClientView(contract: HostingContract, evidence?: HostingContractEvidence) {
+  const endpointDisplay = accessGatewayCapability().configured ? null : contract.endpointDisplay;
   const settlementBreakdown = contract.settledMicros !== null && contract.supplierIncomeMicros !== null && contract.commissionMicros !== null
     ? hostingActualFeeBreakdown(contract.settledMicros, contract.supplierIncomeMicros, contract.commissionMicros)
     : null;
@@ -59,7 +116,7 @@ export function hostingSupplierContractClientView(contract: HostingContract, evi
     id: contract.id,
     offerId: contract.offerId,
     deviceId: contract.deviceId,
-    snapshot: contract.snapshot,
+    snapshot: hostingContractSnapshotClientView(contract.snapshot),
     reservedSeconds: contract.reservedSeconds,
     measuredSeconds: contract.measuredSeconds,
     heldMicros: contract.heldMicros,
@@ -69,7 +126,7 @@ export function hostingSupplierContractClientView(contract: HostingContract, evi
     settlementBreakdown,
     status: contract.status,
     sshPublicKeyFingerprint: contract.sshPublicKeyFingerprint,
-    endpointDisplay: contract.endpointDisplay,
+    endpointDisplay,
     startedAt: contract.startedAt,
     stoppedAt: contract.stoppedAt,
     acceptedAt: contract.acceptedAt,
@@ -77,6 +134,89 @@ export function hostingSupplierContractClientView(contract: HostingContract, evi
     createdAt: contract.createdAt,
     updatedAt: contract.updatedAt,
     evidence,
+  };
+}
+
+export function hostingSettlementClientView(settlement: Readonly<{
+  heldMicros: number;
+  settledMicros: number;
+  releasedMicros: number;
+  supplierIncomeMicros: number;
+  commissionMicros: number;
+  platformFeeMicros: number;
+}>) {
+  return {
+    heldMicros: settlement.heldMicros,
+    settledMicros: settlement.settledMicros,
+    releasedMicros: settlement.releasedMicros,
+    supplierIncomeMicros: settlement.supplierIncomeMicros,
+    commissionMicros: settlement.commissionMicros,
+    platformFeeMicros: settlement.platformFeeMicros,
+  };
+}
+
+function safeSupplierLedgerEntry(value: Record<string, unknown>) {
+  const operation = typeof value.operation === "string" ? value.operation : "UNKNOWN";
+  const businessKey = typeof value.business_key === "string" ? value.business_key : "—";
+  const side = value.side === "DEBIT" ? "DEBIT" : "CREDIT";
+  const amountMicros = Number.isSafeInteger(value.amount_micros) ? Number(value.amount_micros) : 0;
+  const balanceAfterMicros = value.balance_after_micros === null || value.balance_after_micros === undefined
+    ? null
+    : Number.isSafeInteger(value.balance_after_micros) ? Number(value.balance_after_micros) : null;
+  const createdAt = typeof value.created_at === "string" ? value.created_at : "";
+  return { operation, businessKey, side, amountMicros, balanceAfterMicros, createdAt };
+}
+
+export function hostingSupplierEarningsClientView(
+  dashboard: CardHourDashboard,
+  feePreview: HostingSupplierFeePreview,
+  monthlySettlement: HostingSupplierMonthlySettlement,
+  updatedAt: string,
+) {
+  return {
+    assetCode: dashboard.assetCode,
+    rate: { cardHours: dashboard.rate.cardHours },
+    balance: { availableMicros: dashboard.balance.availableMicros, heldMicros: dashboard.balance.heldMicros },
+    income: {
+      rentalPendingMicros: dashboard.income.rentalPendingMicros,
+      rentalVestedMicros: dashboard.income.rentalVestedMicros,
+      commissionPendingMicros: dashboard.income.commissionPendingMicros,
+      commissionVestedMicros: dashboard.income.commissionVestedMicros,
+    },
+    referral: { code: dashboard.referral.code, invitedOrganizations: dashboard.referral.invitedOrganizations },
+    ledger: dashboard.ledger.map(safeSupplierLedgerEntry),
+    feePreview: {
+      activeFeeScheduleId: feePreview.activeFeeScheduleId,
+      model: feePreview.model,
+      tierCode: feePreview.tierCode,
+      asOf: feePreview.asOf,
+      qualifyingVolumeMicros: feePreview.qualifyingVolumeMicros,
+      platformFeeBps: feePreview.platformFeeBps,
+      referralRewardBps: feePreview.referralRewardBps,
+      tiers: feePreview.tiers.map((tier) => ({
+        code: tier.code,
+        minimumQualifyingMicros: tier.minimumQualifyingMicros,
+        platformFeeBps: tier.platformFeeBps,
+        referralRewardBps: tier.referralRewardBps,
+      })),
+      nextTierCode: feePreview.nextTierCode,
+      nextTierMinimumMicros: feePreview.nextTierMinimumMicros,
+      remainingToNextTierMicros: feePreview.remainingToNextTierMicros,
+    },
+    monthlySettlement: {
+      period: {
+        key: monthlySettlement.period.key,
+        startAt: monthlySettlement.period.startAt,
+        endAt: monthlySettlement.period.endAt,
+        timeZone: monthlySettlement.period.timeZone,
+      },
+      grossMicros: monthlySettlement.grossMicros,
+      platformFeeMicros: monthlySettlement.platformFeeMicros,
+      supplierIncomeMicros: monthlySettlement.supplierIncomeMicros,
+      inFeeReferralCommissionMicros: monthlySettlement.inFeeReferralCommissionMicros,
+      platformNetMicros: monthlySettlement.platformNetMicros,
+    },
+    updatedAt,
   };
 }
 

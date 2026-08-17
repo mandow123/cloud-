@@ -82,7 +82,7 @@ export function SupplyEarnings() {
               </div>
             </section>
             <aside className={styles.sidePanel}>
-              <section><h2>标准换算</h2><p>1 KAI 标准卡时 = ¥1.002，仅作为平台固定参考换算。成交与收益均以卡时记账。</p></section>
+              <section><h2>统一记账</h2><p>挂牌、合同、订单和收益全部以 KAI 标准卡时记账，用户可见金额统一显示两位小数。</p></section>
               <section><h3>我的推荐佣金</h3><p>上方 C 是供应订单对应推荐人的佣金，不等同于你的推荐收入。你的推荐收益单独进入“已归属佣金”和账本，奖励比例使用订单冻结的费率版本。</p></section>
               <section><h3>卡时回购 / 变现</h3><p>申请、锁定和审核结构保留，但生产出款尚未开放。完成法务、支付、发票和资金存管前，不承诺随时兑付。</p><button className={styles.disabledAction} disabled type="button">变现申请暂未开放</button></section>
               <section><small>账本更新于 {formatHostingTime(earnings.updatedAt)}</small></section>
