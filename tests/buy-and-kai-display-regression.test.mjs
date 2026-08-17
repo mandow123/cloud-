@@ -83,7 +83,7 @@ test("the offer checkout uses the same exact card-hour calculation as the server
   const checkout = source("components/hosting-offer-checkout.tsx");
   assert.match(checkout, /hostingCardHourMicrosForSeconds\(offer\.pricing\.cardHourMicrosPerGpuHour, reservedSeconds\)/u);
   assert.doesNotMatch(checkout, /Math\.ceil\(offer\.pricing\.cardHourMicrosPerGpuHour/u);
-  assert.match(checkout, /disabled=\{busy \|\| heldMicros === null/u);
+  assert.match(checkout, /disabled=\{!transaction\?\.ready \|\| busy \|\| heldMicros === null/u);
 });
 
 test("the static resource directory is inquiry-only, not a fake purchase flow", () => {

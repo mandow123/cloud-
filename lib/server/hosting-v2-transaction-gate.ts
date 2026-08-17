@@ -23,12 +23,32 @@ export function isHostingFinancialRailReady() {
   return false;
 }
 
-export async function requireHostingV2TransactionCapability() {
-  if (isLocalHostingAcceptance()) return;
+export type HostingV2TransactionAvailability = Readonly<{
+  ready: boolean;
+  mode: "TRANSACT" | "BROWSE_ONLY";
+  failClosed: true;
+  reason: null | "HOSTING_FINANCIAL_RAIL_CLOSED" | "HOSTING_V2_NOT_READY";
+  message: string;
+}>;
+
+const transactionOpen = (): HostingV2TransactionAvailability => ({
+  ready: true,
+  mode: "TRANSACT",
+  failClosed: true,
+  reason: null,
+  message: "算力交易能力已就绪。",
+});
+
+const transactionClosed = (
+  reason: "HOSTING_FINANCIAL_RAIL_CLOSED" | "HOSTING_V2_NOT_READY",
+  message: string,
+): HostingV2TransactionAvailability => ({ ready: false, mode: "BROWSE_ONLY", failClosed: true, reason, message });
+
+export async function readHostingV2TransactionAvailability(): Promise<HostingV2TransactionAvailability> {
+  if (isLocalHostingAcceptance()) return transactionOpen();
   if (!isHostingFinancialRailReady()) {
-    throw new AccountAuthError(
+    return transactionClosed(
       "HOSTING_FINANCIAL_RAIL_CLOSED",
-      503,
       "算力交易资金链路正在完成双式账本、退款与收益冲正验收，当前仅开放市场浏览。 ",
     );
   }
@@ -43,7 +63,7 @@ export async function requireHostingV2TransactionCapability() {
         : Promise.resolve({ available: false as const, probe: "read-only" as const }),
       getAccountAuthStore().then((store) => store.hasSuccessfulKaiIdentityLoginAudit()),
     ]);
-    requireHostingV2TransactionReady(evaluateHostingV2Capability({
+    const readiness = evaluateHostingV2Capability({
       environment,
       hostingStorage: { ready: operations.integrity === "ok" },
       cardHourStorage: { ready: cardHourHealth.integrity === "ok" },
@@ -54,9 +74,16 @@ export async function requireHostingV2TransactionCapability() {
       financeApprovalAvailable: Boolean(environment.KAI_ADMIN_APPROVER_USERNAME?.trim() && environment.KAI_ADMIN_APPROVER_PASSWORD_HASH?.startsWith("pbkdf2-sha256:")),
       financialRailReady: isHostingFinancialRailReady(),
       alipay: alipayReadiness(environment),
-    }));
+    });
+    requireHostingV2TransactionReady(readiness);
+    return transactionOpen();
   } catch (error) {
-    if (error instanceof AccountAuthError) throw error;
-    throw new AccountAuthError("HOSTING_V2_NOT_READY", 503, "算力交易关键能力尚未全部就绪。 ");
+    if (error instanceof AccountAuthError) return transactionClosed("HOSTING_V2_NOT_READY", "算力交易关键能力尚未全部就绪，当前仅开放市场浏览。 ");
+    return transactionClosed("HOSTING_V2_NOT_READY", "算力交易关键能力尚未全部就绪。 ");
   }
+}
+
+export async function requireHostingV2TransactionCapability() {
+  const availability = await readHostingV2TransactionAvailability();
+  if (!availability.ready) throw new AccountAuthError(availability.reason ?? "HOSTING_V2_NOT_READY", 503, availability.message);
 }

@@ -2,6 +2,7 @@ import { verifyAlipayNotification } from "@/lib/server/alipay-live";
 import { mutationHash } from "@/lib/server/api-guard";
 import { getSupplyStore } from "@/lib/server/supply-store";
 import { getCardHourStore } from "@/lib/server/card-hour-store";
+import { requireLegacyGpuMutationSimulation } from "@/lib/server/legacy-gpu-mutation-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ export async function POST(request: Request) {
       await store.applyTopupEvent({ orderId: event.providerOrderId, providerEventId: event.providerEventId, providerTransactionId: event.providerTransactionId, eventType: event.eventType, amountCents: event.amountCents, payloadDigest: event.rawPayloadDigest, occurredAt: event.occurredAt, receivedAt: event.verifiedAt });
       return notifyResponse("success");
     }
+    requireLegacyGpuMutationSimulation();
     const store = await getSupplyStore();
     const detail = await store.getTrialOrder("alipay-notify", event.providerOrderId, "ops");
     if (detail.order.id !== event.providerOrderId

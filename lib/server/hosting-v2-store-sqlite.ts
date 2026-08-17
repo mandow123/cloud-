@@ -33,12 +33,20 @@ function adapter(db: DatabaseSync): HostingV2DatabaseAdapter {
         throw error;
       }
     },
-    async ensureSchema(statements, version, compatibleThrough = version) {
+    async ensureSchema(statements, version, compatibleThrough = version, migrations = []) {
       db.exec("BEGIN IMMEDIATE");
       try {
-        for (const sql of statements) db.prepare(sql).run();
+        db.prepare(statements[0]).run();
         const row = db.prepare("SELECT MAX(version) version FROM hosting_v2_schema_migrations").get() as { version?: number | null } | undefined;
         assertHostingV2SchemaCompatible(row?.version, compatibleThrough);
+        const previousVersion = row?.version == null ? null : Number(row.version);
+        for (const sql of statements.slice(1)) db.prepare(sql).run();
+        if (previousVersion !== null) {
+          for (const migration of migrations.filter((candidate) => candidate.version > previousVersion && candidate.version <= version).sort((left, right) => left.version - right.version)) {
+            for (const sql of migration.statements) db.prepare(sql).run();
+            db.prepare("INSERT OR IGNORE INTO hosting_v2_schema_migrations(version,applied_at) VALUES(?,?)").run(migration.version, new Date().toISOString());
+          }
+        }
         db.prepare("INSERT OR IGNORE INTO hosting_v2_schema_migrations(version,applied_at) VALUES(?,?)").run(version, new Date().toISOString());
         db.exec("COMMIT");
       } catch (error) {

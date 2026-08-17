@@ -408,7 +408,8 @@ export class KaiAccessGateway {
     try {
       const url = new URL(request.url ?? "/", "http://gateway.local");
       if (request.method === "GET" && url.pathname === "/health") {
-        return json(response, 200, { status: "ok", service: "kai-access-gateway", tunnelPort: this.tunnelAddress().port, checkedAt: this.options.now().toISOString() });
+        const health = this.healthSnapshot();
+        return json(response, health.status === "ok" ? 200 : 503, health);
       }
       const bearer = request.headers.authorization?.startsWith("Bearer ") ? request.headers.authorization.slice(7) : "";
       if (!safeEqual(bearer, this.options.controlToken)) throw new AccessGatewayError("CONTROL_UNAUTHORIZED", "Gateway control authentication failed.", 401);
@@ -441,6 +442,32 @@ export class KaiAccessGateway {
     const address = this.controlServer?.address();
     if (!address || typeof address === "string") return null;
     return address;
+  }
+
+  healthSnapshot() {
+    let integrity = "error";
+    let activeLeases = 0;
+    try { integrity = String(this.db.prepare("PRAGMA quick_check").get()?.quick_check ?? "error"); }
+    catch { integrity = "error"; }
+    const tunnelListening = Boolean(this.tunnelServer?.listening);
+    if (integrity === "ok") {
+      try { activeLeases = Number(this.db.prepare("SELECT COUNT(*) count FROM gateway_leases WHERE status='ACTIVE' AND expires_at>?").get(this.options.now().toISOString())?.count ?? 0); }
+      catch { integrity = "error"; }
+    }
+    const authenticatedAgentSlots = [...this.pendingAgents.values()].reduce((total, sockets) => total + sockets.filter((socket) => !socket.destroyed).length, 0);
+    const activeConnections = [...this.activeSockets.values()].reduce((total, sockets) => total + Math.floor(sockets.size / 2), 0);
+    const healthy = integrity === "ok" && tunnelListening;
+    return {
+      status: healthy ? "ok" : "unavailable",
+      service: "kai-access-gateway",
+      databaseIntegrity: integrity,
+      tunnelListening,
+      tunnelPort: this.tunnelAddress().port,
+      activeLeases,
+      authenticatedAgentSlots,
+      activeConnections,
+      checkedAt: this.options.now().toISOString(),
+    };
   }
 
   async start() {

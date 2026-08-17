@@ -208,9 +208,9 @@ test("schema15 runtime safely upgrades a schema14 bridge database with the addit
   const store = await createSqliteHostingV2Store(state.path);
   try {
     const snapshot = await store.readiness(NOW);
-    assert.equal(snapshot.schemaVersion, 15);
+    assert.equal(snapshot.schemaVersion, 16);
     const db = new DatabaseSync(state.path);
-    assert.equal(db.prepare("SELECT MAX(version) version FROM hosting_v2_schema_migrations").get().version, 15);
+    assert.equal(db.prepare("SELECT MAX(version) version FROM hosting_v2_schema_migrations").get().version, 16);
     assert.equal(db.prepare("SELECT COUNT(*) count FROM hosting_v2_device_retirements WHERE id='hdrt_bridge_preserved'").get().count, 1);
     const columns = db.prepare("PRAGMA table_info(hosting_v2_gateway_bindings)").all().map((row) => row.name);
     for (const field of ["contract_id", "device_id", "lease_id", "mode", "status", "buyer_endpoint", "expires_at", "updated_at"]) {
@@ -230,9 +230,9 @@ test("schema15 runtime accepts an already migrated additive Gateway binding data
   try {
     store = await createSqliteHostingV2Store(state.path);
     const snapshot = await store.readiness(NOW);
-    assert.equal(snapshot.schemaVersion, 15);
+    assert.equal(snapshot.schemaVersion, 16);
     const db = new DatabaseSync(state.path);
-    assert.equal(db.prepare("SELECT MAX(version) version FROM hosting_v2_schema_migrations").get().version, 15);
+    assert.equal(db.prepare("SELECT MAX(version) version FROM hosting_v2_schema_migrations").get().version, 16);
     assert.equal(db.prepare("SELECT COUNT(*) count FROM hosting_v2_device_retirements").get().count, 0);
     assert.equal(db.prepare("SELECT COUNT(*) count FROM hosting_v2_gateway_bindings").get().count, 0);
     const triggerNames = db.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'hosting_v2_gateway_binding_%'").all().map((row) => row.name);

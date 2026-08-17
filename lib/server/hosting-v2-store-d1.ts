@@ -12,10 +12,18 @@ function adapter(db: D1): HostingV2DatabaseAdapter {
     async first<T>(sql: string, values: readonly unknown[] = []) { return prepared(db, sql, values).first<T>(); },
     async all<T>(sql: string, values: readonly unknown[] = []) { return (await prepared(db, sql, values).all<T>()).results ?? []; },
     async batch(items: readonly HostingV2Sql[]) { return (await db.batch(items.map((item) => prepared(db, item.sql, item.values)))).map((result) => ({ changes: Number(result.meta?.changes ?? 0) })); },
-    async ensureSchema(statements, version, compatibleThrough = version) {
-      await db.batch(statements.map((sql) => db.prepare(sql)));
+    async ensureSchema(statements, version, compatibleThrough = version, migrations = []) {
+      await db.prepare(statements[0]).run();
       const row = await db.prepare("SELECT MAX(version) version FROM hosting_v2_schema_migrations").first<{ version: number | null }>();
       assertHostingV2SchemaCompatible(row?.version, compatibleThrough);
+      const previousVersion = row?.version == null ? null : Number(row.version);
+      await db.batch(statements.slice(1).map((sql) => db.prepare(sql)));
+      if (previousVersion !== null) {
+        for (const migration of migrations.filter((candidate) => candidate.version > previousVersion && candidate.version <= version).sort((left, right) => left.version - right.version)) {
+          await db.batch(migration.statements.map((sql) => db.prepare(sql)));
+          await db.prepare("INSERT OR IGNORE INTO hosting_v2_schema_migrations(version,applied_at) VALUES(?,?)").bind(migration.version, new Date().toISOString()).run();
+        }
+      }
       await db.prepare("INSERT OR IGNORE INTO hosting_v2_schema_migrations(version,applied_at) VALUES(?,?)").bind(version, new Date().toISOString()).run();
     },
   };

@@ -97,6 +97,43 @@ test("gateway control and agent tickets fail closed", async () => {
   } finally { await gateway.stop(); }
 });
 
+test("Gateway health reports durable readiness and fails when the tunnel listener is unavailable", async () => {
+  const gateway = new KaiAccessGateway({
+    dbPath: ":memory:", controlToken: TOKEN, ticketPepper: PEPPER,
+    publicHost: "127.0.0.1", controlHost: "127.0.0.1", controlPort: 0,
+    tunnelHost: "127.0.0.1", tunnelPort: 0, buyerHost: "127.0.0.1",
+    publicPortStart: 0, publicPortEnd: 0, allowPlaintextTunnel: true,
+  });
+  const addresses = await gateway.start();
+  const origin = `http://127.0.0.1:${addresses.control.port}`;
+  try {
+    const initial = await fetch(`${origin}/health`);
+    assert.equal(initial.status, 200);
+    const initialBody = await initial.json();
+    assert.match(initialBody.checkedAt, /^\d{4}-\d{2}-\d{2}T/u);
+    assert.deepEqual(initialBody, {
+      status: "ok",
+      service: "kai-access-gateway",
+      databaseIntegrity: "ok",
+      tunnelListening: true,
+      tunnelPort: addresses.tunnel.port,
+      activeLeases: 0,
+      authenticatedAgentSlots: 0,
+      activeConnections: 0,
+      checkedAt: initialBody.checkedAt,
+    });
+    await gateway.createLease({ leaseId: "hgw_health", deviceId: "had_health", contractId: "hctr_health", expiresAt: new Date(Date.now() + 300_000).toISOString() });
+    const active = await fetch(`${origin}/health`);
+    assert.equal((await active.json()).activeLeases, 1);
+    await new Promise((resolve) => gateway.tunnelServer.close(resolve));
+    const unavailable = await fetch(`${origin}/health`);
+    assert.equal(unavailable.status, 503);
+    const unavailableBody = await unavailable.json();
+    assert.equal(unavailableBody.status, "unavailable");
+    assert.equal(unavailableBody.tunnelListening, false);
+  } finally { await gateway.stop(); }
+});
+
 test("unauthorized buyer connections never consume an Agent slot and replayed lease creation is idempotent", async () => {
   const echo = createServer((socket) => socket.pipe(socket));
   const echoAddress = await listen(echo);

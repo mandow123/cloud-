@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { dirname } from "node:path";
-import { AGENT_VERSION, checkConnection, heartbeat, pairDevice, processOneCommand, resumeGatewayBindings, resumePairing } from "./client.mjs";
+import { AGENT_VERSION, checkConnection, heartbeat, pairDevice, processOneCommand, resumeGatewayBindings, resumePairing, stopGatewayBindings } from "./client.mjs";
 import { runDoctor } from "./doctor.mjs";
 import { readGatewayBundle, runGatewayPool } from "./gateway-client.mjs";
 import { AgentError } from "./protocol.mjs";
@@ -46,30 +46,43 @@ async function stdinJson() {
 
 async function runService() {
   let stopping = false;
-  process.on("SIGTERM", () => { stopping = true; });
-  process.on("SIGINT", () => { stopping = true; });
+  let wake = null;
+  const requestStop = () => { stopping = true; wake?.(); };
+  process.on("SIGTERM", requestStop);
+  process.on("SIGINT", requestStop);
   log("agent.started", { version: AGENT_VERSION });
-  const resumedGateways = await resumeGatewayBindings({ onError: (error, contractId) => log("gateway.resume_failed", { contractId, code: error instanceof AgentError ? error.code : "GATEWAY_RESUME_FAILED" }) });
-  if (resumedGateways.length) log("gateway.resumed", { count: resumedGateways.length });
-  while (!stopping) {
-    try {
-      const result = await heartbeat();
-      log("heartbeat.accepted", { deviceId: result.state.deviceId, sequence: result.state.lastSequence, capacityState: result.capacityState });
-    } catch (error) {
-      const code = error instanceof AgentError ? error.code : "HEARTBEAT_FAILED";
-      log("heartbeat.failed", { code });
+  try {
+    const resumedGateways = await resumeGatewayBindings({ onError: (error, contractId) => log("gateway.resume_failed", { contractId, code: error instanceof AgentError ? error.code : "GATEWAY_RESUME_FAILED" }) });
+    if (resumedGateways.length) log("gateway.resumed", { count: resumedGateways.length });
+    while (!stopping) {
+      try {
+        const result = await heartbeat();
+        log("heartbeat.accepted", { deviceId: result.state.deviceId, sequence: result.state.lastSequence, capacityState: result.capacityState });
+      } catch (error) {
+        const code = error instanceof AgentError ? error.code : "HEARTBEAT_FAILED";
+        log("heartbeat.failed", { code });
+      }
+      if (stopping) break;
+      try {
+        const processed = await processOneCommand();
+        if (processed) log("command.completed", { commandId: processed.command.id, type: processed.command.type, outcome: processed.result.outcome });
+      } catch (error) {
+        const code = error instanceof AgentError ? error.code : "COMMAND_FAILED";
+        log("command.failed", { code });
+      }
+      if (stopping) break;
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, 30_000);
+        wake = () => { clearTimeout(timer); resolve(); };
+      });
+      wake = null;
     }
-    try {
-      const processed = await processOneCommand();
-      if (processed) log("command.completed", { commandId: processed.command.id, type: processed.command.type, outcome: processed.result.outcome });
-    } catch (error) {
-      const code = error instanceof AgentError ? error.code : "COMMAND_FAILED";
-      log("command.failed", { code });
-    }
-    if (stopping) break;
-    await new Promise((resolve) => setTimeout(resolve, 30_000));
+  } finally {
+    process.off("SIGTERM", requestStop);
+    process.off("SIGINT", requestStop);
+    await stopGatewayBindings();
+    log("agent.stopped");
   }
-  log("agent.stopped");
 }
 
 async function main() {

@@ -1,5 +1,5 @@
 import { HOSTING_FEE_LEGACY_QUALIFICATION_MODEL, HOSTING_FEE_QUALIFICATION_MODEL, HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, hostingActualFeeBreakdown, hostingCardHourMicrosForSeconds, hostingCurrentCalendarMonth, hostingDefaultFeeTiers, hostingFeeBreakdown, hostingFeeRatesAreValid, hostingSelectFeeTier, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDeviceRetirement, type HostingDisputeCase, type HostingFeeSchedule, type HostingFeeTier, type HostingGoldenLoopAudit, type HostingOffer, type HostingPublicOffer, type HostingStopIncident, type HostingSupplierFeePreview, type HostingSupplierMonthlySettlement, type HostingSupplierProfile } from "../hosting-v2.ts";
-import { HOSTING_V2_SCHEMA_COMPATIBILITY_VERSION, HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
+import { HOSTING_V2_SCHEMA_COMPATIBILITY_VERSION, HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaMigrations, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { assertHostingAgentWindow, hostingAgentCanonicalJson, hostingAgentDigest, verifyHostingAgentSignature } from "./hosting-agent-crypto.ts";
 import { assertHostingV2ApprovedImage, HOSTING_V2_OCI_IMAGE_PATTERN, hostingV2ApprovedImages } from "./hosting-v2-image-policy.ts";
@@ -516,7 +516,7 @@ async function supplierMonthlySettlementReadModel(db: HostingV2DatabaseAdapter, 
 }
 
 export async function createHostingV2Store(db: HostingV2DatabaseAdapter): Promise<HostingV2Store> {
-  await db.ensureSchema(hostingV2SchemaStatements, HOSTING_V2_SCHEMA_VERSION, HOSTING_V2_SCHEMA_COMPATIBILITY_VERSION);
+  await db.ensureSchema(hostingV2SchemaStatements, HOSTING_V2_SCHEMA_VERSION, HOSTING_V2_SCHEMA_COMPATIBILITY_VERSION, hostingV2SchemaMigrations);
   const store = {} as HostingV2Store;
   Object.assign(store, createReadinessMethods(db), createProfileMethods(db), createDeviceMethods(db), createMarketMethods(db), createGatewayMethods(db));
   return store;

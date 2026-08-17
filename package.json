@@ -28,6 +28,7 @@
     "ops:hosting:local-agent": "node scripts/ops/run-local-host-agent-acceptance.mjs",
     "ops:hosting:access-acceptance": "node scripts/ops/verify-supplier-access-capability.mjs --simulation",
     "ops:hosting:verify": "node scripts/ops/verify-hosting-production-readiness.mjs",
+    "ops:gateway:validate": "node scripts/ops/validate-access-gateway-deployment.mjs",
     "gateway:start": "node access-gateway/src/cli.mjs"
   },
   "dependencies": {

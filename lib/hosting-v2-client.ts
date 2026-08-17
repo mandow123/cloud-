@@ -26,6 +26,32 @@ export type PublicHostingOffer = Readonly<{
   }>;
 }>;
 
+export type PublicHostingTransactionAvailability = Readonly<{
+  ready: boolean;
+  mode: "TRANSACT" | "BROWSE_ONLY";
+  failClosed: true;
+  reason: null | "HOSTING_FINANCIAL_RAIL_CLOSED" | "HOSTING_V2_NOT_READY";
+  message: string;
+}>;
+
+export function parseHostingTransactionAvailability(value: unknown): PublicHostingTransactionAvailability {
+  const closed: PublicHostingTransactionAvailability = {
+    ready: false,
+    mode: "BROWSE_ONLY",
+    failClosed: true,
+    reason: "HOSTING_V2_NOT_READY",
+    message: "算力交易关键能力尚未全部就绪，当前仅开放市场浏览。",
+  };
+  if (!value || typeof value !== "object") return closed;
+  const raw = value as Record<string, unknown>;
+  if (raw.failClosed !== true || typeof raw.message !== "string" || raw.message.length < 2 || raw.message.length > 300) return closed;
+  if (raw.ready === true && raw.mode === "TRANSACT" && raw.reason === null) return { ready: true, mode: "TRANSACT", failClosed: true, reason: null, message: raw.message };
+  if (raw.ready === false && raw.mode === "BROWSE_ONLY" && ["HOSTING_FINANCIAL_RAIL_CLOSED", "HOSTING_V2_NOT_READY"].includes(String(raw.reason))) {
+    return { ready: false, mode: "BROWSE_ONLY", failClosed: true, reason: raw.reason as PublicHostingTransactionAvailability["reason"], message: raw.message };
+  }
+  return closed;
+}
+
 export type HostingReadinessCheck = Readonly<{ ready: boolean; reason?: string }>;
 
 export type PublicHostingReadiness = Readonly<{

@@ -109,3 +109,12 @@ test("every public install surface requires the exact release version", async ()
     assert.match(source, new RegExp(`(?:AGENT_VERSION|HOSTING_V2_MIN_AGENT_VERSION|HOST_AGENT_VERSION) = "${packageJson.version.replaceAll(".", "\\.")}"`, "u"), `${name} must use Host Agent ${packageJson.version}`);
   }
 });
+
+test("Host Agent service has a bounded graceful shutdown that closes restored Gateway slots", async () => {
+  const cli = await readFile("host-agent/src/cli.mjs", "utf8");
+  const unit = await readFile("host-agent/kai-host-agent.service", "utf8");
+  assert.match(cli, /finally \{[\s\S]*await stopGatewayBindings\(\);[\s\S]*agent\.stopped/u);
+  assert.match(cli, /wake = \(\) => \{ clearTimeout\(timer\); resolve\(\); \}/u);
+  assert.match(unit, /^KillSignal=SIGTERM$/mu);
+  assert.match(unit, /^TimeoutStopSec=45s$/mu);
+});

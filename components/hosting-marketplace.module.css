@@ -299,6 +299,27 @@
   color: var(--text);
 }
 
+.tradeClosed {
+  display: grid;
+  gap: 7px;
+  margin-top: 18px;
+  border: 1px solid var(--border-strong);
+  border-left: 4px solid var(--accent);
+  padding: 16px 18px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.tradeClosed strong {
+  color: var(--ink);
+}
+
+.tradeClosed span,
+.tradeClosed small {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
 .error strong,
 .successBlock h3 {
   color: var(--ink);

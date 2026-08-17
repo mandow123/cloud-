@@ -11,6 +11,8 @@ Group=kai-host-agent
 ExecStart=/usr/local/bin/kai-host-agent run
 Restart=on-failure
 RestartSec=10s
+KillSignal=SIGTERM
+TimeoutStopSec=45s
 Environment=NODE_ENV=production
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 UMask=0077

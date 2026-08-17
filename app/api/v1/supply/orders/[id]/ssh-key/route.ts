@@ -13,6 +13,7 @@ import { authorizeMarketplaceRequest, persistMarketplaceSession } from "@/lib/se
 import { registerSshPublicKey, SshProvisionerError } from "@/lib/server/ssh-provisioner";
 import { getSupplyStore } from "@/lib/server/supply-store";
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
+import { requireLegacyGpuMutationSimulation } from "@/lib/server/legacy-gpu-mutation-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,7 @@ export async function POST(request: Request, contextValue: { params: Promise<{ i
   const context = beginApiRequest(request);
   let actor: MarketplaceActor | undefined;
   try {
+    requireLegacyGpuMutationSimulation();
     await requireExchangeRole(request, "buyer");
     const authorization = await authorizeMarketplaceRequest(request);
     actor = authorization.actor;

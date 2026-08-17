@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createIdempotencyKey, MarketplaceApiError, marketplaceErrorMessage, marketplaceGet, marketplacePost } from "@/lib/client/marketplace-client";
 import { hostingCardHourMicrosForSeconds } from "@/lib/hosting-v2";
-import type { BuyerHostingContract, PublicHostingOffer } from "@/lib/hosting-v2-client";
-import { formatCardHours, formatHostingTime } from "@/lib/hosting-v2-client";
+import type { BuyerHostingContract, PublicHostingOffer, PublicHostingTransactionAvailability } from "@/lib/hosting-v2-client";
+import { formatCardHours, formatHostingTime, parseHostingTransactionAvailability } from "@/lib/hosting-v2-client";
 import styles from "./hosting-marketplace.module.css";
 
 export function HostingOfferCheckout({ offerId }: { offerId: string }) {
@@ -17,6 +17,7 @@ export function HostingOfferCheckout({ offerId }: { offerId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loginRequired, setLoginRequired] = useState(false);
+  const [transaction, setTransaction] = useState<PublicHostingTransactionAvailability | null>(null);
   const requestKey = useRef<string | null>(null);
 
   useEffect(() => {
@@ -26,6 +27,7 @@ export function HostingOfferCheckout({ offerId }: { offerId: string }) {
         if (cancelled) return;
         const current = result.record;
         setOffer(current);
+        setTransaction(parseHostingTransactionAvailability((result as typeof result & { transaction?: unknown }).transaction));
         if (current) setMinutes(Math.ceil(current.minRentalSeconds / 60));
         else setError("该报价不存在、已被预留或已经停止发布。");
       })
@@ -45,7 +47,7 @@ export function HostingOfferCheckout({ offerId }: { offerId: string }) {
   }, [offer, reservedSeconds]);
 
   async function reserve() {
-    if (!offer || busy || reservedSeconds < offer.minRentalSeconds || reservedSeconds > offer.maxRentalSeconds) return;
+    if (!offer || !transaction?.ready || busy || reservedSeconds < offer.minRentalSeconds || reservedSeconds > offer.maxRentalSeconds) return;
     setBusy(true); setError(null); setLoginRequired(false);
     try {
       requestKey.current ??= createIdempotencyKey("hosting-reserve");
@@ -65,7 +67,8 @@ export function HostingOfferCheckout({ offerId }: { offerId: string }) {
   const maxMinutes = Math.floor(offer.maxRentalSeconds / 60);
   return (
     <div className={styles.market}>
-      <header className={styles.detailHeader}><div><Link href="/gpu">← GPU 市场</Link><p className={styles.eyebrow}>LOCK A VERIFIED OFFER</p><h1>确认资源与卡时锁定</h1></div><span className={styles.statusPill}>报价可成交</span></header>
+      <header className={styles.detailHeader}><div><Link href="/gpu">← GPU 市场</Link><p className={styles.eyebrow}>VERIFIED OFFER DETAIL</p><h1>{transaction?.ready ? "确认资源与卡时锁定" : "查看验真资源报价"}</h1></div><span className={styles.statusPill}>{transaction?.ready ? "报价可成交" : "仅浏览 · 交易关闭"}</span></header>
+      {!transaction?.ready ? <section className={styles.tradeClosed} role="status"><strong>购买入口尚未开放</strong><span>{transaction?.message ?? "算力交易关键能力尚未全部就绪，当前仅开放报价浏览。"}</span><small>本页不会提交合同、锁定卡时或产生订单。</small></section> : null}
       <div className={styles.checkoutGrid}>
         <section className={styles.detailPanel}>
           <h2>{offer.title}</h2>
@@ -78,10 +81,10 @@ export function HostingOfferCheckout({ offerId }: { offerId: string }) {
         </section>
         <aside className={styles.checkoutPanel}>
           <h2>租用配置</h2>
-          <label><span>租用分钟数</span><input min={minMinutes} max={maxMinutes} step={1} type="number" value={minutes} onChange={(event) => setMinutes(Number(event.target.value))} /></label>
+          <label><span>租用分钟数</span><input disabled={!transaction?.ready} min={minMinutes} max={maxMinutes} step={1} type="number" value={minutes} onChange={(event) => setMinutes(Number(event.target.value))} /></label>
           <small>允许 {minMinutes}–{maxMinutes} 分钟；实际按秒计量，最低计费 3 分钟。</small>
           <dl className={styles.quoteList}><div><dt>网站价</dt><dd>{formatCardHours(offer.pricing.cardHourMicrosPerGpuHour)} 卡时 / GPU 小时</dd></div><div><dt>预估锁定</dt><dd>{heldMicros === null ? "—" : `${formatCardHours(heldMicros)} KAI 标准卡时`}</dd></div><div><dt>结算规则</dt><dd>实际按秒计量 · 多退少补</dd></div></dl>
-          <button className={styles.primary} disabled={busy || heldMicros === null || !Number.isSafeInteger(minutes) || minutes < minMinutes || minutes > maxMinutes} onClick={() => void reserve()} type="button">{busy ? "正在锁定卡时…" : "锁定卡时并创建合同"}</button>
+          <button className={styles.primary} disabled={!transaction?.ready || busy || heldMicros === null || !Number.isSafeInteger(minutes) || minutes < minMinutes || minutes > maxMinutes} onClick={() => void reserve()} type="button">{!transaction?.ready ? "交易关闭 · 仅浏览" : busy ? "正在锁定卡时…" : "锁定卡时并创建合同"}</button>
           {error ? <p className={styles.inlineError} role="alert">{error}</p> : null}
           {loginRequired ? <Link className={styles.loginLink} href={`/login?returnTo=${encodeURIComponent(`/gpu/offers/${offer.id}`)}`}>登录或注册后继续</Link> : null}
           <small>公开自助充值和自动回购保持关闭；试运营卡时由平台双人审批发放。</small>

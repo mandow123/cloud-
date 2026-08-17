@@ -15,6 +15,7 @@ import { getSupplyStore } from "@/lib/server/supply-store";
 import { getCardHourStore } from "@/lib/server/card-hour-store";
 import { requireTradingAccountSession } from "@/lib/server/entity-ownership";
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
+import { requireLegacyGpuMutationSimulation } from "@/lib/server/legacy-gpu-mutation-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ export async function POST(request: Request, contextValue: { params: Promise<{ i
   const context = beginApiRequest(request);
   let actor: MarketplaceActor | undefined;
   try {
+    requireLegacyGpuMutationSimulation();
     const account = await requireTradingAccountSession(request);
     if (!account) throw new AccountAuthError("ACCOUNT_AUTH_REQUIRED", 401, "请先登录交易账户。 ");
     await requireExchangeRole(request, "buyer");

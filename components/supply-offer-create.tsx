@@ -28,6 +28,16 @@ function eligibleHostingDevice(device: SupplierHostingDashboard["devices"][numbe
     && Boolean(device.lastSeenAt && Date.parse(device.lastSeenAt) >= now - HOSTING_V2_AGENT_STALE_SECONDS * 1_000);
 }
 
+const GPU_MODEL_LABELS = {
+  RTX_4090: "RTX 4090",
+  H100_80GB: "H100 80GB",
+  H100_94GB: "H100 94GB",
+} as const;
+
+function suggestedOfferTitle(device: SupplierHostingDashboard["devices"][number]) {
+  return `${GPU_MODEL_LABELS[device.inventory.gpuModel]} 单卡独享`;
+}
+
 export function SupplyOfferCreate() {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<SupplierHostingDashboard | null>(null);
@@ -63,7 +73,7 @@ export function SupplyOfferCreate() {
       setPolicy(policyResult.policy);
       const eligible = dashboardResult.dashboard.devices.find((device) => eligibleHostingDevice(device, loadedAt));
       setEligibilityNow(loadedAt);
-      if (eligible) { setDeviceId(eligible.id); setTitle(`${eligible.inventory.gpuModel === "RTX_4090" ? "RTX 4090" : "H100 80GB"} 单卡独享`); }
+      if (eligible) { setDeviceId(eligible.id); setTitle(suggestedOfferTitle(eligible)); }
       setApprovedImage(policyResult.policy.approvedImages[0] ?? "");
     }).catch((cause) => { if (!cancelled) setError(marketplaceErrorMessage(cause, "挂牌策略或设备状态暂时无法读取。")); });
     return () => { cancelled = true; };
@@ -133,7 +143,12 @@ export function SupplyOfferCreate() {
       {dashboard ? <div className={styles.formLayout}>
         <form className={styles.formPanel} onSubmit={submit}>
           <div className={styles.fieldGrid}>
-            <label className={`${styles.field} ${styles.fieldFull}`}><span>验真设备</span><select onChange={(event) => setDeviceId(event.target.value)} required value={deviceId}><option value="">选择在线且验真有效的设备</option>{eligibleDevices.map((device) => <option key={device.id} value={device.id}>{device.displayName} · {device.inventory.gpuModel}</option>)}</select><small>设备规格来自签名清单，浏览器不能更改 GPU 型号。</small></label>
+            <label className={`${styles.field} ${styles.fieldFull}`}><span>验真设备</span><select onChange={(event) => {
+              const nextDeviceId = event.target.value;
+              setDeviceId(nextDeviceId);
+              const nextDevice = eligibleDevices.find((device) => device.id === nextDeviceId);
+              if (nextDevice) setTitle(suggestedOfferTitle(nextDevice));
+            }} required value={deviceId}><option value="">选择在线且验真有效的设备</option>{eligibleDevices.map((device) => <option key={device.id} value={device.id}>{device.displayName} · {GPU_MODEL_LABELS[device.inventory.gpuModel]}</option>)}</select><small>设备规格来自签名清单，浏览器不能更改 GPU 型号。</small></label>
             <label className={styles.field}><span>挂牌标题</span><input maxLength={120} minLength={3} onChange={(event) => setTitle(event.target.value)} required value={title} /></label>
             <label className={styles.field}><span>资源区域</span><input maxLength={80} minLength={2} onChange={(event) => setRegion(event.target.value)} placeholder="中国·北京" required value={region} /></label>
             <label className={styles.field}><span>KAI 标准卡时 / GPU 小时</span><input inputMode="decimal" onChange={(event) => setRate(event.target.value)} pattern="\d{1,9}(\.\d{1,2})?" required value={rate} /><small>卡时价格最多 2 位小数；挂牌、合同和订单不显示法币交易等值。</small></label>

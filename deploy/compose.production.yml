@@ -95,6 +95,9 @@ services:
       options:
         max-size: 10m
         max-file: "5"
+    networks:
+      - default
+      - gateway-control
 
   access-gateway:
     profiles: ["gateway"]
@@ -105,6 +108,7 @@ services:
     user: "1000:1000"
     read_only: true
     entrypoint: ["node", "access-gateway/src/cli.mjs"]
+    command: []
     environment:
       KAI_GATEWAY_DB_PATH: /app/gateway/kai-access-gateway.sqlite
       KAI_GATEWAY_CONTROL_TOKEN: "${KAI_ACCESS_GATEWAY_CONTROL_TOKEN:?KAI_ACCESS_GATEWAY_CONTROL_TOKEN is required}"
@@ -156,6 +160,8 @@ services:
       options:
         max-size: 10m
         max-file: "5"
+    networks:
+      - gateway-control
 
   market-update:
     profiles: ["ops"]
@@ -236,3 +242,7 @@ services:
       options:
         max-size: 10m
         max-file: "3"
+
+networks:
+  gateway-control:
+    internal: true

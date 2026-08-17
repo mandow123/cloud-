@@ -1,7 +1,9 @@
-export const HOSTING_V2_SCHEMA_VERSION = 15;
-// Schema 15 is deliberately additive so the schema-14 bridge remains a safe
-// rollback target while preserving all device-retirement guards.
-export const HOSTING_V2_SCHEMA_COMPATIBILITY_VERSION = 15;
+export const HOSTING_V2_SCHEMA_VERSION = 16;
+// Schema 16 widens the persisted offer model constraint without changing any
+// offer identity or contract snapshot data.
+export const HOSTING_V2_SCHEMA_COMPATIBILITY_VERSION = 16;
+
+export type HostingV2SchemaMigration = Readonly<{ version: number; statements: readonly string[] }>;
 
 export function assertHostingV2SchemaCompatible(version: number | null | undefined, compatibleThrough = HOSTING_V2_SCHEMA_COMPATIBILITY_VERSION) {
   if (version == null) return;
@@ -181,7 +183,7 @@ export const hostingV2SchemaStatements = [
     device_id TEXT NOT NULL,
     fee_schedule_id TEXT NOT NULL,
     title TEXT NOT NULL,
-    gpu_model TEXT NOT NULL CHECK (gpu_model IN ('RTX_4090','H100_80GB')),
+    gpu_model TEXT NOT NULL CHECK (gpu_model IN ('RTX_4090','H100_80GB','H100_94GB')),
     region TEXT NOT NULL,
     card_hour_micros_per_gpu_hour INTEGER NOT NULL CHECK (card_hour_micros_per_gpu_hour > 0),
     min_rental_seconds INTEGER NOT NULL CHECK (min_rental_seconds >= 180),
@@ -518,3 +520,42 @@ export const hostingV2SchemaStatements = [
   )`,
   `CREATE INDEX IF NOT EXISTS hosting_v2_income_org_idx ON hosting_v2_income_entries(organization_id, status, created_at DESC)`,
 ] as const;
+
+export const hostingV2SchemaMigrations: readonly HostingV2SchemaMigration[] = [{
+  version: 16,
+  statements: [
+    "DROP TABLE IF EXISTS hosting_v2_offers_h100_94gb",
+    `CREATE TABLE hosting_v2_offers_h100_94gb (
+      id TEXT PRIMARY KEY,
+      organization_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      fee_schedule_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      gpu_model TEXT NOT NULL CHECK (gpu_model IN ('RTX_4090','H100_80GB','H100_94GB')),
+      region TEXT NOT NULL,
+      card_hour_micros_per_gpu_hour INTEGER NOT NULL CHECK (card_hour_micros_per_gpu_hour > 0),
+      min_rental_seconds INTEGER NOT NULL CHECK (min_rental_seconds >= 180),
+      max_rental_seconds INTEGER NOT NULL CHECK (max_rental_seconds >= min_rental_seconds),
+      available_from TEXT NOT NULL,
+      available_until TEXT NOT NULL,
+      approved_image TEXT NOT NULL,
+      terms_version TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('DRAFT','PUBLISHED','RESERVED','PAUSED','UNLISTED','SUSPENDED')),
+      version INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`,
+    `INSERT INTO hosting_v2_offers_h100_94gb(
+      id,organization_id,device_id,fee_schedule_id,title,gpu_model,region,
+      card_hour_micros_per_gpu_hour,min_rental_seconds,max_rental_seconds,
+      available_from,available_until,approved_image,terms_version,status,version,created_at,updated_at
+    ) SELECT
+      id,organization_id,device_id,fee_schedule_id,title,gpu_model,region,
+      card_hour_micros_per_gpu_hour,min_rental_seconds,max_rental_seconds,
+      available_from,available_until,approved_image,terms_version,status,version,created_at,updated_at
+    FROM hosting_v2_offers`,
+    "DROP TABLE hosting_v2_offers",
+    "ALTER TABLE hosting_v2_offers_h100_94gb RENAME TO hosting_v2_offers",
+    "CREATE INDEX hosting_v2_offers_market_idx ON hosting_v2_offers(status, gpu_model, card_hour_micros_per_gpu_hour)",
+  ],
+}] as const;

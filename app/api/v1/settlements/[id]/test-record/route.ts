@@ -13,6 +13,7 @@ import { ExchangeDomainError } from "@/lib/server/exchange-errors";
 import { getExchangeStore } from "@/lib/server/exchange-store";
 import { authorizeMarketplaceRequest, persistMarketplaceSession } from "@/lib/server/marketplace-auth";
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
+import { requireLegacyGpuMutationSimulation } from "@/lib/server/legacy-gpu-mutation-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export async function POST(request: Request, contextValue: { params: Promise<{ i
   const context = beginApiRequest(request);
   let actor: MarketplaceActor | undefined;
   try {
+    requireLegacyGpuMutationSimulation();
     await requireExchangeAdmin(request, ["SETTLEMENT_OPERATE"]);
     const authorization = await authorizeMarketplaceRequest(request);
     actor = authorization.actor;

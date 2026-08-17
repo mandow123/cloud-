@@ -22,13 +22,14 @@ import type {
   HostingStopIncident,
 } from "../hosting-v2.ts";
 import type { AccountSessionContext } from "./account-auth.ts";
+import type { HostingV2SchemaMigration } from "../../db/hosting-v2-schema.ts";
 
 export type HostingV2Sql = Readonly<{ sql: string; values?: readonly unknown[] }>;
 export interface HostingV2DatabaseAdapter {
   first<T>(sql: string, values?: readonly unknown[]): Promise<T | null>;
   all<T>(sql: string, values?: readonly unknown[]): Promise<T[]>;
   batch(items: readonly HostingV2Sql[]): Promise<Array<{ changes: number }>>;
-  ensureSchema(statements: readonly string[], version: number, compatibleThrough?: number): Promise<void>;
+  ensureSchema(statements: readonly string[], version: number, compatibleThrough?: number, migrations?: readonly HostingV2SchemaMigration[]): Promise<void>;
 }
 
 export type HostingMutationContext = Readonly<{ actorId: string; idempotencyKey: string; payloadHash: string; now: string }>;

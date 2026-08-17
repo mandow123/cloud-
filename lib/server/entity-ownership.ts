@@ -1,6 +1,7 @@
 import type { AccountSessionContext } from "./account-auth.ts";
 import { AccountAuthError, accountAuthDigest, requireAccountSession } from "./account-auth.ts";
 import { getAdminOperationsStore, type AdminSourceSystem } from "./admin-store.ts";
+import { hostingServiceScopeForRequest, requireHostingServiceScope } from "./hosting-service-scopes.ts";
 
 export async function bindNewEntityToOrganization(input: {
   account: AccountSessionContext;
@@ -42,5 +43,7 @@ export async function requireTradingAccountSession(request: Request) {
       "后台 Root 与独立财务审批身份不能参与买卖、供应或收款；如需交易，请切换到不含后台权限的独立组织。 ",
     );
   }
+  const hostingScope = hostingServiceScopeForRequest(request);
+  if (hostingScope) await requireHostingServiceScope(account, hostingScope);
   return account;
 }

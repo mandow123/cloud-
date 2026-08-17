@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { GpuLabEngine, type GpuLabCheckoutInput, type GpuLabPublishInput } from "@/lib/server/gpu-lab-engine";
 import { assertAccountAuthSameOrigin } from "@/lib/server/account-auth";
 import { requireAdminPermission } from "@/lib/server/admin-auth";
+import { requireLegacyGpuMutationSimulation } from "@/lib/server/legacy-gpu-mutation-gate";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -60,6 +61,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     if (!enabled()) throw new Error("GPU_LAB_DISABLED");
+    requireLegacyGpuMutationSimulation("LAB");
     assertAccountAuthSameOrigin(request);
     await requireAdminPermission(request, ["FULFILLMENT_OPERATE"]);
     const body = await request.json() as Record<string, unknown>;
