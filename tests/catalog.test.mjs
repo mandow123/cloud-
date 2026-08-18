@@ -21,23 +21,41 @@ import {
 } from "../lib/catalog.mjs";
 
 test("catalog has the planned initialization inventory shape", () => {
-  assert.equal(resourceListings.length, 24);
+  assert.equal(resourceListings.length, 124);
   assert.equal(suppliers.length, 8);
-  assert.equal(regions.length, 6);
-  assert.equal(new Set(resourceListings.map((item) => item.id)).size, 24);
+  assert.equal(regions.length, 8);
+  assert.equal(new Set(resourceListings.map((item) => item.id)).size, 124);
   assert.equal(new Set(suppliers.map((item) => item.id)).size, 8);
 
   for (const category of RESOURCE_CATEGORIES) {
     assert.equal(
       resourceListings.filter((item) => item.category === category).length,
-      6,
-      `${category} should have six listings`,
+      category === "gpu" ? 106 : 6,
+      `${category} should include the curated catalog plus approved source directory records`,
     );
   }
   assert.doesNotMatch(
     JSON.stringify({ resourceListings, suppliers }),
     /"(?:demo|fictional)":true|supplierId":"demo-/iu,
   );
+});
+
+test("user-provided supplier directory is complete, attributed and explicitly unverified", () => {
+  const sourced = resourceListings.filter((item) => item.source?.kind === "USER_PROVIDED_WORKBOOK_REFERENCE");
+  assert.equal(sourced.length, 100);
+  assert.equal(new Set(sourced.map((item) => item.supplierName)).size, 100);
+  assert.equal(sourced.filter((item) => item.region === "全国").length, 65);
+  assert.equal(sourced.filter((item) => item.region === "海外").length, 35);
+  assert.equal(sourced.filter((item) => item.specs["B300 时租参考"] !== "报价单未提供").length, 4);
+  for (const listing of sourced) {
+    assert.equal(listing.source.documentTitle, "GPU算力租赁报价单_100家供应商.xlsx");
+    assert.equal(listing.source.observedAt, "2026-08-17");
+    assert.equal(listing.source.verificationStatus, "UNVERIFIED");
+    assert.equal(listing.source.supplierName, listing.supplierName);
+    assert.match(listing.source.notice, /不代表 KAI 已完成供应商入驻、库存验真或价格确认/u);
+    assert.match(listing.capacity, /未经 KAI 验真/u);
+    assert.match(listing.specs["H100 时租参考"], /^\d+\.\d{2} KAI 标准卡时 \/ GPU 小时$/u);
+  }
 });
 
 test("all ten business aliases map to valid category, deal and unit values", () => {

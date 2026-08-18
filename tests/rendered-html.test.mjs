@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
-import { resourceListings, serviceAliases } from "../lib/catalog.mjs";
+import { formatCardHourQuote, resourceListings, serviceAliases } from "../lib/catalog.mjs";
 
 let workerPromise;
 
@@ -193,9 +193,10 @@ test("resources expose the approved purchase action and a clearly priced purchas
   const checkoutHtml = await checkoutResponse.text();
   assert.match(checkoutHtml, /购买/);
   assert.match(checkoutHtml, /市场参考单价/);
-  assert.match(checkoutHtml, /人民币参考价/);
+  assert.doesNotMatch(checkoutHtml, /人民币参考价|¥/u);
+  assert.match(checkoutHtml, /卡时参考范围/);
   assert.match(checkoutHtml, /预计支付卡时/);
-  assert.match(checkoutHtml, new RegExp(String(listing.quote.median)));
+  assert.match(checkoutHtml, new RegExp(formatCardHourQuote(listing.quote.median, listing.pricingUnit).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(checkoutHtml, /平台确认库存与正式价格/);
 });
 

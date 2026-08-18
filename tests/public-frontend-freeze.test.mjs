@@ -20,6 +20,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "app/page.tsx": "3f68b8c3587d187148946c3317dbe6675b70649ebbd423e864f552a5410cb382",
   "app/methodology/page.tsx": "07f6c0547cc216903715e626548e1d2801a0cb829df12411f522e43cae7e5135",
   "app/request/page.tsx": "29b26ddcd028966bcd41b40650a27a02ade4b7942a421569adf58e47b26d5ab3",
+  "app/resources/[id]/page.tsx": "12d153a6251b7a18c104837e2da88949765517a10c33508d81a52694c71484cd",
   "app/checkout/[resourceId]/page.tsx": "de59110cb3345259e0e3fc22a58d0f2e07a5c53744579c1d5ba58286ca8aa220",
   "app/login/page.tsx": "026689be202766d6cbcfae7b18b9ea7c7b86bf6a514d848184c84025899437e3",
   "app/member/page.tsx": "a57ec7793221869f72c14e34910b4ea6dcb4d6fc65af9d292a6be176e93c7a1d",
@@ -28,7 +29,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "components/account-required.tsx": "eba4b05ead04f06c54a4863f0da123c8ded8d21e3071a5a3b609074f7d4cef04",
   "components/buyer-order-list.tsx": "fa15cbb70d18d19074633efc5d9fe60acd276ae4a45ab9df1e99dc3f6092d31a",
   "components/catalog-purchase.module.css": "d9e451203cbbfcb4b13a1c8f91267309cfe4be895e7ee225afb52cdfbc99d0a7",
-  "components/catalog-purchase.tsx": "e3188f907d18f2b920239b157362994f775eafdaef05138bd3706d6f8da13aeb",
+  "components/catalog-purchase.tsx": "f383dd4cbda6fe6d2af6dc43f860fb8ff8749acede3607097af4dcbd715660dd",
   "components/admin-login.tsx": "0ec4b26ed6e04d40422f14d6c6b471265ff65f49d78df61c99c6c20bcb7f0567",
   "components/admin-resource-page.tsx": "026788b741fd20de28fe0095722822edcc5ae20305e2335d2217a66b70b70c4d",
   "components/card-hour-account-panel.tsx": "bad8cbe4908decf2c6a08e1e4cb597d23e30e62947067ed233204a240019c206",
@@ -43,7 +44,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "components/personal-center-overview.tsx": "89f031d46092ad91738b88b32cb4fafb40792ef74c453b8e1caa0824357025e2",
   "components/personal-menu.module.css": "0813b8a2fa3d164922add93de17daf66adc0dd9c1859427097c36975708f90f2",
   "components/personal-menu.tsx": "31a492a0fdfa2e9f972f4ca5fd9d52ea094d96fdb5c8b7e1b53f29352b128fbe",
-  "components/resource-explorer.tsx": "3f982290f4ade59276e466970f8a199ca2cc390cff284e083b32f94243f5eac9",
+  "components/resource-explorer.tsx": "800983a7671f24c6dd724aa81ccd2bdfab91d28d13786376432fa20235560c9b",
   "components/resource-detail-actions.tsx": "e0b85851d955b1eed95756e520274f7462a29a5b4e4e46ab01d1d1204f50de53",
   "components/resource-purchase.module.css": "6569ca7f4f35c5cd6f731ee97dba34567d002d5bb370aa9b3058c33628bc6669",
   "components/site-footer.tsx": "323a6233a7e26f38935f2f854f5d3fa2b3b086512d07bccd87205bbd0bf178d5",
@@ -51,7 +52,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "components/supply-api-client.tsx": "60292f9e3e4a141f3a69be788b3d627f3969f67aeecb6153dc5fbc1f02a97825",
   "components/supply-listings-dashboard.tsx": "e5a24ab251eed94562f51f523590bba70a041b1551c11bdaa5234ae300a6f0d4",
   "components/supply-order-workspace.tsx": "771eca38029a65863d3012b5bc21babd084339307a9fad1c9a53e74c6b005375",
-  "lib/catalog.mjs": "b7f3affa356f33822378c8c8f806dee137565a0fd61b31d56e2eaed19387bfa8",
+  "lib/catalog.mjs": "78750db0a08e49d025f65bbc57953d89edf773ace7201b50b2391a17b90ff930",
   "public/og-home-v2.png": "9ab58389125a32bbe84a29a6f73f7f7f75cdb04c717c58c82233f7ec09d63d5d",
 });
 const APPROVED_HOSTING_V2_ROUTES = new Set([
@@ -205,7 +206,8 @@ test("the admin panel stays isolated, supplier pages stay gated and transaction 
 
   const purchase = readFileSync(join(ROOT, "components/catalog-purchase.tsx"), "utf8");
   assert.match(purchase, /确认目录资源与询价范围/u);
-  assert.match(purchase, /人民币参考价/u);
+  assert.doesNotMatch(purchase, /人民币参考价|¥/u);
+  assert.match(purchase, /卡时参考范围/u);
   assert.match(purchase, /预计支付卡时/u);
   assert.match(purchase, /平台确认库存与正式价格/u);
   assert.match(purchase, /登录后提交询价/u);

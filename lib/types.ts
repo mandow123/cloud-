@@ -27,6 +27,8 @@ export const REGION_VALUES = [
   "浙江",
   "四川",
   "内蒙古",
+  "全国",
+  "海外",
 ] as const;
 export type RegionName = (typeof REGION_VALUES)[number];
 
@@ -91,6 +93,18 @@ export interface CatalogQuote {
   disclaimer: string;
 }
 
+export interface ResourceSource {
+  kind: "USER_PROVIDED_WORKBOOK_REFERENCE";
+  supplierName: string;
+  documentTitle: string;
+  observedAt: string;
+  verificationStatus: "UNVERIFIED";
+  notice: string;
+  note: string;
+  originalCurrency: "CNY";
+  publicConversionRate: string;
+}
+
 export interface ResourceListing {
   id: string;
   title: string;
@@ -109,6 +123,7 @@ export interface ResourceListing {
   tags: readonly string[];
   featured: boolean;
   quote: CatalogQuote;
+  source?: ResourceSource;
 }
 
 export interface MarketPoint {
@@ -242,4 +257,3 @@ export type ResourceQueryInput =
   | URLSearchParams
   | string
   | Record<string, string | string[] | undefined>;
-

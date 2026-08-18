@@ -135,6 +135,7 @@ test("supplier demand data does not alter the approved member and resource prese
   for (const term of ["页面每 5 分钟", "报价有效至", "参考报价已过期", "算力资源为带独立更新时间的参考目录"]) {
     assert.ok(!explorer.includes(term));
   }
-  assert.match(explorer, /目录资源池/u);
-  assert.match(explorer, /平台初始化样本，供应商接入后核验更新/u);
+  assert.match(explorer, /供应参考目录/u);
+  assert.match(explorer, /报价单供应商来源/u);
+  assert.match(explorer, /未经 KAI 验真/u);
 });
