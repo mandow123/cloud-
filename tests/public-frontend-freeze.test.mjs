@@ -52,7 +52,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "components/supply-api-client.tsx": "60292f9e3e4a141f3a69be788b3d627f3969f67aeecb6153dc5fbc1f02a97825",
   "components/supply-listings-dashboard.tsx": "e5a24ab251eed94562f51f523590bba70a041b1551c11bdaa5234ae300a6f0d4",
   "components/supply-order-workspace.tsx": "771eca38029a65863d3012b5bc21babd084339307a9fad1c9a53e74c6b005375",
-  "lib/catalog.mjs": "78750db0a08e49d025f65bbc57953d89edf773ace7201b50b2391a17b90ff930",
+  "lib/catalog.mjs": "271d881edd8c5ea470d82366521b07d92f2f2c43834c0efcc121f06bda6cf261",
   "public/og-home-v2.png": "9ab58389125a32bbe84a29a6f73f7f7f75cdb04c717c58c82233f7ec09d63d5d",
 });
 const APPROVED_HOSTING_V2_ROUTES = new Set([
