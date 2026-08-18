@@ -8,6 +8,11 @@
  * inventory, admitted suppliers, or executable offers.
  */
 
+import {
+  SUPPLIER_LISTING_PRICE_MULTIPLIER,
+  applySupplierListingMarkup,
+} from "../lib/pricing-policy.mjs";
+
 const SOURCE_DOCUMENT = "GPU算力租赁报价单_100家供应商.xlsx";
 const SOURCE_OBSERVED_AT = "2026-08-17";
 const UPDATED_AT = "2026-08-17T04:00:00.000Z";
@@ -39,12 +44,12 @@ function compactSpecs(row) {
     "报价单型号": String(models),
     "机房所在地": String(location),
     "企业性质": String(nature),
-    "H100 时租参考": displayKai(h100Hour, "GPU 小时"),
-    "H100 包月参考": displayKai(h100Month, "卡月"),
-    "H200 时租参考": displayKai(h200Hour, "GPU 小时"),
-    "H200 包月参考": displayKai(h200Month, "卡月"),
-    "B300 时租参考": displayKai(b300Hour, "GPU 小时"),
-    "B300 包月参考": displayKai(b300Month, "卡月"),
+    "源报价 H100 时租参考": displayKai(h100Hour, "GPU 小时"),
+    "源报价 H100 包月参考": displayKai(h100Month, "卡月"),
+    "源报价 H200 时租参考": displayKai(h200Hour, "GPU 小时"),
+    "源报价 H200 包月参考": displayKai(h200Month, "卡月"),
+    "源报价 B300 时租参考": displayKai(b300Hour, "GPU 小时"),
+    "源报价 B300 包月参考": displayKai(b300Month, "卡月"),
     "合约记录": String(contract),
     "网络记录": String(network),
   });
@@ -74,13 +79,13 @@ function createReferenceListing(row) {
     quote: Object.freeze({
       currency: "CNY",
       pricingUnit: "卡时",
-      rangeMin: Number(h100Hour),
-      rangeMax: Number(h100Hour),
-      median: Number(h100Hour),
+      rangeMin: applySupplierListingMarkup(h100Hour),
+      rangeMax: applySupplierListingMarkup(h100Hour),
+      median: applySupplierListingMarkup(h100Hour),
       taxIncluded: false,
       energyIncluded: false,
       networkIncluded: false,
-      scopeNote: `报价单记录：${contract}；网络：${network}。源报价已按平台固定换算规则折算为 KAI 标准卡时；税费、带宽、存储、IP 与运维范围需重新确认。`,
+      scopeNote: `报价单记录：${contract}；网络：${network}。平台挂牌价为源时租参考的 150%，并按固定换算规则折算为 KAI 标准卡时；税费、带宽、存储、IP 与运维范围需重新确认。`,
       sampleCount: 1,
       validUntil: VALID_UNTIL,
       updatedAt: UPDATED_AT,
@@ -96,6 +101,7 @@ function createReferenceListing(row) {
       note: note ? String(note) : "",
       originalCurrency: "CNY",
       publicConversionRate: "KAI-SCH-1.002",
+      listingPriceMultiplier: SUPPLIER_LISTING_PRICE_MULTIPLIER,
     }),
   });
 }

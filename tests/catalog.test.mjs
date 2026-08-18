@@ -19,6 +19,7 @@ import {
   sortResources,
   suppliers,
 } from "../lib/catalog.mjs";
+import { SUPPLIER_LISTING_PRICE_MULTIPLIER } from "../lib/pricing-policy.mjs";
 
 test("catalog has the planned initialization inventory shape", () => {
   assert.equal(resourceListings.length, 124);
@@ -46,7 +47,7 @@ test("user-provided supplier directory is complete, attributed and explicitly un
   assert.equal(new Set(sourced.map((item) => item.supplierName)).size, 100);
   assert.equal(sourced.filter((item) => item.region === "全国").length, 65);
   assert.equal(sourced.filter((item) => item.region === "海外").length, 35);
-  assert.equal(sourced.filter((item) => item.specs["B300 时租参考"] !== "报价单未提供").length, 4);
+  assert.equal(sourced.filter((item) => item.specs["源报价 B300 时租参考"] !== "报价单未提供").length, 4);
   for (const listing of sourced) {
     assert.equal(listing.source.documentTitle, "GPU算力租赁报价单_100家供应商.xlsx");
     assert.equal(listing.source.observedAt, "2026-08-17");
@@ -54,8 +55,27 @@ test("user-provided supplier directory is complete, attributed and explicitly un
     assert.equal(listing.source.supplierName, listing.supplierName);
     assert.match(listing.source.notice, /不代表 KAI 已完成供应商入驻、库存验真或价格确认/u);
     assert.match(listing.capacity, /未经 KAI 验真/u);
-    assert.match(listing.specs["H100 时租参考"], /^\d+\.\d{2} KAI 标准卡时 \/ GPU 小时$/u);
+    assert.match(listing.specs["源报价 H100 时租参考"], /^\d+\.\d{2} KAI 标准卡时 \/ GPU 小时$/u);
+    assert.equal(listing.source.listingPriceMultiplier, SUPPLIER_LISTING_PRICE_MULTIPLIER);
+    assert.match(listing.quote.scopeNote, /150%/u);
   }
+});
+
+test("every supplier listing applies the unified 50 percent platform markup", () => {
+  assert.equal(SUPPLIER_LISTING_PRICE_MULTIPLIER, 1.5);
+  const curatedH100 = resourceListings.find((item) => item.id === "gpu-h100-sxm-8-bj");
+  const sourcedAlibaba = resourceListings.find((item) => item.id === "gpu-supplier-reference-001");
+
+  assert.deepEqual(
+    [curatedH100.quote.rangeMin, curatedH100.quote.median, curatedH100.quote.rangeMax],
+    [41.7, 46.8, 51.9],
+  );
+  assert.deepEqual(
+    [sourcedAlibaba.quote.rangeMin, sourcedAlibaba.quote.median, sourcedAlibaba.quote.rangeMax],
+    [25.2, 25.2, 25.2],
+  );
+  assert.equal(sourcedAlibaba.specs["源报价 H100 时租参考"], "16.77 KAI 标准卡时 / GPU 小时");
+  assert.ok(resourceListings.every((item) => item.quote.scopeNote.includes("上调 50%") || item.quote.scopeNote.includes("150%")));
 });
 
 test("all ten business aliases map to valid category, deal and unit values", () => {
