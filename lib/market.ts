@@ -46,6 +46,10 @@ export function formatPrice(
   return catalog.formatPrice(value, pricingUnit, options);
 }
 
+export function formatCardHourQuote(value: number, pricingUnit: PricingUnit): string {
+  return catalog.formatCardHourQuote(value, pricingUnit);
+}
+
 export function normalizeQuote(
   listingOrQuote: ResourceListing | CatalogQuote,
   context: NormalizeQuoteContext = {},
@@ -59,4 +63,3 @@ export function createInitializationRequestId(
 ): string {
   return catalog.createInitializationRequestId(kind, seed);
 }
-

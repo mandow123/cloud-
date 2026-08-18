@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "@/components/catalog-purchase.module.css";
 import { createIdempotencyKey, marketplaceErrorMessage, marketplacePost } from "@/lib/client/marketplace-client";
 import { formatCardHourValue } from "@/lib/card-hours";
-import { formatPrice } from "@/lib/market";
+import { formatCardHourQuote } from "@/lib/market";
 import type { MarketplaceRequestRecord } from "@/lib/marketplace";
 import type { ResourceListing } from "@/lib/types";
 
@@ -21,15 +21,6 @@ function tomorrow() {
   const date = new Date();
   date.setDate(date.getDate() + 1);
   return date.toISOString().slice(0, 10);
-}
-
-function money(value: number) {
-  return new Intl.NumberFormat("zh-CN", {
-    style: "currency",
-    currency: "CNY",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
 }
 
 export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
@@ -134,7 +125,8 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
             <p className={styles.eyebrow}>{resource.region} · {resource.deliveryForm}</p>
             <h2 id="purchase-resource-title">{resource.title}</h2>
             <p>{resource.summary}</p>
-            <p className={styles.meta}><span>{resource.supplierName}</span><span>{resource.capacity}</span><span>SLA {resource.sla}</span></p>
+            <p className={styles.meta}><span>{resource.source ? `供应商来源：${resource.source.supplierName}` : resource.supplierName}</span><span>{resource.capacity}</span><span>SLA {resource.sla}</span></p>
+            {resource.source ? <p className={styles.meta}><span>数据来源：《{resource.source.documentTitle}》</span><span>{resource.source.observedAt}</span><span>未经 KAI 验真</span></p> : null}
             <dl className={styles.specs}>
               {Object.entries(resource.specs).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
             </dl>
@@ -170,14 +162,13 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
         <aside className={styles.summary} aria-label="价格汇总">
           <p className={styles.eyebrow}>Price summary</p>
           <p className={styles.unitPrice}>
-            {formatPrice(resource.quote.median, resource.pricingUnit)}
+            {formatCardHourQuote(resource.quote.median, resource.pricingUnit)}
             <span>市场参考单价 · 正式价格以供应商确认为准</span>
           </p>
           <dl className={styles.priceRows}>
             <div><dt>资源数量</dt><dd>{quantityNumber > 0 ? quantityNumber : "—"}</dd></div>
             {usesDuration ? <div><dt>服务时长</dt><dd>{durationNumber > 0 ? `${durationNumber} 小时` : "—"}</dd></div> : null}
-            <div><dt>参考价格范围</dt><dd>¥{resource.quote.rangeMin.toLocaleString("zh-CN")}–¥{resource.quote.rangeMax.toLocaleString("zh-CN")}</dd></div>
-            <div><dt>人民币参考价</dt><dd>{estimatedAmount > 0 ? money(estimatedAmount) : "—"}</dd></div>
+            <div><dt>卡时参考范围</dt><dd>{formatCardHourQuote(resource.quote.rangeMin, resource.pricingUnit)}–{formatCardHourQuote(resource.quote.rangeMax, resource.pricingUnit)}</dd></div>
             <div><dt>预计支付卡时</dt><dd className={styles.estimated}>{estimatedCardHours > 0 ? `${formatCardHourValue(estimatedCardHours)} 卡时` : "—"}</dd></div>
           </dl>
           <p className={styles.scope}>{resource.quote.scopeNote}</p>

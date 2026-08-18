@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import purchaseStyles from "@/components/resource-purchase.module.css";
-import { filterAndSortResources, formatPrice, parseResourceQuery } from "@/lib/market";
+import { filterAndSortResources, formatCardHourQuote, parseResourceQuery } from "@/lib/market";
 import type { DealMode, ResourceCategory, ResourceListing } from "@/lib/types";
 
 const CATEGORY_LABELS: Record<ResourceCategory, string> = {
@@ -66,6 +66,11 @@ function publicCatalogText(value: string) {
     .replaceAll("\u6f14\u793a资源", "资源")
     .replaceAll("\u6f14\u793a值", "参考值")
     .replaceAll("\u6f14\u793a", "参考");
+}
+
+function supplierSource(resource: ResourceListing) {
+  if (!resource.source) return `${publicCatalogText(resource.supplierName)} · 供应商目录`;
+  return `供应商来源：${resource.source.supplierName} · 报价单 ${resource.source.observedAt} · 未经 KAI 验真`;
 }
 
 function FilterSelect({
@@ -132,6 +137,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
   const regions = useMemo(() => unique(listings.map((item) => item.region)), [listings]);
   const deliveries = useMemo(() => unique(listings.map((item) => item.deliveryForm)), [listings]);
   const units = useMemo(() => unique(listings.map((item) => item.pricingUnit)), [listings]);
+  const sourcedCount = useMemo(() => listings.filter((item) => Boolean(item.source)).length, [listings]);
   const compared = compareIds
     .map((id) => listings.find((item) => item.id === id))
     .filter((item): item is ResourceListing => Boolean(item));
@@ -186,18 +192,18 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
         <div className="shell py-14 sm:py-16">
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-end">
             <div>
-              <p className="kicker">Verified resource taxonomy</p>
+              <p className="kicker">Supplier reference directory</p>
               <h1 className="m-0 max-w-4xl text-4xl leading-[1.08] text-[var(--ink)] sm:text-5xl">算力资源市场</h1>
               <p className="section-lead">
-                按资源类型、交易方式、区域、交付形态和计价单位筛选，并在同一口径下比较候选方案。
+                按供应商来源、GPU 型号、区域和交付形态发现候选方案；报价统一换算为 KAI 标准卡时，提交后再核验库存与成交条件。
               </p>
             </div>
             <div className="border-t-2 border-[var(--accent)] bg-[var(--info-bg)] px-5 py-4">
               <div className="flex items-baseline justify-between gap-6">
-                <span className="text-xs font-semibold text-[var(--muted)]">目录资源池</span>
+                <span className="text-xs font-semibold text-[var(--muted)]">供应参考目录</span>
                 <strong className="text-3xl tabular-nums text-[var(--ink)]">{listings.length}</strong>
               </div>
-              <p className="mt-2 mb-0 text-xs leading-5 text-[var(--muted)]">平台初始化样本资源，供应商接入后核验容量与报价。</p>
+              <p className="mt-2 mb-0 text-xs leading-5 text-[var(--muted)]">含 {sourcedCount} 家报价单供应商来源；均需重新询价和验真。</p>
             </div>
           </div>
         </div>
@@ -205,8 +211,8 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
 
       <div className="shell py-10 sm:py-12">
         <aside className="market-notice mb-8" aria-label="报价声明">
-          <p className="m-0"><strong>市场参考报价：</strong>所有报价均标明计价单位、税费、电费、网络与更新时间。</p>
-          <p className="m-0 whitespace-nowrap font-semibold text-[var(--warning)]">具体以询价确认为准</p>
+          <p className="m-0"><strong>来源说明：</strong>报价单供应商会明确标注公司名称、数据日期与来源文件，不代表已经入驻或存在可成交库存。</p>
+          <p className="m-0 whitespace-nowrap font-semibold text-[var(--warning)]">未经 KAI 验真 · 具体以询价确认为准</p>
         </aside>
 
         <div className="grid items-start gap-8 lg:grid-cols-[260px_minmax(0,1fr)]">
@@ -344,7 +350,8 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                     </thead>
                     <tbody>
                       {[
-                        ["市场参考报价", (item: ResourceListing) => formatPrice(item.quote.median, item.pricingUnit)],
+                        ["市场参考报价", (item: ResourceListing) => formatCardHourQuote(item.quote.median, item.pricingUnit)],
+                        ["供应商来源", (item: ResourceListing) => supplierSource(item)],
                         ["区域 / 交付", (item: ResourceListing) => `${item.region} · ${item.deliveryForm}`],
                         ["容量样本", (item: ResourceListing) => publicCatalogText(item.capacity)],
                         ["目标服务等级", (item: ResourceListing) => publicCatalogText(item.sla)],
@@ -400,7 +407,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                             <Link className="inline-flex min-h-11 items-center font-semibold text-[var(--ink)] underline decoration-[var(--border-strong)] underline-offset-4 hover:text-[var(--accent)]" href={`/resources/${resource.id}`}>
                               {resource.title}
                             </Link>
-                            <span className="mt-1 block text-xs text-[var(--muted)]">{publicCatalogText(resource.supplierName)} · 供应商目录</span>
+                            <span className="mt-1 block text-xs text-[var(--muted)]">{supplierSource(resource)}</span>
                           </td>
                           <td className="min-w-40">
                             <span className="font-semibold text-[var(--ink)]">{CATEGORY_LABELS[resource.category]}</span>
@@ -409,7 +416,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                           <td className="min-w-40">{resource.region}<span className="mt-1 block text-xs text-[var(--muted)]">{resource.deliveryForm}</span></td>
                           <td className="min-w-44">{publicCatalogText(resource.capacity)}<span className="mt-1 block text-xs text-[var(--muted)]">SLA {publicCatalogText(resource.sla)}</span></td>
                           <td className="num min-w-44">
-                            <strong className="block whitespace-nowrap text-xl text-[var(--ink)]">{formatPrice(resource.quote.median, resource.pricingUnit)}</strong>
+                            <strong className="block whitespace-nowrap text-xl text-[var(--ink)]">{formatCardHourQuote(resource.quote.median, resource.pricingUnit)}</strong>
                             <span className="mt-1 block text-xs text-[var(--warning)]">市场参考报价 · 具体以询价确认为准</span>
                             <span className="mt-1 block text-xs text-[var(--muted)]">{pricingScope(resource)}</span>
                             <span className="mt-1 block text-xs text-[var(--muted)]">样本 {resource.quote.sampleCount} 条 · 更新 {resource.quote.updatedAt}</span>
@@ -426,7 +433,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                             <Link
                               className={purchaseStyles.purchaseLink}
                               href={`/checkout/${encodeURIComponent(resource.id)}`}
-                              aria-label={`基于 ${resource.title} 提交询价，目录参考价 ${formatPrice(resource.quote.median, resource.pricingUnit)}`}
+                              aria-label={`基于 ${resource.title} 提交询价，目录参考价 ${formatCardHourQuote(resource.quote.median, resource.pricingUnit)}`}
                             >
                               <span>提交询价</span><span aria-hidden="true">→</span>
                             </Link>
@@ -446,7 +453,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                           <h2 className="mt-2 mb-0 text-xl text-[var(--ink)]">
                             <Link className="inline-flex min-h-11 items-center hover:text-[var(--accent)]" href={`/resources/${resource.id}`}>{resource.title}</Link>
                           </h2>
-                          <p className="mt-1 mb-0 text-xs text-[var(--muted)]">{publicCatalogText(resource.supplierName)} · 供应商目录</p>
+                          <p className="mt-1 mb-0 text-xs text-[var(--muted)]">{supplierSource(resource)}</p>
                         </div>
                         <div className={purchaseStyles.mobileActions}>
                           <label className="inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center gap-2 text-xs font-semibold text-[var(--text)]">
@@ -456,7 +463,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                           <Link
                             className={purchaseStyles.purchaseLink}
                             href={`/checkout/${encodeURIComponent(resource.id)}`}
-                            aria-label={`基于 ${resource.title} 提交询价，目录参考价 ${formatPrice(resource.quote.median, resource.pricingUnit)}`}
+                            aria-label={`基于 ${resource.title} 提交询价，目录参考价 ${formatCardHourQuote(resource.quote.median, resource.pricingUnit)}`}
                           >
                             <span>提交询价</span><span aria-hidden="true">→</span>
                           </Link>
@@ -472,7 +479,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                       <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
                         <div>
                           <p className="m-0 text-xs text-[var(--muted)]">市场参考报价</p>
-                          <p className="mt-1 mb-0 text-2xl font-semibold tabular-nums text-[var(--ink)]">{formatPrice(resource.quote.median, resource.pricingUnit)}</p>
+                          <p className="mt-1 mb-0 text-2xl font-semibold tabular-nums text-[var(--ink)]">{formatCardHourQuote(resource.quote.median, resource.pricingUnit)}</p>
                           <p className="m-0 text-xs text-[var(--warning)]">具体以询价确认为准 · {pricingScope(resource)}</p>
                           <p className="mt-1 mb-0 text-xs text-[var(--muted)]">样本 {resource.quote.sampleCount} 条 · 更新 {resource.quote.updatedAt}</p>
                         </div>
@@ -487,7 +494,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
             {results.length > 0 && (
               <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--border)] pt-4 text-xs text-[var(--muted)]">
                 <span>共 {results.length} 项 · 报价更新以各资源详情页为准</span>
-                <span>平台初始化样本，供应商接入后核验更新</span>
+                <span>{sourcedCount} 家供应商报价来源已标注，库存和价格需重新确认</span>
               </div>
             )}
           </div>
