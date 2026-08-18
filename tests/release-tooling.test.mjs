@@ -84,8 +84,8 @@ test("local image verification binds RepoDigest, revision and OS/architecture", 
   assert.deepEqual(commands.map((args) => args[0]), ["version", "image"]);
 });
 
-test("registry and application Compose templates enforce immutable loopback operation", async () => {
-  const [registryCompose, registryConfig, productionCompose, Dockerfile, updater, backup, promotion] = await Promise.all([
+test("registry, application, and systemd templates enforce bounded immutable operation", async () => {
+  const [registryCompose, registryConfig, productionCompose, Dockerfile, updater, backup, promotion, updateUnit, backupUnit, updateTimer, backupTimer] = await Promise.all([
     readFile(resolve(projectRoot, "deploy/compose.registry.yml"), "utf8"),
     readFile(resolve(projectRoot, "deploy/registry/config.yml"), "utf8"),
     readFile(resolve(projectRoot, "deploy/compose.production.yml"), "utf8"),
@@ -93,13 +93,17 @@ test("registry and application Compose templates enforce immutable loopback oper
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update-run.sh"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup-run.sh"), "utf8"),
     readFile(resolve(projectRoot, "scripts/ops/promote-release.mjs"), "utf8"),
+    readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.service"), "utf8"),
+    readFile(resolve(projectRoot, "deploy/kai-cloud-backup.service"), "utf8"),
+    readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.timer"), "utf8"),
+    readFile(resolve(projectRoot, "deploy/kai-cloud-backup.timer"), "utf8"),
   ]);
   assert.match(registryCompose, /registry:3\.1\.1@sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33/);
   assert.match(registryCompose, /127\.0\.0\.1:\$\{KAI_REGISTRY_PORT:-5443\}:5000/);
   assert.match(registryCompose, /\/opt\/kai-cloud-registry/);
   assert.match(registryConfig, /certificate: \/certs\/registry\.crt/);
   assert.match(registryConfig, /path: \/auth\/htpasswd/);
-  assert.equal((productionCompose.match(/pull_policy: always/g) ?? []).length, 3);
+  assert.equal((productionCompose.match(/pull_policy: always/g) ?? []).length, 4);
   assert.match(Dockerfile, /ARG KAI_RELEASE_SHA/);
   assert.match(Dockerfile, /org\.opencontainers\.image\.revision="\$\{KAI_RELEASE_SHA\}"/);
   assert.match(Dockerfile, /\/app\/drizzle \.\/drizzle/);
@@ -107,7 +111,20 @@ test("registry and application Compose templates enforce immutable loopback oper
   const strictRunnerPattern = /\^\[a-z0-9\]\+\(\[\._-\]\[a-z0-9\]\+\)\*\(:\[0-9\]\+\)\?\(\/\[a-z0-9\]\+\(\[\._-\]\[a-z0-9\]\+\)\*\)\*@sha256:\[0-9a-f\]\{64\}\$/;
   assert.match(updater, strictRunnerPattern);
   assert.match(backup, strictRunnerPattern);
+  assert.match(backup, /KAI_BACKUP_SHARED_LOCK="\$KAI_STATE_ROOT\/backups\/\.kai-cloud-backup\.lock"/);
+  assert.match(backup, /\/usr\/bin\/flock --nonblock 9/);
   assert.match(promotion, /git", \["archive", "--format=tar", "HEAD"\]/);
   assert.match(promotion, /"image", "push", sourceTag/);
   assert.match(promotion, /selectRepositoryDigest/);
+  for (const unit of [updateUnit, backupUnit]) {
+    assert.match(unit, /Type=oneshot/);
+    assert.match(unit, /TimeoutStartSec=330/);
+    assert.match(unit, /\/usr\/bin\/timeout --signal=TERM --kill-after=15s 300s/);
+    assert.match(unit, /OnFailure=kai-cloud-ops-alert@%n\.service/);
+    assert.doesNotMatch(unit, /RuntimeMaxSec=/);
+  }
+  assert.match(updateTimer, /OnCalendar=\*-\*-\* 06:00:00 Asia\/Shanghai/);
+  assert.match(backupTimer, /OnCalendar=\*-\*-\* \*:15:00 Asia\/Shanghai/);
+  assert.match(updateTimer, /Persistent=true/);
+  assert.match(backupTimer, /Persistent=true/);
 });

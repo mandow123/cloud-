@@ -41,7 +41,7 @@ const ROLE_DESCRIPTIONS: Readonly<Record<AdminRole,string>> = {
   MARKET_OPERATOR:"Capacity lots, listings and matching",
   FULFILLMENT_OPERATOR:"Delivery, access, metering and cleanup",
   FINANCE_OPERATOR:"Payment lookup, reconciliation and refund requests",
-  FINANCE_APPROVER:"Independent refund approval",
+  FINANCE_APPROVER:"Independent financial approval",
   SUPPORT_READONLY:"Masked customer and order support view",
   AUDITOR:"Read-only audit and operational evidence",
 };

@@ -45,7 +45,7 @@ export function KaiStandardSignIn() {
     <div className={`${styles.state} ${styles.stateError}`} role="alert">
       <strong>登录后查看本组织的容量与结算</strong>
       <p>公开行情可以匿名查看；组织容量、订单占用和人民币结算只对已登录成员开放。</p>
-      <Link className={styles.primaryLink} href={`/login?returnTo=${encodeURIComponent(returnTo)}`}>邮箱验证码登录</Link>
+      <Link className={styles.primaryLink} href={`/login?returnTo=${encodeURIComponent(returnTo)}`}>统一账号登录</Link>
     </div>
   );
 }

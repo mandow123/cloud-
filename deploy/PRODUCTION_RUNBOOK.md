@@ -58,6 +58,7 @@ npm run ops:image:promote -- \
 /opt/kai-cloud-3051/db       # 仅应用与备份任务可写
 /opt/kai-cloud-3051/market   # 更新任务可写，应用和备份任务只读
 /opt/kai-cloud-3051/backups  # 仅备份任务可写
+/opt/kai-cloud-3051/gateway  # 仅 Access Gateway 写入独立 SQLite 状态
 ```
 
 创建目录时固定为容器运行 UID/GID 1000，权限 `0750`。不要把三个目录重新合并，也不要把宿主机根目录或 `/opt` 整体挂入容器。
@@ -84,7 +85,7 @@ npm run ops:image:promote -- \
 
 5. 在目标 Ubuntu 主机执行 `systemd-analyze verify`。首次安装和升级的任务顺序不同，必须按下方对应流程操作；恢复演练通过前不得启用 timer。
 
-`flock` 防止同一任务重入，`timeout` 将总运行时间限制为 300 秒。两个任务都使用只读根文件系统、非 root 用户、能力全移除、资源上限和日志轮转。行情更新容器完全看不到业务数据库目录。
+`flock` 防止同一任务重入，`timeout` 将总运行时间限制为 300 秒。备份脚本还必须在 `${KAI_STATE_ROOT}/backups/.kai-cloud-backup.lock` 取得共享锁；因此即使升级时残留了不同名称的旧 unit，也不能同时清理同一状态目录。迁移到带端口后缀的 unit 时，应先执行 `systemctl disable --now` 停用旧 backup timer，确认只有一个 timer 指向该 `KAI_STATE_ROOT`，再启用新 timer。两个任务都使用只读根文件系统、非 root 用户、能力全移除、资源上限和日志轮转。行情更新容器完全看不到业务数据库目录。
 
 ## 声明式应用启动
 
@@ -111,7 +112,58 @@ npm run ops:image:promote -- \
 
 门禁会拒绝：不足 32 UTF-8 字节或已知占位值的 `KAI_CURSOR_SECRET`、非规范 HTTPS 公网 origin、非完整 40/64 位小写十六进制发布 SHA、可变 tag 或占位 digest、关闭的 HTTPS/代理标志、非 `0`/`1` 的 HSTS 标志，以及不安全或不存在的状态目录。镜像自己的 entrypoint 会在 `server.js` 之前重复相同校验；任一条件不满足时容器以非零状态退出，`up --wait` 不会报告成功。不要把跳过 `ops:deploy:validate -- --current-env`、删除 entrypoint 或不等待健康检查的命令当作受支持的发布路径。
 
-应用端口只绑定 `127.0.0.1:3051`。因此生产配置固定启用 `KAI_TRUST_PROXY=1`，并同时设置 `KAI_REQUIRE_HTTPS_WRITES=1`；任何绕过反向代理的明文写请求都会被拒绝。容器内业务数据库和行情目录固定分别挂载到 `/app/db` 与 `/app/market`，不得合并或改成应用根目录。容器还具有 1 CPU、512MB 内存、256 PIDs、只读根文件系统、日志轮转和 `/api/live` 存活检查。`/api/ready` 用于发布和反向代理就绪判断，不应替代存活检查。
+应用端口只绑定 `127.0.0.1:3051`。私网 3054 必须运行 `kai-cloud-edge-http-3054.service`，由它覆盖而不是继承请求中的 `Host`、`Forwarded` 与 `X-Forwarded-*`，并向应用固定签发 `X-Forwarded-Proto: https`。因此生产配置固定启用 `KAI_TRUST_PROXY=1`，并同时设置 `KAI_REQUIRE_HTTPS_WRITES=1`；任何绕过反向代理的明文写请求都会被拒绝。不得在公网边界继续使用旧的 `kai-cloud-edge-3054.socket` 原始 TCP 转发，否则应用无法确认 TLS 已在上游终止，安全 Cookie 和会员写入会保持关闭。容器内业务数据库和行情目录固定分别挂载到 `/app/db` 与 `/app/market`，不得合并或改成应用根目录。容器还具有 1 CPU、512MB 内存、256 PIDs、只读根文件系统、日志轮转和 `/api/live` 存活检查。`/api/ready` 用于发布和反向代理就绪判断，不应替代存活检查。
+
+## Access Gateway 无设备预检与回退
+
+Access Gateway 的配置、TLS 启动、健康检查、端口隔离和空租约重启可以在没有 H100/4090 的机器上完成。仓库内先运行不依赖 Docker、也不读取真实密钥的确定性渲染检查：
+
+```bash
+npm run ops:gateway:validate
+```
+
+目标 Ubuntu 仍须额外执行 Docker 自身的配置检查。先创建 `/opt/kai-cloud-3051/gateway`（`0750 1000:1000`），并把证书和私钥安装为 `/etc/kai-cloud/gateway-tls/tls.crt`、`tls.key`（目录 `0750 root:1000`，文件不高于 `0440 root:1000`）。证书 SAN 必须包含 `KAI_GATEWAY_PUBLIC_HOST`；`KAI_ACCESS_GATEWAY_CONTROL_TOKEN` 与 `KAI_GATEWAY_TICKET_PEPPER` 必须分别由受信随机源产生至少 32 字节且不得相同。
+
+Gateway 必须显式启用 profile；只运行 `up app` 不会启动它：
+
+```bash
+docker compose --profile gateway \
+  --env-file /etc/kai-cloud/kai-cloud-release.env \
+  --env-file /etc/kai-cloud/kai-cloud-app.env \
+  -f deploy/compose.production.yml config --quiet
+docker compose --profile gateway \
+  --env-file /etc/kai-cloud/kai-cloud-release.env \
+  --env-file /etc/kai-cloud/kai-cloud-app.env \
+  -f deploy/compose.production.yml up -d --wait access-gateway app
+docker compose --profile gateway \
+  --env-file /etc/kai-cloud/kai-cloud-release.env \
+  --env-file /etc/kai-cloud/kai-cloud-app.env \
+  -f deploy/compose.production.yml exec -T access-gateway \
+  wget -q -O - http://127.0.0.1:7080/health
+```
+
+健康响应必须为 `status=ok`、`databaseIntegrity=ok`、`tunnelListening=true`。控制端口 `7080` 只存在于内部 `gateway-control` 网络，禁止映射到宿主机或安全组；公网只开放 TLS 隧道端口（默认 `7443/TCP`）与买方端口范围（默认 `22000-22999/TCP`），应用 `3051` 仍只绑定回环。没有真实 GPU 时，Compose 渲染、TLS 启动、空租约健康检查、容器重启和 Gateway SQLite 持久性就是本阶段完整验收；不得伪造在线 Agent 或成交记录。
+
+回退时先设置 `KAI_HOSTING_V2=0` 并重建应用以停止新成交，Gateway 保持运行直到 `/health` 的 `activeLeases`、`authenticatedAgentSlots`、`activeConnections` 全部为 `0`。之后停止 Gateway，备份已关闭的 `/opt/kai-cloud-3051/gateway/kai-access-gateway.sqlite`，再用发布记录中的 previous digest 和同一 `--profile gateway` 重建。只回退应用时保留当前 Gateway；任何计数非零、数据库完整性失败或隧道未监听时都禁止停止或切换 Gateway。
+
+切换前必须用同一份 Nginx 配置在临时回环端口演练 `/api/live` 与 `/api/session`，确认会话响应设置 `__Host-` 安全 Cookie。正式切换时停止并禁用 `kai-cloud-edge-3054.socket`，再启用 `kai-cloud-edge-http-3054.service`。若公网健康检查、登录回调或会员写入任一失败，立即停止新服务并重新启用原 socket；应用容器、数据库与审计数据无需回滚。
+
+Hosting V2 试运营固定使用管理员双人审批发放卡时，`KAI_ALIPAY_ENABLED` 必须保持 `0`；即使主机残留完整商户凭据也不能创建付款单。申请账号使用唯一 Root，审批账号使用独立的 `KAI_ADMIN_APPROVER_USERNAME` 与 `KAI_ADMIN_APPROVER_PASSWORD_HASH`，两个用户名、密码和实际操作者都必须不同；审批账号只获得卡时审批和只读审计权限。先设置 `KAI_HOSTING_V2_SETUP=1`、`KAI_HOSTING_V2=0` 进入预上线配置模式，仅完成供应商审核、费率、Agent 配对、设备验真和挂牌草稿；公开市场、租用、开通、启动、扣减和结算仍由服务端拒绝。设备退场接口使用独立开关 `KAI_HOSTING_DEVICE_RETIREMENT`，默认必须保持 `0`，完成 Root 应急撤权和受控退场演练后才可在 Setup 或交易模式下开启。配置模式只允许 Agent 执行验真，以及既有实例的停止与清理收尾，不能领取新的开通或启动命令。启用 `KAI_HOSTING_V2=1` 前必须配置 KAI Identity、不可变交付镜像和供应协议版本，并在隔离入口完成供应商审批、有效费率、在线 Host Agent、三分钟计量及清理演练。`/api/ready` 会逐项报告供应身份、Agent、费率、卡时账本、镜像、协议、计量、清理和支付宝关闭状态，任一关键项失败时新版本不得接入流量。
+
+每次状态推进都必须运行生产 Hosting 闸门，并把单行 JSON 结果存入发布记录。四个阶段不可跳级：
+
+```bash
+KAI_HOSTING_VERIFY_STAGE=SETUP npm run ops:hosting:verify
+KAI_HOSTING_VERIFY_STAGE=AGENT_CONNECTED npm run ops:hosting:verify
+KAI_HOSTING_VERIFY_STAGE=INTERNAL_TRIAL npm run ops:hosting:verify
+KAI_HOSTING_VERIFY_STAGE=MARKET npm run ops:hosting:verify
+```
+
+`SETUP` 要求公开交易关闭且尚无在线 Agent；`AGENT_CONNECTED` 要求至少一台真实 Agent 在线，但仍保持公开交易关闭；`INTERNAL_TRIAL` 要求所有交易依赖就绪且没有 DRAINING、清理失败或清理中的订单；`MARKET` 在此基础上还要求公开 `/api/v2/offers` 至少存在一条经过验真、可成交的 GPU 报价。发布时应同时设置 `KAI_HOSTING_VERIFY_RELEASE=<完整提交 SHA>`，防止校验到旧容器。脚本只读取公开 JSON，不接收 Cookie、密钥或管理员凭据。
+
+KAI Identity 上游修复后，在 Cloud 源码目录运行 `npm run ops:identity:validate`。只有工具返回 `OIDC_DISCOVERY_READY` 才能继续登录验收；308、任意重定向、非 JSON、Issuer 或端点不一致都视为未修复。该检查不携带 Client ID、Cookie、授权码或其他凭据。随后用全新隐私窗口发起一次完整登录，确认授权码被 Cloud 回调兑换并建立普通用户会话。
+
+重构后的 Identity 固定使用 `https://auth.kai.com/api/auth` 和机密 Web Client。管理员只在服务器创建 `0600 root:root` 的 JSON 文件，字段严格为 `clientId`、`clientSecret`；密钥不得进入聊天、工单、Shell 参数或日志。运行 `npm run ops:identity:configure -- --env-file /etc/kai-cloud/kai-cloud-app.env --credential-file /root/kai-cloud-identity-client.json --confirm CONFIGURE_KAI_IDENTITY_WEB_CLIENT` 会先校验新 Discovery，再原子替换四项 OIDC 配置并生成带 UTC 时间的 `.pre-identity-*` 回退文件。之后仍必须依次运行生产环境门禁、`ops:identity:validate`、Compose 健康启动和真实浏览器回调验收。任一步失败都恢复该回退文件并重新创建应用容器，不能用 SPA Client、伪造 Secret 或关闭服务端换码认证绕过。
 
 生产调度使用 systemd；Compose 中 `market-update` 和 `backup` 的 `ops` profile 只用于受控人工验证。
 

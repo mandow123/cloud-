@@ -10,12 +10,14 @@ import { ExchangeDomainError } from "@/lib/server/exchange-errors";
 import { stopSshService, SshProvisionerError } from "@/lib/server/ssh-provisioner";
 import { requireSupplyAdmin } from "@/lib/server/supply-api";
 import { getSupplyStore } from "@/lib/server/supply-store";
+import { requireLegacyGpuMutationSimulation } from "@/lib/server/legacy-gpu-mutation-gate";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request, contextValue: { params: Promise<{ id: string }> }) {
   const context = beginApiRequest(request);
   try {
+    requireLegacyGpuMutationSimulation();
     await requireSupplyAdmin(request, ["FULFILLMENT_OPERATE"]);
     assertSecureWrite(request);
     const { id } = await contextValue.params;

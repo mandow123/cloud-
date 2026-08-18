@@ -78,4 +78,4 @@ export type AdminAuthContext = Readonly<{
   sessionId: string;
 }>;
 
-export type AdminAuthMethod = "LARK_OAUTH" | "EMAIL_OTP" | "LOCAL_TEST";
+export type AdminAuthMethod = "LARK_OAUTH" | "EMAIL_OTP" | "LOCAL_TEST" | "KAI_IDENTITY_OIDC" | "ADMIN_PASSWORD";

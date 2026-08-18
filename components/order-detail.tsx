@@ -15,6 +15,7 @@ import {
   marketplaceErrorMessage,
 } from "@/lib/client/marketplace-client";
 import { capacityDisplay, formatCapacityHours, formatRateUnits } from "@/lib/capacity-display";
+import { cnyCentsToCardHourMicros, formatCardHourDisplayMicros } from "@/lib/card-hours";
 
 const stages = ["待确认", "待支付", "开通中", "待验收", "已完成"] as const;
 
@@ -42,8 +43,13 @@ function mayHaveReachedServer(error: unknown) {
   return error instanceof MarketplaceApiError && ["NETWORK_ERROR", "REQUEST_TIMEOUT"].includes(error.code);
 }
 
-function money(cents: number) {
-  return `¥${(cents / 100).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function cardHoursFromLegacyCents(cents: number) {
+  try {
+    if (cents === 0) return "0.00 KAI 标准卡时";
+    return `${formatCardHourDisplayMicros(cnyCentsToCardHourMicros(cents))} KAI 标准卡时`;
+  } catch {
+    return "—";
+  }
 }
 
 function availabilityLabel(ppm: number | null) {
@@ -274,7 +280,7 @@ export function OrderDetail({ orderId, role }: { orderId: string; role: "buyer" 
           <p className="section-lead">{formatRateUnits(order.productCode, order.rateUnits)} · {formatCapacityHours(order.productCode, order.capacityBaseUnits)}</p>
         </div>
         <div className="text-right">
-          <strong className="font-mono text-3xl text-[var(--ink)]">¥{(order.totalAmountCents / 100).toFixed(2)}</strong>
+          <strong className="font-mono text-3xl text-[var(--ink)]">{cardHoursFromLegacyCents(order.totalAmountCents)}</strong>
           {testPayment ? <p className="m-0 text-sm">未产生真实扣款</p> : null}
         </div>
       </div>
@@ -284,7 +290,7 @@ export function OrderDetail({ orderId, role }: { orderId: string; role: "buyer" 
           <p className="kicker">下一步</p>
           <h2 className="m-0 text-2xl">完成测试支付，进入开通</h2>
           <p>系统会再次核对订单金额与容量预留。本操作不会调用真实资金渠道。</p>
-          <button type="button" className="button button-primary min-h-12 w-full justify-center sm:w-auto" disabled={busy} onClick={() => void runTestPayment()}>{busy ? "正在确认测试支付事件…" : `完成 ${money(order.totalAmountCents)} 测试支付`}</button>
+          <button type="button" className="button button-primary min-h-12 w-full justify-center sm:w-auto" disabled={busy} onClick={() => void runTestPayment()}>{busy ? "正在确认测试支付事件…" : `完成 ${cardHoursFromLegacyCents(order.totalAmountCents)} 测试支付`}</button>
         </div>
       ) : packageActions.has("CLAIM_DELIVERY_PACKAGE") ? (
         <div className="mt-7 border-t-4 border-[var(--accent)] bg-[var(--accent-soft)] p-6">
@@ -550,19 +556,19 @@ export function OrderDetail({ orderId, role }: { orderId: string; role: "buyer" 
           <dl className="grid gap-px bg-[var(--border)] sm:grid-cols-2 lg:grid-cols-4">
             <div className="bg-[var(--info-bg)] p-5">
               <dt>合同金额</dt>
-              <dd className="m-0 font-mono text-xl font-semibold text-[var(--ink)]">{money(settlement.grossAmountCents)}</dd>
+              <dd className="m-0 font-mono text-xl font-semibold text-[var(--ink)]">{cardHoursFromLegacyCents(settlement.grossAmountCents)}</dd>
             </div>
             <div className="bg-[var(--info-bg)] p-5">
               <dt>基础冲减</dt>
-              <dd className="m-0 font-mono text-xl font-semibold text-[var(--ink)]">-{money(settlement.baseCreditCents)}</dd>
+              <dd className="m-0 font-mono text-xl font-semibold text-[var(--ink)]">-{cardHoursFromLegacyCents(settlement.baseCreditCents)}</dd>
             </div>
             <div className="bg-[var(--info-bg)] p-5">
               <dt>争议冲减</dt>
-              <dd className="m-0 font-mono text-xl font-semibold text-[var(--ink)]">-{money(settlement.disputeCreditCents)}</dd>
+              <dd className="m-0 font-mono text-xl font-semibold text-[var(--ink)]">-{cardHoursFromLegacyCents(settlement.disputeCreditCents)}</dd>
             </div>
             <div className="bg-[var(--accent-soft)] p-5">
               <dt>供应商净应付</dt>
-              <dd className="m-0 font-mono text-2xl font-semibold text-[var(--ink)]">{money(settlement.netSupplierPayableCents)}</dd>
+              <dd className="m-0 font-mono text-2xl font-semibold text-[var(--ink)]">{cardHoursFromLegacyCents(settlement.netSupplierPayableCents)}</dd>
             </div>
           </dl>
           <div className="border-l-4 border-[var(--warning)] bg-[var(--warning-bg)] p-5">

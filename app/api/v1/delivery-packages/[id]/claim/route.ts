@@ -12,6 +12,7 @@ import { requireExchangeRole } from "@/lib/server/exchange-auth";
 import { getExchangeStore } from "@/lib/server/exchange-store";
 import { authorizeMarketplaceRequest, persistMarketplaceSession } from "@/lib/server/marketplace-auth";
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
+import { requireLegacyGpuMutationSimulation } from "@/lib/server/legacy-gpu-mutation-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,8 @@ export async function POST(request: Request, contextValue: { params: Promise<{ i
   const context = beginApiRequest(request);
   let actor: MarketplaceActor | undefined;
   try {
-    requireExchangeRole(request, "buyer");
+    requireLegacyGpuMutationSimulation();
+    await requireExchangeRole(request, "buyer");
     const authorization = await authorizeMarketplaceRequest(request);
     actor = authorization.actor;
     prepareWrite(request, actor);

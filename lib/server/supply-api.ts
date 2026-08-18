@@ -1,18 +1,21 @@
 import { ExchangeDomainError } from "./exchange-errors.ts";
 import type { AdminPermission } from "../admin-auth-types.ts";
 import { requireAdminPermission } from "./admin-auth.ts";
+import { requireTradingAccountSession } from "./entity-ownership.ts";
 
 export type SupplyWorkspaceRole = "buyer" | "supplier" | "ops";
+type TradingWorkspaceRole = Exclude<SupplyWorkspaceRole, "ops">;
 
-export function supplyWorkspaceRole(request: Request, allowed: readonly SupplyWorkspaceRole[]) {
-  const role = request.headers.get("x-kai-workspace-role") as SupplyWorkspaceRole | null;
-  if (!role || !allowed.includes(role)) {
-    throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, `该操作仅允许 ${allowed.join("/")} 工作台执行。`);
+export async function supplyWorkspaceRole(request: Request, allowed: readonly SupplyWorkspaceRole[]): Promise<TradingWorkspaceRole> {
+  const view = request.headers.get("x-kai-workspace-role") as SupplyWorkspaceRole | null;
+  await requireTradingAccountSession(request);
+  const availableViews = allowed.filter((role): role is TradingWorkspaceRole => role !== "ops");
+  if (availableViews.length === 0) {
+    throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "该操作必须通过运营工作台执行。" );
   }
-  if (role === "ops") {
-    throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "运营权限必须通过服务端管理员会话校验。" );
-  }
-  return role;
+  // A valid value selects the view only. Missing, forged, or stale values do
+  // not grant or revoke authority; the endpoint and entity ownership do that.
+  return view && view !== "ops" && availableViews.includes(view) ? view : availableViews[0];
 }
 
 /** KAI-owned presets are internal operational writes, never supplier self-service. */
@@ -37,5 +40,5 @@ export async function authorizeSupplyWorkspaceRole(
     await requireAdminPermission(request, opsPermissions);
     return "ops" as const;
   }
-  return supplyWorkspaceRole(request, allowed.filter((role) => role !== "ops"));
+  return await supplyWorkspaceRole(request, allowed.filter((role) => role !== "ops"));
 }

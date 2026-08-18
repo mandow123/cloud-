@@ -14,6 +14,7 @@ import {
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
 import { AccountAuthError } from "@/lib/server/account-auth";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "@/lib/server/exchange-errors";
+import { isAllowedLocalQaOrigin } from "@/lib/server/local-qa-origin";
 
 const BODY_LIMIT = 32 * 1024;
 
@@ -88,7 +89,7 @@ export function assertSameOrigin(request: Request) {
   }
   const configuredOrigin = typeof process !== "undefined" ? process.env.KAI_PUBLIC_ORIGIN : undefined;
   const expectedOrigin = configuredOrigin ? new URL(configuredOrigin).origin : new URL(request.url).origin;
-  if (originUrl.origin !== expectedOrigin) {
+  if (originUrl.origin !== expectedOrigin && !isAllowedLocalQaOrigin(request, originUrl)) {
     throw new MarketplaceCsrfError("ORIGIN_REJECTED");
   }
 }

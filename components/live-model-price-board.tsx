@@ -59,8 +59,8 @@ export function LiveModelPriceBoard({
           ? "正在检查最新行情"
           : checkState === "error"
             ? "最新检查失败，继续使用上一份安全快照"
-            : source === "persistent" ? "已读取 06:00 持久化行情快照" : "正在使用随版本发布的安全快照"}
-        <span className="text-[var(--muted)]"> · {snapshot.quotes.length} 个模型价格档位 · 发布于 {new Date(snapshot.publishedAt).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false })}</span>
+            : source === "persistent" ? "已读取 06:00 持久化目录价快照" : "正在使用随版本发布的目录价快照"}
+        <span className="text-[var(--muted)]"> · {snapshot.quotes.length} 个模型公开目录价格档位 · 不是已核验资源或可购买库存 · 发布于 {new Date(snapshot.publishedAt).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false })}</span>
         {checkState === "error" ? <button className="ml-3 font-semibold text-[var(--accent)] underline" onClick={() => {
           setCheckState("checking");
           setRefreshKey((value) => value + 1);

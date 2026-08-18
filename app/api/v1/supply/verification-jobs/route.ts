@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const context = beginApiRequest(request); let actor: MarketplaceActor | undefined;
   try {
-    supplyWorkspaceRole(request, ["supplier"]); const authorization = await authorizeMarketplaceRequest(request); actor = authorization.actor;
+    await supplyWorkspaceRole(request, ["supplier"]); const authorization = await authorizeMarketplaceRequest(request); actor = authorization.actor;
     prepareWrite(request, actor); await persistMarketplaceSession(authorization); const input = parseCreateVerificationJob(await readJsonBody(request));
     const result = await (await getSupplyStore()).createVerificationJob({ actorId: actor.id, idempotencyKey: requireIdempotencyKey(request), payloadHash: await mutationHash(input) }, input.memberId);
     const headers = new Headers(actor.responseHeaders); headers.set("idempotency-replayed", String(result.replayed));

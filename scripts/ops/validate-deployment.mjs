@@ -40,6 +40,10 @@ function productionEnvironment(overrides = {}) {
     KAI_TRUST_PROXY: "1",
     KAI_REQUIRE_HTTPS_WRITES: "1",
     KAI_ENABLE_HSTS: "0",
+    KAI_ALIPAY_ENABLED: "0",
+    KAI_HOSTING_V2: "0",
+    KAI_HOSTING_V2_SETUP: "0",
+    KAI_HOSTING_DEVICE_RETIREMENT: "0",
     KAI_DB_DIR: "/app/db",
     KAI_MARKET_DATA_DIR: "/app/market",
     ...overrides,
@@ -81,6 +85,13 @@ function validateNegativeEnvironmentCases() {
   assertEnvironmentRejected({ KAI_TRUST_PROXY: "0" }, "KAI_TRUST_PROXY");
   assertEnvironmentRejected({ KAI_REQUIRE_HTTPS_WRITES: "0" }, "KAI_REQUIRE_HTTPS_WRITES");
   assertEnvironmentRejected({ KAI_ENABLE_HSTS: "2" }, "KAI_ENABLE_HSTS");
+  assertEnvironmentRejected({ KAI_ALIPAY_ENABLED: "1" }, "KAI_ALIPAY_ENABLED");
+  assertEnvironmentRejected({ KAI_HOSTING_V2: "2" }, "KAI_HOSTING_V2");
+  assertEnvironmentRejected({ KAI_HOSTING_V2_SETUP: "2" }, "KAI_HOSTING_V2_SETUP");
+  assertEnvironmentRejected({ KAI_HOSTING_DEVICE_RETIREMENT: "2" }, "KAI_HOSTING_DEVICE_RETIREMENT");
+  assertEnvironmentRejected({ KAI_HOSTING_DEVICE_RETIREMENT: "1" }, "requires Hosting V2 setup");
+  assertEnvironmentRejected({ KAI_HOSTING_V2_SETUP: "1" }, "KAI_HOSTING_APPROVED_IMAGES");
+  assertEnvironmentRejected({ KAI_HOSTING_V2: "1" }, "KAI_HOSTING_APPROVED_IMAGES");
   assertEnvironmentRejected({ KAI_DB_DIR: "/" }, "KAI_DB_DIR");
   assertStateRootRejected("/");
   assertStateRootRejected("relative/kai-cloud-3051");
@@ -107,6 +118,21 @@ async function main() {
       KAI_TRUST_PROXY: process.env.KAI_TRUST_PROXY,
       KAI_REQUIRE_HTTPS_WRITES: process.env.KAI_REQUIRE_HTTPS_WRITES,
       KAI_ENABLE_HSTS: process.env.KAI_ENABLE_HSTS ?? "0",
+      KAI_ALIPAY_ENABLED: process.env.KAI_ALIPAY_ENABLED ?? "0",
+      KAI_HOSTING_V2: process.env.KAI_HOSTING_V2 ?? "0",
+      KAI_HOSTING_V2_SETUP: process.env.KAI_HOSTING_V2_SETUP ?? "0",
+      KAI_HOSTING_DEVICE_RETIREMENT: process.env.KAI_HOSTING_DEVICE_RETIREMENT ?? "0",
+      KAI_HOSTING_APPROVED_IMAGES: process.env.KAI_HOSTING_APPROVED_IMAGES,
+      KAI_HOSTING_TERMS_VERSION: process.env.KAI_HOSTING_TERMS_VERSION,
+      KAI_ACCOUNT_OIDC_CLIENT_ID: process.env.KAI_ACCOUNT_OIDC_CLIENT_ID,
+      KAI_ACCOUNT_OIDC_CLIENT_SECRET: process.env.KAI_ACCOUNT_OIDC_CLIENT_SECRET,
+      KAI_ACCOUNT_OIDC_ISSUER: process.env.KAI_ACCOUNT_OIDC_ISSUER,
+      KAI_ACCOUNT_OIDC_SCOPES: process.env.KAI_ACCOUNT_OIDC_SCOPES,
+      KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: process.env.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET,
+      KAI_ADMIN_USERNAME: process.env.KAI_ADMIN_USERNAME,
+      KAI_ADMIN_PASSWORD_HASH: process.env.KAI_ADMIN_PASSWORD_HASH,
+      KAI_ADMIN_APPROVER_USERNAME: process.env.KAI_ADMIN_APPROVER_USERNAME,
+      KAI_ADMIN_APPROVER_PASSWORD_HASH: process.env.KAI_ADMIN_APPROVER_PASSWORD_HASH,
     })
     : productionEnvironment();
   validateProductionEnvironment(candidateEnvironment);
@@ -142,12 +168,34 @@ async function main() {
       KAI_TRUST_PROXY: candidateEnvironment.KAI_TRUST_PROXY,
       KAI_REQUIRE_HTTPS_WRITES: candidateEnvironment.KAI_REQUIRE_HTTPS_WRITES,
       KAI_ENABLE_HSTS: candidateEnvironment.KAI_ENABLE_HSTS,
+      KAI_ALIPAY_ENABLED: candidateEnvironment.KAI_ALIPAY_ENABLED,
+      KAI_HOSTING_V2: candidateEnvironment.KAI_HOSTING_V2,
+      KAI_HOSTING_V2_SETUP: candidateEnvironment.KAI_HOSTING_V2_SETUP,
+      KAI_HOSTING_DEVICE_RETIREMENT: candidateEnvironment.KAI_HOSTING_DEVICE_RETIREMENT,
+      KAI_HOSTING_APPROVED_IMAGES: candidateEnvironment.KAI_HOSTING_APPROVED_IMAGES,
+      KAI_HOSTING_TERMS_VERSION: candidateEnvironment.KAI_HOSTING_TERMS_VERSION,
+      KAI_ACCOUNT_OIDC_CLIENT_ID: candidateEnvironment.KAI_ACCOUNT_OIDC_CLIENT_ID,
+      KAI_ACCOUNT_OIDC_CLIENT_SECRET: candidateEnvironment.KAI_ACCOUNT_OIDC_CLIENT_SECRET,
+      KAI_ACCOUNT_OIDC_ISSUER: candidateEnvironment.KAI_ACCOUNT_OIDC_ISSUER,
+      KAI_ACCOUNT_OIDC_SCOPES: candidateEnvironment.KAI_ACCOUNT_OIDC_SCOPES,
+      KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: candidateEnvironment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET,
+      KAI_ADMIN_USERNAME: candidateEnvironment.KAI_ADMIN_USERNAME,
+      KAI_ADMIN_PASSWORD_HASH: candidateEnvironment.KAI_ADMIN_PASSWORD_HASH,
+      KAI_ADMIN_APPROVER_USERNAME: candidateEnvironment.KAI_ADMIN_APPROVER_USERNAME,
+      KAI_ADMIN_APPROVER_PASSWORD_HASH: candidateEnvironment.KAI_ADMIN_APPROVER_PASSWORD_HASH,
+      KAI_ADMIN_APPROVER_DISPLAY_NAME: process.env.KAI_ADMIN_APPROVER_DISPLAY_NAME,
       KAI_APP_PORT: validateCurrentEnvironment ? (process.env.KAI_APP_PORT ?? "3051") : "3051",
       KAI_STATE_ROOT: stateRoot,
     },
   });
   if (compose.status !== 0) {
-    throw new Error(`docker compose config failed: ${redact(compose.stderr || compose.stdout, [candidateEnvironment.KAI_CURSOR_SECRET])}`);
+    throw new Error(`docker compose config failed: ${redact(compose.stderr || compose.stdout, [
+      candidateEnvironment.KAI_CURSOR_SECRET,
+      candidateEnvironment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET,
+      candidateEnvironment.KAI_ACCOUNT_OIDC_CLIENT_SECRET,
+      candidateEnvironment.KAI_ADMIN_PASSWORD_HASH,
+      candidateEnvironment.KAI_ADMIN_APPROVER_PASSWORD_HASH,
+    ])}`);
   }
   const configuration = JSON.parse(compose.stdout);
   const { app, backup, "market-update": marketUpdate } = configuration.services;
@@ -173,10 +221,12 @@ async function main() {
   assert(app.environment.KAI_PUBLIC_ORIGIN === candidateEnvironment.KAI_PUBLIC_ORIGIN, "app must receive the canonical HTTPS origin");
   assert(app.environment.KAI_CURSOR_SECRET === candidateEnvironment.KAI_CURSOR_SECRET, "app must receive the validated cursor secret");
   assert(app.environment.KAI_ADMIN_LOCAL_AUTH === "0", "production Compose must keep LOCAL administrator login disabled");
+  assert(app.environment.KAI_ALIPAY_ENABLED === "0", "production Compose must keep Alipay disabled during the trial rollout");
   for (const name of [
-    "KAI_LARK_APP_ID", "KAI_LARK_APP_SECRET", "KAI_LARK_REDIRECT_URI", "KAI_LARK_ALLOWED_TENANT_KEYS",
-    "KAI_EMAIL_OTP_WEBHOOK_URL", "KAI_EMAIL_OTP_WEBHOOK_TOKEN", "KAI_EMAIL_OTP_HMAC_SECRET",
-    "KAI_ADMIN_BOOTSTRAP_CODE",
+    "KAI_ADMIN_USERNAME", "KAI_ADMIN_PASSWORD_HASH", "KAI_ADMIN_DISPLAY_NAME",
+    "KAI_ADMIN_APPROVER_USERNAME", "KAI_ADMIN_APPROVER_PASSWORD_HASH", "KAI_ADMIN_APPROVER_DISPLAY_NAME",
+    "KAI_ACCOUNT_OIDC_CLIENT_ID", "KAI_ACCOUNT_OIDC_CLIENT_SECRET", "KAI_ACCOUNT_OIDC_ISSUER", "KAI_ACCOUNT_OIDC_SCOPES", "KAI_ACCOUNT_OIDC_TRANSACTION_SECRET",
+    "KAI_HOSTING_V2", "KAI_HOSTING_V2_SETUP", "KAI_HOSTING_DEVICE_RETIREMENT", "KAI_HOSTING_APPROVED_IMAGES", "KAI_HOSTING_TERMS_VERSION", "KAI_ALIPAY_ENABLED",
     "KAI_ALIPAY_APP_ID", "KAI_ALIPAY_PRIVATE_KEY", "KAI_ALIPAY_PUBLIC_KEY", "KAI_ALIPAY_SELLER_ID",
     "KAI_SSH_PROVISIONER_URL", "KAI_SSH_PROVISIONER_TOKEN",
   ]) {
@@ -222,6 +272,8 @@ async function main() {
     assert(unit.includes("OnFailure=kai-cloud-ops-alert@%n.service"), `${name} must have a failure hook`);
     assert(unit.includes("/usr/bin/flock --nonblock"), `${name} must prevent concurrent runs`);
     assert(unit.includes("/usr/bin/timeout --signal=TERM --kill-after=15s 300s"), `${name} must have a 300 second runtime boundary`);
+    assert(unit.includes("TimeoutStartSec=330"), `${name} must give the bounded command time to terminate cleanly`);
+    assert(!unit.includes("RuntimeMaxSec="), `${name} must not use the ineffective RuntimeMaxSec setting with Type=oneshot`);
     assert(unit.includes("EnvironmentFile=/etc/kai-cloud/kai-cloud-release.env"), `${name} must read the immutable release environment`);
   }
   assert(updateTimer.includes("06:00:00 Asia/Shanghai") && updateTimer.includes("Persistent=true"), "market update timer must persist the 06:00 China schedule");
@@ -233,6 +285,7 @@ async function main() {
   assert(updateRunner.includes("/opt/kai-cloud-3051") && updateRunner.includes("kai-cloud-market-update-3051"), "market update runner must default to the isolated 3051 release paths");
   assert(backupRunner.includes("/opt/kai-cloud-3051") && backupRunner.includes("kai-cloud-backup-3051"), "backup runner must default to the isolated 3051 release paths");
   assert(backupRunner.includes("KAI_BACKUP_RETENTION_MAX_AGE_DAYS"), "backup runner must pass the hard maximum backup age");
+  assert(backupRunner.includes('KAI_BACKUP_SHARED_LOCK="$KAI_STATE_ROOT/backups/.kai-cloud-backup.lock"') && backupRunner.includes("/usr/bin/flock --nonblock 9"), "backup runner must serialize every unit that targets the same state root");
   assert(appEnvironmentExample.includes("KAI_APP_PORT=3051") && appEnvironmentExample.includes("KAI_ENABLE_HSTS=0"), "application environment example must use port 3051 and keep HSTS off by default");
   assert(releaseEnvironmentExample.includes("KAI_STATE_ROOT=/opt/kai-cloud-3051") && releaseEnvironmentExample.includes("KAI_BACKUP_RETENTION_MAX_AGE_DAYS=30") && releaseEnvironmentExample.includes("KAI_IMAGE_PLATFORM=linux/amd64"), "release environment example must use the 3051 state root, validated platform, and 30-day backup limit");
   assert(registryCompose.includes("registry:3.1.1@sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33"), "private registry must use the verified Docker Official Image digest");
@@ -254,6 +307,7 @@ async function main() {
   assert(runbook.includes("API 守卫会为 API 请求输出结构化日志") && runbook.includes("不记录表单正文、Cookie、会话令牌、CSRF 值或供应商原始报价"), "runbook must accurately describe structured API logs and their redaction boundary");
   assert(runbook.includes("首次安装时数据库尚不存在") && runbook.indexOf("请求 `/api/ready`") < runbook.indexOf("第一次备份"), "runbook must initialize the database before the first-install backup");
   assert(runbook.includes("升级已有实例时顺序相反") && runbook.includes("替换应用前创建并异地同步一致性备份"), "runbook must back up existing production data before an upgrade");
+  assert(runbook.includes(".kai-cloud-backup.lock") && runbook.includes("只有一个 timer 指向该 `KAI_STATE_ROOT`"), "runbook must prevent differently named timers from racing on one backup root");
   assert(runbook.includes("127.0.0.1:3051") && runbook.includes("KAI_ENABLE_HSTS=1"), "runbook must document the new loopback port and the gated HSTS enablement step");
   assert(runbook.includes("任何恢复包都不得超过 30 天") && runbook.includes("异地存储也必须配置不超过 30 天的生命周期"), "runbook must align local and off-host backups with the 30-day data boundary");
 

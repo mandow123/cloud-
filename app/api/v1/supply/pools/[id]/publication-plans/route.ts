@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request, contextValue: { params: Promise<{ id: string }> }) {
   const context = beginApiRequest(request); let actor: MarketplaceActor | undefined;
   try {
-    supplyWorkspaceRole(request, ["supplier"]); const authorization = await authorizeMarketplaceRequest(request); actor = authorization.actor;
+    await supplyWorkspaceRole(request, ["supplier"]); const authorization = await authorizeMarketplaceRequest(request); actor = authorization.actor;
     const { id } = await contextValue.params; const input = parsePublicationPlan(await readJsonBody(request)); const store = await getSupplyStore();
     if (input.action === "preview") return jsonResponse({ record: await store.previewPromotion(actor.id, id, input.windowIds) }, 200, actor.responseHeaders, context);
     prepareWrite(request, actor); await persistMarketplaceSession(authorization);

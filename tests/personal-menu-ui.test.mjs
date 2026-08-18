@@ -24,11 +24,28 @@ test("the personal menu reads only the member summary and local comparison contr
   }
 });
 
+test("the member workspace exposes GPU contracts through the same personal order entry", async () => {
+  const [page, summary, contracts] = await Promise.all([
+    source("app/member/page.tsx"),
+    source("components/personal-center-overview.tsx"),
+    source("components/hosting-contract-list.tsx"),
+  ]);
+  assert.match(page, /id="orders"[\s\S]*<HostingContractList embedded \/>[\s\S]*<BuyerOrderList \/>/u);
+  assert.match(page, /isHostingV2Enabled\(\)/u);
+  assert.match(summary, /gpuContracts/u);
+  assert.match(summary, /gpuPendingAcceptance/u);
+  assert.match(contracts, /marketplaceGet<\{ records: BuyerHostingContract\[\] \}>\("\/api\/v2\/contracts"\)/u);
+  assert.match(contracts, /if \(embedded\)/u);
+  assert.match(contracts, /进入工作台/u);
+});
+
 test("signed-in and signed-out personal actions stay buyer-facing", async () => {
   const menu = await source("components/personal-menu.tsx");
-  for (const label of ["登录后查看个人业务", "购买申请", "待支付", "我的订单", "待验收", "我的对比", "基础信息"]) {
+  for (const label of ["登录后查看个人业务", "我的资产", "卡时明细", "购买记录", "我的对比", "收益", "卡时充值", "邀请奖励"]) {
     assert.match(menu, new RegExp(label, "u"));
   }
+  assert.match(menu, /href:\s*"\/member\/assets"/u);
+  assert.doesNotMatch(menu, /我的回购|#buybacks/u);
   assert.doesNotMatch(menu, /href="\/admin|运营管理|管理员/u);
   assert.doesNotMatch(menu, /<button[^>]*>[\s\S]{0,80}(?:立即支付|去支付|付款)/u);
   assert.match(menu, /支付服务尚未就绪/u);

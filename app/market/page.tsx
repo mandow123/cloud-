@@ -7,7 +7,7 @@ import { readMarketSnapshot } from "@/lib/server/market-snapshot";
 
 export const metadata: Metadata = {
   title: "算力与模型行情中心",
-  description: "查看每日更新的主流模型 Token 分项目录价，以及 GPU、整机柜容量和云厂商资源的市场价格分位与趋势。",
+  description: "查看每日更新的主流模型 Token 公开目录价，以及基础设施历史样本的价格分位与趋势；不代表可购买库存。",
 };
 
 export default async function MarketPage() {

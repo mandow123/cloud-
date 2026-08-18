@@ -3,10 +3,18 @@ import { ADMIN_OPERATIONS_SCHEMA_VERSION } from "../../db/admin-operations-schem
 import { EXCHANGE_SCHEMA_VERSION } from "../../db/exchange-schema.ts";
 import { SUPPLY_SCHEMA_VERSION } from "../../db/supply-schema.ts";
 import { STANDARDIZATION_SCHEMA_VERSION } from "../../db/standardization-schema.ts";
+import { CARD_HOUR_SCHEMA_VERSION } from "../../db/card-hour-schema.ts";
+import { HOSTING_V2_SCHEMA_VERSION } from "../../db/hosting-v2-schema.ts";
 import { alipayReadiness } from "./alipay-live.ts";
 import { getAccountAuthStore } from "./account-auth-store.ts";
 import { getAdminOperationsStore } from "./admin-store.ts";
 import { getExchangeStore } from "./exchange-store.ts";
+import { getCardHourStore } from "./card-hour-store.ts";
+import { evaluateHostingV2Capability } from "./hosting-v2-readiness.ts";
+import { isHostingFinancialRailReady } from "./hosting-v2-transaction-gate.ts";
+import { isHostingV2ConfigurationEnabled } from "./hosting-v2-feature.ts";
+import { getHostingV2Store } from "./hosting-v2-store.ts";
+import { isKaiIdentityConfigured, probeKaiIdentityDiscovery } from "./kai-identity-oidc.ts";
 import { readMarketSnapshot } from "./market-snapshot.ts";
 import { assertMarketplaceSecurityConfiguration, createMarketplaceReadinessStore } from "./marketplace-store.ts";
 import { sshProvisionerReadiness } from "./ssh-provisioner.ts";
@@ -14,7 +22,7 @@ import { getSupplyStore } from "./supply-store.ts";
 import { getStandardizationStore } from "./standardization-store.ts";
 
 type Environment = Record<string,string|undefined>;
-type CheckResult = Readonly<{ready:boolean;schemaVersion:number;probe:"read-only";errorCode?:string}>;
+type CheckResult = Readonly<{ready:boolean;schemaVersion:number;probe:"read-only"|"deferred";errorCode?:string}>;
 
 function errorCode(error:unknown){
   const message=error instanceof Error?error.message:"UNKNOWN";
@@ -41,24 +49,41 @@ function requiredCapability(keys:readonly string[],environment:Environment,extra
 }
 
 function capabilityReadiness(environment:Environment){
-  const production=environment.NODE_ENV==="production";
-  const larkExtra:string[]=[];
-  const redirect=environment.KAI_LARK_REDIRECT_URI?.trim();
-  if(redirect){try{const parsed=new URL(redirect);if(production&&parsed.protocol!=="https:")larkExtra.push("KAI_LARK_REDIRECT_URI(HTTPS)");}catch{larkExtra.push("KAI_LARK_REDIRECT_URI(valid URL)");}}
-  if(production&&!environment.KAI_LARK_ALLOWED_TENANT_KEYS?.trim())larkExtra.push("KAI_LARK_ALLOWED_TENANT_KEYS");
-  const emailExtra:string[]=[];
-  if((environment.KAI_EMAIL_OTP_HMAC_SECRET?.trim().length??0)>0&&(environment.KAI_EMAIL_OTP_HMAC_SECRET?.trim().length??0)<32)emailExtra.push("KAI_EMAIL_OTP_HMAC_SECRET(>=32 chars)");
+  const identityExtra:string[]=[];
+  if((environment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET?.trim().length??0)>0&&(environment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET?.trim().length??0)<32)identityExtra.push("KAI_ACCOUNT_OIDC_TRANSACTION_SECRET(>=32 chars)");
+  if(environment.KAI_ACCOUNT_OIDC_CLIENT_ID?.trim()&&!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/u.test(environment.KAI_ACCOUNT_OIDC_CLIENT_ID.trim()))identityExtra.push("KAI_ACCOUNT_OIDC_CLIENT_ID(valid Client ID)");
+  if(environment.KAI_ACCOUNT_OIDC_CLIENT_SECRET?.trim()&&(environment.KAI_ACCOUNT_OIDC_CLIENT_SECRET?.trim().length??0)<16)identityExtra.push("KAI_ACCOUNT_OIDC_CLIENT_SECRET(>=16 chars)");
+  if(environment.KAI_ACCOUNT_OIDC_CLIENT_ID?.trim()&&environment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET?.trim()&&!isKaiIdentityConfigured(environment))identityExtra.push("KAI_ACCOUNT_OIDC_PROVIDER(valid issuer, scopes and client authentication)");
   const alipay=alipayReadiness(environment),ssh=sshProvisionerReadiness(environment);
   return{
-    larkAdminLogin:requiredCapability(["KAI_LARK_APP_ID","KAI_LARK_APP_SECRET","KAI_LARK_REDIRECT_URI"],environment,larkExtra),
-    emailOtpLogin:requiredCapability(["KAI_EMAIL_OTP_HMAC_SECRET","KAI_EMAIL_OTP_WEBHOOK_URL","KAI_EMAIL_OTP_WEBHOOK_TOKEN"],environment,emailExtra),
-    alipayLive:{available:alipay.configured,failClosed:true,missing:alipay.missing},
+    adminPasswordLogin:requiredCapability(["KAI_ADMIN_USERNAME","KAI_ADMIN_PASSWORD_HASH"],environment,
+      environment.KAI_ADMIN_PASSWORD_HASH?.startsWith("pbkdf2-sha256:")?[]:["KAI_ADMIN_PASSWORD_HASH(valid PBKDF2 hash)"]),
+    financeApprovalLogin:requiredCapability(["KAI_ADMIN_APPROVER_USERNAME","KAI_ADMIN_APPROVER_PASSWORD_HASH"],environment,
+      environment.KAI_ADMIN_APPROVER_PASSWORD_HASH?.startsWith("pbkdf2-sha256:")?[]:["KAI_ADMIN_APPROVER_PASSWORD_HASH(valid PBKDF2 hash)"]),
+    kaiIdentityLogin:requiredCapability(["KAI_ACCOUNT_OIDC_CLIENT_ID","KAI_ACCOUNT_OIDC_TRANSACTION_SECRET"],environment,identityExtra),
+    alipayLive:{available:alipay.canCreatePayment,enabled:alipay.enabled,configured:alipay.configured,failClosed:true,missing:alipay.missing},
     sshProvisioning:{available:ssh.configured,failClosed:true,missing:ssh.missing},
   };
 }
 
 export async function evaluateReadiness(){
   const environment=await runtimeEnvironment();
+  const checkedAt=new Date().toISOString();
+  const configuredCapabilities=capabilityReadiness(environment);
+  const identityProbePromise=configuredCapabilities.kaiIdentityLogin.available
+    ? probeKaiIdentityDiscovery({env:environment})
+    : Promise.resolve(null);
+  const hostingV2StoragePromise=isHostingV2ConfigurationEnabled(environment)?(async()=>{
+    try{
+      const snapshot=await (await getHostingV2Store()).readiness(checkedAt);
+      return{ready:true,schemaVersion:HOSTING_V2_SCHEMA_VERSION,probe:"read-only" as const,snapshot};
+    }catch(error){return{ready:false,schemaVersion:HOSTING_V2_SCHEMA_VERSION,probe:"read-only" as const,errorCode:errorCode(error),snapshot:null};}
+  })():Promise.resolve({
+    ready:true,
+    schemaVersion:HOSTING_V2_SCHEMA_VERSION,
+    probe:"deferred" as const,
+    snapshot:null,
+  });
   const marketplacePromise=(async()=>{
     try{
       await assertMarketplaceSecurityConfiguration();
@@ -67,14 +92,37 @@ export async function evaluateReadiness(){
       return{ready:health.integrity==="ok",...health,probe:"read-only" as const};
     }catch(error){return{ready:false,backend:"unknown" as const,schemaVersion:0,integrity:"error" as const,probe:"read-only" as const,errorCode:errorCode(error)};}
   })();
-  const [marketplace,exchange,supply,admin,auth,standardization,marketResult]=await Promise.all([
+  const authPromise=(async()=>{
+    try{
+      const store=await getAccountAuthStore();
+      await store.listMemberships("__readiness_probe__");
+      return{
+        ready:true,
+        schemaVersion:ADMIN_IDENTITY_SCHEMA_VERSION,
+        probe:"read-only" as const,
+        kaiIdentityLoginAudited:await store.hasSuccessfulKaiIdentityLoginAudit(),
+      };
+    }catch(error){
+      return{
+        ready:false,
+        schemaVersion:ADMIN_IDENTITY_SCHEMA_VERSION,
+        probe:"read-only" as const,
+        errorCode:errorCode(error),
+        kaiIdentityLoginAudited:false,
+      };
+    }
+  })();
+  const [marketplace,exchange,supply,admin,auth,standardization,cardHours,hostingV2Storage,marketResult,identityProbe]=await Promise.all([
     marketplacePromise,
     storeCheck(EXCHANGE_SCHEMA_VERSION,async()=>{const products=await (await getExchangeStore()).listProductVersions();if(products.length<1)throw new Error("EXCHANGE_REFERENCE_DATA_MISSING");}),
     storeCheck(SUPPLY_SCHEMA_VERSION,async()=>{await (await getSupplyStore()).listOffers("__readiness_probe__");}),
     storeCheck(ADMIN_OPERATIONS_SCHEMA_VERSION,async()=>{await (await getAdminOperationsStore()).listAuditEvents({limit:1});}),
-    storeCheck(ADMIN_IDENTITY_SCHEMA_VERSION,async()=>{await (await getAccountAuthStore()).listMemberships("__readiness_probe__");}),
+    authPromise,
     storeCheck(STANDARDIZATION_SCHEMA_VERSION,async()=>{await (await getStandardizationStore()).getQuotes();}),
+    storeCheck(CARD_HOUR_SCHEMA_VERSION,async()=>{await (await getCardHourStore()).health();}),
+    hostingV2StoragePromise,
     readMarketSnapshot().then((value)=>({ok:true as const,value})).catch((error)=>({ok:false as const,error})),
+    identityProbePromise,
   ]);
   let market:{source:string;publishedAt:string|null;ageHours:number|null;stale:boolean;ready:boolean;errorCode?:string};
   if(marketResult.ok){
@@ -82,13 +130,34 @@ export async function evaluateReadiness(){
     const stale=ageHours===null||ageHours>26||ageHours< -1;
     market={source:marketResult.value.source,publishedAt:marketResult.value.snapshot.publishedAt,ageHours:ageHours===null?null:Math.round(ageHours*10)/10,stale,ready:marketResult.value.source==="persistent"&&!stale};
   }else market={source:"unavailable",publishedAt:null,ageHours:null,stale:true,ready:false,errorCode:errorCode(marketResult.error)};
-  const storage={marketplace,exchange,supply,admin,auth,standardization};
-  const ready=market.ready&&Object.values(storage).every((item)=>item.ready);
+  const {snapshot:hostingOperations,...hostingV2Health}=hostingV2Storage;
+  const {kaiIdentityLoginAudited,...authHealth}=auth;
+  const storage={marketplace,exchange,supply,admin,auth:authHealth,standardization,cardHours,hostingV2:hostingV2Health};
+  const capabilities={
+    ...configuredCapabilities,
+    kaiIdentityLogin:identityProbe
+      ? {...configuredCapabilities.kaiIdentityLogin,...identityProbe,configured:true,missing:identityProbe.available?[]:[identityProbe.errorCode??"KAI_IDENTITY_UNAVAILABLE"]}
+      : {...configuredCapabilities.kaiIdentityLogin,configured:false,probe:"deferred" as const},
+  };
+  const hostingV2=evaluateHostingV2Capability({
+    environment,
+    hostingStorage:hostingV2Storage,
+    cardHourStorage:cardHours,
+    operations:hostingOperations,
+    kaiIdentityAvailable:capabilities.kaiIdentityLogin.available,
+    kaiIdentityLoginAudited,
+    adminPasswordAvailable:capabilities.adminPasswordLogin.available,
+    financeApprovalAvailable:capabilities.financeApprovalLogin.available,
+    financialRailReady:isHostingFinancialRailReady(),
+    alipay:alipayReadiness(environment),
+  });
+  const ready=market.ready&&Object.values(storage).every((item)=>item.ready)&&hostingV2.ready;
   return{
     ready,
     database:{backend:marketplace.backend,schemaVersion:marketplace.schemaVersion,integrity:marketplace.integrity},
     market,
     storage,
-    capabilities:capabilityReadiness(environment),
+    capabilities,
+    hostingV2,
   };
 }

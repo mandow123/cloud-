@@ -1,0 +1,819 @@
+.market {
+  min-height: calc(100vh - 180px);
+  padding: 48px max(24px, calc((100vw - 1440px) / 2)) 80px;
+  background: var(--canvas);
+  color: var(--text);
+}
+
+.embeddedContracts {
+  display: grid;
+  gap: 24px;
+}
+
+.embeddedHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.embeddedHeader h2 {
+  margin: 6px 0 8px;
+  color: var(--ink);
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+}
+
+.embeddedHeader p:not(.eyebrow) {
+  max-width: 760px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.market a {
+  color: inherit;
+}
+
+.marketHeader,
+.detailHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.marketHeader h1,
+.detailHeader h1 {
+  margin: 6px 0 10px;
+  color: var(--ink);
+  font-size: clamp(2rem, 4vw, 3.75rem);
+  line-height: 1.05;
+}
+
+.marketHeader p:not(.eyebrow),
+.detailHeader p:not(.eyebrow) {
+  max-width: 760px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.detailHeader > div > a {
+  display: inline-block;
+  margin-bottom: 20px;
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--accent);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.headerActions > a,
+.rowAction,
+.primary,
+.dangerButton {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  padding: 0 18px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 750;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--canvas) !important;
+}
+
+.primary:disabled,
+.dangerButton:disabled,
+.cancelBar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.dangerButton {
+  border-color: var(--danger, #b64a47);
+  color: var(--danger, #b64a47);
+}
+
+.rateBar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px 28px;
+  margin-top: 20px;
+  border-left: 3px solid var(--accent);
+  padding: 13px 16px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(180px, 260px) 1fr;
+  align-items: end;
+  gap: 16px;
+  margin: 28px 0 18px;
+}
+
+.toolbar label,
+.checkoutPanel label,
+.actionBlock label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.toolbar select,
+.checkoutPanel input,
+.actionBlock textarea {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: 0;
+  padding: 12px 13px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.actionBlock textarea {
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+
+.marketCount {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.marketCount strong {
+  color: var(--ink);
+  font-size: 1.75rem;
+}
+
+.offerTable,
+.contractTable {
+  border-top: 3px solid var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.tableHead,
+.offerRow {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.4fr) minmax(220px, 1.1fr) minmax(190px, 1fr) minmax(180px, 0.8fr) 150px;
+  gap: 20px;
+  align-items: center;
+}
+
+.contractHead,
+.contractRow {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.4fr) 150px minmax(160px, 0.8fr) minmax(180px, 0.8fr) 150px;
+  gap: 20px;
+  align-items: center;
+}
+
+.tableHead,
+.contractHead {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.offerRow,
+.contractRow {
+  min-height: 124px;
+  padding: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.offerRow:last-child,
+.contractRow:last-child {
+  border-bottom: 0;
+}
+
+.offerRow:hover,
+.contractRow:hover {
+  background: var(--accent-soft);
+}
+
+.offerRow h2,
+.contractRow h2 {
+  margin: 8px 0 5px;
+  color: var(--ink);
+  font-size: 1.04rem;
+}
+
+.offerRow > div,
+.contractRow > div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.offerRow strong,
+.contractRow strong {
+  color: var(--ink);
+}
+
+.offerRow small,
+.contractRow small,
+.contractRow code {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+}
+
+.verified {
+  width: fit-content;
+  color: var(--accent);
+  font-size: 0.66rem;
+  font-weight: 850;
+  letter-spacing: 0.09em;
+}
+
+.rowAction {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.loading,
+.empty {
+  border: 1px solid var(--border);
+  padding: 48px 24px;
+  background: var(--surface);
+  color: var(--muted);
+  text-align: center;
+}
+
+.error,
+.successBlock {
+  display: grid;
+  gap: 8px;
+  border-left: 4px solid var(--danger, #b64a47);
+  padding: 18px 20px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.tradeClosed {
+  display: grid;
+  gap: 7px;
+  margin-top: 18px;
+  border: 1px solid var(--border-strong);
+  border-left: 4px solid var(--accent);
+  padding: 16px 18px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.tradeClosed strong {
+  color: var(--ink);
+}
+
+.tradeClosed span,
+.tradeClosed small {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.error strong,
+.successBlock h3 {
+  color: var(--ink);
+}
+
+.error a {
+  width: fit-content;
+  color: var(--accent);
+  font-weight: 750;
+}
+
+.statusPill,
+.queued {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  border: 1px solid var(--border-strong);
+  padding: 6px 9px;
+  background: var(--surface-muted);
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.statusPill[data-status="IN_SERVICE"],
+.statusPill[data-status="READY"],
+.statusPill[data-status="CLEANED"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.statusPill[data-status="FAILED"],
+.statusPill[data-status="DISPUTED"] {
+  border-color: var(--danger, #b64a47);
+  color: var(--danger, #b64a47);
+}
+
+.checkoutGrid,
+.workspaceGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.65fr);
+  gap: 24px;
+  margin-top: 28px;
+}
+
+.detailPanel,
+.checkoutPanel,
+.workspacePanel,
+.auditPanel {
+  border-top: 3px solid var(--accent);
+  padding: 28px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.detailPanel h2,
+.checkoutPanel h2,
+.workspacePanel h2,
+.auditPanel h2 {
+  margin: 0 0 22px;
+  color: var(--ink);
+}
+
+.detailList,
+.quoteList {
+  margin: 0;
+}
+
+.detailList > div,
+.quoteList > div {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.7fr) minmax(0, 1.3fr);
+  gap: 16px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.detailList dt,
+.quoteList dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.detailList dd,
+.quoteList dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-weight: 650;
+  text-align: right;
+}
+
+.policyNote {
+  margin-top: 24px;
+  border-left: 3px solid var(--accent);
+  padding: 14px 16px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 0.84rem;
+  line-height: 1.7;
+}
+
+.checkoutPanel {
+  align-self: start;
+}
+
+.checkoutPanel > small,
+.auditPanel > small {
+  display: block;
+  margin: 10px 0 20px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.checkoutPanel .primary {
+  width: 100%;
+  margin-top: 22px;
+}
+
+.inlineError {
+  margin: 14px 0 0;
+  color: var(--danger, #b64a47);
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.loginLink {
+  display: block;
+  margin-top: 12px;
+  color: var(--accent) !important;
+  font-weight: 750;
+  text-align: center;
+}
+
+.workflow {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin: 24px 0 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  list-style: none;
+}
+
+.workflow li {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 14px 16px;
+  border-right: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.workflow li:last-child {
+  border-right: 0;
+}
+
+.workflow li span {
+  color: var(--border-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.workflowDone {
+  box-shadow: inset 0 3px 0 var(--accent);
+  color: var(--ink) !important;
+}
+
+.workflowDone span {
+  color: var(--accent) !important;
+}
+
+.panelHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.panelHeading h2 {
+  margin-top: 5px;
+}
+
+.queued {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.actionBlock,
+.successBlock {
+  display: grid;
+  gap: 18px;
+  min-height: 260px;
+  align-content: start;
+  border: 1px solid var(--border);
+  padding: 24px;
+  background: var(--surface-muted);
+}
+
+.accessBlock {
+  display: grid;
+  gap: 18px;
+  border: 1px solid var(--border-strong);
+  border-top: 3px solid var(--accent);
+  padding: 24px;
+  background: var(--surface);
+}
+
+.accessBlock h3,
+.accessBlock p {
+  margin: 6px 0 0;
+}
+
+.accessBlock p {
+  max-width: 760px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.accessBlock > .primary {
+  width: fit-content;
+}
+
+.accessSteps {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+  list-style: none;
+}
+
+.accessSteps li {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--border);
+  padding: 16px 0;
+}
+
+.accessSteps li > span {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.accessSteps li > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.accessSteps small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.accessSteps code {
+  overflow-x: auto;
+  color: var(--text);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.accessSteps a,
+.accessSteps button,
+.regenerateAccess {
+  border: 1px solid var(--border-strong);
+  padding: 9px 12px;
+  background: var(--surface-muted);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.regenerateAccess {
+  width: fit-content;
+  border: 0;
+  padding-left: 0;
+  background: transparent;
+  color: var(--accent);
+}
+
+.actionBlock h3,
+.successBlock h3,
+.actionBlock p,
+.successBlock p {
+  margin: 0;
+}
+
+.actionBlock h3,
+.successBlock h3 {
+  color: var(--ink);
+  font-size: 1.35rem;
+}
+
+.actionBlock p,
+.successBlock p {
+  max-width: 720px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.actionBlock .primary,
+.actionBlock .dangerButton,
+.successBlock .primary {
+  width: fit-content;
+}
+
+.successBlock {
+  border-left: 4px solid var(--accent);
+}
+
+.endpoint {
+  overflow-x: auto;
+  border: 1px solid var(--border-strong);
+  padding: 14px;
+  background: var(--canvas);
+  color: var(--ink);
+  font-size: 0.86rem;
+  white-space: nowrap;
+}
+
+.progressLine {
+  width: 100%;
+  height: 3px;
+  overflow: hidden;
+  background: var(--border);
+}
+
+.progressLine::after {
+  display: block;
+  width: 35%;
+  height: 100%;
+  animation: hosting-progress 1.4s ease-in-out infinite alternate;
+  background: var(--accent);
+  content: "";
+}
+
+@keyframes hosting-progress {
+  from { transform: translateX(0); }
+  to { transform: translateX(185%); }
+}
+
+.cancelBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.cancelBar button {
+  border: 0;
+  padding: 8px 0;
+  background: transparent;
+  color: var(--danger, #b64a47);
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.auditPanel {
+  align-self: start;
+  border-top-color: var(--border-strong);
+}
+
+@media (max-width: 1100px) {
+  .tableHead,
+  .contractHead {
+    display: none;
+  }
+
+  .offerRow,
+  .contractRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .offerRow .rowAction,
+  .contractRow .rowAction {
+    width: fit-content;
+  }
+
+  .workflow {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .workflow li:nth-child(4) {
+    border-right: 0;
+  }
+
+  .workflow li:nth-child(n + 5) {
+    border-top: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 800px) {
+  .market {
+    padding: 32px 18px 64px;
+  }
+
+  .marketHeader,
+  .detailHeader,
+  .embeddedHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .headerActions {
+    justify-content: flex-start;
+  }
+
+  .toolbar,
+  .checkoutGrid,
+  .workspaceGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .marketCount {
+    justify-content: flex-start;
+  }
+
+  .workflow {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .workflow li,
+  .workflow li:nth-child(4) {
+    border-right: 1px solid var(--border);
+  }
+
+  .workflow li:nth-child(even) {
+    border-right: 0;
+  }
+
+  .workflow li:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 560px) {
+  .offerRow,
+  .contractRow {
+    grid-template-columns: 1fr;
+  }
+
+  .detailPanel,
+  .checkoutPanel,
+  .workspacePanel,
+  .auditPanel {
+    padding: 20px;
+  }
+
+  .detailList > div,
+  .quoteList > div {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .detailList dd,
+  .quoteList dd {
+    text-align: left;
+  }
+
+  .cancelBar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .accessSteps li {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .accessSteps li > a,
+  .accessSteps li > button {
+    grid-column: 2;
+    width: fit-content;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progressLine::after {
+    animation: none;
+    width: 100%;
+  }
+}

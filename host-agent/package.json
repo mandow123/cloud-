@@ -1,0 +1,13 @@
+{
+  "name": "@kai-cloud/host-agent",
+  "version": "1.11.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "bin": {
+    "kai-host-agent": "./src/cli.mjs",
+    "kai-host-preflight": "./src/preflight.mjs"
+  }
+}

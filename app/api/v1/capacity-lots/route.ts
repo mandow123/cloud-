@@ -20,7 +20,7 @@ export async function GET(request: Request) {
   const context = beginApiRequest(request);
   let actor: MarketplaceActor | undefined;
   try {
-    requireExchangeRole(request, "supplier");
+    await requireExchangeRole(request, "supplier");
     const authorization = await authorizeMarketplaceRequest(request);
     actor = authorization.actor;
     const items = await (await getExchangeStore()).listSupplierLots(actor.id);
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
   let actor: MarketplaceActor | undefined;
   try {
     const account = await requireTradingAccountSession(request);
-    requireExchangeRole(request, "supplier");
+    await requireExchangeRole(request, "supplier");
     const authorization = await authorizeMarketplaceRequest(request);
     actor = authorization.actor;
     prepareWrite(request, actor);

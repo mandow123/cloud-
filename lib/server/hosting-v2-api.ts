@@ -1,0 +1,376 @@
+import { AccountAuthError, assertAccountAuthSameOrigin } from "./account-auth.ts";
+import { mutationHash, prepareWrite, requireIdempotencyKey } from "./api-guard.ts";
+import type { CardHourDashboard } from "./card-hour-store.ts";
+import { authorizeMarketplaceRequest, persistMarketplaceSession } from "./marketplace-auth.ts";
+import type { HostingMutationContext } from "./hosting-v2-store.ts";
+import { HOSTING_V2_AGENT_STALE_SECONDS, hostingActualFeeBreakdown, type HostingContract, type HostingContractEvidence, type HostingDevice, type HostingOffer, type HostingPublicOffer, type HostingSupplierFeePreview, type HostingSupplierMonthlySettlement } from "../hosting-v2.ts";
+import type { SupplierDeviceTask, SupplierDeviceWorkspace, SupplierDeviceWorkspaceRow, SupplierDeviceWorkspaceState } from "../hosting-v2-client.ts";
+import { accessGatewayCapability } from "./access-gateway-client.ts";
+
+export { requireHostingV2DeviceRetirementEnabled, requireHostingV2Enabled, requireHostingV2SetupEnabled } from "./hosting-v2-feature.ts";
+
+export function hostingObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new AccountAuthError("HOSTING_VALIDATION_ERROR", 400, "提交内容必须是对象。 ");
+  return value as Record<string, unknown>;
+}
+
+export function hostingString(input: Record<string, unknown>, field: string, minimum = 1, maximum = 500) {
+  const value = typeof input[field] === "string" ? input[field].trim() : "";
+  if (value.length < minimum || value.length > maximum) throw new AccountAuthError("HOSTING_VALIDATION_ERROR", 400, `${field} 长度应为 ${minimum}–${maximum} 个字符。 `);
+  return value;
+}
+
+export function hostingInteger(input: Record<string, unknown>, field: string, minimum = 0) {
+  const value = input[field];
+  if (!Number.isSafeInteger(value) || Number(value) < minimum) throw new AccountAuthError("HOSTING_VALIDATION_ERROR", 400, `${field} 必须是大于等于 ${minimum} 的整数。 `);
+  return Number(value);
+}
+
+export function hostingBoolean(input: Record<string, unknown>, field: string) {
+  if (typeof input[field] !== "boolean") throw new AccountAuthError("HOSTING_VALIDATION_ERROR", 400, `${field} 必须是布尔值。 `);
+  return input[field];
+}
+
+function hostingFeeQualificationClientView(value: HostingContract["snapshot"]["feeQualification"]) {
+  if (!value) return null;
+  const base = {
+    model: value.model,
+    tierCode: value.tierCode,
+    qualifyingVolumeMicros: value.qualifyingVolumeMicros,
+    platformFeeBps: value.platformFeeBps,
+    referralRewardBps: value.referralRewardBps,
+  };
+  return value.model === "LIFETIME_SUPPLIER_SETTLED_GROSS_V1"
+    ? { ...base, asOf: value.asOf }
+    : { ...base, period: { key: value.period.key, startAt: value.period.startAt, endAt: value.period.endAt, timeZone: value.period.timeZone } };
+}
+
+function hostingContractSnapshotClientView(snapshot: HostingContract["snapshot"]) {
+  return {
+    offerVersion: snapshot.offerVersion,
+    title: snapshot.title,
+    gpuModel: snapshot.gpuModel,
+    region: snapshot.region,
+    cardHourMicrosPerGpuHour: snapshot.cardHourMicrosPerGpuHour,
+    approvedImage: snapshot.approvedImage,
+    termsVersion: snapshot.termsVersion,
+    platformFeeBps: snapshot.platformFeeBps,
+    referralRewardBps: snapshot.referralRewardBps,
+    feeQualification: hostingFeeQualificationClientView(snapshot.feeQualification),
+    acceptanceWindowSeconds: snapshot.acceptanceWindowSeconds,
+  };
+}
+
+export function hostingPublicOfferClientView(offer: HostingPublicOffer) {
+  return {
+    id: offer.id,
+    dataClass: "LIVE_INVENTORY" as const,
+    source: "HOSTING_V2" as const,
+    version: offer.version,
+    title: offer.title,
+    gpuModel: offer.gpuModel,
+    region: offer.region,
+    minRentalSeconds: offer.minRentalSeconds,
+    maxRentalSeconds: offer.maxRentalSeconds,
+    availableFrom: offer.availableFrom,
+    availableUntil: offer.availableUntil,
+    approvedImage: offer.approvedImage,
+    termsVersion: offer.termsVersion,
+    verificationSummary: offer.verificationSummary,
+    verifiedUntil: offer.verifiedUntil,
+    pricing: {
+      assetCode: "KAI_CREDIT_HOUR" as const,
+      cardHourMicrosPerGpuHour: offer.cardHourMicrosPerGpuHour,
+    },
+  };
+}
+
+export function hostingContractClientView(contract: HostingContract, evidence?: HostingContractEvidence) {
+  return {
+    id: contract.id,
+    offerId: contract.offerId,
+    snapshot: hostingContractSnapshotClientView(contract.snapshot),
+    reservedSeconds: contract.reservedSeconds,
+    measuredSeconds: contract.measuredSeconds,
+    heldMicros: contract.heldMicros,
+    settledMicros: contract.settledMicros,
+    status: contract.status,
+    sshPublicKeyFingerprint: contract.sshPublicKeyFingerprint,
+    endpointDisplay: null,
+    startedAt: contract.startedAt,
+    stoppedAt: contract.stoppedAt,
+    acceptedAt: contract.acceptedAt,
+    version: contract.version,
+    createdAt: contract.createdAt,
+    updatedAt: contract.updatedAt,
+    evidence,
+  };
+}
+
+export function hostingSupplierContractClientView(contract: HostingContract, evidence?: HostingContractEvidence) {
+  const endpointDisplay = accessGatewayCapability().configured ? null : contract.endpointDisplay;
+  const settlementBreakdown = contract.settledMicros !== null && contract.supplierIncomeMicros !== null && contract.commissionMicros !== null
+    ? hostingActualFeeBreakdown(contract.settledMicros, contract.supplierIncomeMicros, contract.commissionMicros)
+    : null;
+  return {
+    id: contract.id,
+    offerId: contract.offerId,
+    deviceId: contract.deviceId,
+    snapshot: hostingContractSnapshotClientView(contract.snapshot),
+    reservedSeconds: contract.reservedSeconds,
+    measuredSeconds: contract.measuredSeconds,
+    heldMicros: contract.heldMicros,
+    settledMicros: contract.settledMicros,
+    supplierIncomeMicros: contract.supplierIncomeMicros,
+    commissionMicros: contract.commissionMicros,
+    settlementBreakdown,
+    status: contract.status,
+    sshPublicKeyFingerprint: contract.sshPublicKeyFingerprint,
+    endpointDisplay,
+    startedAt: contract.startedAt,
+    stoppedAt: contract.stoppedAt,
+    acceptedAt: contract.acceptedAt,
+    version: contract.version,
+    createdAt: contract.createdAt,
+    updatedAt: contract.updatedAt,
+    evidence,
+  };
+}
+
+export function hostingSettlementClientView(settlement: Readonly<{
+  heldMicros: number;
+  settledMicros: number;
+  releasedMicros: number;
+  supplierIncomeMicros: number;
+  commissionMicros: number;
+  platformFeeMicros: number;
+}>) {
+  return {
+    heldMicros: settlement.heldMicros,
+    settledMicros: settlement.settledMicros,
+    releasedMicros: settlement.releasedMicros,
+    supplierIncomeMicros: settlement.supplierIncomeMicros,
+    commissionMicros: settlement.commissionMicros,
+    platformFeeMicros: settlement.platformFeeMicros,
+  };
+}
+
+function safeSupplierLedgerEntry(value: Record<string, unknown>) {
+  const operation = typeof value.operation === "string" ? value.operation : "UNKNOWN";
+  const businessKey = typeof value.business_key === "string" ? value.business_key : "—";
+  const side = value.side === "DEBIT" ? "DEBIT" : "CREDIT";
+  const amountMicros = Number.isSafeInteger(value.amount_micros) ? Number(value.amount_micros) : 0;
+  const balanceAfterMicros = value.balance_after_micros === null || value.balance_after_micros === undefined
+    ? null
+    : Number.isSafeInteger(value.balance_after_micros) ? Number(value.balance_after_micros) : null;
+  const createdAt = typeof value.created_at === "string" ? value.created_at : "";
+  return { operation, businessKey, side, amountMicros, balanceAfterMicros, createdAt };
+}
+
+export function hostingSupplierEarningsClientView(
+  dashboard: CardHourDashboard,
+  feePreview: HostingSupplierFeePreview,
+  monthlySettlement: HostingSupplierMonthlySettlement,
+  updatedAt: string,
+) {
+  return {
+    assetCode: dashboard.assetCode,
+    rate: { cardHours: dashboard.rate.cardHours },
+    balance: { availableMicros: dashboard.balance.availableMicros, heldMicros: dashboard.balance.heldMicros },
+    income: {
+      rentalPendingMicros: dashboard.income.rentalPendingMicros,
+      rentalVestedMicros: dashboard.income.rentalVestedMicros,
+      commissionPendingMicros: dashboard.income.commissionPendingMicros,
+      commissionVestedMicros: dashboard.income.commissionVestedMicros,
+    },
+    referral: { code: dashboard.referral.code, invitedOrganizations: dashboard.referral.invitedOrganizations },
+    ledger: dashboard.ledger.map(safeSupplierLedgerEntry),
+    feePreview: {
+      activeFeeScheduleId: feePreview.activeFeeScheduleId,
+      model: feePreview.model,
+      tierCode: feePreview.tierCode,
+      asOf: feePreview.asOf,
+      qualifyingVolumeMicros: feePreview.qualifyingVolumeMicros,
+      platformFeeBps: feePreview.platformFeeBps,
+      referralRewardBps: feePreview.referralRewardBps,
+      tiers: feePreview.tiers.map((tier) => ({
+        code: tier.code,
+        minimumQualifyingMicros: tier.minimumQualifyingMicros,
+        platformFeeBps: tier.platformFeeBps,
+        referralRewardBps: tier.referralRewardBps,
+      })),
+      nextTierCode: feePreview.nextTierCode,
+      nextTierMinimumMicros: feePreview.nextTierMinimumMicros,
+      remainingToNextTierMicros: feePreview.remainingToNextTierMicros,
+    },
+    monthlySettlement: {
+      period: {
+        key: monthlySettlement.period.key,
+        startAt: monthlySettlement.period.startAt,
+        endAt: monthlySettlement.period.endAt,
+        timeZone: monthlySettlement.period.timeZone,
+      },
+      grossMicros: monthlySettlement.grossMicros,
+      platformFeeMicros: monthlySettlement.platformFeeMicros,
+      supplierIncomeMicros: monthlySettlement.supplierIncomeMicros,
+      inFeeReferralCommissionMicros: monthlySettlement.inFeeReferralCommissionMicros,
+      platformNetMicros: monthlySettlement.platformNetMicros,
+    },
+    updatedAt,
+  };
+}
+
+export function hostingSupplierOfferClientView(offer: import("../hosting-v2.ts").HostingOffer) {
+  return {
+    id: offer.id,
+    deviceId: offer.deviceId,
+    title: offer.title,
+    gpuModel: offer.gpuModel,
+    region: offer.region,
+    cardHourMicrosPerGpuHour: offer.cardHourMicrosPerGpuHour,
+    minRentalSeconds: offer.minRentalSeconds,
+    maxRentalSeconds: offer.maxRentalSeconds,
+    availableFrom: offer.availableFrom,
+    availableUntil: offer.availableUntil,
+    approvedImage: offer.approvedImage,
+    termsVersion: offer.termsVersion,
+    status: offer.status,
+    version: offer.version,
+    createdAt: offer.createdAt,
+    updatedAt: offer.updatedAt,
+  };
+}
+
+const CONTRACT_IN_PROGRESS = new Set(["RESERVED", "CARD_HOURS_HELD", "PAID", "PROVISIONING", "READY", "CLEANING"]);
+const CONTRACT_OPERATING = new Set(["IN_SERVICE", "AWAITING_ACCEPTANCE"]);
+const CONTRACT_NEEDS_ACTION = new Set(["DISPUTED", "FAILED"]);
+const CONTRACT_ACTIVE = new Set([...CONTRACT_IN_PROGRESS, ...CONTRACT_OPERATING, ...CONTRACT_NEEDS_ACTION]);
+
+export function hostingSupplierDeviceWorkspaceView(
+  devices: readonly HostingDevice[],
+  offers: readonly HostingOffer[],
+  contracts: readonly HostingContract[],
+  supplierOrganizationId: string,
+  now: string,
+): SupplierDeviceWorkspace {
+  const nowMs = Date.parse(now);
+  const staleCutoff = nowMs - HOSTING_V2_AGENT_STALE_SECONDS * 1_000;
+  const supplierContracts = contracts.filter((contract) => contract.supplierOrganizationId === supplierOrganizationId);
+  const records: SupplierDeviceWorkspaceRow[] = [];
+  const tasks: SupplierDeviceTask[] = [];
+
+  for (const device of devices) {
+    const deviceOffers = offers.filter((offer) => offer.deviceId === device.id);
+    const publishedOfferCount = deviceOffers.filter((offer) => offer.status === "PUBLISHED").length;
+    const activeContracts = supplierContracts.filter((contract) => contract.deviceId === device.id && CONTRACT_ACTIVE.has(contract.status));
+    const activeContract = activeContracts.length === 1 ? activeContracts[0] : null;
+    const lastSeenMs = device.lastSeenAt ? Date.parse(device.lastSeenAt) : Number.NaN;
+    const stale = !Number.isFinite(lastSeenMs) || lastSeenMs < staleCutoff;
+    const verificationValid = device.verificationStatus === "PASSED"
+      && Boolean(device.verifiedUntil && Date.parse(device.verifiedUntil) > nowMs);
+    let state: SupplierDeviceWorkspaceState = "AVAILABLE";
+    let stateLabel = "待租";
+    let stateDetail = publishedOfferCount > 0 ? "设备在线，挂牌可接受预留" : "设备在线，等待创建挂牌";
+    let task: SupplierDeviceTask | null = null;
+
+    if (activeContracts.length > 1) {
+      state = "ACTION_REQUIRED"; stateLabel = "待处理"; stateDetail = "检测到多份活动合同，设备已暂停自动履约";
+      task = {
+        id: `${device.id}:contract-conflict`, deviceId: device.id, priority: "P0", title: `${device.displayName} 合同状态冲突`,
+        description: stateDetail, href: "/supply/orders",
+      };
+    } else if (device.status === "REVOKED") {
+      state = "DISABLED"; stateLabel = "已停用"; stateDetail = "Agent 身份已撤销，不会接收平台任务";
+    } else if (device.status === "DRAINING" && activeContract?.status === "CLEANING") {
+      state = "DEPLOYING"; stateLabel = "清理中"; stateDetail = "Agent 正在撤销访问并清理受控实例，完成前不会重新挂牌";
+    } else if (device.status === "DRAINING" || (activeContract && CONTRACT_NEEDS_ACTION.has(activeContract.status))) {
+      state = "ACTION_REQUIRED"; stateLabel = "待处理";
+      stateDetail = device.status === "DRAINING" ? "设备处于隔离清理状态，完成清理前不会重新挂牌" : "订单异常需要处理";
+      task = {
+        id: `${device.id}:delivery-risk`, deviceId: device.id, priority: "P0", title: `${device.displayName} 需要处理`,
+        description: stateDetail, href: activeContract ? `/supply/orders/${encodeURIComponent(activeContract.id)}` : `/supply/devices/${encodeURIComponent(device.id)}`,
+      };
+    } else if (device.status === "OFFLINE" || stale) {
+      state = "OFFLINE"; stateLabel = "离线"; stateDetail = "Host Agent 心跳已中断；这不代表设备已永久关闭";
+      task = {
+        id: `${device.id}:offline`, deviceId: device.id, priority: "P1", title: `${device.displayName} 已离线`,
+        description: "检查主机电源、网络与 Host Agent 服务，恢复心跳后再验真。", href: `/supply/devices/${encodeURIComponent(device.id)}`,
+      };
+    } else if (activeContract && CONTRACT_OPERATING.has(activeContract.status)) {
+      state = "OPERATING"; stateLabel = "运营中"; stateDetail = activeContract.status === "IN_SERVICE" ? "实例正在运行并由 Agent 计量" : "服务已停止，等待买家验收";
+    } else if (activeContract && CONTRACT_IN_PROGRESS.has(activeContract.status)) {
+      state = "DEPLOYING"; stateLabel = activeContract.status === "CLEANING" ? "清理中" : "部署中";
+      stateDetail = activeContract.status === "READY" ? "实例已就绪，等待买家启动" : activeContract.status === "CLEANING" ? "Agent 正在撤销访问并清理受控实例" : "正在锁定卡时并创建受控实例";
+    } else if (device.status === "VERIFYING" || device.verificationStatus === "PENDING") {
+      state = "DEPLOYING"; stateLabel = "验真中"; stateDetail = "Host Agent 正在运行受控硬件与网络测试";
+    } else if (!verificationValid) {
+      state = "ACTION_REQUIRED"; stateLabel = "待处理";
+      stateDetail = device.verificationStatus === "FAILED" ? "设备验真未通过" : device.verificationStatus === "EXPIRED" ? "验真证据已过期" : "设备尚未完成验真";
+      task = {
+        id: `${device.id}:verification`, deviceId: device.id, priority: "P1", title: `${device.displayName} 需要验真`,
+        description: stateDetail, href: `/supply/devices/${encodeURIComponent(device.id)}`,
+      };
+    } else if (device.status === "BUSY") {
+      state = "ACTION_REQUIRED"; stateLabel = "待处理"; stateDetail = "设备报告忙碌，但当前没有可见的活动合同";
+      task = {
+        id: `${device.id}:orphan-busy`, deviceId: device.id, priority: "P0", title: `${device.displayName} 状态不一致`,
+        description: stateDetail, href: `/supply/devices/${encodeURIComponent(device.id)}`,
+      };
+    } else if (publishedOfferCount === 0) {
+      task = {
+        id: `${device.id}:listing`, deviceId: device.id, priority: "P2", title: `${device.displayName} 尚未挂牌`,
+        description: "设备已在线且验真有效，可以创建可售时间窗和卡时价格。", href: "/supply/listings/new",
+      };
+    }
+
+    if (task) tasks.push(task);
+    const deviceHref = `/supply/devices/${encodeURIComponent(device.id)}`;
+    const primaryAction = state === "ACTION_REQUIRED"
+      ? { label: "查看并处理", href: task?.href ?? deviceHref }
+      : state === "OFFLINE"
+        ? { label: "检查 Agent", href: task?.href ?? deviceHref }
+        : state === "DEPLOYING"
+          ? { label: "查看进度", href: activeContract ? `/supply/orders/${encodeURIComponent(activeContract.id)}` : deviceHref }
+          : state === "OPERATING"
+            ? { label: "查看订单", href: activeContract ? `/supply/orders/${encodeURIComponent(activeContract.id)}` : deviceHref }
+            : state === "DISABLED"
+              ? { label: "查看停用记录", href: deviceHref }
+              : publishedOfferCount > 0
+                ? { label: "查看挂牌", href: "/supply/listings" }
+                : { label: "创建挂牌", href: "/supply/listings/new" };
+    records.push({
+      id: device.id, displayName: device.displayName, gpuModel: device.inventory.gpuModel, gpuMemoryMiB: device.inventory.gpuMemoryMiB,
+      state, stateLabel, stateDetail, verificationStatus: device.verificationStatus, lastSeenAt: device.lastSeenAt,
+      activeContractId: activeContract?.id ?? null, activeContractStatus: activeContract?.status ?? null,
+      publishedOfferCount, taskCount: task ? 1 : 0, primaryAction,
+    });
+  }
+
+  const summary = Object.fromEntries(["AVAILABLE", "DEPLOYING", "OPERATING", "ACTION_REQUIRED", "OFFLINE", "DISABLED"].map((state) => [state, records.filter((record) => record.state === state).length])) as Record<SupplierDeviceWorkspaceState, number>;
+  const priorityRank = { P0: 0, P1: 1, P2: 2 } as const;
+  tasks.sort((left, right) => priorityRank[left.priority] - priorityRank[right.priority] || left.title.localeCompare(right.title, "zh-CN"));
+  return {
+    generatedAt: now,
+    summary,
+    records,
+    tasks,
+    historyCapabilities: {
+      renewal: { enabled: false, label: "已续约", reason: "托管合同续约实体和审核规则尚未开放，当前不生成虚假记录。" },
+      buyback: { enabled: false, label: "已回购", reason: "回购涉及法务、出款与资金存管，生产入口保持关闭。" },
+      decommission: { enabled: false, label: "设备关闭", reason: "永久退场需要受控撤权、挂牌下架和设备证据；当前只展示可验证的离线状态。" },
+    },
+  };
+}
+
+export async function hostingMutationContext(request: Request, actorId: string, body: unknown): Promise<HostingMutationContext> {
+  assertAccountAuthSameOrigin(request);
+  const authorization = await authorizeMarketplaceRequest(request);
+  prepareWrite(request, authorization.actor);
+  await persistMarketplaceSession(authorization);
+  return {
+    actorId,
+    idempotencyKey: requireIdempotencyKey(request),
+    payloadHash: await mutationHash(body),
+    now: new Date().toISOString(),
+  };
+}

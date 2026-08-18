@@ -126,8 +126,7 @@ export function EmailLogin() {
         </form>
       )}
 
-      <p className="login-admin-link">KAI 员工请前往 <Link href="/admin/login">飞书组织登录</Link>。</p>
+      <p className="login-admin-link">管理员请前往 <Link href="/admin/login">独立账号登录</Link>。</p>
     </div>
   );
 }
-

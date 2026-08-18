@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const context = beginApiRequest(request);
   let actor: MarketplaceActor | undefined;
   try {
-    requireExchangeRole(request, "supplier");
+    await requireExchangeRole(request, "supplier");
     const authorization = await authorizeMarketplaceRequest(request);
     actor = authorization.actor;
     const view = new URL(request.url).searchParams.get("view") ?? "mine";
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
   const context = beginApiRequest(request);
   let actor: MarketplaceActor | undefined;
   try {
-    requireExchangeRole(request, "supplier");
+    await requireExchangeRole(request, "supplier");
     const authorization = await authorizeMarketplaceRequest(request);
     actor = authorization.actor;
     prepareWrite(request, actor);

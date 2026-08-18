@@ -20,15 +20,34 @@ services:
       KAI_ENABLE_HSTS: "${KAI_ENABLE_HSTS:-0}"
       KAI_PUBLIC_ORIGIN: "${KAI_PUBLIC_ORIGIN:?KAI_PUBLIC_ORIGIN must be the canonical https origin}"
       KAI_CURSOR_SECRET: "${KAI_CURSOR_SECRET:?KAI_CURSOR_SECRET must contain at least 32 random characters}"
-      KAI_LARK_APP_ID: "${KAI_LARK_APP_ID:-}"
-      KAI_LARK_APP_SECRET: "${KAI_LARK_APP_SECRET:-}"
-      KAI_LARK_REDIRECT_URI: "${KAI_LARK_REDIRECT_URI:-}"
-      KAI_LARK_ALLOWED_TENANT_KEYS: "${KAI_LARK_ALLOWED_TENANT_KEYS:-}"
-      KAI_EMAIL_OTP_WEBHOOK_URL: "${KAI_EMAIL_OTP_WEBHOOK_URL:-}"
-      KAI_EMAIL_OTP_WEBHOOK_TOKEN: "${KAI_EMAIL_OTP_WEBHOOK_TOKEN:-}"
-      KAI_EMAIL_OTP_HMAC_SECRET: "${KAI_EMAIL_OTP_HMAC_SECRET:-}"
+      KAI_ADMIN_USERNAME: "${KAI_ADMIN_USERNAME:?KAI_ADMIN_USERNAME is required}"
+      KAI_ADMIN_PASSWORD_HASH: "${KAI_ADMIN_PASSWORD_HASH:?KAI_ADMIN_PASSWORD_HASH is required}"
+      KAI_ADMIN_DISPLAY_NAME: "${KAI_ADMIN_DISPLAY_NAME:-KAI Cloud Root}"
+      KAI_ADMIN_APPROVER_USERNAME: "${KAI_ADMIN_APPROVER_USERNAME:-}"
+      KAI_ADMIN_APPROVER_PASSWORD_HASH: "${KAI_ADMIN_APPROVER_PASSWORD_HASH:-}"
+      KAI_ADMIN_APPROVER_DISPLAY_NAME: "${KAI_ADMIN_APPROVER_DISPLAY_NAME:-KAI Cloud Finance Approver}"
+      KAI_ACCOUNT_OIDC_CLIENT_ID: "${KAI_ACCOUNT_OIDC_CLIENT_ID:-}"
+      KAI_ACCOUNT_OIDC_CLIENT_SECRET: "${KAI_ACCOUNT_OIDC_CLIENT_SECRET:-}"
+      KAI_ACCOUNT_OIDC_ISSUER: "${KAI_ACCOUNT_OIDC_ISSUER:-}"
+      KAI_ACCOUNT_OIDC_SCOPES: "${KAI_ACCOUNT_OIDC_SCOPES:-}"
+      KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: "${KAI_ACCOUNT_OIDC_TRANSACTION_SECRET:-}"
+      KAI_DGX_SPARK_CAMPAIGN_ENABLED: "${KAI_DGX_SPARK_CAMPAIGN_ENABLED:-0}"
+      KAI_DGX_SPARK_CAMPAIGN_STATUS: "${KAI_DGX_SPARK_CAMPAIGN_STATUS:-PENDING}"
+      KAI_DGX_SPARK_SUPPLIER_REVIEW_STATUS: "${KAI_DGX_SPARK_SUPPLIER_REVIEW_STATUS:-PENDING}"
+      KAI_DGX_SPARK_TOTAL_UNITS: "${KAI_DGX_SPARK_TOTAL_UNITS:-}"
+      KAI_DGX_SPARK_DISCOUNT_PERCENT: "${KAI_DGX_SPARK_DISCOUNT_PERCENT:-}"
+      KAI_DGX_SPARK_COUNTDOWN_SECONDS: "${KAI_DGX_SPARK_COUNTDOWN_SECONDS:-}"
+      KAI_DGX_SPARK_ESTIMATED_SHIPPING_MONTHS: "${KAI_DGX_SPARK_ESTIMATED_SHIPPING_MONTHS:-}"
+      KAI_DGX_SPARK_PRICE_CARD_HOURS_MICROS: "${KAI_DGX_SPARK_PRICE_CARD_HOURS_MICROS:-}"
+      KAI_DGX_SPARK_PURCHASE_PATH: "${KAI_DGX_SPARK_PURCHASE_PATH:-}"
+      KAI_MARKET_V1: "${KAI_MARKET_V1:-1}"
+      KAI_HOSTING_V2: "${KAI_HOSTING_V2:-0}"
+      KAI_HOSTING_V2_SETUP: "${KAI_HOSTING_V2_SETUP:-0}"
+      KAI_HOSTING_DEVICE_RETIREMENT: "${KAI_HOSTING_DEVICE_RETIREMENT:-0}"
+      KAI_HOSTING_APPROVED_IMAGES: "${KAI_HOSTING_APPROVED_IMAGES:-}"
+      KAI_HOSTING_TERMS_VERSION: "${KAI_HOSTING_TERMS_VERSION:-}"
       KAI_ADMIN_LOCAL_AUTH: "0"
-      KAI_ADMIN_BOOTSTRAP_CODE: "${KAI_ADMIN_BOOTSTRAP_CODE:-}"
+      KAI_ALIPAY_ENABLED: "${KAI_ALIPAY_ENABLED:-0}"
       KAI_ALIPAY_APP_ID: "${KAI_ALIPAY_APP_ID:-}"
       KAI_ALIPAY_PRIVATE_KEY: "${KAI_ALIPAY_PRIVATE_KEY:-}"
       KAI_ALIPAY_PRIVATE_KEY_TYPE: "${KAI_ALIPAY_PRIVATE_KEY_TYPE:-PKCS8}"
@@ -38,6 +57,8 @@ services:
       KAI_SUPPLY_OPS_TOKEN: "${KAI_SUPPLY_OPS_TOKEN:-}"
       KAI_SSH_PROVISIONER_URL: "${KAI_SSH_PROVISIONER_URL:-}"
       KAI_SSH_PROVISIONER_TOKEN: "${KAI_SSH_PROVISIONER_TOKEN:-}"
+      KAI_ACCESS_GATEWAY_CONTROL_URL: "${KAI_ACCESS_GATEWAY_CONTROL_URL:-}"
+      KAI_ACCESS_GATEWAY_CONTROL_TOKEN: "${KAI_ACCESS_GATEWAY_CONTROL_TOKEN:-}"
     ports:
       - "127.0.0.1:${KAI_APP_PORT:-3051}:3000"
     volumes:
@@ -74,6 +95,73 @@ services:
       options:
         max-size: 10m
         max-file: "5"
+    networks:
+      - default
+      - gateway-control
+
+  access-gateway:
+    profiles: ["gateway"]
+    image: "${KAI_IMAGE:?KAI_IMAGE must be an immutable repository@sha256 digest}"
+    pull_policy: always
+    restart: unless-stopped
+    init: true
+    user: "1000:1000"
+    read_only: true
+    entrypoint: ["node", "access-gateway/src/cli.mjs"]
+    command: []
+    environment:
+      KAI_GATEWAY_DB_PATH: /app/gateway/kai-access-gateway.sqlite
+      KAI_GATEWAY_CONTROL_TOKEN: "${KAI_ACCESS_GATEWAY_CONTROL_TOKEN:?KAI_ACCESS_GATEWAY_CONTROL_TOKEN is required}"
+      KAI_GATEWAY_TICKET_PEPPER: "${KAI_GATEWAY_TICKET_PEPPER:?KAI_GATEWAY_TICKET_PEPPER is required}"
+      KAI_GATEWAY_PUBLIC_HOST: "${KAI_GATEWAY_PUBLIC_HOST:?KAI_GATEWAY_PUBLIC_HOST is required}"
+      KAI_GATEWAY_CONTROL_HOST: 0.0.0.0
+      KAI_GATEWAY_CONTROL_PORT: "7080"
+      KAI_GATEWAY_TUNNEL_HOST: 0.0.0.0
+      KAI_GATEWAY_TUNNEL_PORT: "${KAI_GATEWAY_TUNNEL_PORT:-7443}"
+      KAI_GATEWAY_BUYER_HOST: 0.0.0.0
+      KAI_GATEWAY_PUBLIC_PORT_START: "${KAI_GATEWAY_PUBLIC_PORT_START:-22000}"
+      KAI_GATEWAY_PUBLIC_PORT_END: "${KAI_GATEWAY_PUBLIC_PORT_END:-22999}"
+      KAI_GATEWAY_TLS_CERT: /run/kai-gateway-tls/tls.crt
+      KAI_GATEWAY_TLS_KEY: /run/kai-gateway-tls/tls.key
+    ports:
+      - "${KAI_GATEWAY_TUNNEL_PORT:-7443}:${KAI_GATEWAY_TUNNEL_PORT:-7443}"
+      - "${KAI_GATEWAY_PUBLIC_PORT_START:-22000}-${KAI_GATEWAY_PUBLIC_PORT_END:-22999}:${KAI_GATEWAY_PUBLIC_PORT_START:-22000}-${KAI_GATEWAY_PUBLIC_PORT_END:-22999}"
+    volumes:
+      - type: bind
+        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3051}/gateway"
+        target: /app/gateway
+      - type: bind
+        source: "${KAI_GATEWAY_TLS_DIR:-/etc/kai-cloud/gateway-tls}"
+        target: /run/kai-gateway-tls
+        read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: 0.5
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 16384
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:7080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    networks:
+      - gateway-control
 
   market-update:
     profiles: ["ops"]
@@ -154,3 +242,7 @@ services:
       options:
         max-size: 10m
         max-file: "3"
+
+networks:
+  gateway-control:
+    internal: true

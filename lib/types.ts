@@ -76,6 +76,7 @@ export interface ServiceAlias {
 }
 
 export interface CatalogQuote {
+  dataClass: "MARKET_REFERENCE";
   currency: "CNY";
   pricingUnit: PricingUnit;
   rangeMin: number;
@@ -92,6 +93,7 @@ export interface CatalogQuote {
 }
 
 export interface ResourceListing {
+  dataClass: "STATIC_SAMPLE";
   id: string;
   title: string;
   category: ResourceCategory;
@@ -120,6 +122,7 @@ export interface MarketPoint {
 }
 
 export interface MarketSeries {
+  dataClass: "MARKET_REFERENCE";
   id: string;
   category: ResourceCategory;
   label: string;
@@ -131,6 +134,7 @@ export interface MarketSeries {
 }
 
 export interface MarketSnapshot {
+  dataClass: "MARKET_REFERENCE";
   id: string;
   category: ResourceCategory;
   label: string;
@@ -173,6 +177,7 @@ export interface NormalizeQuoteContext {
 }
 
 export interface NormalizedQuote {
+  dataClass: "MARKET_REFERENCE";
   sourceListingId: string | null;
   supplierId: string | null;
   supplierName: string;
@@ -242,4 +247,3 @@ export type ResourceQueryInput =
   | URLSearchParams
   | string
   | Record<string, string | string[] | undefined>;
-

@@ -6,7 +6,7 @@ import {
   accountPresentationState,
   formatCnyCents,
   formatKaiDateTime,
-  formatKaiDecimal,
+  formatKaiSchDisplay,
   memberResponseState,
   parseKaiHoursAccountEnvelope,
   type KaiHoursAccountEnvelope,
@@ -82,15 +82,15 @@ export function KaiStandardAccount() {
         </div>
         <div className={styles.metricGrid}>
           <article className={styles.metric}>
-            <span>已验真入库等值</span><strong>{formatKaiDecimal(data.summary.depositedKaiSch)} KAI-SCH</strong>
+            <span>已验真入库等值</span><strong>{formatKaiSchDisplay(data.summary.depositedKaiSch)} KAI-SCH</strong>
             <small>所有已验真容量按当前政策版本折算的观察值，不代表人民币金额。</small>
           </article>
           <article className={styles.metric}>
-            <span>当前可售等值</span><strong>{formatKaiDecimal(data.summary.availableKaiSch)} KAI-SCH</strong>
+            <span>当前可售等值</span><strong>{formatKaiSchDisplay(data.summary.availableKaiSch)} KAI-SCH</strong>
             <small>尚未被报价、订单或交付占用的容量等值；真正上架数量以原生单位为准。</small>
           </article>
           <article className={styles.metric}>
-            <span>已完成服务等值</span><strong>{formatKaiDecimal(data.summary.earnedKaiSch)} KAI-SCH</strong>
+            <span>已完成服务等值</span><strong>{formatKaiSchDisplay(data.summary.earnedKaiSch)} KAI-SCH</strong>
             <small>已交付服务规模的等值记录，不等于收入，也不产生固定收益。</small>
           </article>
           <article className={styles.metric}>
@@ -117,7 +117,7 @@ export function KaiStandardAccount() {
                   <tr key={`${position.productCode}:${position.productVersionId}:${position.nativeUnitLabel}`}>
                     <th scope="row">{position.productLabel}<span className={styles.secondaryValue}>{position.productCode} · 版本 {position.productVersionId}</span></th>
                     <td><KaiStandardEquivalentLine nativeAmount={position.nativeAmount} nativeUnitLabel={position.nativeUnitLabel} kaiSchAmount={position.availableKaiSch} policyVersion={data.policyVersion} asOf={data.asOf} label="当前可售等值" stale={stale} /></td>
-                    <td><span className={styles.primaryValue}>{formatKaiDecimal(position.heldKaiSch)} KAI-SCH</span><span className={styles.secondaryValue}>暂不能退出或重复出售</span></td>
+                    <td><span className={styles.primaryValue}>{formatKaiSchDisplay(position.heldKaiSch)} KAI-SCH</span><span className={styles.secondaryValue}>暂不能退出或重复出售</span></td>
                   </tr>
                 ))}
               </tbody>

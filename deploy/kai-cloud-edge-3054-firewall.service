@@ -1,6 +1,6 @@
 [Unit]
 Description=Restrict KAI Cloud port 3054 to the AWS VPC
-Before=kai-cloud-edge-3054.socket
+Before=kai-cloud-edge-3054.socket kai-cloud-edge-http-3054.service
 
 [Service]
 Type=oneshot

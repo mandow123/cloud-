@@ -101,7 +101,8 @@ export function assertLocalSecret(request: Request, env: Env = runtimeEnv()) {
 export function assertLocalInteractiveRequest(request: Request, env: Env = runtimeEnv()) {
   if (!localEnabled(env)) throw new AccountAuthError("LOCAL_AUTH_FORBIDDEN", 403, "LOCAL 认证不可用。 ");
   const url = new URL(request.url);
-  if (url.hostname !== "localhost" && url.hostname !== "127.0.0.1") throw new AccountAuthError("LOCAL_AUTH_FORBIDDEN", 403, "LOCAL 认证仅允许本机访问。 ");
+  const multiRoleHost = env.KAI_ADMIN_LOCAL_MULTI_ROLE_QA === "1" && /^(buyer|supplier|root|finance)\.localhost$/u.test(url.hostname);
+  if (url.hostname !== "localhost" && url.hostname !== "127.0.0.1" && !multiRoleHost) throw new AccountAuthError("LOCAL_AUTH_FORBIDDEN", 403, "LOCAL 认证仅允许本机访问。 ");
   const origin = request.headers.get("origin");
   if (!origin || new URL(origin).origin !== url.origin || request.headers.get("sec-fetch-site")?.toLowerCase() === "cross-site") {
     throw new AccountAuthError("LOCAL_AUTH_FORBIDDEN", 403, "LOCAL 认证请求来源无效。 ");

@@ -30,6 +30,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+*.env
+/.codex-artifacts/
 
 # vercel
 .vercel
@@ -38,7 +40,9 @@ yarn-error.log*
 next-env.d.ts
 *.tsbuildinfo
 /dist/
+/public/downloads/
 /.wrangler/
 /outputs/
 /work/
 /.market-cache/
+/.local-workspaces/

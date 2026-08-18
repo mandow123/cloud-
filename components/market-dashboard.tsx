@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
-import { formatPrice } from "@/lib/market";
 import type { MarketSeries, ResourceCategory } from "@/lib/types";
 
 const CATEGORY_ORDER: ResourceCategory[] = [
@@ -19,6 +18,10 @@ const CATEGORY_LABELS: Record<ResourceCategory, string> = {
 };
 
 type RangeDays = 7 | 30 | 90;
+
+function formatHistoricalCardHours(value: number, pricingUnit: string) {
+  return `${(value / 1.002).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} KAI 卡时 / ${pricingUnit}`;
+}
 
 function isCategory(value: string | null): value is ResourceCategory {
   return CATEGORY_ORDER.includes(value as ResourceCategory);
@@ -197,8 +200,8 @@ export function MarketDashboard({
 
         <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="kicker">Infrastructure market</p>
-            <h2 className="m-0 text-2xl text-[var(--ink)]">基础设施算力行情</h2>
+            <p className="kicker">Infrastructure history</p>
+            <h2 className="m-0 text-2xl text-[var(--ink)]">基础设施历史样本</h2>
           </div>
           <a className="inline-flex min-h-11 items-center text-sm font-semibold text-[var(--accent)] underline underline-offset-4" href="#model-token-market">
             查看 Token / 模型日度行情
@@ -284,9 +287,9 @@ export function MarketDashboard({
 
           <div className="grid xl:grid-cols-[300px_minmax(0,1fr)]">
             <div className="border-b border-[var(--border)] p-5 sm:p-6 xl:border-r xl:border-b-0">
-              <p className="m-0 text-xs font-semibold tracking-wide text-[var(--muted)]">最新 P50 中位价</p>
+              <p className="m-0 text-xs font-semibold tracking-wide text-[var(--muted)]">历史 P50 中位参考</p>
               <p className="mt-2 text-3xl font-semibold tabular-nums text-[var(--ink)]">
-                {formatPrice(latest.p50, activeSeries.pricingUnit)}
+                {formatHistoricalCardHours(latest.p50, activeSeries.pricingUnit)}
               </p>
               <p className={`mt-2 text-sm font-semibold ${change >= 0 ? "text-[var(--warning)]" : "text-[var(--success)]"}`}>
                 {change > 0 ? "+" : ""}{change.toFixed(1)}% / {range} 天
@@ -295,13 +298,13 @@ export function MarketDashboard({
                 <div>
                   <dt className="text-xs text-[var(--muted)]">P25</dt>
                   <dd className="mt-1 text-sm font-semibold tabular-nums text-[var(--ink)]">
-                    {formatPrice(latest.p25, activeSeries.pricingUnit)}
+                    {formatHistoricalCardHours(latest.p25, activeSeries.pricingUnit)}
                   </dd>
                 </div>
                 <div>
                   <dt className="text-xs text-[var(--muted)]">P75</dt>
                   <dd className="mt-1 text-sm font-semibold tabular-nums text-[var(--ink)]">
-                    {formatPrice(latest.p75, activeSeries.pricingUnit)}
+                    {formatHistoricalCardHours(latest.p75, activeSeries.pricingUnit)}
                   </dd>
                 </div>
                 <div>
@@ -335,7 +338,7 @@ export function MarketDashboard({
               <div
                 className="relative h-72 border-y border-[var(--border)] bg-[var(--info-bg)]"
                 role="img"
-                aria-label={`${activeSeries.label}从${fullDate(points[0].date)}至${fullDate(latest.date)}，P50中位价${direction}${Math.abs(change).toFixed(1)}%，最新价格${formatPrice(latest.p50, activeSeries.pricingUnit)}。`}
+                aria-label={`${activeSeries.label}从${fullDate(points[0].date)}至${fullDate(latest.date)}，P50中位价${direction}${Math.abs(change).toFixed(1)}%，最新目录参考${formatHistoricalCardHours(latest.p50, activeSeries.pricingUnit)}。`}
               >
                 {[0, 1, 2, 3, 4].map((line) => (
                   <div
@@ -374,7 +377,7 @@ export function MarketDashboard({
                 <strong className="text-[var(--ink)]">文字结论：</strong>
                 过去 {range} 天，{activeSeries.label} 的 P50 中位价{direction}
                 {Math.abs(change) > 0.05 ? ` ${Math.abs(change).toFixed(1)}%` : ""}；最新四分位区间为
-                {formatPrice(latest.p25, activeSeries.pricingUnit)} 至 {formatPrice(latest.p75, activeSeries.pricingUnit)}。
+                {formatHistoricalCardHours(latest.p25, activeSeries.pricingUnit)} 至 {formatHistoricalCardHours(latest.p75, activeSeries.pricingUnit)}。
               </p>
 
               <table className="sr-only">
@@ -396,9 +399,9 @@ export function MarketDashboard({
           <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="kicker">Latest snapshot</p>
-              <h2 id="market-snapshot-title" className="m-0 text-2xl text-[var(--ink)]">{CATEGORY_LABELS[category]}最新横截面</h2>
+              <h2 id="market-snapshot-title" className="m-0 text-2xl text-[var(--ink)]">{CATEGORY_LABELS[category]}历史横截面</h2>
             </div>
-            <p className="m-0 text-xs text-[var(--muted)]">市场参考报价 · 具体以询价确认为准</p>
+            <p className="m-0 text-xs text-[var(--muted)]">历史初始化样本 · 不代表库存或可成交报价</p>
           </div>
           <div className="data-table-wrap border border-[var(--border)]">
             <table className="data-table">
@@ -420,9 +423,9 @@ export function MarketDashboard({
                     <tr key={entry.id}>
                       <th className="min-w-52 text-[var(--ink)]" scope="row">{entry.label}</th>
                       <td>{entry.region}</td>
-                      <td className="num whitespace-nowrap">{formatPrice(point.p25, entry.pricingUnit)}</td>
-                      <td className="num whitespace-nowrap font-semibold text-[var(--ink)]">{formatPrice(point.p50, entry.pricingUnit)}</td>
-                      <td className="num whitespace-nowrap">{formatPrice(point.p75, entry.pricingUnit)}</td>
+                      <td className="num whitespace-nowrap">{formatHistoricalCardHours(point.p25, entry.pricingUnit)}</td>
+                      <td className="num whitespace-nowrap font-semibold text-[var(--ink)]">{formatHistoricalCardHours(point.p50, entry.pricingUnit)}</td>
+                      <td className="num whitespace-nowrap">{formatHistoricalCardHours(point.p75, entry.pricingUnit)}</td>
                       <td className="num">{point.sampleCount}</td>
                       <td className="whitespace-nowrap">{entry.updatedAt}</td>
                     </tr>
@@ -432,7 +435,7 @@ export function MarketDashboard({
             </table>
           </div>
           <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
-            说明：P25、P50、P75 为平台初始化报价样本的四分位统计；供应商接入后核验更新，具体以询价确认为准。
+            说明：P25、P50、P75 为平台历史初始化样本的四分位统计，并统一显示为卡时目录参考值；不代表实时库存、现货或可成交报价。
           </p>
         </section>
       </div>

@@ -1,6 +1,8 @@
 import { verifyAlipayNotification } from "@/lib/server/alipay-live";
 import { mutationHash } from "@/lib/server/api-guard";
 import { getSupplyStore } from "@/lib/server/supply-store";
+import { getCardHourStore } from "@/lib/server/card-hour-store";
+import { requireLegacyGpuMutationSimulation } from "@/lib/server/legacy-gpu-mutation-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +25,14 @@ export async function POST(request: Request) {
     const rawBody = await request.text();
     if (!rawBody || new TextEncoder().encode(rawBody).byteLength > 32 * 1024) return notifyResponse("failure", 413);
     const event = await verifyAlipayNotification(new URLSearchParams(rawBody), rawBody);
+    if (event.providerOrderId.startsWith("KAI_CH_")) {
+      const store = await getCardHourStore();
+      const topup = await store.getTopup(event.providerOrderId) as { id?: string; amountCents?: number; status?: string } | null;
+      if (!topup || topup.id !== event.providerOrderId || topup.amountCents !== event.amountCents) return notifyResponse("failure", 400);
+      await store.applyTopupEvent({ orderId: event.providerOrderId, providerEventId: event.providerEventId, providerTransactionId: event.providerTransactionId, eventType: event.eventType, amountCents: event.amountCents, payloadDigest: event.rawPayloadDigest, occurredAt: event.occurredAt, receivedAt: event.verifiedAt });
+      return notifyResponse("success");
+    }
+    requireLegacyGpuMutationSimulation();
     const store = await getSupplyStore();
     const detail = await store.getTrialOrder("alipay-notify", event.providerOrderId, "ops");
     if (detail.order.id !== event.providerOrderId

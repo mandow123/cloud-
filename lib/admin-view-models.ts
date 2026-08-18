@@ -507,7 +507,7 @@ export const adminSectionConfigs: Record<AdminSectionKey, AdminSectionConfig> = 
     key: "admins",
     title: "管理员与权限",
     kicker: "Access control",
-    description: "唯一 Root 拥有全部权限且不可转移；普通管理员角色可由 Root 分配，所有变更必须留下理由和审计记录。",
+    description: "Root 拥有完整权限，独立财务审批员只负责双人复核；两者均使用独立账号密码，本页不开放邮箱邀请或角色分配。",
     endpoints: [
       { path: "/api/v1/admin/principals", source: "管理员" },
       { path: "/api/v1/admin/roles", source: "角色目录" },
@@ -526,13 +526,7 @@ export const adminSectionConfigs: Record<AdminSectionKey, AdminSectionConfig> = 
     filters: ["角色", "状态", "权限范围", "环境"],
     emptyTitle: "没有管理员或角色记录",
     emptyDescription: "账号事实表和角色目录均没有返回数据。",
-    actions: [
-      { value: "INVITE_ADMIN", label: "邀请管理员", highRisk: true },
-      { value: "SET_ROLES", label: "调整角色", highRisk: true },
-      { value: "ACTIVATE_ADMIN", label: "启用管理员", highRisk: true },
-      { value: "SUSPEND_ADMIN", label: "停用管理员", highRisk: true },
-    ],
-    actionEndpoint: "/api/v1/admin/principals",
+    actions: [],
   },
   audit: {
     key: "audit",
@@ -560,6 +554,7 @@ export const adminSectionConfigs: Record<AdminSectionKey, AdminSectionConfig> = 
 export const adminNavigation = [
   { label: "运营总览", items: [{ href: "/admin", label: "总览", exact: true }] },
   { label: "供给运营", items: [
+    { href: "/admin/hosting", label: "Hosting 试运营" },
     { href: "/admin/supply-offers", label: "上架资源" },
     { href: "/admin/pools", label: "算力池" },
     { href: "/admin/verifications", label: "验真任务" },

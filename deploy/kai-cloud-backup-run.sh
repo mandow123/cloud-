@@ -39,6 +39,16 @@ if [ ! -x "$DOCKER_BIN" ]; then
   exit 69
 fi
 
+# The lock lives with the state root so differently named systemd units cannot
+# operate on the same backup set concurrently. The unit-level /run lock still
+# prevents duplicate starts of one unit; this lock protects the data boundary.
+KAI_BACKUP_SHARED_LOCK="$KAI_STATE_ROOT/backups/.kai-cloud-backup.lock"
+exec 9>"$KAI_BACKUP_SHARED_LOCK"
+if ! /usr/bin/flock --nonblock 9; then
+  printf '%s\n' "another backup task already owns $KAI_STATE_ROOT" >&2
+  exit 75
+fi
+
 cleanup() {
   "$DOCKER_BIN" rm -f "$KAI_BACKUP_CONTAINER" >/dev/null 2>&1 || true
 }

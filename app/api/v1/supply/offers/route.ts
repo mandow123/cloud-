@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const context = beginApiRequest(request); let actor: MarketplaceActor | undefined;
   try {
-    supplyWorkspaceRole(request, ["supplier"]);
+    await supplyWorkspaceRole(request, ["supplier"]);
     const authorization = await authorizeMarketplaceRequest(request); actor = authorization.actor;
     const items = await (await getSupplyStore()).listOffers(actor.id);
     return jsonResponse({ items, count: items.length }, 200, actor.responseHeaders, context);
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   const context = beginApiRequest(request); let actor: MarketplaceActor | undefined;
   try {
     const account = await requireTradingAccountSession(request);
-    supplyWorkspaceRole(request, ["supplier"]);
+    await supplyWorkspaceRole(request, ["supplier"]);
     const authorization = await authorizeMarketplaceRequest(request); actor = authorization.actor;
     prepareWrite(request, actor); await persistMarketplaceSession(authorization);
     const input = parseCreateSupplyOffer(await readJsonBody(request));

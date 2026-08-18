@@ -11,7 +11,9 @@ export const ALIPAY_REQUIRED_ENV = [
 export type AlipayEnvironment = Record<string, string | undefined>;
 
 export type AlipayReadiness = {
+  enabled: boolean;
   configured: boolean;
+  canCreatePayment: boolean;
   missing: string[];
   gateway: string;
   merchantAccountRef: string | null;
@@ -22,6 +24,7 @@ export type AlipayOrderSnapshot = {
   amountCents: number;
   subject: string;
   expiresMinutes?: number;
+  returnPath?: string;
 };
 
 export type VerifiedAlipayNotification = {
@@ -89,8 +92,11 @@ function configuredOrigin(value: string) {
 
 export function alipayReadiness(environment: AlipayEnvironment = runtimeEnvironment()): AlipayReadiness {
   const missing = ALIPAY_REQUIRED_ENV.filter((name) => !environment[name]?.trim());
+  const enabled = environment.KAI_ALIPAY_ENABLED?.trim() === "1";
   return {
+    enabled,
     configured: missing.length === 0,
+    canCreatePayment: enabled && missing.length === 0,
     missing: [...missing],
     gateway: environment.KAI_ALIPAY_GATEWAY?.trim() || "https://openapi.alipay.com/gateway.do",
     merchantAccountRef: environment.KAI_ALIPAY_SELLER_ID?.trim() || null,
@@ -99,10 +105,12 @@ export function alipayReadiness(environment: AlipayEnvironment = runtimeEnvironm
 
 function alipayClient(environment: AlipayEnvironment = runtimeEnvironment()) {
   const readiness = alipayReadiness(environment);
-  if (!readiness.configured) {
+  if (!readiness.canCreatePayment) {
     throw new AlipayLiveError(
       "ALIPAY_NOT_CONFIGURED",
-      `支付宝 LIVE 尚未配置：${readiness.missing.join(", ")}`,
+      readiness.enabled
+        ? `支付宝 LIVE 尚未配置：${readiness.missing.join(", ")}`
+        : "支付宝 LIVE 当前按试运营边界保持关闭。",
     );
   }
   return new AlipaySdk({
@@ -157,10 +165,14 @@ export function createAlipayCheckoutUrl(
   if (!subject || subject.length > 128) {
     throw new AlipayLiveError("ALIPAY_INVALID_ORDER", "支付宝订单标题必须为 1–128 个字符。\n");
   }
+  const returnPath = order.returnPath ?? `/supply/orders/${encodeURIComponent(order.orderId)}?payment=return`;
+  if (!returnPath.startsWith("/") || returnPath.startsWith("//")) {
+    throw new AlipayLiveError("ALIPAY_INVALID_ORDER", "支付返回地址无效。\n");
+  }
 
   const checkoutUrl = client.pageExecute("alipay.trade.page.pay", "GET", {
     notifyUrl: `${origin}/api/v1/payments/alipay/notify`,
-    returnUrl: `${origin}/supply/orders/${encodeURIComponent(order.orderId)}?payment=return`,
+    returnUrl: `${origin}${returnPath}`,
     bizContent: {
       outTradeNo: order.orderId,
       productCode: "FAST_INSTANT_TRADE_PAY",

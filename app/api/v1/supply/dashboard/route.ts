@@ -3,14 +3,13 @@ import { supplyWorkspaceRole } from "@/lib/server/supply-api";
 import { getSupplyStore } from "@/lib/server/supply-store";
 import { authorizeMarketplaceRequest } from "@/lib/server/marketplace-auth";
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
-import { alipayReadiness } from "@/lib/server/alipay-live";
 import { sshProvisionerReadiness } from "@/lib/server/ssh-provisioner";
 
 export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const context = beginApiRequest(request); let actor: MarketplaceActor | undefined;
   try {
-    supplyWorkspaceRole(request, ["supplier"]); const authorization = await authorizeMarketplaceRequest(request); actor = authorization.actor;
+    await supplyWorkspaceRole(request, ["supplier"]); const authorization = await authorizeMarketplaceRequest(request); actor = authorization.actor;
     const store = await getSupplyStore(); const poolSummaries = await store.listPools(actor.id);
     const memberGroups = await Promise.all(poolSummaries.map(async ({ pool, policy }) => {
       const [items, windows] = await Promise.all([store.listMembers(actor!.id, pool.id), store.listAvailability(actor!.id, pool.id)]);
@@ -27,13 +26,12 @@ export async function GET(request: Request) {
       pendingOrderCount: orders.filter((item) => !["COMPLETED", "CANCELLED", "REFUNDED"].includes(item.status)).length,
       submittedOfferCount: offers.filter((item) => item.status === "SUBMITTED").length,
     };
-    const alipay = alipayReadiness();
     const ssh = sshProvisionerReadiness();
     const paymentReadiness = {
-      provider: "ALIPAY",
+      provider: "KAI_CARD_HOUR",
       environment: "LIVE",
-      ready: alipay.configured,
-      blockers: alipay.configured ? [] : alipay.missing.map((name) => `缺少 ${name}`),
+      ready: true,
+      blockers: [],
     };
     return jsonResponse({
       pools: poolSummaries,

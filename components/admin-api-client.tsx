@@ -36,7 +36,7 @@ function apiError(body: unknown, response: Response) {
   );
 }
 
-async function adminFetch(path: string, init: RequestInit = {}, timeoutMs = 15_000) {
+async function adminFetch(path: string, init: RequestInit = {}, timeoutMs = 15_000, acceptedErrorStatuses: readonly number[] = []) {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -48,7 +48,7 @@ async function adminFetch(path: string, init: RequestInit = {}, timeoutMs = 15_0
       signal: controller.signal,
     });
     const body = await responseBody(response);
-    if (!response.ok) throw apiError(body, response);
+    if (!response.ok && !acceptedErrorStatuses.includes(response.status)) throw apiError(body, response);
     return body;
   } catch (error) {
     if (error instanceof AdminApiError) throw error;
@@ -59,6 +59,22 @@ async function adminFetch(path: string, init: RequestInit = {}, timeoutMs = 15_0
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+export async function adminGetJson(path: string) {
+  const payload = await adminFetch(path);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new AdminApiError("管理员接口返回了无法识别的内容。", 200, "INVALID_RESPONSE");
+  }
+  return payload as Record<string, unknown>;
+}
+
+export async function adminGetReadinessJson() {
+  const payload = await adminFetch("/api/ready", {}, 15_000, [503]);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new AdminApiError("就绪检查返回了无法识别的内容。", 200, "INVALID_RESPONSE");
+  }
+  return payload as Record<string, unknown>;
 }
 
 function recordArray(value: unknown): AdminRow[] {
@@ -127,31 +143,6 @@ export async function adminPostAction(path: string, payload: unknown, method: "P
   }, 30_000);
   if (!result || typeof result !== "object") {
     throw new AdminApiError("管理员操作接口未返回可核验结果。", 200, "INVALID_RESPONSE");
-  }
-  return result as Record<string, unknown>;
-}
-
-export async function localAdminLogin() {
-  const response = await fetch("/api/auth/local", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { accept: "application/json", "content-type": "application/json" },
-    body: JSON.stringify({ returnTo: "/admin" }),
-  });
-  const body = await responseBody(response);
-  if (!response.ok) throw apiError(body, response);
-  const result = body && typeof body === "object" ? body as Record<string, unknown> : {};
-  return typeof result.redirectUrl === "string" ? result.redirectUrl : "/admin";
-}
-
-export async function bootstrapRootAccount(code: string) {
-  const result = await adminFetch("/api/auth/bootstrap-admin", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ code }),
-  }, 30_000);
-  if (!result || typeof result !== "object") {
-    throw new AdminApiError("Root 初始化接口未返回可核验结果。", 200, "INVALID_RESPONSE");
   }
   return result as Record<string, unknown>;
 }

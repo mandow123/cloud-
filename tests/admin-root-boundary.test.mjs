@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { AccountAuthError, assertAccountAuthSameOrigin, createAccountSession } from "../lib/server/account-auth.ts";
-import { adminLarkReturnPath } from "../lib/server/admin-auth-lark.ts";
 import { requireAdminPermission } from "../lib/server/admin-auth.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
 
@@ -29,7 +28,7 @@ test("admin write entry points reject same-site cross-origin requests before any
   assert.ok(postBody.indexOf("requireAdminPermission(request") < postBody.indexOf("getStandardizationStore()"));
 });
 
-test("unauthenticated and non-ROOT administrator checks fail before backend data access", async () => {
+test("unauthenticated and email-authenticated Root checks fail before backend data access", async () => {
   await assert.rejects(
     requireAdminPermission(new Request("https://cloud.kai.com/api/v1/admin/dashboard"), ["ADMIN_PANEL_READ"]),
     (error) => error instanceof AccountAuthError && error.status === 401,
@@ -48,7 +47,7 @@ test("unauthenticated and non-ROOT administrator checks fail before backend data
     verifiedAt: now.toISOString(),
   };
   const identity = await store.resolveOrCreateIdentity(identityInput);
-  await store.activateMembership(identity.membership.id, ["ROLE_ADMIN"], now.toISOString());
+  await store.activateMembership(identity.membership.id, ["ROOT"], now.toISOString());
   const active = await store.resolveOrCreateIdentity(identityInput);
   const issued = await createAccountSession(
     new Request("https://cloud.kai.com/api/auth/email/verify"),
@@ -76,11 +75,9 @@ test("unauthenticated and non-ROOT administrator checks fail before backend data
   assert.ok(readBody.indexOf("requireAdminPermission(request") < readBody.indexOf("getAdminOperationsStore()"));
 });
 
-test("Lark login sends non-ROOT identities to bootstrap while an established ROOT reaches the requested admin page", () => {
+test("administrator UI exposes only the independent password entry point", () => {
   const login = source("components/admin-login.tsx");
-  assert.match(login, /\/api\/auth\/lark\/start\?returnTo=%2Fadmin["']/u);
-  assert.equal(adminLarkReturnPath("/admin/orders", { status: "PENDING", roles: [] }), "/admin/login");
-  assert.equal(adminLarkReturnPath("/admin/orders", { status: "ACTIVE", roles: ["ROLE_ADMIN"] }), "/admin/login");
-  assert.equal(adminLarkReturnPath("/admin/orders", { status: "ACTIVE", roles: ["ROOT"] }), "/admin/orders");
-  assert.equal(adminLarkReturnPath("/member", { status: "PENDING", roles: [] }), "/member");
+  assert.match(login, /\/api\/auth\/admin\/password/u);
+  assert.doesNotMatch(login, /飞书|邮箱登录|bootstrap-admin|bootstrapRootAccount/u);
+  assert.match(source("app/api/auth/admin/password/route.ts"), /createAdminPasswordSession/u);
 });

@@ -13,6 +13,8 @@ import type {
 } from "./types";
 
 export const MARKET_REFERENCE_NOTICE: string = catalog.MARKET_REFERENCE_NOTICE;
+export const STATIC_SAMPLE_DATA_CLASS = catalog.STATIC_SAMPLE_DATA_CLASS as "STATIC_SAMPLE";
+export const MARKET_REFERENCE_DATA_CLASS = catalog.MARKET_REFERENCE_DATA_CLASS as "MARKET_REFERENCE";
 export const RESOURCE_CATEGORIES = catalog.RESOURCE_CATEGORIES as readonly ResourceCategory[];
 export const DEAL_MODES = catalog.DEAL_MODES;
 export const PRICING_UNITS = catalog.PRICING_UNITS;
@@ -39,4 +41,3 @@ export function getResourceById(id: string): ResourceListing | undefined {
 export function findServiceAlias(input: string): ServiceAlias | undefined {
   return catalog.findServiceAlias(input) as ServiceAlias | undefined;
 }
-

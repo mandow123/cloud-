@@ -34,7 +34,7 @@ export function LiveExchangeMarket() {
         </div>
         {error ? <div role="alert" className="mt-7 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-4 text-[var(--error)]">{error}</div> : null}
         {!page && !error ? <p className="mt-7 border-l-2 border-[var(--accent)] pl-4">正在核对可售时间窗…</p> : null}
-        {page && page.items.length === 0 ? <p className="mt-7 border-y border-[var(--border)] bg-[var(--surface)] p-6">当前没有可直接锁定的容量。你仍可浏览下方行情并发布采购需求。</p> : null}
+        {page && page.items.length === 0 ? <p className="mt-7 border-y border-[var(--border)] bg-[var(--surface)] p-6">当前没有可直接锁定的容量。你仍可浏览下方行情并提交算力需求。</p> : null}
         {page?.items.length ? (
           <div className="mt-8 grid gap-px bg-[var(--border)] lg:grid-cols-2">
             {page.items.map((listing) => {

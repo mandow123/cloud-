@@ -2,20 +2,19 @@ import type { ExchangeWorkspaceRole } from "../exchange.ts";
 import { ExchangeDomainError } from "./exchange-errors.ts";
 import type { AdminPermission } from "../admin-auth-types.ts";
 import { requireAdminPermission } from "./admin-auth.ts";
+import { requireTradingAccountSession } from "./entity-ownership.ts";
 
 /**
- * Temporary workspace boundary until the organization identity provider is
- * connected. It keeps role behavior explicit without pretending to be the
- * final authentication system.
+ * Buyer/supplier is a workspace view, not an authorization credential. The
+ * browser may still send x-kai-workspace-role to select UI behavior, but every
+ * exchange operation is authorized by the signed account session and the
+ * store's organization ownership checks.
  */
-export function requireExchangeRole(request: Request, expected: ExchangeWorkspaceRole) {
+export async function requireExchangeRole(request: Request, expected: ExchangeWorkspaceRole) {
   if (expected === "ops") {
     throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "运营权限必须通过服务端管理员会话校验。" );
   }
-  const supplied = request.headers.get("x-kai-workspace-role");
-  if (supplied !== expected) {
-    throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, `该操作仅允许 ${expected} 工作台执行。`);
-  }
+  await requireTradingAccountSession(request);
   return expected;
 }
 

@@ -8,13 +8,13 @@ import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
 export const dynamic = "force-dynamic";
 export async function GET(request: Request, contextValue: { params: Promise<{ id: string }> }) {
   const context = beginApiRequest(request); let actor: MarketplaceActor | undefined;
-  try { supplyWorkspaceRole(request, ["supplier"]); const authorization = await authorizeMarketplaceRequest(request); actor = authorization.actor; const { id } = await contextValue.params;
+  try { await supplyWorkspaceRole(request, ["supplier"]); const authorization = await authorizeMarketplaceRequest(request); actor = authorization.actor; const { id } = await contextValue.params;
     const items = await (await getSupplyStore()).listAvailability(actor.id, id); return jsonResponse({ items, count: items.length }, 200, actor.responseHeaders, context);
   } catch (error) { return apiErrorResponse(error, actor?.responseHeaders, context); }
 }
 export async function POST(request: Request, contextValue: { params: Promise<{ id: string }> }) {
   const context = beginApiRequest(request); let actor: MarketplaceActor | undefined;
-  try { supplyWorkspaceRole(request, ["supplier"]); const authorization = await authorizeMarketplaceRequest(request); actor = authorization.actor; prepareWrite(request, actor); await persistMarketplaceSession(authorization);
+  try { await supplyWorkspaceRole(request, ["supplier"]); const authorization = await authorizeMarketplaceRequest(request); actor = authorization.actor; prepareWrite(request, actor); await persistMarketplaceSession(authorization);
     const { id } = await contextValue.params; const items = parseAvailabilityBatch(await readJsonBody(request)); const result = await (await getSupplyStore()).batchAvailability(id, { actorId: actor.id, idempotencyKey: requireIdempotencyKey(request), payloadHash: await mutationHash({ poolId: id, items }) }, items);
     const headers = new Headers(actor.responseHeaders); headers.set("idempotency-replayed", String(result.replayed)); return jsonResponse(result, result.replayed ? 200 : 201, headers, context);
   } catch (error) { return apiErrorResponse(error, actor?.responseHeaders, context); }

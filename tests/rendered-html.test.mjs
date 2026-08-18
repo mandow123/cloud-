@@ -32,12 +32,14 @@ test("server-renders the finished KAI Cloud home page", async () => {
 
   const html = await response.text();
   assert.match(html, /KAI Cloud/);
-  assert.match(html, /中国 Token 学院算力市场/);
-  assert.match(html, /先看清价格/);
-  assert.match(html, /发布算力需求/);
+  assert.match(html, /KAI CLOUD · COMPUTE MARKETPLACE/);
+  assert.match(html, /让算力，抵达每一个需要它的时刻/);
+  assert.match(html, /Compute, ready for every moment that matters/);
+  assert.match(html, /进入真实 GPU 市场/);
+  assert.match(html, /模型价格档位/);
   assert.match(html, /需求服务已接通|交易链路已接通|供应方报价会回流到需求方工作台/);
-  assert.match(html, /每日北京时间 06:00/);
-  assert.match(html, /模型调用成本指数/);
+  assert.match(html, /历史目录参考/);
+  assert.match(html, /模型价格档位不是已核验资源、库存或可成交报价/);
   assert.match(html, /供应方报价会回流到需求方工作台/);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
 });
@@ -87,10 +89,10 @@ test("production typography is self-hosted without build-machine font URLs", asy
 test("all primary public and member routes render", async () => {
   const routes = [
     ["/market", /行情中心/],
-    ["/resources", /资源市场/],
+    ["/resources", /资源目录/],
     ["/request", /发布.*需求|租赁.*置换/],
     ["/member", /会员中心|需求方|供应方/],
-    ["/partners", /供应商合作/],
+    ["/hosting/partners", /供应商合作/],
     ["/methodology", /数据方法|价格口径/],
   ];
 
@@ -109,7 +111,7 @@ test("primary routes never render demonstration wording", async () => {
     `/resources/${resourceListings[0].id}`,
     "/request",
     "/member",
-    "/partners",
+    "/hosting/partners",
     "/methodology",
   ];
 
@@ -126,12 +128,18 @@ test("primary routes never render demonstration wording", async () => {
   }
 });
 
-test("market surfaces disclose reference pricing and inquiry confirmation", async () => {
+test("the retired supplier entry permanently redirects to the governed Hosting page", async () => {
+  const response = await render("/partners");
+  assert.equal(response.status, 308);
+  assert.equal(response.headers.get("location"), "https://cloud.kai.com/hosting/partners");
+});
+
+test("market surfaces disclose historical reference status and demand confirmation", async () => {
   for (const pathname of ["/market", "/resources"]) {
     const response = await render(pathname);
     const html = await response.text();
-    assert.match(html, /市场参考报价|市场参考/);
-    assert.match(html, /询价确认/);
+    assert.match(html, /历史初始化样本|历史样本|目录参考/);
+    assert.match(html, /不代表.*(?:库存|可成交报价)|提交.*需求/);
     assert.match(html, /更新|更新时间/);
   }
 });
@@ -142,7 +150,8 @@ test("model market renders per-model prices, source status, and the 06:00 update
 
   assert.match(html, /主流模型 Token 分项行情/);
   assert.match(html, /每日 06:00/);
-  assert.match(html, /不是跨模型人民币均价/);
+  assert.match(html, /不是跨模型成交均价/);
+  assert.match(html, /KAI 卡时 \/ 百万 Token/);
   assert.match(html, /DeepSeek/);
   assert.match(html, /OpenAI/);
   assert.match(html, /Moonshot \/ Kimi/);
@@ -159,35 +168,34 @@ test("all ten business aliases are reachable from the home page", async () => {
   }
 });
 
-test("a dynamic resource detail exposes complete reference quote scope", async () => {
+test("a dynamic resource detail discloses an expired historical reference", async () => {
   const listing = resourceListings[0];
   const response = await render(`/resources/${listing.id}`);
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, new RegExp(listing.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(html, /市场参考报价/);
-  assert.match(html, /询价确认/);
+  assert.match(html, /历史初始化样本/);
+  assert.match(html, /报价已过期/);
+  assert.match(html, /不可直接购买/);
   assert.match(html, /含税|税费/);
   assert.match(html, /有效期|更新/);
   assert.match(html, /发布需求|询价/);
 });
 
-test("resources expose the approved purchase action and a clearly priced purchase page", async () => {
+test("resources submit demand while the retired catalog checkout permanently redirects", async () => {
   const listing = resourceListings[0];
   const resourcesResponse = await render("/resources");
   assert.equal(resourcesResponse.status, 200);
   const resourcesHtml = await resourcesResponse.text();
-  assert.match(resourcesHtml, new RegExp(`/checkout/${listing.id}`));
-  assert.match(resourcesHtml, /购买/);
+  assert.doesNotMatch(resourcesHtml, new RegExp(`/checkout/${listing.id}`));
+  assert.match(resourcesHtml, /提交需求/);
+  assert.match(resourcesHtml, /报价已过期/);
 
   const checkoutResponse = await render(`/checkout/${listing.id}`);
-  assert.equal(checkoutResponse.status, 200);
-  const checkoutHtml = await checkoutResponse.text();
-  assert.match(checkoutHtml, /购买/);
-  assert.match(checkoutHtml, /市场参考单价/);
-  assert.match(checkoutHtml, /预计金额/);
-  assert.match(checkoutHtml, new RegExp(String(listing.quote.median)));
-  assert.match(checkoutHtml, /平台确认库存与正式价格/);
+  assert.equal(checkoutResponse.status, 308);
+  const location = checkoutResponse.headers.get("location") ?? "";
+  assert.match(location, /\/request\?/u);
+  assert.match(location, new RegExp(`listing=${listing.id}`));
 });
 
 test("starter artifacts are removed and brand assets are wired", async () => {
@@ -201,10 +209,11 @@ test("starter artifacts are removed and brand assets are wired", async () => {
   await assert.rejects(access(new URL("../app/_sites-preview/SkeletonPreview.tsx", import.meta.url)));
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
-  assert.match(layout, /og\.png/);
+  assert.match(layout, /og-home-v2\.png/);
   assert.match(layout, /zh-CN/);
   assert.match(css, /--brand:\s*#177777/i);
   assert.match(css, /--canvas:\s*#fbfdfd/i);
   assert.match(css, /--accent:\s*#69d1cb/i);
   await access(new URL("../public/og.png", import.meta.url));
+  await access(new URL("../public/og-home-v2.png", import.meta.url));
 });
