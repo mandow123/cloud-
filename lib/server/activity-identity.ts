@@ -35,7 +35,7 @@ export async function requireActivityAdminAccess(request: Request, access: "READ
   const env = await activitySecurityEnvironment(envOverride);
   if (env.KAI_TRUST_OPENAI_IDENTITY_HEADERS === "1") {
     const identity = await resolveActivityIdentity(request, env);
-    if (identity?.source === "chatgpt" && configuredAdminEmails(env.KAI_ACTIVITY_ADMIN_EMAILS).has(identity.email.toLowerCase())) {
+    if (identity?.source === "chatgpt" && identity.email && configuredAdminEmails(env.KAI_ACTIVITY_ADMIN_EMAILS).has(identity.email.toLowerCase())) {
       return { id: identity.id, displayName: identity.displayName, source: "sites-allowlist" as const };
     }
   }

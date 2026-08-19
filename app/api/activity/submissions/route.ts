@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       if (result.replayed) { await env.UPLOADS.delete(uploadedKey); uploadedKey = null; }
       return Response.json({ submissionId: result.submissionId, status: "PENDING" }, { status: result.replayed ? 200 : 201, headers: { "cache-control": "no-store", "idempotency-replayed": String(result.replayed) } });
     } catch (error) {
-      await env.UPLOADS.delete(uploadedKey).catch(() => undefined);
+      if (uploadedKey) await env.UPLOADS.delete(uploadedKey).catch(() => undefined);
       uploadedKey = null;
       throw error;
     }
