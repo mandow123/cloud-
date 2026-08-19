@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
 import { DatabaseSync } from "node:sqlite";
 
@@ -42,6 +42,9 @@ class NodeD1Database {
   }
 
   async batch(statements) {
+    if (!Array.isArray(statements) || statements.some((statement) => !(statement instanceof NodeD1Statement) || statement.database !== this.database)) {
+      throw new TypeError("ACTIVITY_DB_BATCH_INVALID");
+    }
     this.database.exec("BEGIN IMMEDIATE");
     try {
       const results = [];
@@ -61,7 +64,15 @@ class NodeR2Bucket {
   }
 
   pathFor(key) {
-    if (!key || key.includes("\0") || key.split("/").some((part) => part === ".." || part === ".")) {
+    if (
+      typeof key !== "string"
+      || !key
+      || key.includes("\0")
+      || key.includes("\\")
+      || key.startsWith("/")
+      || /^[A-Za-z]:[\\/]/.test(key)
+      || key.split("/").some((part) => !part || part === ".." || part === ".")
+    ) {
       throw new Error("ACTIVITY_UPLOAD_KEY_INVALID");
     }
     const target = resolve(this.root, ...key.split("/"));
@@ -75,9 +86,18 @@ class NodeR2Bucket {
       ? Buffer.from(value)
       : Buffer.from(await new Response(value).arrayBuffer());
     await mkdir(resolve(target, ".."), { recursive: true });
-    const temporary = `${target}.${crypto.randomUUID()}.partial`;
-    await writeFile(temporary, bytes, { flag: "wx", mode: 0o640 });
-    await rename(temporary, target);
+    const temporary = `${target}.${randomUUID()}.partial`;
+    try {
+      await writeFile(temporary, bytes, { flag: "wx", mode: 0o640 });
+      await rename(temporary, target);
+    } catch (error) {
+      try {
+        await unlink(temporary);
+      } catch (cleanupError) {
+        if (cleanupError?.code !== "ENOENT") error.cleanupError = cleanupError.message;
+      }
+      throw error;
+    }
   }
 
   async get(key) {
@@ -108,9 +128,12 @@ class NodeR2Bucket {
 export async function installActivityNodeBindings() {
   const databaseDirectory = resolve(process.env.KAI_DB_DIR ?? join(process.cwd(), ".market-cache", "marketplace"));
   const uploadDirectory = resolve(process.env.KAI_ACTIVITY_UPLOAD_DIR ?? join(databaseDirectory, "activity-uploads"));
-  await Promise.all([mkdir(databaseDirectory, { recursive: true }), mkdir(uploadDirectory, { recursive: true })]);
-  globalThis.__KAI_ACTIVITY_ENV__ = {
-    DB: new NodeD1Database(resolve(process.env.KAI_ACTIVITY_DB_PATH ?? join(databaseDirectory, "activity.sqlite"))),
+  const databasePath = resolve(process.env.KAI_ACTIVITY_DB_PATH ?? join(databaseDirectory, "activity.sqlite"));
+  await Promise.all([mkdir(databaseDirectory, { recursive: true }), mkdir(dirname(databasePath), { recursive: true }), mkdir(uploadDirectory, { recursive: true })]);
+  const bindings = {
+    DB: new NodeD1Database(databasePath),
     UPLOADS: new NodeR2Bucket(uploadDirectory),
   };
+  globalThis.__KAI_ACTIVITY_ENV__ = bindings;
+  return bindings;
 }
