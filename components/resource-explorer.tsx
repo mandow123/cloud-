@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import purchaseStyles from "@/components/resource-purchase.module.css";
@@ -70,7 +71,17 @@ function publicCatalogText(value: string) {
 
 function supplierSource(resource: ResourceListing) {
   if (!resource.source) return `${publicCatalogText(resource.supplierName)} · 供应商目录`;
-  return `供应商来源：${resource.source.supplierName} · 报价单 ${resource.source.observedAt} · 未经 KAI 验真`;
+  const status = resource.source.verificationStatus === "SUPPLIER_PROVIDED" ? "供应商提供报价" : "未经 KAI 验真";
+  return `供应商来源：${resource.source.supplierName} · 报价单 ${resource.source.observedAt} · ${status}`;
+}
+
+function SupplierIdentity({ resource }: { resource: ResourceListing }) {
+  return (
+    <span className="mt-1 flex items-center gap-2 text-xs text-[var(--muted)]">
+      {resource.supplierLogoUrl ? <Image alt={`${resource.supplierName} Logo`} className="h-8 w-8 shrink-0 border border-[var(--border)] object-cover" height={32} src={resource.supplierLogoUrl} width={32} /> : null}
+      <span>{supplierSource(resource)}</span>
+    </span>
+  );
 }
 
 function FilterSelect({
@@ -137,7 +148,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
   const regions = useMemo(() => unique(listings.map((item) => item.region)), [listings]);
   const deliveries = useMemo(() => unique(listings.map((item) => item.deliveryForm)), [listings]);
   const units = useMemo(() => unique(listings.map((item) => item.pricingUnit)), [listings]);
-  const sourcedCount = useMemo(() => listings.filter((item) => Boolean(item.source)).length, [listings]);
+  const sourcedCount = useMemo(() => new Set(listings.flatMap((item) => item.source ? [item.source.supplierName] : [])).size, [listings]);
   const compared = compareIds
     .map((id) => listings.find((item) => item.id === id))
     .filter((item): item is ResourceListing => Boolean(item));
@@ -407,7 +418,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                             <Link className="inline-flex min-h-11 items-center font-semibold text-[var(--ink)] underline decoration-[var(--border-strong)] underline-offset-4 hover:text-[var(--accent)]" href={`/resources/${resource.id}`}>
                               {resource.title}
                             </Link>
-                            <span className="mt-1 block text-xs text-[var(--muted)]">{supplierSource(resource)}</span>
+                            <SupplierIdentity resource={resource} />
                           </td>
                           <td className="min-w-40">
                             <span className="font-semibold text-[var(--ink)]">{CATEGORY_LABELS[resource.category]}</span>
@@ -453,7 +464,7 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
                           <h2 className="mt-2 mb-0 text-xl text-[var(--ink)]">
                             <Link className="inline-flex min-h-11 items-center hover:text-[var(--accent)]" href={`/resources/${resource.id}`}>{resource.title}</Link>
                           </h2>
-                          <p className="mt-1 mb-0 text-xs text-[var(--muted)]">{supplierSource(resource)}</p>
+                          <SupplierIdentity resource={resource} />
                         </div>
                         <div className={purchaseStyles.mobileActions}>
                           <label className="inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center gap-2 text-xs font-semibold text-[var(--text)]">

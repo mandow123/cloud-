@@ -44,7 +44,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "components/personal-center-overview.tsx": "89f031d46092ad91738b88b32cb4fafb40792ef74c453b8e1caa0824357025e2",
   "components/personal-menu.module.css": "0813b8a2fa3d164922add93de17daf66adc0dd9c1859427097c36975708f90f2",
   "components/personal-menu.tsx": "31a492a0fdfa2e9f972f4ca5fd9d52ea094d96fdb5c8b7e1b53f29352b128fbe",
-  "components/resource-explorer.tsx": "800983a7671f24c6dd724aa81ccd2bdfab91d28d13786376432fa20235560c9b",
+  "components/resource-explorer.tsx": "098c2ee4103344f5c9ba16361d357042537e00ee1923e356a2156e46610accf5",
   "components/resource-detail-actions.tsx": "e0b85851d955b1eed95756e520274f7462a29a5b4e4e46ab01d1d1204f50de53",
   "components/resource-purchase.module.css": "6569ca7f4f35c5cd6f731ee97dba34567d002d5bb370aa9b3058c33628bc6669",
   "components/site-footer.tsx": "323a6233a7e26f38935f2f854f5d3fa2b3b086512d07bccd87205bbd0bf178d5",
@@ -52,8 +52,9 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "components/supply-api-client.tsx": "60292f9e3e4a141f3a69be788b3d627f3969f67aeecb6153dc5fbc1f02a97825",
   "components/supply-listings-dashboard.tsx": "e5a24ab251eed94562f51f523590bba70a041b1551c11bdaa5234ae300a6f0d4",
   "components/supply-order-workspace.tsx": "771eca38029a65863d3012b5bc21babd084339307a9fad1c9a53e74c6b005375",
-  "lib/catalog.mjs": "271d881edd8c5ea470d82366521b07d92f2f2c43834c0efcc121f06bda6cf261",
+  "lib/catalog.mjs": "814608044dda4a2b9e25902b1c07963d43a675ab8d3d42ab8f8aff89db0ca568",
   "public/og-home-v2.png": "9ab58389125a32bbe84a29a6f73f7f7f75cdb04c717c58c82233f7ec09d63d5d",
+  "public/assets/suppliers/shanghai-honghuan.jpg": "db1ed9e4cddc31f4b6e641bbc9179443e5a5d251a31abe28109c3fa55f32a70f",
 });
 const APPROVED_HOSTING_V2_ROUTES = new Set([
   "app/buy/page.tsx",

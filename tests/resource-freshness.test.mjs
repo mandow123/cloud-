@@ -15,8 +15,8 @@ test("resource quote freshness has exact expiry and 48-hour warning boundaries",
 test("resource catalog summary reports validity without rewriting source timestamps", () => {
   const before = JSON.stringify(resourceListings);
   const summary = summarizeResourceCatalog(resourceListings, Date.parse("2026-08-06T00:00:00.000Z"));
-  assert.equal(summary.total, 124);
-  assert.equal(summary.current + summary.expiring + summary.expired, 124);
-  assert.equal(summary.latestUpdatedAt, "2026-08-17T04:00:00.000Z");
+  assert.equal(summary.total, 134);
+  assert.equal(summary.current + summary.expiring + summary.expired, 134);
+  assert.equal(summary.latestUpdatedAt, "2026-08-19T04:00:00.000Z");
   assert.equal(JSON.stringify(resourceListings), before);
 });

@@ -22,16 +22,16 @@ import {
 import { SUPPLIER_LISTING_PRICE_MULTIPLIER } from "../lib/pricing-policy.mjs";
 
 test("catalog has the planned initialization inventory shape", () => {
-  assert.equal(resourceListings.length, 124);
-  assert.equal(suppliers.length, 8);
+  assert.equal(resourceListings.length, 134);
+  assert.equal(suppliers.length, 9);
   assert.equal(regions.length, 8);
-  assert.equal(new Set(resourceListings.map((item) => item.id)).size, 124);
-  assert.equal(new Set(suppliers.map((item) => item.id)).size, 8);
+  assert.equal(new Set(resourceListings.map((item) => item.id)).size, 134);
+  assert.equal(new Set(suppliers.map((item) => item.id)).size, 9);
 
   for (const category of RESOURCE_CATEGORIES) {
     assert.equal(
       resourceListings.filter((item) => item.category === category).length,
-      category === "gpu" ? 106 : 6,
+      category === "gpu" ? 116 : 6,
       `${category} should include the curated catalog plus approved source directory records`,
     );
   }
@@ -39,6 +39,10 @@ test("catalog has the planned initialization inventory shape", () => {
     JSON.stringify({ resourceListings, suppliers }),
     /"(?:demo|fictional)":true|supplierId":"demo-/iu,
   );
+  const supplierIds = new Set(suppliers.map((supplier) => supplier.id));
+  assert.ok(resourceListings
+    .filter((listing) => listing.source?.kind !== "USER_PROVIDED_WORKBOOK_REFERENCE")
+    .every((listing) => supplierIds.has(listing.supplierId)), "every operational listing must resolve to a supplier entity");
 });
 
 test("user-provided supplier directory is complete, attributed and explicitly unverified", () => {
@@ -76,6 +80,30 @@ test("every supplier listing applies the unified 50 percent platform markup", ()
   );
   assert.equal(sourcedAlibaba.specs["源报价 H100 时租参考"], "16.77 KAI 标准卡时 / GPU 小时");
   assert.ok(resourceListings.every((item) => item.quote.scopeNote.includes("上调 50%") || item.quote.scopeNote.includes("150%")));
+});
+
+test("Shanghai Honghuan supplier offers are complete, attributed and card-hour ready", () => {
+  const listings = resourceListings.filter((item) => item.source?.kind === "SUPPLIER_PROVIDED_QUOTE");
+  assert.equal(listings.length, 10);
+  assert.ok(listings.every((item) => item.supplierName === "上海鸿欢网络科技有限公司"));
+  assert.ok(listings.every((item) => item.supplierLogoUrl === "/assets/suppliers/shanghai-honghuan.jpg"));
+  assert.ok(listings.every((item) => item.source.verificationStatus === "SUPPLIER_PROVIDED"));
+  assert.ok(listings.every((item) => item.source.listingPriceMultiplier === 1.5));
+  assert.ok(listings.every((item) => item.deliveryForm === "云主机"));
+  assert.ok(listings.every((item) => item.region === "全国"));
+  assert.ok(listings.every((item) => item.specs["实际机房地域"] === "询价时确认；全国仅表示可申请服务范围"));
+  assert.ok(listings.every((item) => item.source.notice.includes("实际机房地域")));
+  assert.ok(listings.every((item) => item.quote.scopeNote.includes("上调 50%")));
+  assert.equal(suppliers.find((item) => item.id === listings[0].supplierId)?.name, "上海鸿欢网络科技有限公司");
+
+  const b300 = listings.find((item) => item.id === "gpu-honghuan-b300-269gb-1");
+  assert.equal(b300.quote.median, 306);
+  assert.equal(b300.specs["小时挂牌"], "305.39 KAI 标准卡时 / GPU 小时");
+  assert.equal(b300.specs["24 小时挂牌"], "7329.34 KAI 标准卡时 / 24 小时");
+
+  const h100 = listings.find((item) => item.id === "gpu-honghuan-h100-sxm-80gb-1");
+  assert.match(h100.specs["可选卡数"], /四卡价格需询价确认/u);
+  assert.equal(listings.some((item) => /h100.*4/iu.test(item.id)), false);
 });
 
 test("all ten business aliases map to valid category, deal and unit values", () => {

@@ -94,15 +94,16 @@ export interface CatalogQuote {
 }
 
 export interface ResourceSource {
-  kind: "USER_PROVIDED_WORKBOOK_REFERENCE";
+  kind: "USER_PROVIDED_WORKBOOK_REFERENCE" | "SUPPLIER_PROVIDED_QUOTE";
   supplierName: string;
   documentTitle: string;
   observedAt: string;
-  verificationStatus: "UNVERIFIED";
+  verificationStatus: "UNVERIFIED" | "SUPPLIER_PROVIDED";
   notice: string;
   note: string;
   originalCurrency: "CNY";
   publicConversionRate: string;
+  listingPriceMultiplier: number;
 }
 
 export interface ResourceListing {
@@ -114,6 +115,7 @@ export interface ResourceListing {
   region: RegionName;
   supplierId: string;
   supplierName: string;
+  supplierLogoUrl?: string;
   deliveryForm: DeliveryForm;
   summary: string;
   specs: Readonly<Record<string, string>>;
