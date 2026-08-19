@@ -8,12 +8,32 @@ declare global {
   var __KAI_ACTIVITY_ENV__: { DB: ActivityD1; UPLOADS: ActivityR2 } | undefined;
 }
 
-export async function activityEnvironment(): Promise<{ DB: ActivityD1; UPLOADS: ActivityR2 }> {
-  if (globalThis.__KAI_ACTIVITY_ENV__) return globalThis.__KAI_ACTIVITY_ENV__;
+export type ActivitySecurityEnv = {
+  KAI_TRUST_OPENAI_IDENTITY_HEADERS?: string;
+  KAI_ACTIVITY_ADMIN_EMAILS?: string;
+};
+
+async function cloudflareEnvironment(): Promise<Record<string, unknown>> {
   try {
     const cloudflare = await import("cloudflare:workers");
-    const env = cloudflare.env as unknown as { DB?: ActivityD1; UPLOADS?: ActivityR2 };
-    if (env.DB && env.UPLOADS) return { DB: env.DB, UPLOADS: env.UPLOADS };
-  } catch { /* direct Node deployments do not expose Cloudflare bindings */ }
+    return cloudflare.env as unknown as Record<string, unknown>;
+  } catch {
+    return typeof process === "undefined" ? {} : process.env;
+  }
+}
+
+export async function activitySecurityEnvironment(override?: ActivitySecurityEnv): Promise<ActivitySecurityEnv> {
+  if (override) return override;
+  const env = await cloudflareEnvironment();
+  return {
+    KAI_TRUST_OPENAI_IDENTITY_HEADERS: typeof env.KAI_TRUST_OPENAI_IDENTITY_HEADERS === "string" ? env.KAI_TRUST_OPENAI_IDENTITY_HEADERS : undefined,
+    KAI_ACTIVITY_ADMIN_EMAILS: typeof env.KAI_ACTIVITY_ADMIN_EMAILS === "string" ? env.KAI_ACTIVITY_ADMIN_EMAILS : undefined,
+  };
+}
+
+export async function activityEnvironment(): Promise<{ DB: ActivityD1; UPLOADS: ActivityR2 }> {
+  if (globalThis.__KAI_ACTIVITY_ENV__) return globalThis.__KAI_ACTIVITY_ENV__;
+  const env = await cloudflareEnvironment() as { DB?: ActivityD1; UPLOADS?: ActivityR2 };
+  if (env.DB && env.UPLOADS) return { DB: env.DB, UPLOADS: env.UPLOADS };
   throw new Error("ACTIVITY_BINDINGS_UNAVAILABLE");
 }

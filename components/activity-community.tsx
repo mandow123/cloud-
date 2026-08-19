@@ -8,7 +8,7 @@ import styles from "./activity-community.module.css";
 type ErrorEnvelope = { error?: { message?: string } };
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
-const ALLOWED_UPLOAD_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
+const ALLOWED_UPLOAD_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 async function readJson<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => ({})) as T & ErrorEnvelope;
@@ -150,7 +150,12 @@ export function ActivityCommunity() {
     setNotice("");
     const form = event.currentTarget;
     try {
-      await readJson(await activityFetch("/api/activity/submissions", { method: "POST", credentials: "same-origin", body: new FormData(form) }, 60_000));
+      await readJson(await activityFetch("/api/activity/submissions", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "idempotency-key": `kai-submission-${crypto.randomUUID()}` },
+        body: new FormData(form),
+      }, 60_000));
       form.reset();
       setSelectedFile(null);
       setPreviewUrl("");
@@ -198,7 +203,7 @@ export function ActivityCommunity() {
     </div>
 
     <div className={styles.creatorArea}>
-      <div><span>05 / SUBMIT YOUR WORK</span><h2>把你的作品放进能量池</h2><p>支持 JPG、PNG、WebP、AVIF，最大 10MB。图片存入独立对象存储，审核前仅作者和管理员可见。每个账户每天最多提交 10 件作品。</p></div>
+      <div><span>05 / SUBMIT YOUR WORK</span><h2>把你的作品放进能量池</h2><p>支持 JPG、PNG、WebP，最大 10MB。图片存入独立对象存储，审核前仅作者和管理员可见。每个账户每天最多提交 10 件作品。</p></div>
       {!snapshot?.viewer
         ? <div className={styles.authGate}><strong>需要先完成身份验证</strong><p>登录用于作品归属、限制重复投票和接收奖励。</p><Link href="/login?returnTo=/activity%23community">登录后投稿 →</Link></div>
         : activeCampaigns.length === 0
@@ -208,7 +213,7 @@ export function ActivityCommunity() {
             <label><span>作品标题</span><input aria-describedby="activity-title-help" maxLength={80} minLength={2} name="title" required disabled={uploading} /><small id="activity-title-help">2–80 字</small></label>
             <label><span>作品说明</span><textarea aria-describedby="activity-description-help" maxLength={500} minLength={10} name="description" required rows={3} disabled={uploading} /><small id="activity-description-help">说明创作主题，10–500 字</small></label>
             <label><span>关键提示词 / 创作过程</span><textarea aria-describedby="activity-prompt-help" maxLength={500} minLength={3} name="promptExcerpt" required rows={3} disabled={uploading} /><small id="activity-prompt-help">公开后会随作品展示，请勿填写密钥或隐私信息</small></label>
-            <label className={styles.file}><span>作品图片</span><input accept="image/jpeg,image/png,image/webp,image/avif" aria-describedby="activity-file-help" name="file" onChange={chooseFile} required type="file" disabled={uploading} /><small id="activity-file-help">{fileSummary}</small></label>
+            <label className={styles.file}><span>作品图片</span><input accept="image/jpeg,image/png,image/webp" aria-describedby="activity-file-help" name="file" onChange={chooseFile} required type="file" disabled={uploading} /><small id="activity-file-help">{fileSummary}</small></label>
             {previewUrl ? <div className={styles.filePreview}>{/* eslint-disable-next-line @next/next/no-img-element */}<img alt="待上传作品预览" src={previewUrl} /><span>仅本机预览，点击提交后才会上传</span></div> : null}
             <button disabled={uploading || !selectedFile} type="submit">{uploading ? "正在安全上传，请勿关闭页面…" : "提交作品等待审核 ↗"}</button>
           </form>}

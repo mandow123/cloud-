@@ -1,19 +1,9 @@
-import { activityEnvironment } from "@/lib/server/activity-env";
+import { activityEnvironment, type ActivityR2 } from "@/lib/server/activity-env";
 import { ActivityHttpError, activityErrorResponse, assertActivitySameOrigin, requireActivityIdentity } from "@/lib/server/activity-identity";
-import { createActivitySubmission } from "@/lib/server/activity-store";
+import { activityBytesHash, activityPayloadHash, createActivitySubmission } from "@/lib/server/activity-store";
+import { ACTIVITY_UPLOAD_MAX_BYTES, ACTIVITY_UPLOAD_TYPES, inspectActivityImage } from "@/lib/server/activity-upload";
 
 export const dynamic = "force-dynamic";
-const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
-
-async function hasValidSignature(file: File) {
-  const bytes = new Uint8Array(await file.slice(0, 16).arrayBuffer());
-  if (file.type === "image/png") return [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value);
-  if (file.type === "image/jpeg") return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-  if (file.type === "image/webp") return String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP";
-  if (file.type === "image/avif") return String.fromCharCode(...bytes.slice(4, 8)) === "ftyp" && ["avif", "avis", "mif1"].includes(String.fromCharCode(...bytes.slice(8, 12)));
-  return false;
-}
-
 function bounded(form: FormData, name: string, maximum: number, minimum = 1) {
   const value = form.get(name);
   if (typeof value !== "string") throw new ActivityHttpError("ACTIVITY_FIELD_INVALID", 400, `${name} 字段无效。`);
@@ -24,28 +14,42 @@ function bounded(form: FormData, name: string, maximum: number, minimum = 1) {
 
 export async function POST(request: Request) {
   let uploadedKey: string | null = null;
+  let uploads: ActivityR2 | null = null;
   try {
     assertActivitySameOrigin(request);
     const [identity, env] = await Promise.all([requireActivityIdentity(request), activityEnvironment()]);
-    const declaredLength = Number(request.headers.get("content-length") ?? 0);
-    if (Number.isFinite(declaredLength) && declaredLength > 11 * 1024 * 1024) throw new ActivityHttpError("ACTIVITY_UPLOAD_TOO_LARGE", 413, "作品文件不能超过 10MB。 ");
+    uploads = env.UPLOADS;
+    if (!request.headers.get("content-type")?.toLowerCase().startsWith("multipart/form-data;")) throw new ActivityHttpError("ACTIVITY_MULTIPART_REQUIRED", 400, "投稿请求必须使用表单上传。 ");
+    const declaredLength = Number(request.headers.get("content-length"));
+    if (!Number.isSafeInteger(declaredLength) || declaredLength < 1 || declaredLength > ACTIVITY_UPLOAD_MAX_BYTES + 64 * 1024) throw new ActivityHttpError("ACTIVITY_UPLOAD_TOO_LARGE", 413, "投稿请求大小无效或超过 10MB 限制。 ");
     const form = await request.formData();
     const file = form.get("file");
-    if (!(file instanceof File) || file.size < 1 || file.size > 10 * 1024 * 1024 || !allowedTypes.has(file.type) || !await hasValidSignature(file)) throw new ActivityHttpError("ACTIVITY_UPLOAD_INVALID", 400, "只支持 10MB 以内且文件内容有效的 JPG、PNG、WebP 或 AVIF 图片。 ");
+    if (!(file instanceof File) || file.size < 1 || file.size > ACTIVITY_UPLOAD_MAX_BYTES || !ACTIVITY_UPLOAD_TYPES.has(file.type)) throw new ActivityHttpError("ACTIVITY_UPLOAD_INVALID", 400, "只支持 10MB 以内且文件内容有效的 JPG、PNG 或 WebP 图片。 ");
+    const fileBuffer = await file.arrayBuffer();
+    if (!inspectActivityImage(new Uint8Array(fileBuffer), file.type)) throw new ActivityHttpError("ACTIVITY_UPLOAD_INVALID", 400, "图片结构、尺寸或文件内容无效。 ");
     const campaignId = bounded(form, "campaignId", 80);
+    if (!/^act_[a-z0-9_]{3,64}$/u.test(campaignId)) throw new ActivityHttpError("ACTIVITY_CAMPAIGN_INVALID", 400, "活动标识无效。 ");
     const title = bounded(form, "title", 80, 2);
     const description = bounded(form, "description", 500, 10);
     const promptExcerpt = bounded(form, "promptExcerpt", 500, 3);
+    const idempotencyKey = request.headers.get("idempotency-key")?.trim() ?? "";
+    if (!/^kai-[A-Za-z0-9._:-]{8,124}$/u.test(idempotencyKey)) throw new ActivityHttpError("ACTIVITY_IDEMPOTENCY_REQUIRED", 400, "投稿请求缺少有效的幂等键。 ");
+    const fileHash = await activityBytesHash(fileBuffer);
+    const payloadHash = await activityPayloadHash({ campaignId, title, description, promptExcerpt, contentType: file.type, size: file.size, fileHash });
     const extension = file.type === "image/jpeg" ? "jpg" : file.type.split("/")[1];
     uploadedKey = `activity/${campaignId}/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${extension}`;
-    await env.UPLOADS.put(uploadedKey, file.stream(), { httpMetadata: { contentType: file.type }, customMetadata: { owner: identity.id, campaignId } });
+    await env.UPLOADS.put(uploadedKey, fileBuffer, { httpMetadata: { contentType: file.type }, customMetadata: { owner: identity.id, campaignId } });
     try {
-      const submissionId = await createActivitySubmission(env.DB, { campaignId, author: identity, title, description, promptExcerpt, assetKey: uploadedKey, contentType: file.type, size: file.size });
-      return Response.json({ submissionId, status: "PENDING" }, { status: 201, headers: { "cache-control": "no-store" } });
+      const result = await createActivitySubmission(env.DB, { campaignId, author: identity, title, description, promptExcerpt, assetKey: uploadedKey, contentType: file.type, size: file.size, idempotencyKey, payloadHash });
+      if (result.replayed) { await env.UPLOADS.delete(uploadedKey); uploadedKey = null; }
+      return Response.json({ submissionId: result.submissionId, status: "PENDING" }, { status: result.replayed ? 200 : 201, headers: { "cache-control": "no-store", "idempotency-replayed": String(result.replayed) } });
     } catch (error) {
-      await env.UPLOADS.delete(uploadedKey);
+      await env.UPLOADS.delete(uploadedKey).catch(() => undefined);
       uploadedKey = null;
       throw error;
     }
-  } catch (error) { return activityErrorResponse(error); }
+  } catch (error) {
+    if (uploadedKey && uploads) await uploads.delete(uploadedKey).catch(() => undefined);
+    return activityErrorResponse(error);
+  }
 }

@@ -8,6 +8,34 @@ const text = (row: Row, key: string) => String(row[key] ?? "");
 const nullableText = (row: Row, key: string) => row[key] == null ? null : String(row[key]);
 const number = (row: Row, key: string) => Number(row[key] ?? 0);
 
+export async function activityPayloadHash(value: unknown) {
+  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value))));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export async function activityBytesHash(value: ArrayBuffer) {
+  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", value));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function reserveRateLimit(db: ActivityD1, input: { scope: "SUBMISSION" | "VOTE"; actorId: string; now: Date; windowMs: number; limit: number }) {
+  const windowStart = new Date(Math.floor(input.now.getTime() / input.windowMs) * input.windowMs).toISOString();
+  const result = await db.prepare(`INSERT INTO activity_rate_limits(scope,actor_id,window_start,request_count,updated_at)
+    VALUES(?,?,?,1,?)
+    ON CONFLICT(scope,actor_id,window_start) DO UPDATE SET request_count=request_count+1,updated_at=excluded.updated_at
+    WHERE request_count<?`).bind(input.scope, input.actorId, windowStart, input.now.toISOString(), input.limit).run();
+  if (Number(result.meta?.changes ?? 0) !== 1) {
+    const submission = input.scope === "SUBMISSION";
+    throw new ActivityHttpError(submission ? "ACTIVITY_SUBMISSION_RATE_LIMITED" : "ACTIVITY_VOTE_RATE_LIMITED", 429, submission ? "每天最多提交 10 件作品。 " : "投票过于频繁，请稍后再试。 ");
+  }
+}
+
+function checkedReplay(row: Row | null, payloadHash: string, mismatchCode: string) {
+  if (!row) return null;
+  if (text(row, "payload_hash") !== payloadHash) throw new ActivityHttpError(mismatchCode, 409, "相同幂等键不能用于不同的操作内容。 ");
+  return JSON.parse(text(row, "response_json")) as Record<string, unknown>;
+}
+
 function campaign(row: Row): ActivityCampaign {
   return { id: text(row, "id"), slug: text(row, "slug"), title: text(row, "title"), summary: text(row, "summary"), status: text(row, "status") as ActivityCampaign["status"], startsAt: nullableText(row, "starts_at"), endsAt: nullableText(row, "ends_at"), rewardLabel: text(row, "reward_label") };
 }
@@ -41,43 +69,56 @@ export async function readActivitySnapshot(db: ActivityD1, viewer: ActivityIdent
   return { campaigns, submissions: published.map(submission), leaderboard: leaders.map(submission), viewer, mySubmissions: mine.map(submission), rewardBalance: number(reward ?? {}, "balance") };
 }
 
-export async function createActivitySubmission(db: ActivityD1, input: { campaignId: string; author: ActivityIdentity; title: string; description: string; promptExcerpt: string; assetKey: string; contentType: string; size: number; now?: Date }) {
+export async function createActivitySubmission(db: ActivityD1, input: { campaignId: string; author: ActivityIdentity; title: string; description: string; promptExcerpt: string; assetKey: string; contentType: string; size: number; idempotencyKey: string; payloadHash: string; now?: Date }) {
   await ensureSchema(db);
   const now = input.now ?? new Date();
-  const recent = await db.prepare("SELECT COUNT(*) AS count FROM activity_submissions WHERE author_id=? AND created_at>=?").bind(input.author.id, new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()).first<Row>();
-  if (number(recent ?? {}, "count") >= 10) throw new ActivityHttpError("ACTIVITY_SUBMISSION_RATE_LIMITED", 429, "每天最多提交 10 件作品。 ");
+  const existing = await db.prepare("SELECT payload_hash,response_json FROM activity_submission_commands WHERE actor_id=? AND idempotency_key=?").bind(input.author.id, input.idempotencyKey).first<Row>();
+  const replay = checkedReplay(existing, input.payloadHash, "ACTIVITY_SUBMISSION_IDEMPOTENCY_CONFLICT");
+  if (replay) return { submissionId: String(replay.submissionId), replayed: true };
   const campaignRow = await db.prepare("SELECT id,status,starts_at,ends_at FROM activity_campaigns WHERE id=?").bind(input.campaignId).first<Row>();
   if (!campaignRow || !["ACTIVE", "EVERGREEN"].includes(text(campaignRow, "status"))) throw new ActivityHttpError("ACTIVITY_CAMPAIGN_CLOSED", 409, "该活动当前不接受投稿。 ");
   const nowMs = now.getTime();
   if (campaignRow.starts_at && Date.parse(text(campaignRow, "starts_at")) > nowMs || campaignRow.ends_at && Date.parse(text(campaignRow, "ends_at")) <= nowMs) throw new ActivityHttpError("ACTIVITY_CAMPAIGN_CLOSED", 409, "该活动当前不接受投稿。 ");
+  await reserveRateLimit(db, { scope: "SUBMISSION", actorId: input.author.id, now, windowMs: 24 * 60 * 60 * 1000, limit: 10 });
   const id = `sub_${crypto.randomUUID()}`;
   const at = now.toISOString();
-  await db.batch([
-    db.prepare(`INSERT INTO activity_submissions(id,campaign_id,author_id,author_name,title,description,prompt_excerpt,asset_key,asset_content_type,asset_size,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,'PENDING',?,?)`).bind(id, input.campaignId, input.author.id, input.author.displayName, input.title, input.description, input.promptExcerpt, input.assetKey, input.contentType, input.size, at, at),
-    db.prepare("INSERT INTO activity_audit_events(id,actor_id,event_type,target_id,metadata_json,occurred_at) VALUES(?,?,?,?,?,?)").bind(`aae_${crypto.randomUUID()}`, input.author.id, "SUBMISSION_CREATED", id, JSON.stringify({ campaignId: input.campaignId, contentType: input.contentType, size: input.size }), at),
-  ]);
-  return id;
+  const response = { submissionId: id };
+  try {
+    await db.batch([
+      db.prepare(`INSERT INTO activity_submissions(id,campaign_id,author_id,author_name,title,description,prompt_excerpt,asset_key,asset_content_type,asset_size,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,'PENDING',?,?)`).bind(id, input.campaignId, input.author.id, input.author.displayName, input.title, input.description, input.promptExcerpt, input.assetKey, input.contentType, input.size, at, at),
+      db.prepare("INSERT INTO activity_audit_events(id,actor_id,event_type,target_id,metadata_json,occurred_at) VALUES(?,?,?,?,?,?)").bind(`aae_${crypto.randomUUID()}`, input.author.id, "SUBMISSION_CREATED", id, JSON.stringify({ campaignId: input.campaignId, contentType: input.contentType, size: input.size }), at),
+      db.prepare("INSERT INTO activity_submission_commands(actor_id,idempotency_key,payload_hash,submission_id,response_json,created_at) VALUES(?,?,?,?,?,?)").bind(input.author.id, input.idempotencyKey, input.payloadHash, id, JSON.stringify(response), at),
+    ]);
+  } catch (error) {
+    const concurrent = await db.prepare("SELECT payload_hash,response_json FROM activity_submission_commands WHERE actor_id=? AND idempotency_key=?").bind(input.author.id, input.idempotencyKey).first<Row>();
+    const concurrentReplay = checkedReplay(concurrent, input.payloadHash, "ACTIVITY_SUBMISSION_IDEMPOTENCY_CONFLICT");
+    if (concurrentReplay) return { submissionId: String(concurrentReplay.submissionId), replayed: true };
+    throw error;
+  }
+  return { submissionId: id, replayed: false };
 }
 
 export async function setActivityVote(db: ActivityD1, submissionId: string, voter: ActivityIdentity, desired: boolean, now = new Date()) {
   await ensureSchema(db);
-  const recent = await db.prepare("SELECT COUNT(*) AS count FROM activity_votes WHERE voter_id=? AND created_at>=?").bind(voter.id, new Date(now.getTime() - 60 * 60 * 1000).toISOString()).first<Row>();
-  if (number(recent ?? {}, "count") >= 120) throw new ActivityHttpError("ACTIVITY_VOTE_RATE_LIMITED", 429, "投票过于频繁，请稍后再试。 ");
-  const target = await db.prepare("SELECT status FROM activity_submissions WHERE id=?").bind(submissionId).first<Row>();
+  const target = await db.prepare("SELECT status,author_id FROM activity_submissions WHERE id=?").bind(submissionId).first<Row>();
   if (!target || text(target, "status") !== "PUBLISHED") throw new ActivityHttpError("ACTIVITY_SUBMISSION_NOT_FOUND", 404, "作品不存在或尚未公开。 ");
+  if (desired && text(target, "author_id") === voter.id) throw new ActivityHttpError("ACTIVITY_SELF_VOTE_FORBIDDEN", 403, "不能给自己的作品投票。 ");
+  const current = await db.prepare("SELECT 1 AS voted FROM activity_votes WHERE submission_id=? AND voter_id=?").bind(submissionId, voter.id).first<Row>();
+  if (Boolean(current) === desired) return { voted: desired };
+  await reserveRateLimit(db, { scope: "VOTE", actorId: voter.id, now, windowMs: 60 * 60 * 1000, limit: 120 });
   const at = now.toISOString();
   if (!desired) {
     await db.batch([
       db.prepare("DELETE FROM activity_votes WHERE submission_id=? AND voter_id=?").bind(submissionId, voter.id),
+      db.prepare("INSERT INTO activity_audit_events(id,actor_id,event_type,target_id,metadata_json,occurred_at) SELECT ?,?,?,?,?,? WHERE changes()=1").bind(`aae_${crypto.randomUUID()}`, voter.id, "VOTE_REMOVED", submissionId, "{}", at),
       db.prepare("UPDATE activity_submissions SET vote_count=(SELECT COUNT(*) FROM activity_votes WHERE submission_id=?),updated_at=? WHERE id=?").bind(submissionId, at, submissionId),
-      db.prepare("INSERT INTO activity_audit_events(id,actor_id,event_type,target_id,metadata_json,occurred_at) VALUES(?,?,?,?,?,?)").bind(`aae_${crypto.randomUUID()}`, voter.id, "VOTE_REMOVED", submissionId, "{}", at),
     ]);
     return { voted: false };
   }
   await db.batch([
     db.prepare("INSERT OR IGNORE INTO activity_votes(submission_id,voter_id,created_at) VALUES(?,?,?)").bind(submissionId, voter.id, at),
+    db.prepare("INSERT INTO activity_audit_events(id,actor_id,event_type,target_id,metadata_json,occurred_at) SELECT ?,?,?,?,?,? WHERE changes()=1").bind(`aae_${crypto.randomUUID()}`, voter.id, "VOTE_ADDED", submissionId, "{}", at),
     db.prepare("UPDATE activity_submissions SET vote_count=(SELECT COUNT(*) FROM activity_votes WHERE submission_id=?),updated_at=? WHERE id=?").bind(submissionId, at, submissionId),
-    db.prepare("INSERT INTO activity_audit_events(id,actor_id,event_type,target_id,metadata_json,occurred_at) VALUES(?,?,?,?,?,?)").bind(`aae_${crypto.randomUUID()}`, voter.id, "VOTE_ADDED", submissionId, "{}", at),
   ]);
   return { voted: true };
 }
@@ -86,7 +127,7 @@ export async function readActivityAssetRecord(db: ActivityD1, submissionId: stri
   await ensureSchema(db);
   const row = await db.prepare("SELECT asset_key,asset_content_type,status,author_id FROM activity_submissions WHERE id=?").bind(submissionId).first<Row>();
   if (!row || (text(row, "status") !== "PUBLISHED" && !admin && text(row, "author_id") !== viewerId)) return null;
-  return { key: text(row, "asset_key"), contentType: text(row, "asset_content_type") };
+  return { key: text(row, "asset_key"), contentType: text(row, "asset_content_type"), published: text(row, "status") === "PUBLISHED" };
 }
 
 export async function readActivityAdminRows(db: ActivityD1) {
@@ -94,44 +135,73 @@ export async function readActivityAdminRows(db: ActivityD1) {
   return rows<Row>(db.prepare(`${submissionSelect},0 AS viewer_voted ${submissionFrom} ORDER BY CASE s.status WHEN 'PENDING' THEN 0 WHEN 'PUBLISHED' THEN 1 ELSE 2 END,s.created_at DESC LIMIT 500`));
 }
 
-export async function moderateActivitySubmission(db: ActivityD1, input: { submissionId: string; action: "PUBLISH" | "REJECT" | "GRANT_REWARD" | "REVOKE_REWARD"; reason: string; units?: number; adminId: string; idempotencyKey: string; now?: Date }) {
+export async function moderateActivitySubmission(db: ActivityD1, input: { submissionId: string; action: "PUBLISH" | "REJECT" | "GRANT_REWARD" | "REVOKE_REWARD"; reason: string; units?: number; adminId: string; idempotencyKey: string; payloadHash: string; now?: Date }) {
   await ensureSchema(db);
-  const replay = await db.prepare("SELECT response_json FROM activity_admin_commands WHERE idempotency_key=?").bind(input.idempotencyKey).first<Row>();
-  if (replay) return JSON.parse(text(replay, "response_json")) as Record<string, unknown>;
+  const commandType = `ACTIVITY_${input.action}`;
+  const receiptSql = "SELECT command_type,payload_hash,response_json FROM activity_admin_command_receipts WHERE actor_id=? AND idempotency_key=?";
+  const receipt = await db.prepare(receiptSql).bind(input.adminId, input.idempotencyKey).first<Row>();
+  const replay = checkedReplay(receipt, input.payloadHash, "ACTIVITY_ADMIN_IDEMPOTENCY_CONFLICT");
+  if (replay) {
+    if (text(receipt ?? {}, "command_type") !== commandType) throw new ActivityHttpError("ACTIVITY_ADMIN_IDEMPOTENCY_CONFLICT", 409, "相同幂等键不能用于不同的管理操作。 ");
+    return replay;
+  }
   const row = await db.prepare("SELECT id,author_id,status,reward_units FROM activity_submissions WHERE id=?").bind(input.submissionId).first<Row>();
   if (!row) throw new ActivityHttpError("ACTIVITY_SUBMISSION_NOT_FOUND", 404, "作品不存在。 ");
   const at = (input.now ?? new Date()).toISOString();
   if (input.action === "PUBLISH" || input.action === "REJECT") {
+    if (input.action === "REJECT" && number(row, "reward_units") > 0) throw new ActivityHttpError("ACTIVITY_REWARD_MUST_BE_REVOKED", 409, "拒绝作品前请先撤销已发放的奖励。 ");
     const next = input.action === "PUBLISH" ? "PUBLISHED" : "REJECTED";
     const response = { status: next };
-    await db.batch([
-      db.prepare("UPDATE activity_submissions SET status=?,moderation_note=?,updated_at=? WHERE id=?").bind(next, input.reason, at, input.submissionId),
-      db.prepare("INSERT INTO activity_audit_events(id,actor_id,event_type,target_id,metadata_json,occurred_at) VALUES(?,?,?,?,?,?)").bind(`aae_${crypto.randomUUID()}`, input.adminId, `SUBMISSION_${next}`, input.submissionId, JSON.stringify({ reason: input.reason }), at),
-      db.prepare("INSERT INTO activity_admin_commands(idempotency_key,response_json,created_at) VALUES(?,?,?)").bind(input.idempotencyKey, JSON.stringify(response), at),
-    ]);
-    return response;
+    try {
+      await db.batch([
+        db.prepare("UPDATE activity_submissions SET status=?,moderation_note=?,updated_at=? WHERE id=?").bind(next, input.reason, at, input.submissionId),
+        db.prepare("INSERT INTO activity_audit_events(id,actor_id,event_type,target_id,metadata_json,occurred_at) VALUES(?,?,?,?,?,?)").bind(`aae_${crypto.randomUUID()}`, input.adminId, `SUBMISSION_${next}`, input.submissionId, JSON.stringify({ reason: input.reason }), at),
+        db.prepare("INSERT INTO activity_admin_command_receipts(actor_id,idempotency_key,command_type,payload_hash,response_json,created_at) VALUES(?,?,?,?,?,?)").bind(input.adminId, input.idempotencyKey, commandType, input.payloadHash, JSON.stringify(response), at),
+      ]);
+      return response;
+    } catch (error) {
+      const concurrent = await db.prepare(receiptSql).bind(input.adminId, input.idempotencyKey).first<Row>();
+      const concurrentReplay = checkedReplay(concurrent, input.payloadHash, "ACTIVITY_ADMIN_IDEMPOTENCY_CONFLICT");
+      if (concurrentReplay && text(concurrent ?? {}, "command_type") === commandType) return concurrentReplay;
+      throw error;
+    }
   }
   if (input.action === "GRANT_REWARD") {
     const units = input.units ?? 0;
     if (!Number.isSafeInteger(units) || units < 1 || units > 1_000_000) throw new ActivityHttpError("ACTIVITY_REWARD_INVALID", 400, "奖励数量无效。 ");
+    if (text(row, "status") !== "PUBLISHED") throw new ActivityHttpError("ACTIVITY_REWARD_SUBMISSION_NOT_PUBLISHED", 409, "只能给已公开作品发放奖励。 ");
     const rewardId = `rew_${crypto.randomUUID()}`;
     const response = { status: text(row, "status"), rewardId, units };
-    await db.batch([
-      db.prepare("INSERT INTO activity_rewards(id,submission_id,recipient_id,units,status,reason,granted_by,created_at,updated_at) VALUES(?,?,?,?,'GRANTED',?,?,?,?)").bind(rewardId, input.submissionId, text(row, "author_id"), units, input.reason, input.adminId, at, at),
-      db.prepare("UPDATE activity_submissions SET reward_units=reward_units+?,updated_at=? WHERE id=?").bind(units, at, input.submissionId),
-      db.prepare("INSERT INTO activity_audit_events(id,actor_id,event_type,target_id,metadata_json,occurred_at) VALUES(?,?,?,?,?,?)").bind(`aae_${crypto.randomUUID()}`, input.adminId, "REWARD_GRANTED", input.submissionId, JSON.stringify({ rewardId, units, reason: input.reason }), at),
-      db.prepare("INSERT INTO activity_admin_commands(idempotency_key,response_json,created_at) VALUES(?,?,?)").bind(input.idempotencyKey, JSON.stringify(response), at),
-    ]);
-    return response;
+    try {
+      await db.batch([
+        db.prepare("INSERT INTO activity_rewards(id,submission_id,recipient_id,units,status,reason,granted_by,created_at,updated_at) VALUES(?,?,?,?,'GRANTED',?,?,?,?)").bind(rewardId, input.submissionId, text(row, "author_id"), units, input.reason, input.adminId, at, at),
+        db.prepare("UPDATE activity_submissions SET reward_units=(SELECT COALESCE(SUM(units),0) FROM activity_rewards WHERE submission_id=? AND status='GRANTED'),updated_at=? WHERE id=?").bind(input.submissionId, at, input.submissionId),
+        db.prepare("INSERT INTO activity_audit_events(id,actor_id,event_type,target_id,metadata_json,occurred_at) VALUES(?,?,?,?,?,?)").bind(`aae_${crypto.randomUUID()}`, input.adminId, "REWARD_GRANTED", input.submissionId, JSON.stringify({ rewardId, units, reason: input.reason }), at),
+        db.prepare("INSERT INTO activity_admin_command_receipts(actor_id,idempotency_key,command_type,payload_hash,response_json,created_at) VALUES(?,?,?,?,?,?)").bind(input.adminId, input.idempotencyKey, commandType, input.payloadHash, JSON.stringify(response), at),
+      ]);
+      return response;
+    } catch (error) {
+      const concurrent = await db.prepare(receiptSql).bind(input.adminId, input.idempotencyKey).first<Row>();
+      const concurrentReplay = checkedReplay(concurrent, input.payloadHash, "ACTIVITY_ADMIN_IDEMPOTENCY_CONFLICT");
+      if (concurrentReplay && text(concurrent ?? {}, "command_type") === commandType) return concurrentReplay;
+      throw error;
+    }
   }
   const reward = await db.prepare("SELECT id,units FROM activity_rewards WHERE submission_id=? AND status='GRANTED' ORDER BY created_at DESC LIMIT 1").bind(input.submissionId).first<Row>();
   if (!reward) throw new ActivityHttpError("ACTIVITY_REWARD_NOT_FOUND", 409, "没有可撤销的奖励。 ");
   const response = { status: text(row, "status"), rewardRevoked: text(reward, "id") };
-  await db.batch([
+  const auditId = `aae_${crypto.randomUUID()}`;
+  const results = await db.batch([
     db.prepare("UPDATE activity_rewards SET status='REVOKED',reason=?,updated_at=? WHERE id=? AND status='GRANTED'").bind(input.reason, at, text(reward, "id")),
-    db.prepare("UPDATE activity_submissions SET reward_units=MAX(0,reward_units-?),updated_at=? WHERE id=?").bind(number(reward, "units"), at, input.submissionId),
-    db.prepare("INSERT INTO activity_audit_events(id,actor_id,event_type,target_id,metadata_json,occurred_at) VALUES(?,?,?,?,?,?)").bind(`aae_${crypto.randomUUID()}`, input.adminId, "REWARD_REVOKED", input.submissionId, JSON.stringify({ rewardId: text(reward, "id"), reason: input.reason }), at),
-    db.prepare("INSERT INTO activity_admin_commands(idempotency_key,response_json,created_at) VALUES(?,?,?)").bind(input.idempotencyKey, JSON.stringify(response), at),
+    db.prepare("INSERT INTO activity_audit_events(id,actor_id,event_type,target_id,metadata_json,occurred_at) SELECT ?,?,?,?,?,? WHERE changes()=1").bind(auditId, input.adminId, "REWARD_REVOKED", input.submissionId, JSON.stringify({ rewardId: text(reward, "id"), reason: input.reason }), at),
+    db.prepare("UPDATE activity_submissions SET reward_units=(SELECT COALESCE(SUM(units),0) FROM activity_rewards WHERE submission_id=? AND status='GRANTED'),updated_at=? WHERE id=?").bind(input.submissionId, at, input.submissionId),
+    db.prepare("INSERT INTO activity_admin_command_receipts(actor_id,idempotency_key,command_type,payload_hash,response_json,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM activity_audit_events WHERE id=?)").bind(input.adminId, input.idempotencyKey, commandType, input.payloadHash, JSON.stringify(response), at, auditId),
   ]);
+  if (Number(results[0]?.meta?.changes ?? 0) !== 1) {
+    const concurrent = await db.prepare(receiptSql).bind(input.adminId, input.idempotencyKey).first<Row>();
+    const concurrentReplay = checkedReplay(concurrent, input.payloadHash, "ACTIVITY_ADMIN_IDEMPOTENCY_CONFLICT");
+    if (concurrentReplay && text(concurrent ?? {}, "command_type") === commandType) return concurrentReplay;
+    throw new ActivityHttpError("ACTIVITY_REWARD_ALREADY_REVOKED", 409, "奖励已被其他操作撤销，请刷新后重试。 ");
+  }
   return response;
 }
