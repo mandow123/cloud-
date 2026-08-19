@@ -6,9 +6,17 @@ import test from "node:test";
 const ROOT = join(import.meta.dirname, "..");
 const read = (path) => readFileSync(join(ROOT, path), "utf8");
 
-test("GPU public routes use the real Hosting V2 buyer flow on separate pages", () => {
+test("GPU public route shows the supplier directory while Hosting V2 remains on separate guarded routes", () => {
   const marketPage = read("app/gpu/page.tsx");
-  assert.match(marketPage, /HostingGpuMarketplace/u);
+  assert.match(marketPage, /ResourceExplorer/u);
+  assert.match(marketPage, /listing\.category === "gpu"/u);
+  assert.match(marketPage, /listing\.source\?\.kind === "SUPPLIER_PROVIDED_QUOTE"/u);
+  assert.match(marketPage, /supplierIds\.has\(listing\.supplierId\)/u);
+  assert.match(marketPage, /isHostingV2Enabled/u);
+  assert.match(marketPage, /requireHostingV2TransactionCapability/u);
+  assert.match(marketPage, /if \(await hostingMarketReady\(\)\) return <HostingGpuMarketplace/u);
+  assert.match(marketPage, /GPU 算力目录/u);
+  assert.doesNotMatch(marketPage, /VERIFIED|已验真|立即租用/u);
   assert.doesNotMatch(marketPage, /GpuMarketplaceLab|gpu-cloud-lab|LOCAL_TEST/u);
 
   for (const path of [

@@ -117,7 +117,15 @@ function FilterSelect({
   );
 }
 
-export function ResourceExplorer({ listings }: { listings: readonly ResourceListing[] }) {
+export function ResourceExplorer({
+  listings,
+  heading = "算力资源市场",
+  lead = "按供应商来源、GPU 型号、区域和交付形态发现候选方案；报价统一换算为 KAI 标准卡时，提交后再核验库存与成交条件。",
+}: {
+  listings: readonly ResourceListing[];
+  heading?: string;
+  lead?: string;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -204,10 +212,8 @@ export function ResourceExplorer({ listings }: { listings: readonly ResourceList
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-end">
             <div>
               <p className="kicker">Supplier reference directory</p>
-              <h1 className="m-0 max-w-4xl text-4xl leading-[1.08] text-[var(--ink)] sm:text-5xl">算力资源市场</h1>
-              <p className="section-lead">
-                按供应商来源、GPU 型号、区域和交付形态发现候选方案；报价统一换算为 KAI 标准卡时，提交后再核验库存与成交条件。
-              </p>
+              <h1 className="m-0 max-w-4xl text-4xl leading-[1.08] text-[var(--ink)] sm:text-5xl">{heading}</h1>
+              <p className="section-lead">{lead}</p>
             </div>
             <div className="border-t-2 border-[var(--accent)] bg-[var(--info-bg)] px-5 py-4">
               <div className="flex items-baseline justify-between gap-6">
