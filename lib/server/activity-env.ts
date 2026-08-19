@@ -4,7 +4,12 @@ export type ActivityD1 = { prepare(sql: string): D1Statement; batch<T = unknown>
 export type ActivityR2Object = { body: ReadableStream; httpEtag: string; size: number; httpMetadata?: { contentType?: string } };
 export type ActivityR2 = { put(key: string, value: ReadableStream | ArrayBuffer | Blob, options?: { httpMetadata?: { contentType?: string }; customMetadata?: Record<string, string> }): Promise<unknown>; get(key: string): Promise<ActivityR2Object | null>; delete(key: string): Promise<void> };
 
+declare global {
+  var __KAI_ACTIVITY_ENV__: { DB: ActivityD1; UPLOADS: ActivityR2 } | undefined;
+}
+
 export async function activityEnvironment(): Promise<{ DB: ActivityD1; UPLOADS: ActivityR2 }> {
+  if (globalThis.__KAI_ACTIVITY_ENV__) return globalThis.__KAI_ACTIVITY_ENV__;
   try {
     const cloudflare = await import("cloudflare:workers");
     const env = cloudflare.env as unknown as { DB?: ActivityD1; UPLOADS?: ActivityR2 };

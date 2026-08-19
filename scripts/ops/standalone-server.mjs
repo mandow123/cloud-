@@ -13,6 +13,8 @@ if (process.platform === "win32") {
 }
 
 try {
+  const { installActivityNodeBindings } = await import("./scripts/ops/activity-node-bindings.mjs");
+  await installActivityNodeBindings();
   const { startProdServer } = await import("vinext/server/prod-server");
   const port = Number.parseInt(process.env.PORT ?? "3000", 10);
   const host = process.env.HOST ?? "0.0.0.0";

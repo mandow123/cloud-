@@ -6,6 +6,7 @@ const projectRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const clientDir = join(projectRoot, "dist", "client");
 const standaloneClientDir = join(projectRoot, "dist", "standalone", "dist", "client");
 const standaloneLauncher = join(projectRoot, "dist", "standalone", "server.js");
+const standaloneOpsDir = join(projectRoot, "dist", "standalone", "scripts", "ops");
 
 await access(clientDir);
 await mkdir(standaloneClientDir, { recursive: true });
@@ -28,7 +29,9 @@ const requiredAssets = [
 ];
 
 await Promise.all(requiredAssets.map((asset) => access(join(standaloneClientDir, asset))));
+await mkdir(standaloneOpsDir, { recursive: true });
 await copyFile(join(projectRoot, "scripts", "ops", "standalone-server.mjs"), standaloneLauncher);
+await copyFile(join(projectRoot, "scripts", "ops", "activity-node-bindings.mjs"), join(standaloneOpsDir, "activity-node-bindings.mjs"));
 
 console.log(
   JSON.stringify({

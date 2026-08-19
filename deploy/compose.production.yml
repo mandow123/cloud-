@@ -13,6 +13,7 @@ services:
       PORT: "3000"
       KAI_DB_DIR: /app/db
       KAI_MARKET_DATA_DIR: /app/market
+      KAI_ACTIVITY_UPLOAD_DIR: /app/uploads
       KAI_RELEASE_SHA: "${KAI_RELEASE_SHA:?KAI_RELEASE_SHA is required}"
       KAI_IMAGE_REFERENCE: "${KAI_IMAGE:?KAI_IMAGE must be an immutable repository@sha256 digest}"
       KAI_TRUST_PROXY: "1"
@@ -48,6 +49,9 @@ services:
         source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3051}/market"
         target: /app/market
         read_only: true
+      - type: bind
+        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3051}/uploads"
+        target: /app/uploads
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
     cap_drop:

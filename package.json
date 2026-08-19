@@ -19,7 +19,8 @@
     "ops:self-test": "node scripts/ops/self-test.mjs",
     "ops:deploy:validate": "node scripts/ops/validate-deployment.mjs",
     "ops:image:promote": "node scripts/ops/promote-release.mjs",
-    "ops:image:validate": "node scripts/ops/validate-local-image.mjs"
+    "ops:image:validate": "node scripts/ops/validate-local-image.mjs",
+    "sites:validate": "node scripts/ops/validate-sites-build.mjs"
   },
   "dependencies": {
     "alipay-sdk": "^4.14.0",

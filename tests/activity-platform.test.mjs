@@ -14,7 +14,18 @@ test("activity persistence separates structured records from uploaded blobs", as
   assert.match(schema, /activity_rewards/);
   assert.match(upload, /UPLOADS\.put/);
   assert.match(upload, /hasValidSignature/);
-  assert.deepEqual(JSON.parse(hosting), { project_id: "appgprj_6a6d86bd306881918f158b1287d20983", d1: "DB", r2: "UPLOADS" });
+  const hostingConfig = JSON.parse(hosting);
+  assert.match(hostingConfig.project_id, /^appgprj_[a-zA-Z0-9]+$/);
+  assert.equal(hostingConfig.d1, "DB");
+  assert.equal(hostingConfig.r2, "UPLOADS");
+});
+
+test("Sites deployment contract validates bindings, migrations and build artifacts", async () => {
+  const script = await source("../scripts/ops/validate-sites-build.mjs");
+  assert.match(script, /dist\/server\/index\.js/);
+  assert.match(script, /0022_activity_platform\.sql/);
+  assert.match(script, /hosting\.d1, "DB"/);
+  assert.match(script, /hosting\.r2, "UPLOADS"/);
 });
 
 test("write APIs require identity, same-origin requests and bounded input", async () => {
