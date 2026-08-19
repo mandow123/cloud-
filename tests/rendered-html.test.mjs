@@ -46,6 +46,19 @@ test("server-renders the activity plaza at the root route", async () => {
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
 });
 
+test("login offers a working ChatGPT identity path and hides unavailable email controls", async () => {
+  const response = await render("/login?returnTo=%2Factivity%23community");
+  assert.equal(response.status, 200);
+
+  const html = await response.text();
+  assert.match(html, /登录创作者账户/u);
+  assert.match(html, /使用 ChatGPT 账户登录/u);
+  assert.match(html, /href="\/signin-with-chatgpt\?return_to=%2Factivity%23community"/u);
+  assert.match(html, /企业邮箱登录暂未开放/u);
+  assert.doesNotMatch(html, /邮箱验证码服务未配置/u);
+  assert.doesNotMatch(html, /发送邮箱验证码/u);
+});
+
 test("security headers cover the root page, nested pages, and APIs", async () => {
   for (const pathname of ["/", "/activity/neon-city", "/market", "/api/live"]) {
     const response = await render(pathname);

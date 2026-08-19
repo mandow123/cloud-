@@ -19,12 +19,13 @@ async function authPost<T>(path: string, body: Record<string, unknown>) {
   return payload;
 }
 
-export function AccountLogin({ returnTo }: { returnTo: string }) {
+export function AccountLogin({ emailOtpConfigured, returnTo }: { emailOtpConfigured: boolean; returnTo: string }) {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [challenge, setChallenge] = useState<ChallengeEnvelope | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const chatGptLoginHref = `/signin-with-chatgpt?${new URLSearchParams({ return_to: returnTo }).toString()}`;
 
   async function requestCode(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -64,13 +65,23 @@ export function AccountLogin({ returnTo }: { returnTo: string }) {
   return (
     <section className="mx-auto max-w-xl border-t-4 border-[var(--accent)] bg-[var(--surface)] p-6 ring-1 ring-[var(--border)] sm:p-9" aria-labelledby="account-login-title">
       <p className="kicker">KAI ACCOUNT</p>
-      <h1 className="m-0 text-4xl" id="account-login-title">登录个人账户</h1>
-      <p className="section-lead text-base">登录后查看购买申请、正式订单、待支付、待验收和本机对比。平台不会通过此页面索取支付密码。</p>
+      <h1 className="m-0 text-4xl" id="account-login-title">登录创作者账户</h1>
+      <p className="section-lead text-base">登录后可以投稿作品、参与投票，并查看自己的参赛与奖励记录。</p>
+
+      <a className="button button-primary mt-7 min-h-12 w-full justify-center" href={chatGptLoginHref}>
+        使用 ChatGPT 账户登录
+      </a>
+      <p className="mt-3 text-sm text-[var(--muted)]">由站点登录系统安全验证，无需在 KAI 另设密码。</p>
 
       {error ? <div className="mt-5 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-4 text-[var(--error)]" role="alert">{error}</div> : null}
 
-      {!challenge ? (
+      {emailOtpConfigured && !challenge ? (
         <form className="mt-7 grid gap-5" onSubmit={requestCode}>
+          <div className="flex items-center gap-3 text-xs text-[var(--muted)]" aria-hidden="true">
+            <span className="h-px flex-1 bg-[var(--border)]" />
+            或使用企业邮箱
+            <span className="h-px flex-1 bg-[var(--border)]" />
+          </div>
           <label className="grid gap-2 text-sm font-semibold text-[var(--ink)]" htmlFor="account-email">
             登录邮箱
             <input
@@ -89,7 +100,7 @@ export function AccountLogin({ returnTo }: { returnTo: string }) {
             {busy ? "正在发送…" : "发送邮箱验证码"}
           </button>
         </form>
-      ) : (
+      ) : emailOtpConfigured && challenge ? (
         <form className="mt-7 grid gap-5" onSubmit={verifyCode}>
           <div className="border-l-2 border-[var(--accent)] pl-4 text-sm">
             验证码已发送至 <strong>{email}</strong>，10 分钟内有效。
@@ -116,11 +127,16 @@ export function AccountLogin({ returnTo }: { returnTo: string }) {
             更换邮箱或重新发送
           </button>
         </form>
+      ) : (
+        <div className="mt-7 border-l-2 border-[var(--border-strong)] bg-[var(--canvas)] p-4 text-sm text-[var(--muted)]">
+          <strong className="block text-[var(--ink)]">企业邮箱登录暂未开放</strong>
+          邮件发送服务接通后才会显示验证码输入，不影响上方 ChatGPT 账户登录。
+        </div>
       )}
 
       <div className="mt-7 border-t border-[var(--border)] pt-5 text-sm text-[var(--muted)]">
-        <p className="m-0">账户服务尚未配置时，页面会明确阻断登录，不会创建默认密码或模拟身份。</p>
-        <Link className="mt-3 inline-flex min-h-11 items-center font-semibold text-[var(--accent)] underline underline-offset-4" href="/resources">继续匿名浏览资源</Link>
+        <p className="m-0">KAI 不会索取 ChatGPT 密码，也不会创建默认密码或模拟身份。</p>
+        <Link className="mt-3 inline-flex min-h-11 items-center font-semibold text-[var(--accent)] underline underline-offset-4" href={returnTo}>暂不登录，继续浏览活动</Link>
       </div>
     </section>
   );

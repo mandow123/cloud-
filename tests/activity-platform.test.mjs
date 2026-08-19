@@ -67,6 +67,6 @@ test("private assets are never shared-cacheable and Sites identity trust fails c
 
 test("public UI exposes account, upload, gallery, vote and leaderboard flows", async () => {
   const [community, admin] = await Promise.all([source("../components/activity-community.tsx"), source("../components/activity-admin.tsx")]);
-  for (const phrase of ["邮箱登录", "ChatGPT 登录", "提交作品等待审核", "最新公开作品", "能量榜 TOP 10", "我的投稿"]) assert.match(community, new RegExp(phrase));
+  for (const phrase of ["账户登录", "ChatGPT 登录", "提交作品等待审核", "最新公开作品", "能量榜 TOP 10", "我的投稿"]) assert.match(community, new RegExp(phrase));
   for (const phrase of ["审核通过并公开", "拒绝公开", "发放 KAI 奖励", "撤销最近一笔奖励"]) assert.match(admin, new RegExp(phrase));
 });

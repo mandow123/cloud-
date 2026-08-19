@@ -184,7 +184,7 @@ export function ActivityCommunity() {
         ? <div className={styles.account}><span>账户状态</span><strong>{loading ? "正在确认账户…" : "暂时无法确认"}</strong><small>{loading ? "请稍候" : "重新加载后再投稿或投票"}</small></div>
         : snapshot.viewer
           ? <div className={styles.account}><span>已登录 · {accountType}</span><strong>{snapshot.viewer.displayName}</strong>{snapshot.viewer.email ? <small>{snapshot.viewer.email}</small> : null}<small>奖励余额 {snapshot.rewardBalance} KAI 时</small><Link href={snapshot.viewer.source === "chatgpt" ? "/signout-with-chatgpt?return_to=/activity" : "/member"}>{snapshot.viewer.source === "chatgpt" ? "退出当前账户" : "进入账户中心"} →</Link></div>
-          : <div className={styles.login}><strong>登录后投稿与投票</strong><small>登录会保存作品归属、投票和奖励记录。</small><div><Link href="/login?returnTo=/activity%23community">邮箱登录</Link><a href="/signin-with-chatgpt?return_to=/activity%23community">ChatGPT 登录</a></div></div>}
+          : <div className={styles.login}><strong>登录后投稿与投票</strong><small>登录会保存作品归属、投票和奖励记录。</small><div><Link href="/login?returnTo=/activity%23community">账户登录</Link><a href="/signin-with-chatgpt?return_to=/activity%23community">ChatGPT 登录</a></div></div>}
     </div>
 
     {error ? <div className={styles.error} role="alert"><span>{error}</span><button onClick={() => void load(true)} type="button">重新加载</button></div> : null}
