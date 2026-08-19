@@ -102,8 +102,12 @@ function item(
 }
 
 async function supplyOffers(db: AdminProjectionAdapter) {
-  const rows = await safeAll(db, `SELECT x.*,${ownershipColumns}
+  const rows = await safeAll(db, `SELECT x.*,${ownershipColumns},
+      acct.display_name account_display_name,acct.primary_email account_primary_email,
+      org.name organization_name
     FROM supply_offers x ${ownershipJoin("SUPPLY_PILOT", "SUPPLY_OFFER")}
+    LEFT JOIN admin_user_accounts acct ON acct.id=own.account_id
+    LEFT JOIN admin_organizations org ON org.id=own.organization_id
     ORDER BY x.created_at DESC LIMIT 250`);
   return rows.map((row) => item(row, "SUPPLY_PILOT", "SUPPLY_OFFER", {
     title: String(row.product_name),
@@ -112,9 +116,18 @@ async function supplyOffers(db: AdminProjectionAdapter) {
     facts: {
       resourceType: row.resource_type,
       supplierType: row.supplier_type,
+      accountDisplayName: row.account_display_name,
+      accountPrimaryEmail: row.account_primary_email,
+      organizationName: row.organization_name,
+      quantity: Number(row.quantity),
+      quantityUnit: row.quantity_unit,
       specification: row.specification,
       pricingUnit: row.pricing_unit,
+      region: row.region,
       deliveryForm: row.delivery_form,
+      availabilityStartAt: row.availability_start_at,
+      availabilityEndAt: row.availability_end_at,
+      notes: row.notes,
       version: Number(row.version),
     },
   }));

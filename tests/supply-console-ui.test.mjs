@@ -33,6 +33,7 @@ test("supplier console exposes the implemented resource, listing, order and earn
   const shell = readFileSync("components/supply-console-shell.tsx", "utf8");
   assert.match(shell, /href: "\/supply"/u);
   assert.doesNotMatch(shell, /href: "\/supply\/onboarding"/u);
+  assert.match(shell, /href: "\/supply\/resources"/u);
   assert.match(shell, /href: "\/supply\/devices"/u);
   assert.match(shell, /href: "\/supply\/listings"/u);
   assert.match(shell, /href: "\/supply\/orders"/u);
@@ -43,7 +44,25 @@ test("supplier console exposes the implemented resource, listing, order and earn
   assert.match(shell, /预上线配置模式/u);
   assert.match(shell, /aria-disabled="true"/u);
   const routes = shell.slice(shell.indexOf("const availableRoutes"), shell.indexOf("] as const"));
-  assert.equal((routes.match(/href:/gu) ?? []).length, 6);
+  assert.equal((routes.match(/href:/gu) ?? []).length, 7);
+});
+
+test("manual supply applications persist through the authenticated API and remain separate from Agent delivery", () => {
+  const createPage = readFileSync("app/supply/resources/new/page.tsx", "utf8");
+  const listPage = readFileSync("app/supply/resources/page.tsx", "utf8");
+  const form = readFileSync("components/supply-offer-form.tsx", "utf8");
+  const records = readFileSync("components/supply-offer-records.tsx", "utf8");
+  const admin = readFileSync("lib/admin-view-models.ts", "utf8");
+
+  assert.match(createPage, /<SupplyOfferForm \/>/u);
+  assert.match(listPage, /<SupplyOfferRecords \/>/u);
+  assert.match(form, /createSupplyOffer/u);
+  assert.match(form, /提交上架申请/u);
+  assert.match(form, /不要求安装 Agent/u);
+  assert.match(records, /getSupplyOffers\(\)/u);
+  assert.match(records, /不会自动验真、公开发布、成交或交付/u);
+  assert.match(admin, /"ownership\.organizationId"/u);
+  assert.match(admin, /"ownership\.accountId"/u);
 });
 
 test("resource registration issues a short-lived server challenge without client identity fields", () => {

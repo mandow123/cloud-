@@ -153,15 +153,15 @@ export function SupplyOfferForm() {
       <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_340px]">
         <section className="border-t-4 border-[var(--accent)] bg-[var(--surface)] p-6 ring-1 ring-[var(--border)] sm:p-8" aria-labelledby="offer-form-title">
           <p className="kicker">General supply offer</p>
-          <h2 className="m-0 text-3xl" id="offer-form-title">上架可供资源</h2>
-          <p className="section-lead text-base">个人、企业、IDC 与云厂商均可申报；GPU 型号不限制为 H100。KAI 自有资源只通过内部快捷预设进入。</p>
+          <h2 className="m-0 text-3xl" id="offer-form-title">提交上架申请</h2>
+          <p className="section-lead text-base">个人、企业、IDC 与云厂商均可申报；本阶段只收集资源信息并进入管理员人工审核，不要求安装 Agent 或完成设备验真。</p>
 
           {error ? <div className="mt-5 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-4 text-sm text-[var(--error)]" role="alert">{error}</div> : null}
           {offer ? (
             <div className="mt-5 border-l-4 border-[var(--success)] bg-[var(--success-bg)] p-5" role="status">
-              <strong className="block text-[var(--ink)]">服务端已接收上架记录</strong>
+              <strong className="block text-[var(--ink)]">管理员已收到上架申请</strong>
               <span className="mt-1 block font-mono text-sm">{offer.id}{offer.status ? ` · ${offer.status}` : ""}</span>
-              <p className="mb-0 mt-2 text-sm">这是一条资源供给记录，不代表已公开挂牌或已成交。</p>
+              <p className="mb-0 mt-2 text-sm">记录已经写入服务端数据库；这不代表已公开挂牌或已成交。</p>
             </div>
           ) : null}
 
@@ -218,8 +218,8 @@ export function SupplyOfferForm() {
               <textarea maxLength={2000} onChange={(event) => setNotes(event.target.value)} placeholder="例如最低起售量、网络边界、维护窗口或资质说明；不要填写密码、私钥。" rows={4} value={notes} />
             </label>
             <div className="md:col-span-2 flex flex-wrap items-center gap-3">
-              <button className="button button-primary" disabled={busy || Boolean(offer)} type="submit">{busy ? "正在提交…" : offer ? "已提交服务端" : "提交资源上架"}</button>
-              <Link className="button button-secondary" href="/supply/assets">查看上架记录</Link>
+              <button className="button button-primary" disabled={busy || Boolean(offer)} type="submit">{busy ? "正在提交…" : offer ? "已提交服务端" : "提交上架申请"}</button>
+              <Link className="button button-secondary" href="/supply/resources">查看申请记录</Link>
             </div>
           </form>
         </section>
@@ -230,7 +230,8 @@ export function SupplyOfferForm() {
           <ul className="mt-5 grid gap-3 pl-5 text-sm text-[var(--text)]">
             <li>交易方式暂不选择，提交后不会自动成交。</li>
             <li>计价单位用于表达报价口径，不代替后续价格审核。</li>
-            <li>涉及设备的资源仍需权属、规格和交付能力验真。</li>
+            <li>本次提交不要求安装 Agent，也不会自动发起硬件验真。</li>
+            <li>管理员可在后台查看组织、账号、规格、数量和备注。</li>
             <li>接口缺失或请求失败时不在浏览器生成假记录。</li>
           </ul>
         </aside>
