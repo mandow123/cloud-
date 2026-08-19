@@ -28,14 +28,17 @@ export function ActivityHub() {
   const filtered = useMemo(() => filter === "全部" ? activities : activities.filter((item) => item.tag === filter), [filter]);
 
   useEffect(() => {
-    try {
-      const savedSquad = window.localStorage.getItem("kai-activity-squad");
-      const savedJoined = JSON.parse(window.localStorage.getItem("kai-activity-joined") ?? "[]") as unknown;
-      if (squads.some((item) => item.name === savedSquad)) setSquad(savedSquad!);
-      if (Array.isArray(savedJoined)) setJoined(savedJoined.filter((item): item is string => typeof item === "string" && activities.some((activity) => activity.id === item)));
-    } catch {
-      // Browser storage is optional. Account-backed activity flows remain usable without it.
-    }
+    const timer = window.setTimeout(() => {
+      try {
+        const savedSquad = window.localStorage.getItem("kai-activity-squad");
+        const savedJoined = JSON.parse(window.localStorage.getItem("kai-activity-joined") ?? "[]") as unknown;
+        if (squads.some((item) => item.name === savedSquad)) setSquad(savedSquad!);
+        if (Array.isArray(savedJoined)) setJoined(savedJoined.filter((item): item is string => typeof item === "string" && activities.some((activity) => activity.id === item)));
+      } catch {
+        // Browser storage is optional. Account-backed activity flows remain usable without it.
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   function toggleJoin(id: string) {

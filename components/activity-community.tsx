@@ -88,7 +88,10 @@ export function ActivityCommunity() {
     }
   }, []);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(true), 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
 
   function chooseFile(event: ChangeEvent<HTMLInputElement>) {

@@ -64,7 +64,10 @@ export function ActivityAdmin() {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
   const filteredRows = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("zh-CN");
