@@ -1019,4 +1019,120 @@ body:has(.admin-app) #main-content {
 }
 
 .activity-admin-grid { display: grid; gap: 24px; }
-.activity-admin-grid .admin-action-panel { position: sticky; bottom: 0; z-index: 2; box-shadow: 0 -8px 30px rgba(0,0,0,.1); }
+.activity-admin-grid .admin-action-panel { position: static; box-shadow: 0 5px 20px rgb(10 65 65 / 6%); }
+.activity-admin-grid .admin-table-wrap { margin-top: 0; }
+
+.activity-admin-filters {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(180px, 240px) auto;
+  align-items: end;
+  gap: 16px;
+  margin-top: 20px;
+  border: 1px solid var(--admin-line);
+  background: var(--admin-panel);
+  padding: 18px;
+}
+
+.activity-admin-filters .admin-result-count {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.activity-admin-table tbody tr.activity-admin-selected,
+.activity-admin-table tbody tr.activity-admin-selected:hover {
+  background: var(--accent-soft);
+  box-shadow: inset 4px 0 0 var(--brand);
+}
+
+.activity-admin-table th[scope="row"] {
+  min-width: 190px;
+  color: var(--ink);
+}
+
+.activity-admin-preview {
+  display: grid;
+  grid-template-columns: minmax(120px, 210px) 1fr;
+  gap: 18px;
+  margin-top: 18px;
+  border: 1px solid var(--admin-line);
+  background: var(--admin-panel);
+  padding: 12px;
+}
+
+.activity-admin-preview img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  display: block;
+  object-fit: cover;
+  background: var(--info-bg);
+}
+
+.activity-admin-preview dl,
+.activity-admin-preview dd {
+  margin: 0;
+}
+
+.activity-admin-preview dl {
+  display: grid;
+  align-content: start;
+  gap: 11px;
+}
+
+.activity-admin-preview dt {
+  color: var(--muted);
+  font-size: .65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.activity-admin-preview dd {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: .78rem;
+  font-weight: 700;
+}
+
+.activity-admin-panel .admin-action-fields small {
+  color: var(--muted);
+  font-size: .68rem;
+}
+
+.activity-admin-panel .admin-action-fields > .admin-button {
+  min-width: 190px;
+}
+
+@media (max-width: 820px) {
+  .activity-admin-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .activity-admin-filters .admin-result-count {
+    min-height: auto;
+    justify-content: flex-start;
+  }
+
+  .activity-admin-preview {
+    grid-template-columns: 120px 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .activity-admin-filters {
+    padding: 14px;
+  }
+
+  .activity-admin-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .activity-admin-preview img {
+    max-height: 240px;
+  }
+
+  .activity-admin-panel .admin-action-fields > .admin-button {
+    width: 100%;
+    min-width: 0;
+  }
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import styles from "./activity-hub.module.css";
 import { ActivityCommunity } from "./activity-community";
 
@@ -24,10 +24,35 @@ export function ActivityHub() {
   const [filter, setFilter] = useState<Filter>("全部");
   const [joined, setJoined] = useState<string[]>([]);
   const [squad, setSquad] = useState("造梦局");
+  const [choiceNotice, setChoiceNotice] = useState("");
   const filtered = useMemo(() => filter === "全部" ? activities : activities.filter((item) => item.tag === filter), [filter]);
 
+  useEffect(() => {
+    try {
+      const savedSquad = window.localStorage.getItem("kai-activity-squad");
+      const savedJoined = JSON.parse(window.localStorage.getItem("kai-activity-joined") ?? "[]") as unknown;
+      if (squads.some((item) => item.name === savedSquad)) setSquad(savedSquad!);
+      if (Array.isArray(savedJoined)) setJoined(savedJoined.filter((item): item is string => typeof item === "string" && activities.some((activity) => activity.id === item)));
+    } catch {
+      // Browser storage is optional. Account-backed activity flows remain usable without it.
+    }
+  }, []);
+
   function toggleJoin(id: string) {
-    setJoined((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+    setJoined((current) => {
+      const joining = !current.includes(id);
+      const next = joining ? [...current, id] : current.filter((item) => item !== id);
+      try { window.localStorage.setItem("kai-activity-joined", JSON.stringify(next)); } catch { /* optional preference storage */ }
+      const activity = activities.find((item) => item.id === id);
+      setChoiceNotice(`${activity?.title ?? "活动"}${joining ? "已加入当前浏览器的任务清单" : "已从当前浏览器的任务清单移除"}。`);
+      return next;
+    });
+  }
+
+  function chooseSquad(name: string) {
+    setSquad(name);
+    setChoiceNotice(`已选择${name}，阵营偏好保存在当前浏览器。`);
+    try { window.localStorage.setItem("kai-activity-squad", name); } catch { /* optional preference storage */ }
   }
 
   return (
@@ -44,7 +69,7 @@ export function ActivityHub() {
               <a href="#rules" className={styles.textAction}>玩法说明 <span>02 min</span></a>
             </div>
           </div>
-          <div className={styles.heroVisual} aria-label="本季阵营能量概览">
+          <div className={styles.heroVisual} aria-label="本季阵营能量概览" role="img">
             <div className={styles.ring}><span>SEASON<br /><strong>02</strong></span></div>
             <div className={styles.floatCard}><small>本季共同创作</small><strong>21,406</strong><span>件作品已进入能量池</span></div>
             <div className={styles.spark}>✦</div>
@@ -59,16 +84,18 @@ export function ActivityHub() {
           <p>阵营不限制你的创作方式，只决定你本周收到的隐藏任务。随时可以切换。</p>
         </div>
         <div className={styles.squadGrid}>
-          {squads.map((item, index) => <button key={item.name} className={`${styles.squadCard} ${squad === item.name ? styles.selected : ""}`} onClick={() => setSquad(item.name)}>
+          {squads.map((item, index) => <button aria-pressed={squad === item.name} key={item.name} className={`${styles.squadCard} ${squad === item.name ? styles.selected : ""}`} onClick={() => chooseSquad(item.name)} type="button">
             <span className={styles.squadNo}>0{index + 1}</span><b className={styles.squadIcon}>{item.icon}</b><strong>{item.name}</strong><em>{item.copy}</em><small>{item.count} 位创作者</small><i>{squad === item.name ? "已加入" : "加入 →"}</i>
           </button>)}
         </div>
+        <p className={styles.preferenceNote}>阵营和任务清单保存在当前浏览器；投稿、投票与奖励会安全保存到登录账户。</p>
+        <p className={styles.liveNotice} aria-live="polite">{choiceNotice}</p>
       </section>
 
       <section className={styles.events} id="events" aria-labelledby="events-title">
         <div className={styles.sectionIntro}>
           <div><span className={styles.index}>02 / OPEN CALLS</span><h2 id="events-title">正在发生的创作</h2></div>
-          <div className={styles.filters}>{(["全部", "进行中", "即将开始", "长期活动"] as Filter[]).map((item) => <button aria-pressed={filter === item} key={item} onClick={() => setFilter(item)}>{item}</button>)}</div>
+          <div className={styles.filters} aria-label="按活动状态筛选">{(["全部", "进行中", "即将开始", "长期活动"] as Filter[]).map((item) => <button aria-pressed={filter === item} key={item} onClick={() => setFilter(item)} type="button">{item}</button>)}</div>
         </div>
         <div className={styles.eventGrid}>
           {filtered.map((item, index) => <article className={`${styles.eventCard} ${styles[item.tone]}`} key={item.id}>
@@ -81,7 +108,7 @@ export function ActivityHub() {
               <span className={styles.eyebrow}>{item.eyebrow}</span><h3>{item.title}</h3><p>{item.copy}</p>
               <dl><div><dt>活动时间</dt><dd>{item.date}</dd></div><div><dt>能量奖池</dt><dd>{item.prize}</dd></div></dl>
               {item.progress > 0 && <div className={styles.progress}><span><i style={{ width: `${item.progress}%` }} /></span><small>{item.people} 人已参与</small></div>}
-              <button className={styles.joinButton} onClick={() => toggleJoin(item.id)}>{joined.includes(item.id) ? "已领取任务 ✓" : item.tag === "即将开始" ? "预约提醒" : "领取创作任务"}<span>↗</span></button>
+              <button aria-pressed={joined.includes(item.id)} className={styles.joinButton} onClick={() => toggleJoin(item.id)} type="button">{joined.includes(item.id) ? (item.tag === "即将开始" ? "已加入提醒清单 ✓" : "已加入任务清单 ✓") : item.tag === "即将开始" ? "加入提醒清单" : "加入任务清单"}<span aria-hidden="true">↗</span></button>
             </div>
           </article>)}
         </div>
