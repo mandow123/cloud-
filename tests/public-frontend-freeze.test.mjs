@@ -10,6 +10,7 @@ const ROOT = join(import.meta.dirname, "..");
 const EXTRA_FROZEN_FILES = ["data/model-market.snapshot.json", "lib/catalog.mjs"];
 const ACTIVITY_SURFACE_FILES = new Set([
   "app/globals.css",
+  "app/layout.tsx",
   "app/page.tsx",
   "components/activity-community.tsx",
   "components/activity-hub.module.css",

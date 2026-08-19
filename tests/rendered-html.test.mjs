@@ -37,6 +37,11 @@ test("server-renders the activity plaza at the root route", async () => {
   assert.match(html, /霓虹城市重构计划/);
   assert.match(html, /老照片会说话/);
   assert.match(html, /href="\/market"/u);
+  assert.match(html, /<title>创作挑战与活动广场｜KAI Cloud<\/title>/u);
+  assert.match(html, /<meta property="og:title" content="KAI Creator｜AI 创作挑战与活动广场"\/>/u);
+  assert.match(html, /<meta property="og:site_name" content="KAI Creator"\/>/u);
+  assert.match(html, /<meta name="twitter:title" content="KAI Creator｜AI 创作挑战与活动广场"\/>/u);
+  assert.doesNotMatch(html, /<meta (?:property="og:image|name="twitter:image)/u);
   assert.doesNotMatch(html, /先看清价格，\s*再发布算力需求/u);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
 });
@@ -161,6 +166,18 @@ test("all six activity cards link from the root plaza to their detail routes", a
   }
 });
 
+test("activity detail metadata comes from the visible activity and clears inherited images", async () => {
+  const response = await render("/activity/neon-city");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /<title>霓虹城市重构计划｜KAI Cloud<\/title>/u);
+  assert.match(html, /<meta property="og:title" content="霓虹城市重构计划"\/>/u);
+  assert.match(html, /<meta name="twitter:title" content="霓虹城市重构计划"\/>/u);
+  assert.match(html, /选择一处真实地标/u);
+  assert.doesNotMatch(html, /<meta (?:property="og:image|name="twitter:image)/u);
+  assert.doesNotMatch(html, /\/og\.png/u);
+});
+
 test("the market route retains the existing model and infrastructure pricing product", async () => {
   const response = await render("/market");
   assert.equal(response.status, 200);
@@ -202,7 +219,7 @@ test("resources expose the approved purchase action and a clearly priced purchas
   assert.match(checkoutHtml, /平台确认库存与正式价格/);
 });
 
-test("starter artifacts are removed and brand assets are wired", async () => {
+test("starter artifacts are removed and activity metadata is wired without a stale social image", async () => {
   const [page, layout, css, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
@@ -213,10 +230,14 @@ test("starter artifacts are removed and brand assets are wired", async () => {
   await assert.rejects(access(new URL("../app/_sites-preview/SkeletonPreview.tsx", import.meta.url)));
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
-  assert.match(layout, /og\.png/);
+  assert.match(layout, /KAI Creator｜AI 创作挑战与活动广场/u);
+  assert.match(layout, /参加原创 AI 创作挑战/u);
+  assert.match(layout, /siteName:\s*"KAI Creator"/u);
+  assert.match(layout, /twitter:\s*\{[\s\S]*card:\s*"summary_large_image"/u);
+  assert.doesNotMatch(layout, /og\.png|images:\s*\[/u);
+  assert.doesNotMatch(layout, /中国 Token 学院算力市场|算力行情与资源撮合/u);
   assert.match(layout, /zh-CN/);
   assert.match(css, /--brand:\s*#177777/i);
   assert.match(css, /--canvas:\s*#fbfdfd/i);
   assert.match(css, /--accent:\s*#69d1cb/i);
-  await access(new URL("../public/og.png", import.meta.url));
 });
