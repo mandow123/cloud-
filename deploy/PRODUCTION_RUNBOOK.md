@@ -57,10 +57,11 @@ npm run ops:image:promote -- \
 ```text
 /opt/kai-cloud-3051/db       # 仅应用与备份任务可写
 /opt/kai-cloud-3051/market   # 更新任务可写，应用和备份任务只读
+/opt/kai-cloud-3051/uploads  # 活动作品对象；应用可写，备份任务只读
 /opt/kai-cloud-3051/backups  # 仅备份任务可写
 ```
 
-创建目录时固定为容器运行 UID/GID 1000，权限 `0750`。不要把三个目录重新合并，也不要把宿主机根目录或 `/opt` 整体挂入容器。
+创建目录时固定为容器运行 UID/GID 1000，权限 `0750`。首次安装可由主机管理员运行 `sudo env KAI_STATE_ROOT=/opt/kai-cloud-3051 deploy/kai-cloud-prepare-state.sh`；脚本会拒绝 `/opt/kai-cloud[-suffix]` 之外的路径和符号链接。不要把四个目录重新合并，也不要把宿主机根目录或 `/opt` 整体挂入容器。
 
 从旧版单目录迁移时，先通过旧数据库的一致性备份生成恢复包，再恢复到新目录。SQLite 启用 WAL 时，禁止只复制 `kai-cloud.sqlite`；主文件、WAL 与 SHM 的普通文件复制不构成可靠备份。
 
@@ -72,6 +73,7 @@ npm run ops:image:promote -- \
 
    - `kai-cloud-market-update-run.sh`
    - `kai-cloud-backup-run.sh`
+   - `kai-cloud-prepare-state.sh`（仅安装/恢复时由 root 人工执行，不进入 timer）
    - `kai-cloud-ops-alert.sh`
 
 4. 将三个 service unit 和两个 timer 安装到 `/etc/systemd/system/`：
@@ -119,7 +121,7 @@ npm run ops:image:promote -- \
 
 首次安装时数据库尚不存在，不能把“先备份”作为启动前置条件。正确顺序是：
 
-1. 创建 `/opt/kai-cloud-*/{db,market,backups}`，设置 UID/GID 1000 与 `0750` 权限，并安装环境文件、脚本和 systemd units。
+1. 创建 `/opt/kai-cloud-*/{db,market,uploads,backups}`，设置 UID/GID 1000 与 `0750` 权限，并安装环境文件、脚本和 systemd units。不得漏建 `uploads`，否则应用启动门禁和备份任务都会失败关闭。
 2. 人工运行一次行情更新，确认 `market/model-market.snapshot.json` 已生成且校验通过。
 3. 仅在回环端口启动应用，不接入外部流量；必须使用上一节的部署门禁和 `up -d --wait app`。
 4. 请求 `/api/ready`，让应用创建或迁移数据库，并确认返回就绪、schema 版本正确、行情不过期。
@@ -135,13 +137,16 @@ npm run ops:image:promote -- \
 ```text
 kai-cloud-backup-<UTC timestamp>-<random>/
   kai-cloud.sqlite
+  activity.sqlite
   model-market.snapshot.json
+  uploads/
+    submissions/<user>/<object>
   manifest.json
 ```
 
-数据库通过 `VACUUM INTO` 创建一致性副本。完成前目录以 `.partial-` 开头，任何失败都不会发布为正式恢复包。正式 manifest 包含：
+两个数据库分别通过 `VACUUM INTO` 创建一致性副本。活动作品先完成原子文件写入再提交数据库元数据，因此备份先快照 `activity.sqlite`、再复制只读上传树；并发新作品最多作为无引用的额外对象进入恢复包，不会让已快照记录丢失文件。完成前目录以 `.partial-` 开头，任何失败都不会发布为正式恢复包。正式 manifest 包含：
 
-- 两个文件的 SHA-256 和字节数；
+- 两个 SQLite 数据库、行情快照以及每个上传对象的 SHA-256 和字节数；
 - `PRAGMA quick_check` 与 `PRAGMA foreign_key_check` 结果；
 - `user_version`、表清单和关键表记录数；
 - 行情 schema、发布时间、报价数和指数值；
@@ -165,7 +170,10 @@ node scripts/ops/verify-restore.mjs \
 
 ```text
 restore-candidate/db/kai-cloud.sqlite
+restore-candidate/db/activity.sqlite
 restore-candidate/market/model-market.snapshot.json
+restore-candidate/uploads/...
+restore-candidate/backups/
 restore-candidate/backup-manifest.json
 restore-candidate/restore-verification.json
 ```
@@ -173,8 +181,8 @@ restore-candidate/restore-verification.json
 上线前的恢复演练必须完成：
 
 1. 从异地存储下载恢复包到隔离目录。
-2. 校验 manifest 与两个文件的 SHA-256。
-3. 验证 `quick_check=ok`、无外键违规、迁移版本和记录数一致。
+2. 校验 manifest、两个数据库、行情快照和每个上传对象的 SHA-256；上传清单不得有遗漏、额外文件、符号链接或路径穿越。
+3. 对两个数据库验证 `quick_check=ok`、无外键违规、迁移版本和记录数一致。
 4. 使用恢复目录在新端口启动同一 digest 的 canary；不得与生产实例共享数据库文件。
 5. 请求 `/api/live` 与 `/api/ready`，并在恢复副本上执行一次“需求 → 报价 → 需求方查看”冒烟流程。
 6. 重启 canary 后再次确认数据存在。
@@ -228,6 +236,17 @@ systemd 失败会调用 `kai-cloud-ops-alert@.service`。默认写入 journal；
 
 只有数据库迁移明确向后兼容时，才允许只回退应用 digest。若 schema 不兼容，必须恢复发布前恢复包或使用经过验证的前向修复迁移。回滚也要在隔离端口完成就绪和业务冒烟，不能依赖一个未挂载持久化目录的停止容器。
 
+需要恢复数据的冷回滚必须切换完整状态根目录，禁止把单个 SQLite 主文件或 `uploads` 单独覆盖回现网：
+
+1. 停止写流量并执行 `docker compose ... stop app`，记录当前 `KAI_STATE_ROOT`、镜像 digest 与恢复包路径。
+2. 把恢复包放在受控只读位置，执行 `verify-restore.mjs` 恢复到尚不存在且符合规则的新目录，例如 `/opt/kai-cloud-3051-restore-20260819`。
+3. 对新目录执行 `chown -R 1000:1000`，目录权限设为 `0750`、普通文件设为 `0640`；人工确认它不是符号链接，并保留原状态根不动。
+4. 用新状态根和待回退 digest 在隔离回环端口启动 canary，核对两个数据库、活动作品读取、登录、投票、排行榜和奖励余额；失败时停掉 canary，不得修改原状态根。
+5. 通过 canary 后，原子替换 `/etc/kai-cloud/kai-cloud-release.env` 中的 `KAI_STATE_ROOT`、`KAI_IMAGE` 与 `KAI_RELEASE_SHA`，再次运行完整部署门禁，再启动正式应用并切流。
+6. 观察期内不得删除原状态根和回滚恢复包。若回滚后检查失败，停止写流量并把 release env 原子切回原状态根与原 digest，而不是在两个目录之间复制文件。
+
+`kai-cloud-backup/1` 旧恢复包仍可校验，但它不含活动库和上传对象，验证结果会标记 `legacyBackup=true`；有活动数据后不得将其作为完整灾备或回滚依据。
+
 ## 验收命令
 
 本地脚本自测：
@@ -237,7 +256,7 @@ npm run ops:self-test
 npm run ops:deploy:validate
 ```
 
-`ops:deploy:validate` 内含弱密钥、可变镜像、非法发布 SHA、HTTP/带路径 origin、关闭安全标志和危险目录的负向用例。目标主机发布时还必须在加载真实环境文件后执行 `npm run ops:deploy:validate -- --current-env`；该模式会同时检查 `/opt/kai-cloud-*/{db,market,backups}` 为已存在、非符号链接的独立目录，并检查本机镜像 RepoDigest、OCI revision label 和 OS/架构与 release env 完全一致。
+`ops:deploy:validate` 内含弱密钥、可变镜像、非法发布 SHA、HTTP/带路径 origin、关闭安全标志和危险目录的负向用例。目标主机发布时还必须在加载真实环境文件后执行 `npm run ops:deploy:validate -- --current-env`；该模式会同时检查 `/opt/kai-cloud-*/{db,market,uploads,backups}` 为已存在、非符号链接的独立目录，并检查本机镜像 RepoDigest、OCI revision label 和 OS/架构与 release env 完全一致。
 
 发布候选至少还要通过：
 

@@ -41,6 +41,8 @@ function productionEnvironment(overrides = {}) {
     KAI_REQUIRE_HTTPS_WRITES: "1",
     KAI_ENABLE_HSTS: "0",
     KAI_DB_DIR: "/app/db",
+    KAI_ACTIVITY_DB_PATH: "/app/db/activity.sqlite",
+    KAI_ACTIVITY_UPLOAD_DIR: "/app/uploads",
     KAI_MARKET_DATA_DIR: "/app/market",
     ...overrides,
   };
@@ -82,6 +84,8 @@ function validateNegativeEnvironmentCases() {
   assertEnvironmentRejected({ KAI_REQUIRE_HTTPS_WRITES: "0" }, "KAI_REQUIRE_HTTPS_WRITES");
   assertEnvironmentRejected({ KAI_ENABLE_HSTS: "2" }, "KAI_ENABLE_HSTS");
   assertEnvironmentRejected({ KAI_DB_DIR: "/" }, "KAI_DB_DIR");
+  assertEnvironmentRejected({ KAI_ACTIVITY_DB_PATH: "/tmp/activity.sqlite" }, "KAI_ACTIVITY_DB_PATH");
+  assertEnvironmentRejected({ KAI_ACTIVITY_UPLOAD_DIR: "/tmp/uploads" }, "KAI_ACTIVITY_UPLOAD_DIR");
   assertStateRootRejected("/");
   assertStateRootRejected("relative/kai-cloud-3051");
   assertStateRootRejected("/opt/kai-cloud-3051/../other");
@@ -167,6 +171,8 @@ async function main() {
   assert(app.environment.HOST === "0.0.0.0", "app must bind its container listener through HOST");
   assert(app.environment.KAI_ENVIRONMENT === "LIVE", "production app must expose the LIVE environment label");
   assert(app.environment.KAI_DB_DIR === "/app/db", "app must use the isolated KAI_DB_DIR");
+  assert(app.environment.KAI_ACTIVITY_DB_PATH === "/app/db/activity.sqlite", "app must use the activity database inside KAI_DB_DIR");
+  assert(app.environment.KAI_ACTIVITY_UPLOAD_DIR === "/app/uploads", "app must use the isolated activity upload directory");
   assert(app.environment.KAI_TRUST_PROXY === "1", "loopback-only app must trust the configured reverse proxy");
   assert(app.environment.KAI_REQUIRE_HTTPS_WRITES === "1", "production writes must require HTTPS");
   assert(app.environment.KAI_ENABLE_HSTS === candidateEnvironment.KAI_ENABLE_HSTS, "app must receive the validated HSTS flag");
@@ -186,6 +192,7 @@ async function main() {
   assert(app.environment.KAI_IMAGE_REFERENCE === candidateEnvironment.KAI_IMAGE_REFERENCE, "app must receive its immutable image reference for the startup gate");
   assert(volumeByTarget(app, "/app/db") && !volumeByTarget(app, "/app/db").read_only, "app requires a writable /app/db mount");
   assert(volumeByTarget(app, "/app/market")?.read_only === true, "app market mount must be read-only");
+  assert(volumeByTarget(app, "/app/uploads") && !volumeByTarget(app, "/app/uploads").read_only, "app requires a writable /app/uploads mount");
 
   assert(marketUpdate.volumes?.length === 1, "market update must have exactly one host mount");
   assert(volumeByTarget(marketUpdate, "/app/market") && !volumeByTarget(marketUpdate, "/app/market").read_only, "market update requires only writable /app/market");
@@ -198,15 +205,17 @@ async function main() {
   assert(String(backup.environment.KAI_BACKUP_RETENTION_MAX_AGE_DAYS) === "30", "backup retention must have a hard 30-day age limit");
   assert(volumeByTarget(backup, "/app/db") && !volumeByTarget(backup, "/app/db").read_only, "backup requires database access for VACUUM INTO");
   assert(volumeByTarget(backup, "/app/market")?.read_only === true, "backup market mount must be read-only");
+  assert(volumeByTarget(backup, "/app/uploads")?.read_only === true, "backup upload mount must be read-only");
   assert(volumeByTarget(backup, "/app/backups") && !volumeByTarget(backup, "/app/backups").read_only, "backup output mount must be writable");
 
-  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, runbook, appEnvironmentExample, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator] = await Promise.all([
+  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, prepareState, Dockerfile, productionEntrypoint, runbook, appEnvironmentExample, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator] = await Promise.all([
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.timer"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup.timer"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update-run.sh"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup-run.sh"), "utf8"),
+    readFile(resolve(projectRoot, "deploy/kai-cloud-prepare-state.sh"), "utf8"),
     readFile(resolve(projectRoot, "Dockerfile"), "utf8"),
     readFile(resolve(projectRoot, "scripts/ops/production-entrypoint.sh"), "utf8"),
     readFile(resolve(projectRoot, "deploy/PRODUCTION_RUNBOOK.md"), "utf8"),
@@ -233,6 +242,8 @@ async function main() {
   assert(updateRunner.includes("/opt/kai-cloud-3051") && updateRunner.includes("kai-cloud-market-update-3051"), "market update runner must default to the isolated 3051 release paths");
   assert(backupRunner.includes("/opt/kai-cloud-3051") && backupRunner.includes("kai-cloud-backup-3051"), "backup runner must default to the isolated 3051 release paths");
   assert(backupRunner.includes("KAI_BACKUP_RETENTION_MAX_AGE_DAYS"), "backup runner must pass the hard maximum backup age");
+  assert(backupRunner.includes("KAI_ACTIVITY_DB_PATH=/app/db/activity.sqlite") && backupRunner.includes("/uploads,dst=/app/uploads,readonly"), "backup runner must include the activity database and read-only upload tree");
+  assert(prepareState.includes("db market uploads backups") && prepareState.includes("install -d"), "state preparation must create all isolated persistence directories");
   assert(appEnvironmentExample.includes("KAI_APP_PORT=3051") && appEnvironmentExample.includes("KAI_ENABLE_HSTS=0"), "application environment example must use port 3051 and keep HSTS off by default");
   assert(releaseEnvironmentExample.includes("KAI_STATE_ROOT=/opt/kai-cloud-3051") && releaseEnvironmentExample.includes("KAI_BACKUP_RETENTION_MAX_AGE_DAYS=30") && releaseEnvironmentExample.includes("KAI_IMAGE_PLATFORM=linux/amd64"), "release environment example must use the 3051 state root, validated platform, and 30-day backup limit");
   assert(registryCompose.includes("registry:3.1.1@sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33"), "private registry must use the verified Docker Official Image digest");
@@ -262,7 +273,7 @@ async function main() {
     checks: [
       "Compose parsed successfully with all ops profiles",
       "market updater has no database mount",
-      "database, market, and backup boundaries are distinct",
+      "database, activity uploads, market, and backup boundaries are distinct",
       "loopback binding, limits, log rotation, and healthcheck are enforced",
       "startup gate rejects weak secrets, mutable images, invalid release IDs, invalid origins, unsafe paths, and disabled HTTPS/proxy flags",
       "systemd locks, timeouts, failure hooks, and schedules are present",

@@ -28,7 +28,7 @@ if [ "$KAI_STATE_ROOT" = "/" ]; then
   printf '%s\n' "KAI_STATE_ROOT cannot be /" >&2
   exit 64
 fi
-for directory in db market backups; do
+for directory in db market uploads backups; do
   if [ ! -d "$KAI_STATE_ROOT/$directory" ]; then
     printf '%s\n' "$KAI_STATE_ROOT/$directory must exist" >&2
     exit 72
@@ -63,6 +63,8 @@ trap cleanup EXIT HUP INT TERM
   --log-opt max-file=3 \
   --label "org.opencontainers.image.revision=$KAI_RELEASE_SHA" \
   --env KAI_DB_DIR=/app/db \
+  --env KAI_ACTIVITY_DB_PATH=/app/db/activity.sqlite \
+  --env KAI_ACTIVITY_UPLOAD_DIR=/app/uploads \
   --env KAI_MARKET_DATA_DIR=/app/market \
   --env KAI_BACKUP_DIR=/app/backups \
   --env "KAI_RELEASE_SHA=$KAI_RELEASE_SHA" \
@@ -72,6 +74,7 @@ trap cleanup EXIT HUP INT TERM
   --env "KAI_BACKUP_RETENTION_MAX_AGE_DAYS=$KAI_BACKUP_RETENTION_MAX_AGE_DAYS" \
   --mount "type=bind,src=$KAI_STATE_ROOT/db,dst=/app/db" \
   --mount "type=bind,src=$KAI_STATE_ROOT/market,dst=/app/market,readonly" \
+  --mount "type=bind,src=$KAI_STATE_ROOT/uploads,dst=/app/uploads,readonly" \
   --mount "type=bind,src=$KAI_STATE_ROOT/backups,dst=/app/backups" \
   "$KAI_IMAGE" \
   node scripts/ops/backup-marketplace.mjs create

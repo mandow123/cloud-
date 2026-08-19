@@ -12,8 +12,9 @@ services:
       HOST: 0.0.0.0
       PORT: "3000"
       KAI_DB_DIR: /app/db
-      KAI_MARKET_DATA_DIR: /app/market
+      KAI_ACTIVITY_DB_PATH: /app/db/activity.sqlite
       KAI_ACTIVITY_UPLOAD_DIR: /app/uploads
+      KAI_MARKET_DATA_DIR: /app/market
       KAI_RELEASE_SHA: "${KAI_RELEASE_SHA:?KAI_RELEASE_SHA is required}"
       KAI_IMAGE_REFERENCE: "${KAI_IMAGE:?KAI_IMAGE must be an immutable repository@sha256 digest}"
       KAI_TRUST_PROXY: "1"
@@ -124,6 +125,8 @@ services:
     read_only: true
     environment:
       KAI_DB_DIR: /app/db
+      KAI_ACTIVITY_DB_PATH: /app/db/activity.sqlite
+      KAI_ACTIVITY_UPLOAD_DIR: /app/uploads
       KAI_MARKET_DATA_DIR: /app/market
       KAI_BACKUP_DIR: /app/backups
       KAI_RELEASE_SHA: "${KAI_RELEASE_SHA:?KAI_RELEASE_SHA is required}"
@@ -138,6 +141,10 @@ services:
       - type: bind
         source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3051}/market"
         target: /app/market
+        read_only: true
+      - type: bind
+        source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3051}/uploads"
+        target: /app/uploads
         read_only: true
       - type: bind
         source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3051}/backups"

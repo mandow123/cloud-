@@ -19,7 +19,8 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 
-export const BACKUP_SCHEMA = "kai-cloud-backup/1";
+export const BACKUP_SCHEMA = "kai-cloud-backup/2";
+export const LEGACY_BACKUP_SCHEMA = "kai-cloud-backup/1";
 
 const BACKUP_NAME_PATTERN = /^kai-cloud-backup-(\d{8}T\d{9}Z)-([0-9a-f]{8})$/;
 function fail(code, message) {
@@ -67,7 +68,9 @@ function defaultPaths() {
     : resolve(process.cwd(), "data");
   return {
     databasePath: resolve(process.env.KAI_DB_PATH ?? join(databaseDirectory, "kai-cloud.sqlite")),
+    activityDatabasePath: resolve(process.env.KAI_ACTIVITY_DB_PATH ?? join(databaseDirectory, "activity.sqlite")),
     marketPath: resolve(process.env.KAI_MARKET_SNAPSHOT_PATH ?? join(marketDirectory, "model-market.snapshot.json")),
+    uploadDirectory: resolve(process.env.KAI_ACTIVITY_UPLOAD_DIR ?? join(databaseDirectory, "activity-uploads")),
     backupRoot: resolve(process.env.KAI_BACKUP_DIR ?? join(process.cwd(), ".market-cache", "backups")),
   };
 }
@@ -103,6 +106,68 @@ async function assertRegularFile(path, code) {
   }
   if (!metadata.isFile() || metadata.isSymbolicLink()) fail(code, `${path} must be a regular file`);
   return metadata;
+}
+
+async function assertRealDirectory(path, code) {
+  let metadata;
+  try {
+    metadata = await lstat(path);
+  } catch (error) {
+    if (error?.code === "ENOENT") fail(code, `${path} does not exist`);
+    throw error;
+  }
+  if (!metadata.isDirectory() || metadata.isSymbolicLink()) fail(code, `${path} must be a real directory`);
+  return metadata;
+}
+
+function portableRelativePath(root, path) {
+  return relative(root, path).split(sep).join("/");
+}
+
+async function copyUploadTree(sourceRoot, destinationRoot) {
+  await assertRealDirectory(sourceRoot, "UPLOAD_DIRECTORY_NOT_FOUND");
+  await mkdir(destinationRoot, { recursive: false, mode: 0o750 });
+  const files = [];
+
+  async function visit(sourceDirectory, destinationDirectory) {
+    const entries = await readdir(sourceDirectory, { withFileTypes: true });
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      const sourcePath = join(sourceDirectory, entry.name);
+      const destinationPath = join(destinationDirectory, entry.name);
+      const metadata = await lstat(sourcePath);
+      if (metadata.isSymbolicLink()) fail("UNSAFE_UPLOAD_ENTRY", `${sourcePath} must not be a symbolic link`);
+      if (metadata.isDirectory()) {
+        await mkdir(destinationPath, { recursive: false, mode: 0o750 });
+        await visit(sourcePath, destinationPath);
+        continue;
+      }
+      if (!metadata.isFile()) fail("UNSAFE_UPLOAD_ENTRY", `${sourcePath} must be a regular file or directory`);
+      // R2-compatible local writes publish by atomic rename. A leftover partial
+      // file is never a committed object and must not enter a recovery bundle.
+      if (entry.name.endsWith(".partial")) continue;
+      await copyFile(sourcePath, destinationPath, fsConstants.COPYFILE_EXCL);
+      await chmod(destinationPath, 0o640);
+      const copiedMetadata = await stat(destinationPath);
+      const sha256 = await sha256File(destinationPath);
+      files.push({
+        path: portableRelativePath(destinationRoot, destinationPath),
+        bytes: copiedMetadata.size,
+        sha256,
+      });
+      await syncPath(destinationPath);
+    }
+    await syncPath(destinationDirectory);
+  }
+
+  await visit(sourceRoot, destinationRoot);
+  files.sort((left, right) => left.path.localeCompare(right.path));
+  return {
+    directory: "uploads",
+    fileCount: files.length,
+    totalBytes: files.reduce((total, file) => total + file.bytes, 0),
+    files,
+  };
 }
 
 async function syncPath(path) {
@@ -197,7 +262,7 @@ async function readBackupMetadata(backupRoot, entry) {
   if (!metadata.isDirectory() || metadata.isSymbolicLink()) return null;
   try {
     const manifest = JSON.parse(await readFile(join(bundlePath, "manifest.json"), "utf8"));
-    if (manifest?.schemaVersion !== BACKUP_SCHEMA || typeof manifest.createdAt !== "string") return null;
+    if (![BACKUP_SCHEMA, LEGACY_BACKUP_SCHEMA].includes(manifest?.schemaVersion) || typeof manifest.createdAt !== "string") return null;
     const createdAt = new Date(manifest.createdAt);
     if (!Number.isFinite(createdAt.getTime())) return null;
     return { name: entry.name, path: bundlePath, createdAt };
@@ -269,7 +334,9 @@ async function vacuumInto(databasePath, outputPath) {
 export async function createBackup(options = {}) {
   const defaults = defaultPaths();
   const databasePath = resolve(options.databasePath ?? defaults.databasePath);
+  const activityDatabasePath = resolve(options.activityDatabasePath ?? defaults.activityDatabasePath);
   const marketPath = resolve(options.marketPath ?? defaults.marketPath);
+  const uploadDirectory = resolve(options.uploadDirectory ?? defaults.uploadDirectory);
   const backupRoot = resolve(options.backupRoot ?? defaults.backupRoot);
   const retention = normalizeRetention(options.retention ?? retentionFromEnvironment());
   if (retention.hourly + retention.daily + retention.monthly < 1) {
@@ -279,7 +346,9 @@ export async function createBackup(options = {}) {
   if (!Number.isFinite(now.getTime())) fail("INVALID_TIME", "backup time is invalid");
   assertSafeRoot(backupRoot, "backup root");
   await assertRegularFile(databasePath, "DATABASE_NOT_FOUND");
+  await assertRegularFile(activityDatabasePath, "ACTIVITY_DATABASE_NOT_FOUND");
   await assertRegularFile(marketPath, "MARKET_SNAPSHOT_NOT_FOUND");
+  await assertRealDirectory(uploadDirectory, "UPLOAD_DIRECTORY_NOT_FOUND");
   await mkdir(backupRoot, { recursive: true, mode: 0o750 });
 
   const name = backupName(now);
@@ -291,18 +360,40 @@ export async function createBackup(options = {}) {
 
   try {
     const databaseFile = "kai-cloud.sqlite";
+    const activityDatabaseFile = "activity.sqlite";
     const marketFile = "model-market.snapshot.json";
     const stagedDatabase = join(stagingPath, databaseFile);
+    const stagedActivityDatabase = join(stagingPath, activityDatabaseFile);
     const stagedMarket = join(stagingPath, marketFile);
+    const stagedUploads = join(stagingPath, "uploads");
     await vacuumInto(databasePath, stagedDatabase);
+    // Activity objects are written before their metadata row is committed, and
+    // committed objects are immutable. Snapshotting the database before walking
+    // the object tree therefore cannot produce a manifest row without its file.
+    await vacuumInto(activityDatabasePath, stagedActivityDatabase);
     await copyFile(marketPath, stagedMarket, fsConstants.COPYFILE_EXCL);
+    const uploads = await copyUploadTree(uploadDirectory, stagedUploads);
     await chmod(stagedDatabase, 0o640);
+    await chmod(stagedActivityDatabase, 0o640);
     await chmod(stagedMarket, 0o640);
 
-    const [databaseMetadata, databaseInspection, databaseSha256, marketMetadata, marketInspection, marketSha256] = await Promise.all([
+    const [
+      databaseMetadata,
+      databaseInspection,
+      databaseSha256,
+      activityDatabaseMetadata,
+      activityDatabaseInspection,
+      activityDatabaseSha256,
+      marketMetadata,
+      marketInspection,
+      marketSha256,
+    ] = await Promise.all([
       stat(stagedDatabase),
       Promise.resolve(inspectDatabase(stagedDatabase)),
       sha256File(stagedDatabase),
+      stat(stagedActivityDatabase),
+      Promise.resolve(inspectDatabase(stagedActivityDatabase)),
+      sha256File(stagedActivityDatabase),
       stat(stagedMarket),
       inspectMarketSnapshot(stagedMarket),
       sha256File(stagedMarket),
@@ -317,17 +408,29 @@ export async function createBackup(options = {}) {
         sha256: databaseSha256,
         ...databaseInspection,
       },
+      activityDatabase: {
+        file: activityDatabaseFile,
+        bytes: activityDatabaseMetadata.size,
+        sha256: activityDatabaseSha256,
+        ...activityDatabaseInspection,
+      },
       market: {
         file: marketFile,
         bytes: marketMetadata.size,
         sha256: marketSha256,
         ...marketInspection,
       },
+      uploads,
       retention,
     };
     const manifestPath = join(stagingPath, "manifest.json");
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { encoding: "utf8", flag: "wx", mode: 0o640 });
-    await Promise.all([syncPath(stagedDatabase), syncPath(stagedMarket), syncPath(manifestPath)]);
+    await Promise.all([
+      syncPath(stagedDatabase),
+      syncPath(stagedActivityDatabase),
+      syncPath(stagedMarket),
+      syncPath(manifestPath),
+    ]);
     await syncPath(stagingPath);
     await rename(stagingPath, finalPath);
     await syncPath(backupRoot);

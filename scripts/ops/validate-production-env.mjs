@@ -6,8 +6,9 @@ import { posix } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const REQUIRED_CONTAINER_STATE_PATHS = Object.freeze({
-  KAI_DB_DIR: "/app/db",
-  KAI_MARKET_DATA_DIR: "/app/market",
+  KAI_DB_DIR: { expected: "/app/db", writable: true },
+  KAI_MARKET_DATA_DIR: { expected: "/app/market", writable: false },
+  KAI_ACTIVITY_UPLOAD_DIR: { expected: "/app/uploads", writable: true },
 });
 
 const PLACEHOLDER_SECRET_PATTERN = /(?:change[-_ ]?me|deployment[-_ ]?validation|dummy|example|insert|placeholder|replace|secret[-_ ]?here|test[-_ ]?secret|your[-_ ])/i;
@@ -91,7 +92,7 @@ function validateImageReference(value, errors) {
   if (!immutable) errors.push("KAI_IMAGE_REFERENCE must be an immutable, non-placeholder repository@sha256:<64 lowercase hexadecimal characters> reference");
 }
 
-function validateContainerStatePath(name, value, expected, errors, checkFilesystem) {
+function validateContainerStatePath(name, value, expected, errors, checkFilesystem, writable) {
   if (typeof value !== "string"
     || hasControlCharacters(value)
     || !posix.isAbsolute(value)
@@ -106,7 +107,7 @@ function validateContainerStatePath(name, value, expected, errors, checkFilesyst
       errors.push(`${name} must exist as a real directory mounted at ${expected}`);
       return;
     }
-    accessSync(value, name === "KAI_DB_DIR" ? constants.R_OK | constants.W_OK : constants.R_OK);
+    accessSync(value, writable ? constants.R_OK | constants.W_OK : constants.R_OK);
   } catch {
     errors.push(`${name} must exist with the required application-user access at ${expected}`);
   }
@@ -122,7 +123,7 @@ export function validateStateRoot(value, { checkFilesystem = false } = {}) {
   if (!safeShape) {
     errors.push("KAI_STATE_ROOT must be a normalized absolute path dedicated to KAI Cloud under /opt (for example /opt/kai-cloud-3051)");
   } else if (checkFilesystem) {
-    for (const child of ["db", "market", "backups"]) {
+    for (const child of ["db", "market", "uploads", "backups"]) {
       const candidate = posix.join(value, child);
       try {
         if (!existsSync(candidate) || !lstatSync(candidate).isDirectory() || realpathSync(candidate) !== candidate) {
@@ -148,8 +149,11 @@ export function validateProductionEnvironment(environment = process.env, { check
   if (environment.KAI_ENABLE_HSTS !== "0" && environment.KAI_ENABLE_HSTS !== "1") {
     errors.push("KAI_ENABLE_HSTS must be exactly 0 or 1");
   }
-  for (const [name, expected] of Object.entries(REQUIRED_CONTAINER_STATE_PATHS)) {
-    validateContainerStatePath(name, environment[name], expected, errors, checkFilesystem);
+  for (const [name, configuration] of Object.entries(REQUIRED_CONTAINER_STATE_PATHS)) {
+    validateContainerStatePath(name, environment[name], configuration.expected, errors, checkFilesystem, configuration.writable);
+  }
+  if (environment.KAI_ACTIVITY_DB_PATH !== "/app/db/activity.sqlite") {
+    errors.push("KAI_ACTIVITY_DB_PATH must be the safe absolute container path /app/db/activity.sqlite");
   }
   if (environment.KAI_DB_DIR === environment.KAI_MARKET_DATA_DIR) {
     errors.push("KAI_DB_DIR and KAI_MARKET_DATA_DIR must be distinct");
@@ -162,6 +166,7 @@ export function validateProductionEnvironment(environment = process.env, { check
     hstsEnabled: environment.KAI_ENABLE_HSTS === "1",
     dbDirectory: environment.KAI_DB_DIR,
     marketDirectory: environment.KAI_MARKET_DATA_DIR,
+    activityUploadDirectory: environment.KAI_ACTIVITY_UPLOAD_DIR,
   });
 }
 
@@ -175,7 +180,7 @@ async function main() {
     publicOrigin: result.publicOrigin,
     releaseSha: result.releaseSha,
     hstsEnabled: result.hstsEnabled,
-    stateDirectories: [result.dbDirectory, result.marketDirectory],
+    stateDirectories: [result.dbDirectory, result.marketDirectory, result.activityUploadDirectory],
   })}\n`);
 }
 
