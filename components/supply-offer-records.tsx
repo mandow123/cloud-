@@ -61,7 +61,7 @@ export function SupplyOfferRecords() {
     <>
       <div className={styles.pageHeading}>
         <div><h1>上架申请</h1><p>提交后立即写入服务端数据库，由管理员人工审核；不会自动验真、公开发布、成交或交付。</p></div>
-        <Link className={styles.primaryAction} href="/supply/resources/new">提交新申请</Link>
+        <Link className={styles.primaryAction} href="/supply/apply">提交新申请</Link>
       </div>
 
       <div className={styles.metrics}>

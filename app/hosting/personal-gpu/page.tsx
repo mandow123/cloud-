@@ -105,7 +105,7 @@ export default function PersonalGpuHostingPage() {
       <aside className={styles.notice}>
         <div><h2>先提交你的第一台机器</h2><p>当前只需填写资源规格、数量、地区与交付方式；申请会进入管理员后台，不要求安装 Agent，也不会自动发布或交付。</p></div>
         <div className={styles.actions}>
-          <Link className={styles.actionPrimary} href="/login?returnTo=%2Fsupply%2Fresources%2Fnew">提交上架申请</Link>
+          <Link className={styles.actionPrimary} href="/login?returnTo=%2Fsupply%2Fapply">提交上架申请</Link>
           <Link className={styles.actionSecondary} href="/guides/host-agent">下载 Agent 与查看教程</Link>
         </div>
       </aside>

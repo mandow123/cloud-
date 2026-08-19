@@ -33,7 +33,7 @@ test("supplier console exposes the implemented resource, listing, order and earn
   const shell = readFileSync("components/supply-console-shell.tsx", "utf8");
   assert.match(shell, /href: "\/supply"/u);
   assert.doesNotMatch(shell, /href: "\/supply\/onboarding"/u);
-  assert.match(shell, /href: "\/supply\/resources"/u);
+  assert.match(shell, /href: "\/supply\/applications"/u);
   assert.match(shell, /href: "\/supply\/devices"/u);
   assert.match(shell, /href: "\/supply\/listings"/u);
   assert.match(shell, /href: "\/supply\/orders"/u);
@@ -50,12 +50,16 @@ test("supplier console exposes the implemented resource, listing, order and earn
 test("manual supply applications persist through the authenticated API and remain separate from Agent delivery", () => {
   const createPage = readFileSync("app/supply/resources/new/page.tsx", "utf8");
   const listPage = readFileSync("app/supply/resources/page.tsx", "utf8");
+  const uncachedCreatePage = readFileSync("app/supply/apply/page.tsx", "utf8");
+  const uncachedListPage = readFileSync("app/supply/applications/page.tsx", "utf8");
   const form = readFileSync("components/supply-offer-form.tsx", "utf8");
   const records = readFileSync("components/supply-offer-records.tsx", "utf8");
   const admin = readFileSync("lib/admin-view-models.ts", "utf8");
 
   assert.match(createPage, /<SupplyOfferForm \/>/u);
   assert.match(listPage, /<SupplyOfferRecords \/>/u);
+  assert.match(uncachedCreatePage, /<SupplyOfferForm \/>/u);
+  assert.match(uncachedListPage, /<SupplyOfferRecords \/>/u);
   assert.match(form, /createSupplyOffer/u);
   assert.match(form, /提交上架申请/u);
   assert.match(form, /不要求安装 Agent/u);

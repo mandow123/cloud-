@@ -9,7 +9,7 @@ import styles from "./supply-console.module.css";
 
 const availableRoutes = [
   { href: "/supply", label: "总览" },
-  { href: "/supply/resources", label: "上架申请" },
+  { href: "/supply/applications", label: "上架申请" },
   { href: "/supply/devices", label: "托管设备" },
   { href: "/supply/listings", label: "挂牌" },
   { href: "/supply/orders", label: "订单与实例" },

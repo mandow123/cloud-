@@ -71,6 +71,8 @@ const APPROVED_HOSTING_V2_ROUTES = new Set([
   "app/hosting/personal-gpu/page.tsx",
   "app/market/listings/page.tsx",
   "app/supply/layout.tsx",
+  "app/supply/apply/page.tsx",
+  "app/supply/applications/page.tsx",
   "app/supply/earnings/page.tsx",
   "app/supply/devices/[deviceId]/page.tsx",
   "app/supply/devices/new/page.tsx",

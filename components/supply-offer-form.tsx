@@ -219,7 +219,7 @@ export function SupplyOfferForm() {
             </label>
             <div className="md:col-span-2 flex flex-wrap items-center gap-3">
               <button className="button button-primary" disabled={busy || Boolean(offer)} type="submit">{busy ? "正在提交…" : offer ? "已提交服务端" : "提交上架申请"}</button>
-              <Link className="button button-secondary" href="/supply/resources">查看申请记录</Link>
+              <Link className="button button-secondary" href="/supply/applications">查看申请记录</Link>
             </div>
           </form>
         </section>
