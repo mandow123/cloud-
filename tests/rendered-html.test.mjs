@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
-import { resourceListings, serviceAliases } from "../lib/catalog.mjs";
+import { resourceListings } from "../lib/catalog.mjs";
 
 let workerPromise;
 
@@ -25,25 +25,24 @@ async function render(pathname = "/") {
   );
 }
 
-test("server-renders the finished KAI Cloud home page", async () => {
+test("server-renders the activity plaza at the root route", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /KAI Cloud/);
-  assert.match(html, /中国 Token 学院算力市场/);
-  assert.match(html, /先看清价格/);
-  assert.match(html, /发布算力需求/);
-  assert.match(html, /需求服务已接通|交易链路已接通|供应方报价会回流到需求方工作台/);
-  assert.match(html, /每日北京时间 06:00/);
-  assert.match(html, /模型调用成本指数/);
-  assert.match(html, /供应方报价会回流到需求方工作台/);
+  assert.match(html, /KAI CREATOR/);
+  assert.match(html, /创作挑战/);
+  assert.match(html, /六大主题赛道/);
+  assert.match(html, /霓虹城市重构计划/);
+  assert.match(html, /老照片会说话/);
+  assert.match(html, /href="\/market"/u);
+  assert.doesNotMatch(html, /先看清价格，\s*再发布算力需求/u);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
 });
 
 test("security headers cover the root page, nested pages, and APIs", async () => {
-  for (const pathname of ["/", "/market", "/api/live"]) {
+  for (const pathname of ["/", "/activity/neon-city", "/market", "/api/live"]) {
     const response = await render(pathname);
     assert.equal(response.status, 200, `${pathname} should render`);
     assert.match(response.headers.get("content-security-policy") ?? "", /frame-ancestors 'none'/u);
@@ -86,6 +85,9 @@ test("production typography is self-hosted without build-machine font URLs", asy
 
 test("all primary public and member routes render", async () => {
   const routes = [
+    ["/", /创作挑战/],
+    ["/activity", /创作挑战/],
+    ["/activity/neon-city", /霓虹城市重构计划/],
     ["/market", /行情中心/],
     ["/resources", /资源市场/],
     ["/request", /发布.*需求|租赁.*置换/],
@@ -150,13 +152,23 @@ test("model market renders per-model prices, source status, and the 06:00 update
   assert.doesNotMatch(html, /模型 Token 综合行情/);
 });
 
-test("all ten business aliases are reachable from the home page", async () => {
+test("all six activity cards link from the root plaza to their detail routes", async () => {
   const response = await render("/");
   const html = await response.text();
-  assert.equal(serviceAliases.length, 10);
-  for (const alias of serviceAliases) {
-    assert.match(html, new RegExp(alias.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  const slugs = ["neon-city", "sound-shape", "tiny-world", "open-lab", "character-relay", "memory-restore"];
+  for (const slug of slugs) {
+    assert.match(html, new RegExp(`href=["']\\/activity\\/${slug}["']`));
   }
+});
+
+test("the market route retains the existing model and infrastructure pricing product", async () => {
+  const response = await render("/market");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /行情中心/);
+  assert.match(html, /主流模型 Token 分项行情/);
+  assert.match(html, /每日 06:00/);
+  assert.match(html, /GPU|算力/u);
 });
 
 test("a dynamic resource detail exposes complete reference quote scope", async () => {

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { resourceListings } from "../lib/catalog.mjs";
 
 let workerPromise;
 
@@ -25,56 +24,30 @@ async function render(pathname = "/") {
   );
 }
 
-const homepageCategories = ["gpu", "token_model", "rack_capacity", "cloud_vendor"];
-
-function selectedHomepageListings() {
-  return homepageCategories.map((category) => {
-    const listing = resourceListings.find((item) => item.category === category && item.featured);
-    assert.ok(listing, `homepage needs one featured ${category} listing`);
-    return listing;
-  });
-}
-
-function scopeLabel(listing) {
-  return [
-    listing.quote.taxIncluded ? "含税" : "未含税",
-    listing.quote.energyIncluded ? "含电费" : "未含电费",
-    listing.quote.networkIncluded ? "含网络" : "未含网络",
-  ].join(" · ");
-}
-
-test("homepage quote rows are traceable to the shared resource catalog", async () => {
+test("homepage activity cards expose six keyboard-reachable detail links", async () => {
   const response = await render("/");
   assert.equal(response.status, 200);
   const html = await response.text();
-  const textHtml = html.replaceAll("<!-- -->", "");
-
-  for (const listing of selectedHomepageListings()) {
-    assert.match(html, new RegExp(`/resources/${listing.id}`));
-    assert.match(html, new RegExp(`listing=${listing.id}`));
-    assert.ok(textHtml.includes(listing.title));
-    assert.ok(textHtml.includes(listing.region));
-    assert.ok(textHtml.includes(listing.quote.currency));
-    assert.ok(textHtml.includes(listing.pricingUnit));
-    assert.ok(textHtml.includes(scopeLabel(listing)));
-    assert.ok(textHtml.includes(`样本 ${listing.quote.sampleCount} 条`));
-    assert.ok(html.includes(listing.quote.updatedAt));
-    assert.ok(html.includes(listing.quote.validUntil));
-    assert.ok(html.includes(`region=${encodeURIComponent(listing.region)}`));
+  const slugs = ["neon-city", "sound-shape", "tiny-world", "open-lab", "character-relay", "memory-restore"];
+  for (const slug of slugs) {
+    assert.match(html, new RegExp(`href=["']\\/activity\\/${slug}["']`));
   }
+  assert.match(html, /aria-label="筛选活动"/u);
+  assert.match(html, /aria-label="活动快捷导航"/u);
+  assert.match(html, /aria-label="移动端活动导航"/u);
 });
 
-test("homepage has no independent hardcoded quote table", async () => {
-  const [page, hero] = await Promise.all([
+test("homepage is a thin route backed by the shared six-item activity catalog", async () => {
+  const [page, hub, catalog] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../components/live-home-market-hero.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/activity-hub.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/activity-catalog.ts", import.meta.url), "utf8"),
   ]);
-  assert.match(page, /resourceListings\.find\(/u);
-  assert.doesNotMatch(page, /const quoteRows\s*=\s*\[/u);
-  assert.doesNotMatch(page, /H20 \/ 96 GB|A800 \/ 80 GB|推理容量 \/ 1M TPM/u);
-  assert.match(page, /gpuP50:\s*homepageGpuQuote\.quote\.median/u);
-  assert.match(hero, /summary\.gpuP50/u);
-  assert.doesNotMatch(hero, /12\.80|H20 卡时/u);
+  assert.match(page, /<ActivityHub \/>/u);
+  assert.doesNotMatch(page, /LiveHomeMarketHero|resourceListings|readMarketSnapshot/u);
+  assert.match(hub, /activityCatalog\.filter/u);
+  assert.match(hub, /href=\{`\/activity\/\$\{item\.slug\}`\}/u);
+  assert.equal((catalog.match(/\bid:\s*"act_/gu) ?? []).length, 6);
 });
 
 test("market controls, comparison targets, and theme selector meet target sizes", async () => {
@@ -106,13 +79,14 @@ test("scoped market surfaces use release wording", async () => {
   }
 });
 
-test("supplier demand data does not alter the approved member and resource presentation", async () => {
+test("the activity homepage does not alter the approved member and resource presentation", async () => {
   const [home, workspace, explorer] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/member-workspace.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/resource-explorer.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(home, /每日北京时间 06:00 更新 · 平台初始化样本，供应商接入后核验更新/u);
+  assert.match(home, /ActivityHub/u);
+  assert.doesNotMatch(home, /resourceListings|marketSeries|readMarketSnapshot/u);
   assert.match(workspace, /<th scope="col">需求<\/th><th scope="col">类别<\/th><th scope="col">区域<\/th><th scope="col">数量<\/th><th scope="col">状态<\/th>/u);
   for (const term of ["本页最近更新", "上次检查", "立即刷新", "当前响应：", "连续时间 / 期望开始日"]) {
     assert.ok(!workspace.includes(term));

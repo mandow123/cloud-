@@ -2,43 +2,82 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+const home = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const page = await readFile(new URL("../app/activity/page.tsx", import.meta.url), "utf8");
+const detailPage = await readFile(new URL("../app/activity/[slug]/page.tsx", import.meta.url), "utf8");
+const catalog = await readFile(new URL("../lib/activity-catalog.ts", import.meta.url), "utf8");
 const hub = await readFile(new URL("../components/activity-hub.tsx", import.meta.url), "utf8");
 const styles = await readFile(new URL("../components/activity-hub.module.css", import.meta.url), "utf8");
+const detail = await readFile(new URL("../components/activity-detail.tsx", import.meta.url), "utf8");
+const detailStyles = await readFile(new URL("../components/activity-detail.module.css", import.meta.url), "utf8");
 const nav = await readFile(new URL("../components/nav-links.tsx", import.meta.url), "utf8");
 const community = await readFile(new URL("../components/activity-community.tsx", import.meta.url), "utf8");
 const communityStyles = await readFile(new URL("../components/activity-community.module.css", import.meta.url), "utf8");
 const admin = await readFile(new URL("../components/activity-admin.tsx", import.meta.url), "utf8");
 const adminStyles = await readFile(new URL("../app/admin/admin.css", import.meta.url), "utf8");
 
-test("activity route is public and discoverable from primary navigation", () => {
+test("the root route is the activity plaza while the legacy activity alias and market remain reachable", () => {
+  assert.match(home, /import \{ ActivityHub \}/u);
+  assert.match(home, /<ActivityHub \/>/u);
   assert.match(page, /<ActivityHub \/>/);
-  assert.match(nav, /href: "\/activity", label: "创作活动"/);
+  assert.match(nav, /href: "\/", label: "创作活动"/u);
+  assert.match(nav, /href: "\/market", label: "行情中心"/u);
+  assert.match(nav, /item\.href === "\/"[\s\S]*pathname\.startsWith\("\/activity"\)/u);
+  assert.match(hub, /<Link href="\/market">算力行情<\/Link>/u);
 });
 
-test("activity hub offers original participation mechanics", () => {
-  assert.match(hub, /先选一个创作阵营/);
-  assert.match(hub, /加入任务清单/);
-  assert.match(hub, /积攒能量/);
-  assert.match(hub, /setFilter/);
-  assert.match(hub, /toggleJoin/);
+test("activity plaza is catalog-driven and exposes exactly six distinct challenge cards", () => {
+  const ids = [...catalog.matchAll(/\bid:\s*"(act_[^"]+)"/gu)].map((match) => match[1]);
+  const slugs = [...catalog.matchAll(/\bslug:\s*"([^"]+)"/gu)].map((match) => match[1]);
+  assert.equal(ids.length, 6);
+  assert.equal(slugs.length, 6);
+  assert.equal(new Set(ids).size, 6);
+  assert.equal(new Set(slugs).size, 6);
+  assert.equal((catalog.match(/\bsteps:\s*\[/gu) ?? []).length, 6);
+  assert.equal((catalog.match(/\brequirements:\s*\[/gu) ?? []).length, 6);
+  assert.equal((catalog.match(/\breward:\s*"/gu) ?? []).length, 6);
+  assert.match(hub, /activityCatalog\.filter/u);
+  assert.match(hub, /visible\.map/u);
+  assert.match(hub, /href=\{`\/activity\/\$\{item\.slug\}`\}/u);
+  assert.match(hub, /筛选活动/u);
+  assert.match(hub, /搜索活动/u);
   assert.match(hub, /<ActivityCommunity \/>/);
   assert.match(community, /\/api\/activity\/submissions/);
 });
 
-test("activity layout includes responsive desktop and mobile treatments", () => {
-  assert.match(styles, /grid-template-columns:repeat\(2,1fr\)/);
-  assert.match(styles, /@media\(max-width:650px\)/);
-  assert.match(styles, /prefers-reduced-motion|@keyframes float/);
+test("every catalog card has a shareable detail route with route-specific metadata", () => {
+  assert.match(detailPage, /generateStaticParams/u);
+  assert.match(detailPage, /activityCatalog\.map/u);
+  assert.match(detailPage, /generateMetadata/u);
+  assert.match(detailPage, /activityBySlug/u);
+  assert.match(detailPage, /notFound\(\)/u);
+  assert.match(detailPage, /<ActivityDetail activity=\{activity\} \/>/u);
+  assert.match(detail, /返回活动广场/u);
+  assert.match(detail, /activity\.steps\.map/u);
+  assert.match(detail, /activity\.prizes\.map/u);
+  assert.match(detail, /activity\.requirements\.map/u);
+  assert.equal((catalog.match(/\bbrief:\s*"/gu) ?? []).length, 6);
+  assert.match(detailPage, /openGraph:[\s\S]*images: \[\]/u);
+  assert.match(detailPage, /twitter:[\s\S]*images: \[\]/u);
 });
 
-test("activity choices make browser-only and account-backed state explicit", () => {
-  assert.match(hub, /kai-activity-squad/);
-  assert.match(hub, /kai-activity-joined/);
-  assert.match(hub, /保存在当前浏览器/);
-  assert.match(hub, /投稿、投票与奖励会安全保存到登录账户/);
-  assert.match(hub, /aria-live="polite"/);
-  assert.match(hub, /aria-pressed=\{joined\.includes/);
+test("activity layout includes responsive desktop and mobile treatments", () => {
+  assert.match(styles, /\.grid\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/u);
+  assert.match(styles, /@media\(max-width:1180px\)[\s\S]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/u);
+  assert.match(styles, /@media\(max-width:760px\)[\s\S]*grid-template-columns:1fr/u);
+  assert.match(styles, /\.mobileNav/u);
+  assert.match(styles, /prefers-reduced-motion/u);
+  assert.match(detailStyles, /@media\(max-width:760px\)/u);
+});
+
+test("activity filters and public cards are accessible without replacing account-backed actions", () => {
+  assert.match(hub, /aria-live="polite"/u);
+  assert.match(hub, /aria-pressed=\{status === item\}/u);
+  assert.match(hub, /aria-label="活动快捷导航"/u);
+  assert.match(hub, /aria-label="移动端活动导航"/u);
+  assert.match(community, /snapshot\.viewer/u);
+  assert.match(community, /登录后投稿与投票/u);
+  assert.match(community, /rewardBalance/u);
 });
 
 test("submission and voting UI validates uploads and exposes resilient feedback", () => {

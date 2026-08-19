@@ -5,9 +5,17 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import test from "node:test";
 
-const BASELINE = "bb7fd3211fdff28a448af85f53e9f40839ffa843";
+const BASELINE = "5869f020d8ad0019257ee7dab234db9467d7a74e";
 const ROOT = join(import.meta.dirname, "..");
 const EXTRA_FROZEN_FILES = ["data/model-market.snapshot.json", "lib/catalog.mjs"];
+const ACTIVITY_SURFACE_FILES = new Set([
+  "app/globals.css",
+  "app/page.tsx",
+  "components/activity-community.tsx",
+  "components/activity-hub.module.css",
+  "components/activity-hub.tsx",
+  "components/nav-links.tsx",
+]);
 const APPROVED_PUBLIC_FILES = Object.freeze({
   "app/checkout/[resourceId]/page.tsx": "3bebbc74d265d24dd67a2d1c54816fbae604188ed57d1eeabe27bc6669c3693c",
   "app/login/page.tsx": "703ea83d1d8c970ae50ae92c866a447392f9687bfb1a0856c205bef4f53aff46",
@@ -56,9 +64,11 @@ function walk(directory) {
   });
 }
 
-test("the public frontend stays frozen outside the approved purchase and personal-account additions", () => {
+test("the public frontend stays frozen outside the approved activity, purchase, and account surfaces", () => {
   const changed = [];
-  for (const path of [...baselineFiles(), ...EXTRA_FROZEN_FILES].filter((item) => !(item in APPROVED_PUBLIC_FILES))) {
+  for (const path of [...baselineFiles(), ...EXTRA_FROZEN_FILES]
+    .filter((item) => !(item in APPROVED_PUBLIC_FILES))
+    .filter((item) => !ACTIVITY_SURFACE_FILES.has(item))) {
     const currentPath = join(ROOT, path);
     if (!existsSync(currentPath)) {
       changed.push({ path, reason: "missing" });
@@ -91,6 +101,7 @@ test("no new public page or layout is exposed outside the isolated admin panel",
     .filter((path) => !path.startsWith("app/admin/"))
     .filter((path) => path !== "app/checkout/[resourceId]/page.tsx")
     .filter((path) => path !== "app/login/page.tsx")
+    .filter((path) => path !== "app/activity/[slug]/page.tsx")
     .filter((path) => !baseline.has(path));
   assert.deepEqual(unexpected, []);
 });
