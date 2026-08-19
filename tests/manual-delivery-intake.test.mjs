@@ -9,6 +9,8 @@ import { GET as openMarketplaceSession } from "../app/api/session/route.ts";
 import { POST as submitPurchaseIntent } from "../app/api/v1/catalog-purchase-intents/route.ts";
 import { GET as listManualDeliveries } from "../app/api/v1/admin/manual-deliveries/route.ts";
 import { GET as revealManualDeliveryKey } from "../app/api/v1/admin/manual-deliveries/[demandId]/ssh-public-key/route.ts";
+import { GET as listMemberPurchaseIntents } from "../app/api/v1/member/purchase-intents/route.ts";
+import { GET as getMemberPurchaseIntent } from "../app/api/v1/member/purchase-intents/[demandId]/route.ts";
 import { createAccountSession } from "../lib/server/account-auth.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
 import { createSqliteAdminOperationsStore } from "../lib/server/admin-store-sqlite.ts";
@@ -36,12 +38,12 @@ async function json(response, status) {
   return body;
 }
 
-async function buyerSession(auth, now) {
+async function buyerSession(auth, now, subject = "manual-delivery-buyer") {
   const identity = await auth.resolveOrCreateKaiIdentity({
     issuer: "https://auth.kai.com/connect",
-    subject: "manual-delivery-buyer",
+    subject,
     displayName: "H200 Buyer",
-    verifiedEmail: "buyer@example.com",
+    verifiedEmail: `${subject.replaceAll(/[^a-z0-9]/giu, "-")}@example.com`,
     verifiedAt: now,
   });
   const issued = await createAccountSession(new Request(`${ORIGIN}/api/auth/kai/callback`), identity, "KAI_IDENTITY_OIDC", { store: auth, now: new Date(now) });
@@ -123,6 +125,7 @@ test("buyer public key is privately persisted and only an authorized administrat
     const first = await json(await submitPurchaseIntent(purchaseRequest(buyer, "manual-delivery-h200", sourceKey)), 201);
     assert.equal(first.manualDelivery.mode, "MANUAL_SSH");
     assert.equal(first.manualDelivery.status, "PENDING_MANUAL_DELIVERY");
+    assert.equal(first.purchaseDetails.href, `/member/purchases/${first.record.id}`);
     assert.doesNotMatch(JSON.stringify(first), /must-not-be-stored/u);
 
     const replay = await json(await submitPurchaseIntent(purchaseRequest(buyer, "manual-delivery-h200", sourceKey)), 200);
@@ -130,6 +133,33 @@ test("buyer public key is privately persisted and only an authorized administrat
     const conflict = await json(await submitPurchaseIntent(purchaseRequest(buyer, "manual-delivery-h200", ed25519PublicKey("alternate", 10))), 409);
     assert.equal(conflict.error.code, "IDEMPOTENCY_CONFLICT");
     assert.equal((await admin.listManualDeliveryIntakes()).length, 1);
+
+    const ownList = await json(await listMemberPurchaseIntents(new Request(`${ORIGIN}/api/v1/member/purchase-intents`, { headers: { cookie: buyer.accountCookie } })), 200);
+    assert.equal(ownList.records.length, 1);
+    assert.equal(ownList.records[0].demandId, first.record.id);
+    assert.equal(ownList.records[0].resource.id, "gpu-h100-sxm-8-bj");
+    assert.equal(ownList.records[0].request.totalGpuCount, 8);
+    assert.equal(ownList.records[0].request.durationHours, 3);
+    assert.equal(ownList.records[0].status, "PENDING_MANUAL_DELIVERY");
+    assert.equal(ownList.records[0].sshPublicKeyFingerprint, first.manualDelivery.sshPublicKeyFingerprint);
+    assert.doesNotMatch(JSON.stringify(ownList), /ssh-ed25519|must-not-be-stored|buyerOrganizationId|buyerAccountId|payloadHash|idempotencyKey/u);
+
+    const ownDetail = await json(await getMemberPurchaseIntent(new Request(`${ORIGIN}/api/v1/member/purchase-intents/${first.record.id}`, { headers: { cookie: buyer.accountCookie } }), { params: Promise.resolve({ demandId: first.record.id }) }), 200);
+    assert.deepEqual(ownDetail.record, ownList.records[0]);
+    const otherBuyer = await buyerSession(auth, now, "manual-delivery-other-buyer");
+    const crossTenant = await json(await getMemberPurchaseIntent(new Request(`${ORIGIN}/api/v1/member/purchase-intents/${first.record.id}`, { headers: { cookie: otherBuyer.accountCookie } }), { params: Promise.resolve({ demandId: first.record.id }) }), 404);
+    assert.equal(crossTenant.error.code, "PURCHASE_INTENT_NOT_FOUND");
+    assert.equal((await json(await listMemberPurchaseIntents(new Request(`${ORIGIN}/api/v1/member/purchase-intents`, { headers: { cookie: otherBuyer.accountCookie } })), 200)).records.length, 0);
+    assert.equal((await json(await listMemberPurchaseIntents(new Request(`${ORIGIN}/api/v1/member/purchase-intents`)), 401)).error.code, "ACCOUNT_AUTH_REQUIRED");
+
+    const compensationDb = new DatabaseSync(path);
+    try {
+      compensationDb.prepare("DELETE FROM admin_catalog_purchase_intent_snapshots WHERE demand_id=?").run(first.record.id);
+      compensationDb.prepare("DELETE FROM admin_command_receipts WHERE actor_principal_id=? AND idempotency_key=?").run(buyer.context.account.id, "catalog-purchase-snapshot:manual-delivery-h200");
+    } finally { compensationDb.close(); }
+    const repaired = await json(await submitPurchaseIntent(purchaseRequest(buyer, "manual-delivery-h200", sourceKey)), 200);
+    assert.equal(repaired.purchaseDetails.demandId, first.record.id);
+    assert.equal((await admin.listMemberCatalogPurchaseIntents(buyer.context.activeOrganization.id)).length, 1);
 
     const deniedList = await json(await listManualDeliveries(new Request(`${ORIGIN}/api/v1/admin/manual-deliveries`, { headers: { cookie: buyer.accountCookie } })), 403);
     assert.equal(deniedList.error.code, "ADMIN_ACCESS_FORBIDDEN");
@@ -149,10 +179,15 @@ test("buyer public key is privately persisted and only an authorized administrat
       const demand = db.prepare("SELECT summary FROM marketplace_requests_v2 WHERE id=?").get(first.record.id);
       const audit = db.prepare("SELECT action,reason,payload_digest FROM admin_audit_events WHERE entity_id=? ORDER BY occurred_at").all(first.record.id);
       const receipts = db.prepare("SELECT response_json FROM admin_command_receipts WHERE actor_principal_id=?").all(buyer.context.account.id);
+      const snapshot = db.prepare("SELECT resource_snapshot_json,unit_price_cny_cents,unit_card_hour_micros,estimated_card_hour_micros FROM admin_catalog_purchase_intent_snapshots WHERE demand_id=?").get(first.record.id);
       assert.equal(JSON.stringify(demand).includes(canonical), false);
       assert.equal(JSON.stringify(demand).includes(first.manualDelivery.sshPublicKeyFingerprint), false);
       assert.equal(JSON.stringify(audit).includes(canonical), false);
       assert.equal(JSON.stringify(receipts).includes(canonical), false);
+      assert.equal(JSON.stringify(snapshot).includes(canonical), false);
+      assert.equal(JSON.parse(snapshot.resource_snapshot_json).title, "H100 SXM 80GB · 8 卡训练节点");
+      assert.ok(snapshot.unit_card_hour_micros > 0);
+      assert.ok(snapshot.estimated_card_hour_micros > snapshot.unit_card_hour_micros);
       assert.ok(audit.some((event) => event.action === "MANUAL_DELIVERY_KEY_REVEALED"));
     } finally { db.close(); }
   } finally {
@@ -173,6 +208,10 @@ test("manual delivery migration mirrors remain byte-identical and additive", () 
   assert.equal(local, readFileSync(new URL("../dist/.openai/drizzle/0029_admin_manual_delivery.sql", import.meta.url), "utf8"));
   assert.match(local, /admin_manual_delivery_intakes/u);
   assert.doesNotMatch(local, /admin_operations_schema_migrations|VALUES\s*\(\s*4\b/iu);
+  const purchaseSnapshot = readFileSync(new URL("../drizzle/0030_admin_catalog_purchase_intent_snapshots.sql", import.meta.url), "utf8");
+  assert.equal(purchaseSnapshot, readFileSync(new URL("../.openai/drizzle/0030_admin_catalog_purchase_intent_snapshots.sql", import.meta.url), "utf8"));
+  assert.match(purchaseSnapshot, /admin_catalog_purchase_intent_snapshots/u);
+  assert.doesNotMatch(purchaseSnapshot, /DROP\s+TABLE|DELETE\s+FROM|admin_operations_schema_migrations/iu);
 });
 
 test("production compose passes the fail-closed manual delivery flag into the application", () => {

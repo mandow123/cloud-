@@ -4,7 +4,7 @@ import { ADMIN_ROLES, type AdminRole } from "../admin-auth-types.ts";
 import { adminPermissionsForRoles } from "./admin-auth.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { countAdminProjection, readAdminProjection, type AdminProjectionAdapter } from "./admin-projections.ts";
-import type { AdminEntityOwnership, AdminListQuery, AdminManualDeliveryIntake, AdminManualDeliveryPublicKey, AdminMutationContext, AdminOperationsStore, AdminProjectionName, AdminRefundCase, AdminRefundExecution, AdminSourceSystem, AdminWorkItem, MemberPersonalCounts } from "./admin-store.ts";
+import type { AdminEntityOwnership, AdminListQuery, AdminManualDeliveryIntake, AdminManualDeliveryPublicKey, AdminMutationContext, AdminOperationsStore, AdminProjectionName, AdminRefundCase, AdminRefundExecution, AdminSourceSystem, AdminWorkItem, MemberCatalogPurchaseIntent, MemberPersonalCounts } from "./admin-store.ts";
 
 export type AdminSql = Readonly<{ sql: string; values?: readonly unknown[] }>;
 export type AdminRunResult = Readonly<{ changes: number }>;
@@ -20,6 +20,7 @@ const id = (prefix: string) => `KAI-${prefix}-${crypto.randomUUID().replaceAll("
 const text = (value: unknown, field: string, max = 200) => { const v = typeof value === "string" ? value.trim() : ""; if (!v || v.length > max) throw new ExchangeInputError(`${field} is required and must be at most ${max} characters.`, field); return v; };
 const optionalText = (value: unknown, field: string, max = 200) => value == null || value === "" ? null : text(value, field, max);
 const positiveInt = (value: unknown, field: string) => { const v = Number(value); if (!Number.isSafeInteger(v) || v < 1) throw new ExchangeInputError(`${field} must be a positive integer.`, field); return v; };
+const positiveNumber = (value: unknown, field: string) => { const v = Number(value); if (!Number.isFinite(v) || v <= 0 || v > 10_000_000) throw new ExchangeInputError(`${field} must be a positive number.`, field); return v; };
 const nonNegativeInt = (value: unknown, field: string) => { const v = Number(value); if (!Number.isSafeInteger(v) || v < 0) throw new ExchangeInputError(`${field} must be a non-negative integer.`, field); return v; };
 const source = (value: unknown, allowed: readonly AdminSourceSystem[] = ["MARKETPLACE","EXCHANGE","SUPPLY_PILOT","ADMIN"]) => { const v = value as AdminSourceSystem; if (!allowed.includes(v)) throw new ExchangeInputError("Unsupported sourceSystem.", "sourceSystem"); return v; };
 const reason = (value: unknown) => { const v = text(value, "reason", 1000); if (v.length < 8) throw new ExchangeInputError("reason must contain at least 8 characters.", "reason"); return v; };
@@ -71,6 +72,55 @@ function refundExecution(row: Row): AdminRefundExecution { return { refundCaseId
 function refund(row: Row, execution: AdminRefundExecution | null = null): AdminRefundCase { return { id:String(row.id),sourceSystem:row.source_system as AdminRefundCase["sourceSystem"],entityType:String(row.entity_type),entityId:String(row.entity_id),amountCents:Number(row.amount_cents),currency:"CNY",businessExpectedVersion:Number(row.business_expected_version),status:row.status as AdminRefundCase["status"],requestedBy:String(row.requested_by),requestReason:String(row.request_reason),decidedBy:row.decided_by==null?null:String(row.decided_by),decisionReason:row.decision_reason==null?null:String(row.decision_reason),version:Number(row.version),createdAt:String(row.created_at),updatedAt:String(row.updated_at),decidedAt:row.decided_at==null?null:String(row.decided_at),execution }; }
 function ownership(row: Row): AdminEntityOwnership { return { sourceSystem:row.source_system as AdminSourceSystem,entityType:String(row.entity_type),entityId:String(row.entity_id),organizationId:String(row.organization_id),accountId:String(row.account_id),legacyActorId:row.legacy_actor_id==null?null:String(row.legacy_actor_id),boundByPrincipalId:String(row.bound_by_principal_id),createdAt:String(row.created_at),updatedAt:String(row.updated_at),version:Number(row.version),classification:"BOUND" }; }
 function manualDeliveryIntake(row:Row):AdminManualDeliveryIntake{return{demandId:String(row.demand_id),buyerOrganizationId:String(row.buyer_organization_id),buyerAccountId:String(row.buyer_account_id),buyerDisplayName:row.buyer_display_name==null?null:String(row.buyer_display_name),buyerEmail:row.buyer_email==null?null:String(row.buyer_email),organizationName:row.organization_name==null?null:String(row.organization_name),resourceId:String(row.resource_id),resourceTitle:String(row.resource_title),sshPublicKeyFingerprint:String(row.ssh_public_key_fingerprint),status:"PENDING_MANUAL_DELIVERY",createdAt:String(row.created_at),updatedAt:String(row.updated_at)};}
+function memberCatalogPurchaseIntent(row: Row): MemberCatalogPurchaseIntent {
+  const snapshot = JSON.parse(String(row.resource_snapshot_json)) as MemberCatalogPurchaseIntent["resource"];
+  const quantity = Number(row.quantity);
+  return {
+    demandId: String(row.demand_id),
+    status: "PENDING_MANUAL_DELIVERY",
+    resource: snapshot,
+    request: {
+      quantity,
+      totalGpuCount: snapshot.gpuPackageCount * quantity,
+      durationHours: row.duration_hours == null ? null : Number(row.duration_hours),
+      deliveryDate: row.delivery_date == null ? null : String(row.delivery_date),
+    },
+    pricing: {
+      pricingUnit: String(row.pricing_unit),
+      unitCardHourMicros: Number(row.unit_card_hour_micros),
+      estimatedCardHourMicros: Number(row.estimated_card_hour_micros),
+    },
+    sshPublicKeyFingerprint: row.ssh_public_key_fingerprint == null ? null : String(row.ssh_public_key_fingerprint),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+function purchaseResourceSnapshot(value: unknown): MemberCatalogPurchaseIntent["resource"] {
+  const raw = jsonObject(value, "resourceSnapshot");
+  const rawSpecs = jsonObject(raw.specs, "resourceSnapshot.specs");
+  const specs = Object.fromEntries(Object.entries(rawSpecs).map(([key, item]) => [
+    text(key, "resourceSnapshot.specs.key", 120),
+    text(item, `resourceSnapshot.specs.${key}`, 1200),
+  ]));
+  return {
+    id: text(raw.id, "resourceSnapshot.id", 160),
+    title: text(raw.title, "resourceSnapshot.title", 300),
+    supplierId: text(raw.supplierId, "resourceSnapshot.supplierId", 160),
+    supplierName: text(raw.supplierName, "resourceSnapshot.supplierName", 300),
+    supplierLogoUrl: optionalText(raw.supplierLogoUrl, "resourceSnapshot.supplierLogoUrl", 500),
+    category: text(raw.category, "resourceSnapshot.category", 80),
+    region: text(raw.region, "resourceSnapshot.region", 80),
+    deliveryForm: text(raw.deliveryForm, "resourceSnapshot.deliveryForm", 80),
+    summary: text(raw.summary, "resourceSnapshot.summary", 1200),
+    capacity: text(raw.capacity, "resourceSnapshot.capacity", 1200),
+    sla: text(raw.sla, "resourceSnapshot.sla", 1200),
+    deliveryLeadTime: text(raw.deliveryLeadTime, "resourceSnapshot.deliveryLeadTime", 500),
+    sourceNotice: optionalText(raw.sourceNotice, "resourceSnapshot.sourceNotice", 1200),
+    gpuDescription: text(raw.gpuDescription, "resourceSnapshot.gpuDescription", 500),
+    gpuPackageCount: positiveInt(raw.gpuPackageCount, "resourceSnapshot.gpuPackageCount"),
+    specs,
+  };
+}
 async function receipt<T>(db: AdminDatabaseAdapter, context: AdminMutationContext, commandType: string): Promise<T | null> { const row=await db.first<Row>("SELECT command_type,payload_hash,response_json FROM admin_command_receipts WHERE actor_principal_id=? AND idempotency_key=?",[context.principalId,context.idempotencyKey]); if (!row) return null; if (row.command_type!==commandType || row.payload_hash!==context.payloadHash) throw new ExchangeIdempotencyConflictError(); return JSON.parse(String(row.response_json)) as T; }
 const auditSql = (actor:string, sourceSystem:AdminSourceSystem, entityType:string, entityId:string, action:string, why:string, digest:string, at:string):AdminSql => ({sql:"INSERT INTO admin_audit_events(id,actor_principal_id,source_system,entity_type,entity_id,action,reason,payload_digest,occurred_at) VALUES(?,?,?,?,?,?,?,?,?)",values:[id("AAE"),actor,sourceSystem,entityType,entityId,action,why,digest,at]});
 const receiptSql = (context:AdminMutationContext, command:string, response:unknown, at:string):AdminSql => ({sql:"INSERT INTO admin_command_receipts(actor_principal_id,idempotency_key,command_type,payload_hash,response_json,created_at) VALUES(?,?,?,?,?,?)",values:[context.principalId,context.idempotencyKey,command,context.payloadHash,JSON.stringify(response),at]});
@@ -290,6 +340,51 @@ export async function createAdminOperationsStore(db: AdminDatabaseAdapter): Prom
       const at=now(),digest=await digestHex(`${principalId}:${demandId}:${String(row.ssh_public_key_fingerprint)}:${at}`);
       await db.batch([auditSql(principalId,"MARKETPLACE","MANUAL_DELIVERY_INTAKE",demandId,"MANUAL_DELIVERY_KEY_REVEALED","Authorized fulfillment operator revealed a buyer public key for manual delivery.",digest,at)]);
       return{demandId,canonicalSshPublicKey:String(row.canonical_ssh_public_key),sshPublicKeyFingerprint:String(row.ssh_public_key_fingerprint)} satisfies AdminManualDeliveryPublicKey;
+    },
+    async recordCatalogPurchaseIntentSnapshot(context,input) {
+      const command="RECORD_CATALOG_PURCHASE_INTENT_SNAPSHOT";
+      const replay=await receipt<{record:MemberCatalogPurchaseIntent}>(db,context,command);
+      if(replay)return{...replay,replayed:true};
+      const demandId=text(input.demandId,"demandId",160),organizationId=adminOrganizationId(context),accountId=text(input.buyerAccountId,"buyerAccountId",160);
+      if(accountId!==context.principalId)throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN",403,"Purchase snapshot account must match the authenticated buyer.");
+      const owner=await store.getEntityOwnership("MARKETPLACE","DEMAND",demandId);
+      if(!owner||owner.organizationId!==organizationId||owner.accountId!==accountId)throw new ExchangeDomainError("EXCHANGE_NOT_FOUND",404,"Owned marketplace demand not found.");
+      const resource=purchaseResourceSnapshot(input.resourceSnapshot),quantity=positiveNumber(input.quantity,"quantity"),durationHours=input.durationHours==null?null:positiveNumber(input.durationHours,"durationHours"),deliveryDate=optionalText(input.deliveryDate,"deliveryDate",64),pricingUnit=text(input.pricingUnit,"pricingUnit",80);
+      const unitPriceCnyCents=positiveInt(input.unitPriceCnyCents,"unitPriceCnyCents"),unitCardHourMicros=positiveInt(input.unitCardHourMicros,"unitCardHourMicros"),estimatedCardHourMicros=positiveInt(input.estimatedCardHourMicros,"estimatedCardHourMicros");
+      const fingerprint=text(input.sshPublicKeyFingerprint,"sshPublicKeyFingerprint",160);
+      if(!/^SHA256:[A-Za-z0-9+/]{43}$/u.test(fingerprint))throw new ExchangeInputError("sshPublicKeyFingerprint is invalid.","sshPublicKeyFingerprint");
+      const existing=await db.first<Row>(`SELECT s.*,i.ssh_public_key_fingerprint FROM admin_catalog_purchase_intent_snapshots s
+        LEFT JOIN admin_manual_delivery_intakes i ON i.demand_id=s.demand_id WHERE s.demand_id=?`,[demandId]);
+      if(existing){
+        if(String(existing.payload_hash)!==context.payloadHash||String(existing.buyer_organization_id)!==organizationId||String(existing.buyer_account_id)!==accountId)throw new ExchangeIdempotencyConflictError();
+        return{record:memberCatalogPurchaseIntent(existing),replayed:true};
+      }
+      const at=now(),snapshotJson=JSON.stringify(resource);
+      const row:Row={demand_id:demandId,resource_snapshot_json:snapshotJson,quantity,duration_hours:durationHours,delivery_date:deliveryDate,pricing_unit:pricingUnit,unit_card_hour_micros:unitCardHourMicros,estimated_card_hour_micros:estimatedCardHourMicros,ssh_public_key_fingerprint:fingerprint,created_at:at,updated_at:at};
+      const record=memberCatalogPurchaseIntent(row),response={record};
+      await db.batch([
+        {sql:"INSERT INTO admin_catalog_purchase_intent_snapshots(demand_id,buyer_organization_id,buyer_account_id,resource_id,resource_title,resource_snapshot_json,quantity,duration_hours,delivery_date,pricing_unit,unit_price_cny_cents,unit_card_hour_micros,estimated_card_hour_micros,status,idempotency_key,payload_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'PENDING_MANUAL_DELIVERY',?,?,?,?)",values:[demandId,organizationId,accountId,resource.id,resource.title,snapshotJson,quantity,durationHours,deliveryDate,pricingUnit,unitPriceCnyCents,unitCardHourMicros,estimatedCardHourMicros,context.idempotencyKey,context.payloadHash,at,at]},
+        auditSql(context.principalId,"MARKETPLACE","CATALOG_PURCHASE_INTENT",demandId,"CATALOG_PURCHASE_INTENT_SNAPSHOT_RECORDED","Immutable catalog resource and card-hour snapshot recorded for the buyer.",context.payloadHash,at),
+        receiptSql(context,command,response,at),
+      ]);
+      return{record,replayed:false};
+    },
+    async listMemberCatalogPurchaseIntents(organizationIdValue,limitValue=50) {
+      const organizationId=text(organizationIdValue,"organizationId",160),rowLimit=Math.min(100,Math.max(1,Number(limitValue)||50));
+      const rows=await db.all<Row>(`SELECT s.*,i.ssh_public_key_fingerprint FROM admin_catalog_purchase_intent_snapshots s
+        JOIN admin_entity_ownership own ON own.source_system='MARKETPLACE' AND own.entity_type='DEMAND' AND own.entity_id=s.demand_id
+        LEFT JOIN admin_manual_delivery_intakes i ON i.demand_id=s.demand_id
+        WHERE own.organization_id=? AND s.buyer_organization_id=?
+        ORDER BY s.created_at DESC,s.demand_id DESC LIMIT ?`,[organizationId,organizationId,rowLimit]);
+      return rows.map(memberCatalogPurchaseIntent);
+    },
+    async getMemberCatalogPurchaseIntent(organizationIdValue,demandIdValue) {
+      const organizationId=text(organizationIdValue,"organizationId",160),demandId=text(demandIdValue,"demandId",160);
+      const row=await db.first<Row>(`SELECT s.*,i.ssh_public_key_fingerprint FROM admin_catalog_purchase_intent_snapshots s
+        JOIN admin_entity_ownership own ON own.source_system='MARKETPLACE' AND own.entity_type='DEMAND' AND own.entity_id=s.demand_id
+        LEFT JOIN admin_manual_delivery_intakes i ON i.demand_id=s.demand_id
+        WHERE own.organization_id=? AND s.buyer_organization_id=? AND s.demand_id=?`,[organizationId,organizationId,demandId]);
+      return row?memberCatalogPurchaseIntent(row):null;
     },
     async getMemberPersonalCounts(organizationIdValue,asOfValue) {
       const organizationId=text(organizationIdValue,"organizationId");

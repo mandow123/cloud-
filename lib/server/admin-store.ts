@@ -84,6 +84,43 @@ export type AdminManualDeliveryPublicKey = Readonly<{
   sshPublicKeyFingerprint: string;
 }>;
 
+export type MemberCatalogPurchaseIntent = Readonly<{
+  demandId: string;
+  status: "PENDING_MANUAL_DELIVERY";
+  resource: Readonly<{
+    id: string;
+    title: string;
+    supplierId: string;
+    supplierName: string;
+    supplierLogoUrl: string | null;
+    category: string;
+    region: string;
+    deliveryForm: string;
+    summary: string;
+    capacity: string;
+    sla: string;
+    deliveryLeadTime: string;
+    sourceNotice: string | null;
+    gpuDescription: string;
+    gpuPackageCount: number;
+    specs: Readonly<Record<string, string>>;
+  }>;
+  request: Readonly<{
+    quantity: number;
+    totalGpuCount: number;
+    durationHours: number | null;
+    deliveryDate: string | null;
+  }>;
+  pricing: Readonly<{
+    pricingUnit: string;
+    unitCardHourMicros: number;
+    estimatedCardHourMicros: number;
+  }>;
+  sshPublicKeyFingerprint: string | null;
+  createdAt: string;
+  updatedAt: string;
+}>;
+
 export interface AdminOperationsStore {
   dashboard(): Promise<Record<string, unknown>>;
   readProjection(name: AdminProjectionName, query?: AdminListQuery): Promise<AdminProjectionItem[]>;
@@ -109,6 +146,9 @@ export interface AdminOperationsStore {
   recordManualDeliveryIntake(context: AdminMutationContext, input: Record<string, unknown>): Promise<{ record: AdminManualDeliveryIntake; replayed: boolean }>;
   listManualDeliveryIntakes(query?: AdminListQuery): Promise<AdminManualDeliveryIntake[]>;
   revealManualDeliveryPublicKey(principalId: string, demandId: string): Promise<AdminManualDeliveryPublicKey>;
+  recordCatalogPurchaseIntentSnapshot(context: AdminMutationContext, input: Record<string, unknown>): Promise<{ record: MemberCatalogPurchaseIntent; replayed: boolean }>;
+  listMemberCatalogPurchaseIntents(organizationId: string, limit?: number): Promise<MemberCatalogPurchaseIntent[]>;
+  getMemberCatalogPurchaseIntent(organizationId: string, demandId: string): Promise<MemberCatalogPurchaseIntent | null>;
 }
 
 declare global { var __kaiAdminOperationsStorePromise: Promise<AdminOperationsStore> | undefined; }

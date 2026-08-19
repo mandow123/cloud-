@@ -36,6 +36,12 @@ function text(value: unknown, max = 500) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
+function gpuPackageCount(gpuDescription: string) {
+  const matched = gpuDescription.match(/(?:(\d+)\s*[×x]|[×x]\s*(\d+))/u);
+  const count = matched ? Number(matched[1] ?? matched[2]) : 1;
+  return Number.isSafeInteger(count) && count > 0 ? count : 1;
+}
+
 export async function POST(request: Request) {
   const context = beginApiRequest(request);
   let actor: MarketplaceActor | undefined;
@@ -65,6 +71,9 @@ export async function POST(request: Request) {
     } : null;
 
     const quantity = Number(body.quantity);
+    if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 10_000) {
+      throw new MarketplaceInputError("目录资源数量必须是 1–10000 的整数。", "quantity");
+    }
     const durationHours = hourlyUnits.has(resource.pricingUnit) ? Number(body.durationHours) : null;
     const note = text(body.note);
     const referencePrice = `¥${resource.quote.median.toLocaleString("zh-CN")} / ${resource.pricingUnit}`;
@@ -119,8 +128,47 @@ export async function POST(request: Request) {
       payloadHash: await accountAuthDigest(JSON.stringify(manualDeliveryPayload)),
     }, manualDeliveryPayload) : null;
     const multiplier = hourlyUnits.has(resource.pricingUnit) ? quantity * Number(durationHours) : quantity;
-    const estimatedAmount = Math.round(resource.quote.median * multiplier * 100) / 100;
-    const estimatedCardHourMicros = cnyCentsToCardHourMicros(Math.max(1, Math.round(estimatedAmount * 100)));
+    const unitPriceCnyCents = Math.max(1, Math.round(resource.quote.median * 100));
+    const estimatedCnyCents = Math.max(1, Math.round(resource.quote.median * multiplier * 100));
+    const estimatedAmount = estimatedCnyCents / 100;
+    const unitCardHourMicros = cnyCentsToCardHourMicros(unitPriceCnyCents);
+    const estimatedCardHourMicros = cnyCentsToCardHourMicros(estimatedCnyCents);
+    const purchaseSnapshotPayload = manualDelivery && account && sshKey ? {
+      demandId: result.record.id,
+      buyerAccountId: account.account.id,
+      resourceSnapshot: {
+        id: resource.id,
+        title: resource.title,
+        supplierId: resource.supplierId,
+        supplierName: resource.supplierName,
+        supplierLogoUrl: resource.supplierLogoUrl ?? null,
+        category: resource.category,
+        region: resource.region,
+        deliveryForm: resource.deliveryForm,
+        summary: resource.summary,
+        capacity: resource.capacity,
+        sla: resource.sla,
+        deliveryLeadTime: resource.deliveryLeadTime,
+        sourceNotice: resource.source?.notice ?? null,
+        gpuDescription: resource.specs.GPU ?? resource.title,
+        gpuPackageCount: gpuPackageCount(resource.specs.GPU ?? resource.title),
+        specs: resource.specs,
+      },
+      quantity,
+      durationHours,
+      deliveryDate: result.record.deliveryDate,
+      pricingUnit: resource.pricingUnit,
+      unitPriceCnyCents,
+      unitCardHourMicros,
+      estimatedCardHourMicros,
+      sshPublicKeyFingerprint: sshKey.fingerprint,
+    } : null;
+    const purchaseSnapshot = purchaseSnapshotPayload && account ? await (await getAdminOperationsStore()).recordCatalogPurchaseIntentSnapshot({
+      principalId: account.account.id,
+      organizationId: account.activeOrganization.id,
+      idempotencyKey: `catalog-purchase-snapshot:${idempotencyKey}`,
+      payloadHash: await accountAuthDigest(JSON.stringify(purchaseSnapshotPayload)),
+    }, purchaseSnapshotPayload) : null;
     const headers = new Headers(actor.responseHeaders);
     headers.set("idempotency-replayed", String(result.replayed));
     return jsonResponse({
@@ -130,6 +178,11 @@ export async function POST(request: Request) {
         mode: "MANUAL_SSH",
         status: manualDelivery.record.status,
         sshPublicKeyFingerprint: manualDelivery.record.sshPublicKeyFingerprint,
+      } : null,
+      purchaseDetails: purchaseSnapshot ? {
+        href: `/member/purchases/${encodeURIComponent(result.record.id)}`,
+        demandId: result.record.id,
+        status: purchaseSnapshot.record.status,
       } : null,
       priceSnapshot: {
         assetCode: "KAI_CREDIT_HOUR",

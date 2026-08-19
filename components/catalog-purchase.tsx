@@ -108,7 +108,8 @@ export function CatalogPurchase({ resource, manualDeliveryEnabled }: { resource:
             ? "平台将先人工核验真实库存、供应商交付条件和正式价格；确认后由运营人员把你的 SSH 公钥安全交给对应供应商并协调开通。当前步骤不会锁库存、扣减卡时或自动操作任何机器。"
             : "平台将先核验真实库存、供应商交付条件和正式价格；确认可供后再生成真实订单，并只使用卡时完成支付。当前步骤不会锁库存或扣减卡时。"}</p>
           <div className={styles.successActions}>
-            <Link className="button button-primary" href="/member">查看交易工作台</Link>
+            <Link className="button button-primary" href={requiresSshPublicKey ? `/member/purchases/${encodeURIComponent(intent.id)}` : "/member"}>{requiresSshPublicKey ? "查看本次算力详情" : "查看交易工作台"}</Link>
+            {requiresSshPublicKey ? <Link className="button button-secondary" href="/member/purchases">查看全部申请</Link> : null}
             <Link className="button button-secondary" href="/resources">继续选购资源</Link>
           </div>
         </section>

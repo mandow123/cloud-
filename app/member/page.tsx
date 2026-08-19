@@ -5,6 +5,7 @@ import { HostingContractList } from "@/components/hosting-contract-list";
 import { MemberWorkspace } from "@/components/member-workspace";
 import { PersonalCenterOverview } from "@/components/personal-center-overview";
 import { CardHourAccountPanel } from "@/components/card-hour-account-panel";
+import { MemberPurchaseIntentList } from "@/components/member-purchase-intents";
 import { isHostingV2Enabled } from "@/lib/server/hosting-v2-feature";
 
 export const metadata: Metadata = {
@@ -33,6 +34,9 @@ export default function MemberPage() {
       </header>
       <div className="shell py-12 sm:py-16">
         <PersonalCenterOverview />
+        <AccountRequired purpose="查看算力申请">
+          <MemberPurchaseIntentList compact />
+        </AccountRequired>
         <CardHourAccountPanel />
         <MemberWorkspace />
         <section className="mt-16 scroll-mt-28" id="orders">
