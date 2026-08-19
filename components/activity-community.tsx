@@ -73,6 +73,7 @@ export function ActivityCommunity() {
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [selectedCampaignId, setSelectedCampaignId] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("campaign") ?? "");
 
   const load = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
@@ -172,6 +173,7 @@ export function ActivityCommunity() {
   }
 
   const activeCampaigns = snapshot?.campaigns.filter((item) => item.status === "ACTIVE" || item.status === "EVERGREEN") ?? [];
+  const selectedCampaign = activeCampaigns.some((item) => item.id === selectedCampaignId) ? selectedCampaignId : activeCampaigns[0]?.id ?? "";
   const accountType = snapshot?.viewer?.source === "chatgpt" ? "ChatGPT 账户" : "KAI Cloud 账户";
   const fileSummary = useMemo(() => selectedFile ? `${selectedFile.name} · ${(selectedFile.size / 1024 / 1024).toFixed(2)}MB` : "尚未选择图片", [selectedFile]);
 
@@ -197,7 +199,7 @@ export function ActivityCommunity() {
             ? <div className={styles.workGrid}>{snapshot.submissions.map((item) => <SubmissionCard busy={busyId === item.id} item={item} key={item.id} onVote={vote} />)}</div>
             : <div className={styles.empty}><strong>作品墙正在等待第一件作品</strong><span>提交后会先经过安全审核，不会自动公开。</span></div>}
       </div>
-      <aside className={styles.ranking} aria-labelledby="ranking-title">
+      <aside className={styles.ranking} id="leaderboard" aria-labelledby="ranking-title">
         <div className={styles.subheading}><h3 id="ranking-title">能量榜 TOP 10</h3><span>实时</span></div>
         {!loading && snapshot?.leaderboard.length ? <ol>{snapshot.leaderboard.slice(0, 10).map((item, index) => <li key={item.id}><b>{String(index + 1).padStart(2, "0")}</b><span><strong>{item.title}</strong><small>{item.authorName}</small></span><em>✦ {item.voteCount}</em></li>)}</ol> : null}
         {!loading && !snapshot?.leaderboard.length ? <div className={styles.empty}>榜单尚未产生</div> : null}
@@ -212,7 +214,7 @@ export function ActivityCommunity() {
         : activeCampaigns.length === 0
           ? <div className={styles.authGate} role="status"><strong>当前没有开放投稿的活动</strong><p>已登录为 {snapshot.viewer.displayName}。活动开放后可在这里直接提交。</p><button onClick={() => void load(true)} type="button">刷新活动状态</button></div>
           : <form className={styles.uploadForm} onSubmit={submit}>
-            <label><span>选择活动</span><select name="campaignId" required disabled={uploading}>{activeCampaigns.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+            <label><span>选择活动</span><select name="campaignId" required disabled={uploading} onChange={(event) => setSelectedCampaignId(event.target.value)} value={selectedCampaign}>{activeCampaigns.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
             <label><span>作品标题</span><input aria-describedby="activity-title-help" maxLength={80} minLength={2} name="title" required disabled={uploading} /><small id="activity-title-help">2–80 字</small></label>
             <label><span>作品说明</span><textarea aria-describedby="activity-description-help" maxLength={500} minLength={10} name="description" required rows={3} disabled={uploading} /><small id="activity-description-help">说明创作主题，10–500 字</small></label>
             <label><span>关键提示词 / 创作过程</span><textarea aria-describedby="activity-prompt-help" maxLength={500} minLength={3} name="promptExcerpt" required rows={3} disabled={uploading} /><small id="activity-prompt-help">公开后会随作品展示，请勿填写密钥或隐私信息</small></label>

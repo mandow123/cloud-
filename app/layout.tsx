@@ -8,27 +8,25 @@ import "./kai-cloud.css";
 export async function generateMetadata(): Promise<Metadata> {
   const configuredOrigin = typeof process !== "undefined" ? process.env.KAI_PUBLIC_ORIGIN : undefined;
   const metadataBase = new URL(configuredOrigin ?? "https://cloud.kai.com");
-  const title = "KAI Cloud｜中国 Token 学院算力市场";
-  const description = "聚合 GPU、Token、模型容量、整机柜与云厂商资源，以标准化行情驱动算力租赁与置换。";
+  const title = "KAI Creator｜AI 创作挑战与活动广场";
+  const description = "参加原创 AI 创作挑战，提交作品、参与投票、登上排行榜并赢取创作奖励。";
 
   return {
     metadataBase,
     title: { default: title, template: "%s｜KAI Cloud" },
     description,
-    keywords: ["算力租赁", "GPU 租赁", "GPU 置换", "Token 服务", "算力行情", "KAI Cloud"],
+    keywords: ["AI 创作", "创作比赛", "AI 活动", "作品投稿", "创作者社区", "KAI Creator"],
     openGraph: {
       type: "website",
       locale: "zh_CN",
-      siteName: "KAI Cloud",
+      siteName: "KAI Creator",
       title,
       description,
-      images: [{ url: "/og.png", width: 1734, height: 907, alt: "KAI Cloud 算力行情与资源撮合" }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: ["/og.png"],
     },
   };
 }

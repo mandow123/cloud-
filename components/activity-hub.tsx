@@ -1,132 +1,72 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { activityCatalog, type ActivityCatalogStatus } from "@/lib/activity-catalog";
 import styles from "./activity-hub.module.css";
 import { ActivityCommunity } from "./activity-community";
 
-type Filter = "全部" | "进行中" | "即将开始" | "长期活动";
+type StatusFilter = "全部" | ActivityCatalogStatus;
+type CategoryFilter = "全部类型" | "图像" | "视频" | "3D" | "声音" | "共创";
 
-const activities = [
-  { id: "neon-city", eyebrow: "主线挑战 · 进行中", title: "霓虹城市重构计划", copy: "用模型重画你熟悉的一条街，让真实地标与未来想象在同一张图里相遇。", date: "08.12 — 09.08", prize: "120,000 KAI 时", tag: "进行中", tone: "violet", progress: 68, people: "3,842" },
-  { id: "sound-shape", eyebrow: "跨模态实验 · 进行中", title: "把声音变成一座岛", copy: "上传一段 30 秒声音，以波形、节奏或情绪生成可漫游的视觉岛屿。", date: "08.19 — 09.18", prize: "80,000 KAI 时", tag: "进行中", tone: "cyan", progress: 41, people: "1,260" },
-  { id: "tiny-world", eyebrow: "新手友好 · 即将开始", title: "掌心里的小世界", copy: "围绕一个日常物件创作微缩场景。提交提示词过程，比最终作品更重要。", date: "09.01 开启", prize: "创作工具包 × 500", tag: "即将开始", tone: "orange", progress: 0, people: "928" },
-  { id: "open-lab", eyebrow: "开放实验室 · 长期活动", title: "一百种不可能材质", copy: "每周解锁一种材质词：云朵玻璃、液态陶瓷、会呼吸的金属……", date: "每周五更新", prize: "周榜算力加成", tag: "长期活动", tone: "lime", progress: 82, people: "6,419" },
+const statusFilters: readonly StatusFilter[] = ["全部", "进行中", "即将开始", "评审中", "已颁奖", "长期活动"];
+const categoryFilters: readonly CategoryFilter[] = ["全部类型", "图像", "视频", "3D", "声音", "共创"];
+const railLinks = [
+  { href: "/", icon: "⌂", label: "活动广场" },
+  { href: "#community", icon: "▦", label: "作品墙" },
+  { href: "#leaderboard", icon: "♛", label: "排行榜" },
+  { href: "#how-it-works", icon: "?", label: "玩法说明" },
 ];
 
-const squads = [
-  { name: "造梦局", icon: "✦", copy: "叙事、角色与世界观", count: "12.8k" },
-  { name: "异材所", icon: "◈", copy: "材质、光影与实验", count: "9.4k" },
-  { name: "动势组", icon: "↗", copy: "镜头、节奏与动态", count: "7.1k" },
-];
+function statusClass(status: ActivityCatalogStatus) {
+  if (status === "进行中" || status === "长期活动") return styles.active;
+  if (status === "即将开始") return styles.upcoming;
+  if (status === "评审中") return styles.reviewing;
+  return styles.awarded;
+}
 
 export function ActivityHub() {
-  const [filter, setFilter] = useState<Filter>("全部");
-  const [joined, setJoined] = useState<string[]>([]);
-  const [squad, setSquad] = useState("造梦局");
-  const [choiceNotice, setChoiceNotice] = useState("");
-  const filtered = useMemo(() => filter === "全部" ? activities : activities.filter((item) => item.tag === filter), [filter]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      try {
-        const savedSquad = window.localStorage.getItem("kai-activity-squad");
-        const savedJoined = JSON.parse(window.localStorage.getItem("kai-activity-joined") ?? "[]") as unknown;
-        if (squads.some((item) => item.name === savedSquad)) setSquad(savedSquad!);
-        if (Array.isArray(savedJoined)) setJoined(savedJoined.filter((item): item is string => typeof item === "string" && activities.some((activity) => activity.id === item)));
-      } catch {
-        // Browser storage is optional. Account-backed activity flows remain usable without it.
-      }
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  function toggleJoin(id: string) {
-    setJoined((current) => {
-      const joining = !current.includes(id);
-      const next = joining ? [...current, id] : current.filter((item) => item !== id);
-      try { window.localStorage.setItem("kai-activity-joined", JSON.stringify(next)); } catch { /* optional preference storage */ }
-      const activity = activities.find((item) => item.id === id);
-      setChoiceNotice(`${activity?.title ?? "活动"}${joining ? "已加入当前浏览器的任务清单" : "已从当前浏览器的任务清单移除"}。`);
-      return next;
+  const [status, setStatus] = useState<StatusFilter>("全部");
+  const [category, setCategory] = useState<CategoryFilter>("全部类型");
+  const [query, setQuery] = useState("");
+  const visible = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase("zh-CN");
+    return activityCatalog.filter((item) => {
+      const statusMatch = status === "全部" || item.status === status;
+      const categoryMatch = category === "全部类型" || item.category === category;
+      const queryMatch = !normalized || `${item.title}${item.subtitle}${item.mechanic}`.toLocaleLowerCase("zh-CN").includes(normalized);
+      return statusMatch && categoryMatch && queryMatch;
     });
-  }
+  }, [category, query, status]);
 
-  function chooseSquad(name: string) {
-    setSquad(name);
-    setChoiceNotice(`已选择${name}，阵营偏好保存在当前浏览器。`);
-    try { window.localStorage.setItem("kai-activity-squad", name); } catch { /* optional preference storage */ }
-  }
+  return <div className={`activity-experience ${styles.page}`}>
+    <div className={styles.promo}><span>✦ KAI 夏日创作季</span><strong>六大主题赛道正在展出 · 三场开放投稿</strong><a href="#campaigns">马上参赛</a></div>
+    <header className={styles.topbar}>
+      <Link className={styles.brand} href="/" aria-label="KAI 创作挑战首页"><i>K</i><span>KAI CREATOR</span></Link>
+      <nav aria-label="活动主导航"><Link href="/" aria-current="page">挑战赛</Link><a href="#community">作品广场</a><a href="#leaderboard">排行榜</a><Link href="/market">算力行情</Link></nav>
+      <div className={styles.topActions}><a className={styles.points} href="#leaderboard">✦ 我的能量</a><a className={styles.submitTop} href="#submit-work">发布作品</a><Link className={styles.account} href="/login?returnTo=%2F%23community" aria-label="登录或打开个人账户">人</Link></div>
+    </header>
+    <aside className={styles.rail} aria-label="活动快捷导航"><Link className={styles.railBrand} href="/" aria-label="KAI">K</Link><nav>{railLinks.map((item, index) => <a aria-current={index === 0 ? "page" : undefined} href={item.href} key={item.label}><span>{item.icon}</span><small>{item.label}</small></a>)}</nav></aside>
 
-  return (
-    <div className={styles.page}>
-      <section className={styles.hero}>
-        <div className={styles.orbOne} /><div className={styles.orbTwo} />
-        <div className={styles.heroGrid}>
-          <div className={styles.heroCopy}>
-            <span className={styles.livePill}><i /> AUG · 创作季正在发生</span>
-            <h1>把一个念头<br />变成<span>共同事件</span></h1>
-            <p>这里没有标准答案。加入一个创作阵营，领取每周灵感任务，用作品为阵营积攒能量，赢取算力与展示席位。</p>
-            <div className={styles.heroActions}>
-              <a href="#events" className={styles.primaryAction}>探索本期活动 <b>↘</b></a>
-              <a href="#rules" className={styles.textAction}>玩法说明 <span>02 min</span></a>
-            </div>
-          </div>
-          <div className={styles.heroVisual} aria-label="本季阵营能量概览" role="img">
-            <div className={styles.ring}><span>SEASON<br /><strong>02</strong></span></div>
-            <div className={styles.floatCard}><small>本季共同创作</small><strong>21,406</strong><span>件作品已进入能量池</span></div>
-            <div className={styles.spark}>✦</div>
-          </div>
-        </div>
-        <div className={styles.marquee}><span>CREATE TOGETHER</span><i>✦</i><span>NO SINGLE ANSWER</span><i>✦</i><span>IDEAS BECOME WORLDS</span></div>
+    <main className={styles.main}>
+      <section className={styles.catalogHead} aria-labelledby="activity-title">
+        <div><p><span>DISCOVER</span> / 发现下一次创作</p><h1 id="activity-title">创作挑战</h1><p className={styles.intro}>选择一个命题，把作品、过程和灵感放进社区。这里不只评最终结果，也奖励真实过程与共创贡献。</p></div>
+        <dl><div><dt>开放投稿</dt><dd>3</dd></div><div><dt>KAI 时奖励</dt><dd>12万+</dd></div><div><dt>参赛作品</dt><dd>1.6万+</dd></div></dl>
       </section>
-
-      <section className={styles.squadSection} aria-labelledby="squad-title">
-        <div className={styles.sectionIntro}>
-          <div><span className={styles.index}>01 / CHOOSE A SIDE</span><h2 id="squad-title">先选一个创作阵营</h2></div>
-          <p>阵营不限制你的创作方式，只决定你本周收到的隐藏任务。随时可以切换。</p>
-        </div>
-        <div className={styles.squadGrid}>
-          {squads.map((item, index) => <button aria-pressed={squad === item.name} key={item.name} className={`${styles.squadCard} ${squad === item.name ? styles.selected : ""}`} onClick={() => chooseSquad(item.name)} type="button">
-            <span className={styles.squadNo}>0{index + 1}</span><b className={styles.squadIcon}>{item.icon}</b><strong>{item.name}</strong><em>{item.copy}</em><small>{item.count} 位创作者</small><i>{squad === item.name ? "已加入" : "加入 →"}</i>
-          </button>)}
-        </div>
-        <p className={styles.preferenceNote}>阵营和任务清单保存在当前浏览器；投稿、投票与奖励会安全保存到登录账户。</p>
-        <p className={styles.liveNotice} aria-live="polite">{choiceNotice}</p>
+      <section className={styles.toolbar} aria-label="筛选活动">
+        <div className={styles.statusFilters}>{statusFilters.map((item) => <button aria-pressed={status === item} key={item} onClick={() => setStatus(item)} type="button">{item}</button>)}</div>
+        <div className={styles.secondaryFilters}><label><span className="sr-only">活动类型</span><select onChange={(event) => setCategory(event.target.value as CategoryFilter)} value={category}>{categoryFilters.map((item) => <option key={item}>{item}</option>)}</select></label><label className={styles.search}><span aria-hidden="true">⌕</span><input onChange={(event) => setQuery(event.target.value)} placeholder="搜索活动" value={query} /></label></div>
       </section>
-
-      <section className={styles.events} id="events" aria-labelledby="events-title">
-        <div className={styles.sectionIntro}>
-          <div><span className={styles.index}>02 / OPEN CALLS</span><h2 id="events-title">正在发生的创作</h2></div>
-          <div className={styles.filters} aria-label="按活动状态筛选">{(["全部", "进行中", "即将开始", "长期活动"] as Filter[]).map((item) => <button aria-pressed={filter === item} key={item} onClick={() => setFilter(item)} type="button">{item}</button>)}</div>
-        </div>
-        <div className={styles.eventGrid}>
-          {filtered.map((item, index) => <article className={`${styles.eventCard} ${styles[item.tone]}`} key={item.id}>
-            <div className={styles.poster}>
-              <span className={styles.posterIndex}>{String(index + 1).padStart(2, "0")}</span>
-              <div className={styles.posterArt}><i /><i /><i /></div>
-              <span className={styles.posterWord}>{item.id.replace("-", " ")}</span>
-            </div>
-            <div className={styles.eventBody}>
-              <span className={styles.eyebrow}>{item.eyebrow}</span><h3>{item.title}</h3><p>{item.copy}</p>
-              <dl><div><dt>活动时间</dt><dd>{item.date}</dd></div><div><dt>能量奖池</dt><dd>{item.prize}</dd></div></dl>
-              {item.progress > 0 && <div className={styles.progress}><span><i style={{ width: `${item.progress}%` }} /></span><small>{item.people} 人已参与</small></div>}
-              <button aria-pressed={joined.includes(item.id)} className={styles.joinButton} onClick={() => toggleJoin(item.id)} type="button">{joined.includes(item.id) ? (item.tag === "即将开始" ? "已加入提醒清单 ✓" : "已加入任务清单 ✓") : item.tag === "即将开始" ? "加入提醒清单" : "加入任务清单"}<span aria-hidden="true">↗</span></button>
-            </div>
-          </article>)}
-        </div>
+      <section className={styles.catalog} id="campaigns" aria-live="polite">
+        <div className={styles.catalogMeta}><strong>{status === "全部" ? "全部挑战" : status}</strong><span>{visible.length} 个活动</span></div>
+        {visible.length ? <div className={styles.grid}>{visible.map((item, index) => <Link className={`${styles.card} ${styles[item.tone]}`} href={`/activity/${item.slug}`} key={item.id}>
+          <div className={styles.poster}><span className={`${styles.status} ${statusClass(item.status)}`}>● {item.status}</span><span className={styles.category}>{item.category}</span><div className={styles.art} aria-hidden="true"><i /><i /><i /><b>{String(index + 1).padStart(2, "0")}</b></div><div className={styles.posterCopy}><small>{item.mechanic}</small><strong>{item.subtitle}</strong></div><div className={styles.reward}>♕ <span>{item.reward}</span></div><div className={styles.cardHover}><span>查看详情</span><b>↗</b></div></div>
+          <div className={styles.cardBody}><div><h2>{item.title}</h2><p>{item.date} · {item.deadline}</p></div><span>{item.participants}</span></div>
+        </Link>)}</div> : <div className={styles.empty}><strong>暂时没有匹配的活动</strong><button onClick={() => { setStatus("全部"); setCategory("全部类型"); setQuery(""); }} type="button">清除筛选</button></div>}
       </section>
-
-      <section className={styles.rules} id="rules" aria-labelledby="rules-title">
-        <div><span className={styles.index}>03 / HOW IT WORKS</span><h2 id="rules-title">三步，让灵感产生回声</h2></div>
-        <ol><li><b>01</b><strong>领取变量</strong><span>每个阵营拿到不同的隐藏限制词。</span></li><li><b>02</b><strong>公开过程</strong><span>作品与关键提示词一起提交，鼓励再创作。</span></li><li><b>03</b><strong>积攒能量</strong><span>投票不淘汰作品，而是解锁全阵营奖励。</span></li></ol>
-      </section>
-
-      <ActivityCommunity />
-
-      <section className={styles.cta}>
-        <span>YOUR IDEA IS THE NEXT EVENT</span><h2>下一场活动，也可以由你发起。</h2><p>提交主题、参考图和玩法草案。入选提案将获得策展支持与独立算力池。</p><Link href="/request?mode=activity" className={styles.primaryAction}>提交活动提案 <b>↗</b></Link>
-      </section>
-    </div>
-  );
+      <section className={styles.how} id="how-it-works" aria-labelledby="how-title"><div><span>HOW IT WORKS</span><h2 id="how-title">不只比一张成片，<br />也看创作是怎么发生的。</h2></div><ol><li><b>01</b><strong>选活动</strong><span>查看命题、规格和奖励，领取可选支线任务。</span></li><li><b>02</b><strong>交作品</strong><span>上传作品并公开关键过程，审核后进入作品墙。</span></li><li><b>03</b><strong>攒能量</strong><span>社区投票、专业评审与共创贡献形成多维榜单。</span></li></ol></section>
+      <div id="submit-work"><ActivityCommunity /></div>
+    </main>
+    <nav className={styles.mobileNav} aria-label="移动端活动导航"><Link href="/" aria-current="page"><span>⌂</span>活动</Link><a href="#community"><span>▦</span>作品</a><a href="#leaderboard"><span>♛</span>榜单</a><a className={styles.mobileSubmit} href="#submit-work"><span>＋</span>投稿</a></nav>
+  </div>;
 }

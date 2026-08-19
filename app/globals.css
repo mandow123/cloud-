@@ -59,6 +59,15 @@ html[data-color-mode="dark"] {
   box-sizing: border-box;
 }
 
+body:has(.activity-experience) > .site-header,
+body:has(.activity-experience) > .site-footer {
+  display: none;
+}
+
+body:has(.activity-experience) {
+  background: #0d0e10;
+}
+
 html {
   scroll-behavior: smooth;
   background: var(--canvas);
@@ -536,4 +545,33 @@ textarea {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+.activity-experience #community {
+  border-top: 1px solid #2a2c31;
+  background: #0d0e10;
+  color: #f4f4f1;
+}
+
+.activity-experience #community h2,
+.activity-experience #community h3,
+.activity-experience #community strong {
+  color: #f4f4f1;
+}
+
+.activity-experience #community article,
+.activity-experience #community aside,
+.activity-experience #community form,
+.activity-experience #community input,
+.activity-experience #community select,
+.activity-experience #community textarea {
+  border-color: #36383e;
+  background-color: #151619;
+  color: #f4f4f1;
+}
+
+.activity-experience #community input,
+.activity-experience #community select,
+.activity-experience #community textarea {
+  color-scheme: dark;
 }
