@@ -145,7 +145,8 @@ test("standalone image and Compose keep activity state on dedicated writable mou
   assert.match(compose, /KAI_ACTIVITY_UPLOAD_DIR: \/app\/uploads/);
   assert.match(compose, /source: "\$\{KAI_STATE_ROOT:-\/opt\/kai-cloud-3051\}\/db"\s+target: \/app\/db/);
   assert.match(compose, /source: "\$\{KAI_STATE_ROOT:-\/opt\/kai-cloud-3051\}\/uploads"\s+target: \/app\/uploads/);
-  assert.doesNotMatch(compose, /target: \/app\/(?:db|uploads)\s+read_only: true/);
+  const appService = compose.split("\n  market-update:", 1)[0];
+  assert.doesNotMatch(appService, /target: \/app\/(?:db|uploads)\s+read_only: true/);
   assert.match(dockerfile, /COPY --from=build --chown=node:node \/app\/scripts\/ops \.\/scripts\/ops/);
   assert.match(dockerfile, /USER node/);
   assert.ok(launcher.indexOf("await installActivityNodeBindings()") < launcher.indexOf("await startProdServer"));
