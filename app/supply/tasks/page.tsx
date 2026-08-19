@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SupplyTaskQueue } from "@/components/supply-task-queue";
+import { requireSupplyHostingPageAccess } from "@/lib/server/account-console-page-gate";
 
 export const metadata: Metadata = {
   title: "待办",
@@ -7,5 +8,6 @@ export const metadata: Metadata = {
 };
 
 export default function SupplyTasksPage() {
+  requireSupplyHostingPageAccess();
   return <SupplyTaskQueue />;
 }

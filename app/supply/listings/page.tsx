@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SupplyListingsV2 } from "@/components/supply-listings-v2";
+import { requireSupplyHostingPageAccess } from "@/lib/server/account-console-page-gate";
 
 export const metadata: Metadata = {
   title: "挂牌管理",
@@ -7,5 +8,6 @@ export const metadata: Metadata = {
 };
 
 export default function SupplyListingsPage() {
+  requireSupplyHostingPageAccess();
   return <SupplyListingsV2 />;
 }

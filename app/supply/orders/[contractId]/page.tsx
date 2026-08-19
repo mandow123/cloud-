@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SupplyContractDetail } from "@/components/supply-contract-detail";
+import { requireSupplyHostingPageAccess } from "@/lib/server/account-console-page-gate";
 
 export const metadata: Metadata = {
   title: "供应订单详情",
@@ -7,6 +8,7 @@ export const metadata: Metadata = {
 };
 
 export default async function SupplyOrderDetailPage({ params }: { params: Promise<{ contractId: string }> }) {
+  requireSupplyHostingPageAccess();
   const { contractId } = await params;
   return <SupplyContractDetail contractId={contractId} />;
 }

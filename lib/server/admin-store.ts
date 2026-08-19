@@ -121,6 +121,38 @@ export type MemberCatalogPurchaseIntent = Readonly<{
   updatedAt: string;
 }>;
 
+export type MemberAccountConsoleRecords = Readonly<{
+  purchaseIntents: Readonly<{
+    total: number;
+    pendingManualDelivery: number;
+    recent: readonly Readonly<{
+      demandId: string;
+      status: "PENDING_MANUAL_DELIVERY";
+      resourceTitle: string;
+      supplierName: string;
+      estimatedCardHourMicros: number;
+      createdAt: string;
+      updatedAt: string;
+    }>[];
+  }>;
+  supplyApplications: Readonly<{
+    total: number;
+    pendingReview: number;
+    approved: number;
+    verified: number;
+    published: number;
+    needsAttention: number;
+    recent: readonly Readonly<{
+      id: string;
+      productName: string;
+      resourceType: string;
+      status: "DRAFT" | "SUBMITTED" | "UNDER_VERIFICATION" | "VERIFIED" | "REJECTED" | "PUBLISHED";
+      createdAt: string;
+      updatedAt: string;
+    }>[];
+  }>;
+}>;
+
 export interface AdminOperationsStore {
   dashboard(): Promise<Record<string, unknown>>;
   readProjection(name: AdminProjectionName, query?: AdminListQuery): Promise<AdminProjectionItem[]>;
@@ -149,6 +181,7 @@ export interface AdminOperationsStore {
   recordCatalogPurchaseIntentSnapshot(context: AdminMutationContext, input: Record<string, unknown>): Promise<{ record: MemberCatalogPurchaseIntent; replayed: boolean }>;
   listMemberCatalogPurchaseIntents(organizationId: string, limit?: number): Promise<MemberCatalogPurchaseIntent[]>;
   getMemberCatalogPurchaseIntent(organizationId: string, demandId: string): Promise<MemberCatalogPurchaseIntent | null>;
+  getMemberAccountConsoleRecords(organizationId: string, recentLimit?: number): Promise<MemberAccountConsoleRecords>;
 }
 
 declare global { var __kaiAdminOperationsStorePromise: Promise<AdminOperationsStore> | undefined; }

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SupplyOfferCreate } from "@/components/supply-offer-create";
+import { requireSupplyHostingPageAccess } from "@/lib/server/account-console-page-gate";
 
 export const metadata: Metadata = {
   title: "创建 GPU 挂牌",
@@ -7,5 +8,6 @@ export const metadata: Metadata = {
 };
 
 export default function SupplyOfferCreatePage() {
+  requireSupplyHostingPageAccess();
   return <SupplyOfferCreate />;
 }

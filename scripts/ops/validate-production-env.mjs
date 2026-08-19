@@ -155,6 +155,8 @@ export function validateProductionEnvironment(environment = process.env, { check
     errors.push("KAI_ENABLE_HSTS must be exactly 0 or 1");
   }
   if (environment.KAI_ALIPAY_ENABLED !== "0") errors.push("KAI_ALIPAY_ENABLED must remain exactly 0 during the trial rollout");
+  const accountConsoleV2 = environment.KAI_ACCOUNT_CONSOLE_V2 ?? "0";
+  if (accountConsoleV2 !== "0" && accountConsoleV2 !== "1") errors.push("KAI_ACCOUNT_CONSOLE_V2 must be exactly 0 or 1");
   if (environment.KAI_HOSTING_V2 !== "0" && environment.KAI_HOSTING_V2 !== "1") errors.push("KAI_HOSTING_V2 must be exactly 0 or 1");
   if (environment.KAI_HOSTING_V2_SETUP !== "0" && environment.KAI_HOSTING_V2_SETUP !== "1") errors.push("KAI_HOSTING_V2_SETUP must be exactly 0 or 1");
   if (environment.KAI_HOSTING_DEVICE_RETIREMENT !== "0" && environment.KAI_HOSTING_DEVICE_RETIREMENT !== "1") errors.push("KAI_HOSTING_DEVICE_RETIREMENT must be exactly 0 or 1");
@@ -217,6 +219,7 @@ export function validateProductionEnvironment(environment = process.env, { check
     publicOrigin: environment.KAI_PUBLIC_ORIGIN,
     releaseSha: environment.KAI_RELEASE_SHA,
     hstsEnabled: environment.KAI_ENABLE_HSTS === "1",
+    accountConsoleV2Enabled: environment.KAI_ACCOUNT_CONSOLE_V2 === "1",
     hostingV2Enabled: environment.KAI_HOSTING_V2 === "1",
     hostingV2SetupEnabled: environment.KAI_HOSTING_V2_SETUP === "1" || environment.KAI_HOSTING_V2 === "1",
     hostingDeviceRetirementEnabled: environment.KAI_HOSTING_DEVICE_RETIREMENT === "1",

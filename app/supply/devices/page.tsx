@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SupplyResources } from "@/components/supply-resources";
+import { requireSupplyHostingPageAccess } from "@/lib/server/account-console-page-gate";
 
 export const metadata: Metadata = {
   title: "托管设备",
@@ -7,5 +8,6 @@ export const metadata: Metadata = {
 };
 
 export default function SupplyDevicesPage() {
+  requireSupplyHostingPageAccess();
   return <SupplyResources />;
 }

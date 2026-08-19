@@ -6,14 +6,19 @@ import { MemberWorkspace } from "@/components/member-workspace";
 import { PersonalCenterOverview } from "@/components/personal-center-overview";
 import { CardHourAccountPanel } from "@/components/card-hour-account-panel";
 import { MemberPurchaseIntentList } from "@/components/member-purchase-intents";
+import { AccountConsoleOverview } from "@/components/account-console-overview";
+import { isAccountConsoleV2Enabled } from "@/lib/server/account-console-feature";
 import { isHostingV2Enabled } from "@/lib/server/hosting-v2-feature";
 
 export const metadata: Metadata = {
   title: "个人中心",
-  description: "管理 KAI Cloud 卡时、购买记录、资源对比、回购、租金收益与邀请佣金。",
+  description: "查看当前组织的 KAI 标准卡时、算力申请与人工交付进度。",
 };
 
 export default function MemberPage() {
+  if (isAccountConsoleV2Enabled()) {
+    return <AccountRequired purpose="进入采购账户" redirectOnSignedOut><AccountConsoleOverview mode="buyer" /></AccountRequired>;
+  }
   const hostingV2Enabled = isHostingV2Enabled();
   return (
     <>

@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AccountRequired } from "@/components/account-required";
+import { AccountConsoleShell } from "@/components/account-console-shell";
 import { SupplyConsoleShell } from "@/components/supply-console-shell";
+import { isAccountConsoleV2Enabled } from "@/lib/server/account-console-feature";
 import { isHostingV2Enabled, isHostingV2SetupEnabled } from "@/lib/server/hosting-v2-feature";
 
 export const dynamic = "force-dynamic";
@@ -17,11 +19,17 @@ function hostingLandingUrl() {
 }
 
 export default function SupplyLayout({ children }: { children: React.ReactNode }) {
-  if (!isHostingV2SetupEnabled()) redirect(hostingLandingUrl());
+  const accountConsoleV2Enabled = isAccountConsoleV2Enabled();
+  if (!accountConsoleV2Enabled && !isHostingV2SetupEnabled()) redirect(hostingLandingUrl());
+
+  const configurationMode = !isHostingV2Enabled();
+  const console = accountConsoleV2Enabled
+    ? <AccountConsoleShell configurationMode={configurationMode} mode="supplier">{children}</AccountConsoleShell>
+    : <SupplyConsoleShell configurationMode={configurationMode}>{children}</SupplyConsoleShell>;
 
   return (
     <AccountRequired purpose="管理供应资源">
-      <SupplyConsoleShell configurationMode={!isHostingV2Enabled()}>{children}</SupplyConsoleShell>
+      {console}
     </AccountRequired>
   );
 }

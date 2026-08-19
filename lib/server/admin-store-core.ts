@@ -4,7 +4,7 @@ import { ADMIN_ROLES, type AdminRole } from "../admin-auth-types.ts";
 import { adminPermissionsForRoles } from "./admin-auth.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { countAdminProjection, readAdminProjection, type AdminProjectionAdapter } from "./admin-projections.ts";
-import type { AdminEntityOwnership, AdminListQuery, AdminManualDeliveryIntake, AdminManualDeliveryPublicKey, AdminMutationContext, AdminOperationsStore, AdminProjectionName, AdminRefundCase, AdminRefundExecution, AdminSourceSystem, AdminWorkItem, MemberCatalogPurchaseIntent, MemberPersonalCounts } from "./admin-store.ts";
+import type { AdminEntityOwnership, AdminListQuery, AdminManualDeliveryIntake, AdminManualDeliveryPublicKey, AdminMutationContext, AdminOperationsStore, AdminProjectionName, AdminRefundCase, AdminRefundExecution, AdminSourceSystem, AdminWorkItem, MemberAccountConsoleRecords, MemberCatalogPurchaseIntent, MemberPersonalCounts } from "./admin-store.ts";
 
 export type AdminSql = Readonly<{ sql: string; values?: readonly unknown[] }>;
 export type AdminRunResult = Readonly<{ changes: number }>;
@@ -385,6 +385,76 @@ export async function createAdminOperationsStore(db: AdminDatabaseAdapter): Prom
         LEFT JOIN admin_manual_delivery_intakes i ON i.demand_id=s.demand_id
         WHERE own.organization_id=? AND s.buyer_organization_id=? AND s.demand_id=?`,[organizationId,organizationId,demandId]);
       return row?memberCatalogPurchaseIntent(row):null;
+    },
+    async getMemberAccountConsoleRecords(organizationIdValue,recentLimitValue=5) {
+      const organizationId=text(organizationIdValue,"organizationId",160);
+      const recentLimit=Math.min(10,Math.max(1,Number(recentLimitValue)||5));
+      const [purchaseCounts,supplyCounts,purchaseRows,supplyRows]=await Promise.all([
+        db.first<Row>(`SELECT COUNT(*) AS total,
+          SUM(CASE WHEN s.status='PENDING_MANUAL_DELIVERY' THEN 1 ELSE 0 END) AS pending_manual_delivery
+          FROM admin_catalog_purchase_intent_snapshots s
+          JOIN admin_entity_ownership own
+            ON own.source_system='MARKETPLACE' AND own.entity_type='DEMAND' AND own.entity_id=s.demand_id
+          WHERE own.organization_id=? AND s.buyer_organization_id=?`,[organizationId,organizationId]),
+        db.first<Row>(`SELECT COUNT(*) AS total,
+          SUM(CASE WHEN offer.status IN ('SUBMITTED','UNDER_VERIFICATION') THEN 1 ELSE 0 END) AS pending_review,
+          SUM(CASE WHEN offer.status IN ('VERIFIED','PUBLISHED') THEN 1 ELSE 0 END) AS approved,
+          SUM(CASE WHEN offer.status='VERIFIED' THEN 1 ELSE 0 END) AS verified,
+          SUM(CASE WHEN offer.status='PUBLISHED' THEN 1 ELSE 0 END) AS published,
+          SUM(CASE WHEN offer.status='REJECTED' THEN 1 ELSE 0 END) AS needs_attention
+          FROM supply_offers offer
+          JOIN admin_entity_ownership own
+            ON own.source_system='SUPPLY_PILOT' AND own.entity_type='SUPPLY_OFFER' AND own.entity_id=offer.id
+          WHERE own.organization_id=?`,[organizationId]),
+        db.all<Row>(`SELECT s.demand_id,s.status,s.resource_title,s.resource_snapshot_json,
+          s.estimated_card_hour_micros,s.created_at,s.updated_at
+          FROM admin_catalog_purchase_intent_snapshots s
+          JOIN admin_entity_ownership own
+            ON own.source_system='MARKETPLACE' AND own.entity_type='DEMAND' AND own.entity_id=s.demand_id
+          WHERE own.organization_id=? AND s.buyer_organization_id=?
+          ORDER BY s.created_at DESC,s.demand_id DESC LIMIT ?`,[organizationId,organizationId,recentLimit]),
+        db.all<Row>(`SELECT offer.id,offer.product_name,offer.resource_type,offer.status,offer.created_at,offer.updated_at
+          FROM supply_offers offer
+          JOIN admin_entity_ownership own
+            ON own.source_system='SUPPLY_PILOT' AND own.entity_type='SUPPLY_OFFER' AND own.entity_id=offer.id
+          WHERE own.organization_id=?
+          ORDER BY offer.created_at DESC,offer.id DESC LIMIT ?`,[organizationId,recentLimit]),
+      ]);
+      const result:MemberAccountConsoleRecords={
+        purchaseIntents:{
+          total:Number(purchaseCounts?.total??0),
+          pendingManualDelivery:Number(purchaseCounts?.pending_manual_delivery??0),
+          recent:purchaseRows.map((row)=>{
+            const resource=JSON.parse(String(row.resource_snapshot_json)) as MemberCatalogPurchaseIntent["resource"];
+            return{
+              demandId:String(row.demand_id),
+              status:"PENDING_MANUAL_DELIVERY" as const,
+              resourceTitle:String(row.resource_title),
+              supplierName:resource.supplierName,
+              estimatedCardHourMicros:Number(row.estimated_card_hour_micros),
+              createdAt:String(row.created_at),
+              updatedAt:String(row.updated_at),
+            };
+          }),
+        },
+        supplyApplications:{
+          total:Number(supplyCounts?.total??0),
+          pendingReview:Number(supplyCounts?.pending_review??0),
+          approved:Number(supplyCounts?.approved??0),
+          verified:Number(supplyCounts?.verified??0),
+          published:Number(supplyCounts?.published??0),
+          needsAttention:Number(supplyCounts?.needs_attention??0),
+          recent:supplyRows.map((row)=>({
+            id:String(row.id),
+            productName:String(row.product_name),
+            resourceType:String(row.resource_type),
+            status:row.status as MemberAccountConsoleRecords["supplyApplications"]["recent"][number]["status"],
+            createdAt:String(row.created_at),
+            updatedAt:String(row.updated_at),
+          })),
+        },
+      };
+      return result;
     },
     async getMemberPersonalCounts(organizationIdValue,asOfValue) {
       const organizationId=text(organizationIdValue,"organizationId");

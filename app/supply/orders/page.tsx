@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SupplyContracts } from "@/components/supply-contracts";
+import { requireSupplyHostingPageAccess } from "@/lib/server/account-console-page-gate";
 
 export const metadata: Metadata = {
   title: "供应订单",
@@ -7,5 +8,6 @@ export const metadata: Metadata = {
 };
 
 export default function SupplyOrdersPage() {
+  requireSupplyHostingPageAccess();
   return <SupplyContracts />;
 }

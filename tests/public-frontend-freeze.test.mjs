@@ -23,7 +23,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "app/resources/[id]/page.tsx": "12d153a6251b7a18c104837e2da88949765517a10c33508d81a52694c71484cd",
   "app/checkout/[resourceId]/page.tsx": "1b8eb402de18d01b908aa8a32d6391ab6c10e55b537bdfd01b5b886f9424edf3",
   "app/login/page.tsx": "026689be202766d6cbcfae7b18b9ea7c7b86bf6a514d848184c84025899437e3",
-  "app/member/page.tsx": "162e46638546d9b381d47e9952cac503a7f1c2597a41ce5743bb273f8235bf5f",
+  "app/member/page.tsx": "86f020c26af8956409caa9216c8bf29e61871109a7c237bf28d8c79c464441ff",
   "app/partners/page.tsx": "93cd20f90ebf8f6271b1b69fd79521b00497b02975beab97019b7bce121f2b52",
   "components/account-login.tsx": "2bbf68579e3c122d007861546462a072a1b84e98df47ecd315b0cdfa9c7b6cfc",
   "components/account-required.tsx": "eba4b05ead04f06c54a4863f0da123c8ded8d21e3071a5a3b609074f7d4cef04",
@@ -73,6 +73,7 @@ const APPROVED_HOSTING_V2_ROUTES = new Set([
   "app/market/listings/page.tsx",
   "app/member/purchases/[demandId]/page.tsx",
   "app/member/purchases/page.tsx",
+  "app/member/layout.tsx",
   "app/supply/layout.tsx",
   "app/supply/apply/page.tsx",
   "app/supply/applications/page.tsx",
@@ -198,8 +199,10 @@ test("the admin panel stays isolated, supplier pages stay gated and transaction 
   for (const path of APPROVED_HOSTING_V2_ROUTES) assert.equal(existsSync(join(ROOT, path)), true, `${path} is missing`);
   const supplyLayout = readFileSync(join(ROOT, "app/supply/layout.tsx"), "utf8");
   assert.match(supplyLayout, /new URL\("\/hosting", origin\)\.toString\(\)/u);
-  assert.match(supplyLayout, /if \(!isHostingV2SetupEnabled\(\)\) redirect\(hostingLandingUrl\(\)\)/u);
-  assert.match(supplyLayout, /configurationMode=\{!isHostingV2Enabled\(\)\}/u);
+  assert.match(supplyLayout, /const accountConsoleV2Enabled = isAccountConsoleV2Enabled\(\)/u);
+  assert.match(supplyLayout, /if \(!accountConsoleV2Enabled && !isHostingV2SetupEnabled\(\)\) redirect\(hostingLandingUrl\(\)\)/u);
+  assert.match(supplyLayout, /const configurationMode = !isHostingV2Enabled\(\)/u);
+  assert.match(supplyLayout, /configurationMode=\{configurationMode\}/u);
   assert.match(supplyLayout, /<AccountRequired purpose="管理供应资源">/u);
 
   for (const path of [
