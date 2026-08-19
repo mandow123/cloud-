@@ -63,6 +63,27 @@ export type MemberPersonalCounts = Readonly<{
   pendingAcceptance: number;
 }>;
 
+export type AdminManualDeliveryIntake = Readonly<{
+  demandId: string;
+  buyerOrganizationId: string;
+  buyerAccountId: string;
+  buyerDisplayName: string | null;
+  buyerEmail: string | null;
+  organizationName: string | null;
+  resourceId: string;
+  resourceTitle: string;
+  sshPublicKeyFingerprint: string;
+  status: "PENDING_MANUAL_DELIVERY";
+  createdAt: string;
+  updatedAt: string;
+}>;
+
+export type AdminManualDeliveryPublicKey = Readonly<{
+  demandId: string;
+  canonicalSshPublicKey: string;
+  sshPublicKeyFingerprint: string;
+}>;
+
 export interface AdminOperationsStore {
   dashboard(): Promise<Record<string, unknown>>;
   readProjection(name: AdminProjectionName, query?: AdminListQuery): Promise<AdminProjectionItem[]>;
@@ -85,6 +106,9 @@ export interface AdminOperationsStore {
   bindEntityOrganization(context: AdminMutationContext, input: Record<string, unknown>): Promise<{ record: AdminEntityOwnership; replayed: boolean }>;
   getEntityOwnership(sourceSystem: AdminSourceSystem, entityType: string, entityId: string): Promise<AdminEntityOwnership | null>;
   getMemberPersonalCounts(organizationId: string, asOf: string): Promise<MemberPersonalCounts>;
+  recordManualDeliveryIntake(context: AdminMutationContext, input: Record<string, unknown>): Promise<{ record: AdminManualDeliveryIntake; replayed: boolean }>;
+  listManualDeliveryIntakes(query?: AdminListQuery): Promise<AdminManualDeliveryIntake[]>;
+  revealManualDeliveryPublicKey(principalId: string, demandId: string): Promise<AdminManualDeliveryPublicKey>;
 }
 
 declare global { var __kaiAdminOperationsStorePromise: Promise<AdminOperationsStore> | undefined; }

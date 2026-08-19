@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CatalogPurchase } from "@/components/catalog-purchase";
 import { getResourceById } from "@/lib/data";
+import { manualDeliveryIntakeEnabled } from "@/lib/server/manual-delivery-intake";
 
 type PurchasePageProps = {
   params: Promise<{ resourceId: string }>;
@@ -19,5 +20,5 @@ export default async function PurchasePage({ params }: PurchasePageProps) {
   const { resourceId } = await params;
   const resource = getResourceById(resourceId);
   if (!resource) notFound();
-  return <CatalogPurchase resource={resource} />;
+  return <CatalogPurchase manualDeliveryEnabled={manualDeliveryIntakeEnabled()} resource={resource} />;
 }

@@ -8,6 +8,7 @@ import { formatCardHourValue } from "@/lib/card-hours";
 import { formatCardHourQuote } from "@/lib/market";
 import type { MarketplaceRequestRecord } from "@/lib/marketplace";
 import type { ResourceListing } from "@/lib/types";
+import { requiresManualSshPublicKey } from "@/lib/manual-delivery";
 
 const hourlyUnits = new Set(["卡时", "服务器时", "模型实例时", "预留容量时"]);
 
@@ -23,11 +24,12 @@ function tomorrow() {
   return date.toISOString().slice(0, 10);
 }
 
-export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
+export function CatalogPurchase({ resource, manualDeliveryEnabled }: { resource: ResourceListing; manualDeliveryEnabled: boolean }) {
   const [quantity, setQuantity] = useState("1");
   const [durationHours, setDurationHours] = useState("24");
   const [deliveryDate, setDeliveryDate] = useState(tomorrow);
   const [note, setNote] = useState("");
+  const [sshPublicKey, setSshPublicKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [accountState, setAccountState] = useState<"loading" | "ready" | "signed-out" | "inactive">("loading");
@@ -57,6 +59,7 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
     return () => controller.abort();
   }, []);
   const usesDuration = hourlyUnits.has(resource.pricingUnit);
+  const requiresSshPublicKey = manualDeliveryEnabled && requiresManualSshPublicKey(resource);
   const quantityNumber = Number(quantity);
   const durationNumber = usesDuration ? Number(durationHours) : 1;
   const estimatedAmount = useMemo(
@@ -80,6 +83,7 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
           durationHours: usesDuration ? durationNumber : null,
           deliveryDate,
           note,
+          sshPublicKey: requiresSshPublicKey ? sshPublicKey.trim() : null,
         },
         keyRef.current,
         20_000,
@@ -100,7 +104,9 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
           <p className={styles.eyebrow}>Inquiry accepted</p>
           <h2 id="purchase-success-title">询价意向已提交</h2>
           <p>申请编号：<strong>{intent.id}</strong></p>
-          <p>平台将先核验真实库存、供应商交付条件和正式价格；确认可供后再生成真实订单，并只使用卡时完成支付。当前步骤不会锁库存或扣减卡时。</p>
+          <p>{requiresSshPublicKey
+            ? "平台将先人工核验真实库存、供应商交付条件和正式价格；确认后由运营人员把你的 SSH 公钥安全交给对应供应商并协调开通。当前步骤不会锁库存、扣减卡时或自动操作任何机器。"
+            : "平台将先核验真实库存、供应商交付条件和正式价格；确认可供后再生成真实订单，并只使用卡时完成支付。当前步骤不会锁库存或扣减卡时。"}</p>
           <div className={styles.successActions}>
             <Link className="button button-primary" href="/member">查看交易工作台</Link>
             <Link className="button button-secondary" href="/resources">继续选购资源</Link>
@@ -154,6 +160,11 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
                 补充要求（选填）
                 <textarea maxLength={500} value={note} placeholder="例如：网络、存储、镜像、专线或交付窗口要求" onChange={(event) => setNote(event.target.value)} />
               </label>
+              {requiresSshPublicKey ? <label className={`${styles.field} ${styles.wide}`}>
+                SSH 公钥
+                <textarea autoCapitalize="off" autoCorrect="off" maxLength={8192} rows={4} spellCheck={false} value={sshPublicKey} placeholder="ssh-ed25519 AAAA… your-device" onChange={(event) => { setSshPublicKey(event.target.value); keyRef.current = null; }} />
+                <small>仅提交单行 OpenSSH 公钥，支持 Ed25519 或至少 2048 位 RSA。公钥会保存到平台数据库，供授权管理员人工交付；请勿提交私钥。</small>
+              </label> : null}
             </div>
             {error ? <p className={styles.error} role="alert">{error}</p> : null}
           </section>
@@ -172,12 +183,21 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
             <div><dt>预计支付卡时</dt><dd className={styles.estimated}>{estimatedCardHours > 0 ? `${formatCardHourValue(estimatedCardHours)} 卡时` : "—"}</dd></div>
           </dl>
           <p className={styles.scope}>{resource.quote.scopeNote}</p>
-          <ol className={styles.flow}>
-            <li>提交询价意向，不锁库存、不扣卡时</li>
-            <li>平台确认库存与正式价格</li>
-            <li>买方使用卡时支付后启动服务</li>
-            <li>验收后平台结算供应商</li>
-          </ol>
+          {requiresSshPublicKey ? (
+            <ol className={styles.flow}>
+              <li>提交询价意向，不锁库存、不扣卡时</li>
+              <li>平台人工确认库存与正式价格</li>
+              <li>管理员核对公钥并协调供应商人工开通</li>
+              <li>买方验收后再进入后续结算流程</li>
+            </ol>
+          ) : (
+            <ol className={styles.flow}>
+              <li>提交询价意向，不锁库存、不扣卡时</li>
+              <li>平台确认库存与正式价格</li>
+              <li>买方使用卡时支付后启动服务</li>
+              <li>验收后平台结算供应商</li>
+            </ol>
+          )}
           {accountState === "signed-out" ? (
             <Link className={styles.submit} href={`/login?returnTo=${encodeURIComponent(`/checkout/${resource.id}`)}`}>
               <span>登录后提交询价</span><span aria-hidden="true">→</span>
@@ -187,7 +207,7 @@ export function CatalogPurchase({ resource }: { resource: ResourceListing }) {
               <span>完善交易主体后提交</span><span aria-hidden="true">→</span>
             </Link>
           ) : (
-            <button className={styles.submit} type="button" disabled={accountState !== "ready" || busy || estimatedAmount <= 0 || !deliveryDate} onClick={() => void submit()}>
+            <button className={styles.submit} type="button" disabled={accountState !== "ready" || busy || estimatedAmount <= 0 || !deliveryDate || requiresSshPublicKey && sshPublicKey.trim().length < 40} onClick={() => void submit()}>
               <span>{accountState === "loading" ? "正在核对账户…" : busy ? "正在提交…" : "提交询价"}</span><span aria-hidden="true">→</span>
             </button>
           )}

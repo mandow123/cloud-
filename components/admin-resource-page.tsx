@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AdminApiError,
   adminErrorMessage,
@@ -193,7 +193,7 @@ function AdminSafeAction({ section, selectedRows, onCommitted }: { section: Admi
   );
 }
 
-export function AdminResourcePage({ section }: { section: AdminSectionKey }) {
+export function AdminResourcePage({ section, beforeTable }: { section: AdminSectionKey; beforeTable?: ReactNode }) {
   const config = adminSectionConfigs[section];
   const [rows, setRows] = useState<AdminRow[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
@@ -248,6 +248,8 @@ export function AdminResourcePage({ section }: { section: AdminSectionKey }) {
         kicker={config.kicker}
         title={config.title}
       />
+
+      {beforeTable}
 
       <section className="admin-filterbar" aria-label="列表筛选">
         <label className="admin-search"><span>搜索当前结果</span><input onChange={(event) => setQuery(event.target.value)} placeholder="输入 ID、名称、供应商或状态" type="search" value={query} /></label>
