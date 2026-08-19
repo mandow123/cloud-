@@ -174,3 +174,10 @@ test("manual delivery migration mirrors remain byte-identical and additive", () 
   assert.match(local, /admin_manual_delivery_intakes/u);
   assert.doesNotMatch(local, /admin_operations_schema_migrations|VALUES\s*\(\s*4\b/iu);
 });
+
+test("production compose passes the fail-closed manual delivery flag into the application", () => {
+  const compose = readFileSync(new URL("../deploy/compose.production.yml", import.meta.url), "utf8");
+  const environment = readFileSync(new URL("../deploy/kai-cloud-app.env.example", import.meta.url), "utf8");
+  assert.match(compose, /KAI_MANUAL_DELIVERY_INTAKE: "\$\{KAI_MANUAL_DELIVERY_INTAKE:-0\}"/u);
+  assert.match(environment, /^KAI_MANUAL_DELIVERY_INTAKE=0$/mu);
+});
