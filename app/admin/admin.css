@@ -1017,3 +1017,6 @@ body:has(.admin-app) #main-content {
     animation: none;
   }
 }
+
+.activity-admin-grid { display: grid; gap: 24px; }
+.activity-admin-grid .admin-action-panel { position: sticky; bottom: 0; z-index: 2; box-shadow: 0 -8px 30px rgba(0,0,0,.1); }

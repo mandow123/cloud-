@@ -8,6 +8,7 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID = "00000000-0000-4000-8000-000000000000";
 const { d1 } = hostingConfig;
+const { r2 } = hostingConfig;
 
 const localBindingConfig = {
   main: "./worker/index.ts",
@@ -21,6 +22,7 @@ const localBindingConfig = {
         },
       ]
     : [],
+  r2_buckets: r2 ? [{ binding: r2, bucket_name: "kai-cloud-activity-uploads" }] : [],
 };
 
 export default defineConfig(async () => {

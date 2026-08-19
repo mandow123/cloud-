@@ -559,6 +559,7 @@ export const adminSectionConfigs: Record<AdminSectionKey, AdminSectionConfig> = 
 
 export const adminNavigation = [
   { label: "运营总览", items: [{ href: "/admin", label: "总览", exact: true }] },
+  { label: "内容运营", items: [{ href: "/admin/activity", label: "活动与作品" }] },
   { label: "供给运营", items: [
     { href: "/admin/supply-offers", label: "上架资源" },
     { href: "/admin/pools", label: "算力池" },

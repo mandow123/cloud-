@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const navigation = [
+  { href: "/activity", label: "创作活动" },
   { href: "/market", label: "行情中心" },
   { href: "/resources", label: "资源市场" },
   { href: "/partners", label: "供应商合作" },
