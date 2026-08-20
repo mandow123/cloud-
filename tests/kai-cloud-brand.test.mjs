@@ -4,18 +4,21 @@ import test from "node:test";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("the supplied KAI mark is paired with Cloud in one reusable brand", async () => {
+test("the supplied KAI mark and custom Cloud lettering form one vector wordmark", async () => {
   const [brand, asset] = await Promise.all([
     read("components/kai-cloud-brand.tsx"),
-    read("public/kai-logo.svg"),
+    read("public/kai-cloud-wordmark.svg"),
   ]);
-  assert.match(asset, /viewBox="0 0 144 64"/u);
+  assert.match(asset, /viewBox="0 0 304 64"/u);
   assert.match(asset, /#177777/u);
-  assert.match(brand, /src="\/kai-logo\.svg"/u);
-  assert.match(brand, />Cloud<\/span>/u);
+  assert.match(asset, /<title>KAI Cloud<\/title>/u);
+  assert.match(asset, /purpose-drawn geometric wordmark/u);
+  assert.match(asset, /<path/gmu);
+  assert.doesNotMatch(asset, /<text\b/u);
+  assert.match(brand, /src="\/kai-cloud-wordmark\.svg"/u);
   assert.match(brand, /aria-label="KAI Cloud"/u);
   assert.match(brand, /role="img"/u);
-  assert.match(brand, /<span aria-hidden="true" className=\{styles\.cloud\}>Cloud<\/span>/u);
+  assert.doesNotMatch(brand, />Cloud<\/span>/u);
 });
 
 test("public header, footer, and account console use the same KAI Cloud brand", async () => {
