@@ -113,15 +113,6 @@
   padding: 0 12px 22px;
 }
 
-.sidebarHeading span {
-  color: var(--accent);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.68rem;
-  font-weight: 750;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
 .sidebarHeading strong {
   color: var(--ink);
   font-size: 1.25rem;

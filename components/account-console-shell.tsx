@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { KaiCloudBrand } from "./kai-cloud-brand";
 import styles from "./account-console-shell.module.css";
 
 type ConsoleMode = "buyer" | "supplier";
@@ -121,7 +122,7 @@ export function AccountConsoleShell({
       <div className={styles.workspace}>
         <aside className={`${styles.sidebar} ${navigationOpen ? styles.sidebarOpen : ""}`} id="account-console-navigation">
           <div className={styles.sidebarHeading}>
-            <span>KAI Cloud</span>
+            <KaiCloudBrand size="console" />
             <strong>{consoleTitle}</strong>
           </div>
           <nav aria-label={`${consoleTitle}导航`} className={styles.navigation}>

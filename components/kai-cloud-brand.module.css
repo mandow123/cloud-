@@ -1,0 +1,58 @@
+.brand {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.34rem;
+  color: #177777;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.logo {
+  display: block;
+  width: 4.5rem;
+  height: 2rem;
+  flex: none;
+}
+
+.cloud {
+  color: currentColor;
+  font-family: var(--font-display), var(--font-text-latin), system-ui, sans-serif;
+  font-size: 1.08rem;
+  font-weight: 800;
+  letter-spacing: -0.055em;
+  line-height: 1;
+}
+
+.footer .logo {
+  width: 5.06rem;
+  height: 2.25rem;
+}
+
+.footer .cloud {
+  font-size: 1.3rem;
+}
+
+.console .logo {
+  width: 3.38rem;
+  height: 1.5rem;
+}
+
+.console .cloud {
+  font-size: 0.92rem;
+}
+
+@media (max-width: 420px) {
+  .header {
+    gap: 0.24rem;
+  }
+
+  .header .logo {
+    width: 3.94rem;
+    height: 1.75rem;
+  }
+
+  .header .cloud {
+    font-size: 0.98rem;
+  }
+}

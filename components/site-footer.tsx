@@ -2,6 +2,7 @@ import Link from "next/link";
 import { marketSeries } from "@/lib/data";
 import { isHostingV2Enabled } from "@/lib/server/hosting-v2-feature";
 import { readMarketSnapshot } from "@/lib/server/market-snapshot";
+import { KaiCloudBrand } from "@/components/kai-cloud-brand";
 
 function dateLabel(value: string) {
   const date = new Date(value);
@@ -21,7 +22,7 @@ export async function SiteFooter() {
     <footer className="site-footer">
       <div className="shell footer-grid">
         <div>
-          <p className="footer-brand">KAI Cloud</p>
+          <p className="footer-brand"><KaiCloudBrand size="footer" /></p>
           <p className="footer-copy">中国 Token 学院算力市场</p>
         </div>
         <div>

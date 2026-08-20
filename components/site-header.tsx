@@ -3,14 +3,14 @@ import { MobileDemandCta } from "./mobile-demand-cta";
 import { NavLinks } from "./nav-links";
 import { PersonalMenu } from "./personal-menu";
 import { ThemeControl } from "./theme-control";
+import { KaiCloudBrand } from "./kai-cloud-brand";
 
 export function SiteHeader() {
   return (
     <header className="site-header">
       <div className="shell header-inner">
         <Link className="wordmark" href="/" aria-label="KAI Cloud 首页">
-          <span className="wordmark-kai">KAI</span>
-          <span className="wordmark-cloud">Cloud</span>
+          <KaiCloudBrand />
         </Link>
         <NavLinks />
         <div className="header-actions">
