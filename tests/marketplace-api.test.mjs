@@ -492,7 +492,7 @@ test("legacy marketplace tables import once without exposing supplier free text 
     assert.equal(readyResponse.status, 200);
     const ready = await readyResponse.json();
     assert.equal(ready.status, "ok");
-    assert.equal(ready.database.schemaVersion, 3);
+    assert.equal(ready.database.schemaVersion, 4);
     await stopServer(server);
 
     const migratedDb = new DatabaseSync(databasePath, { readOnly: true });
@@ -521,7 +521,7 @@ test("legacy marketplace tables import once without exposing supplier free text 
       ).get();
       const schemaSource = await readFile("db/schema.ts", "utf8");
       const declaredChecksum = schemaSource.match(/MARKETPLACE_MIGRATION_CHECKSUM = "([0-9a-f]{64})"/u)?.[1];
-      assert.equal(migration.version, 3);
+      assert.equal(migration.version, 4);
       assert.equal(migration.checksum, declaredChecksum);
     } finally {
       migratedDb.close();
@@ -588,7 +588,7 @@ test("schema v3 repairs already-migrated v2 marketplace enum values before publi
     const readyResponse = await fetch(`${server.baseUrl}/api/ready`);
     assert.equal(readyResponse.status, 200);
     const ready = await readyResponse.json();
-    assert.equal(ready.database.schemaVersion, 3);
+    assert.equal(ready.database.schemaVersion, 4);
 
     const marketResponse = await fetch(`${server.baseUrl}/api/requests?view=market&limit=50`);
     assert.equal(marketResponse.status, 200);
@@ -614,7 +614,7 @@ test("schema v3 repairs already-migrated v2 marketplace enum values before publi
       const migration = repaired.prepare(
         "SELECT version FROM marketplace_schema_migrations ORDER BY version DESC LIMIT 1",
       ).get();
-      assert.equal(migration.version, 3);
+      assert.equal(migration.version, 4);
     } finally {
       repaired.close();
     }
@@ -856,7 +856,7 @@ test("marketplace API enforces A/B/C isolation, projections, CSRF and idempotenc
     const ready = await (await fetch(`${fixture.server.baseUrl}/api/ready`)).json();
     assert.equal(ready.status, "ok");
     assert.equal(ready.database.backend, "sqlite");
-    assert.equal(ready.database.schemaVersion, 3);
+    assert.equal(ready.database.schemaVersion, 4);
     assert.equal(ready.market.source, "persistent");
     assert.equal(ready.market.ready, true);
 
@@ -1076,7 +1076,7 @@ test("marketplace streaming body limit returns 413 before persisting a draft", a
   }
 });
 
-test("catalog purchase submits a priced procurement intent without exposing unverified inventory as an order", async () => {
+test("catalog purchase rejects initialization samples that are not current supplier offers", async () => {
   const fixture = await createFixture();
   try {
     const client = await openSession(fixture.server.baseUrl);
@@ -1089,18 +1089,10 @@ test("catalog purchase submits a priced procurement intent without exposing unve
       deliveryDate: futureDate(7),
       note: "需要标准网络与交付窗口确认。",
     }, { idempotencyKey: idempotencyKey("catalog-purchase") });
-    assert.equal(response.status, 201);
-    const body = await response.json();
-    assert.equal(body.record.requestType, "procurement");
-    assert.equal(body.record.quantity, 2);
-    assert.equal(body.record.durationHours, 24);
-    assert.match(body.record.summary, new RegExp(resource.id, "u"));
-    assert.equal(body.priceSnapshot.unitPrice, resource.quote.median);
-    assert.equal(body.priceSnapshot.pricingUnit, resource.pricingUnit);
-    assert.equal(body.priceSnapshot.estimatedAmount, resource.quote.median * 2 * 24);
+    await errorBody(response, 400, "VALIDATION_ERROR");
 
     const mine = await (await client.get("/api/requests?view=mine&limit=20")).json();
-    assert.ok(mine.items.some((item) => item.id === body.record.id));
+    assert.equal(mine.items.length, 0);
   } finally {
     await destroyFixture(fixture);
   }

@@ -9,9 +9,9 @@ const read = (path) => readFileSync(join(ROOT, path), "utf8");
 test("GPU public route shows the supplier directory while Hosting V2 remains on separate guarded routes", () => {
   const marketPage = read("app/gpu/page.tsx");
   assert.match(marketPage, /ResourceExplorer/u);
-  assert.match(marketPage, /listing\.category === "gpu"/u);
-  assert.match(marketPage, /listing\.source\?\.kind === "SUPPLIER_PROVIDED_QUOTE"/u);
-  assert.match(marketPage, /supplierIds\.has\(listing\.supplierId\)/u);
+  assert.match(marketPage, /partitionBuyCatalog\(resourceListings, suppliers\)\.primary/u);
+  assert.match(marketPage, /classifyBuyCatalogListing\(listing, suppliers\)/u);
+  assert.match(marketPage, /inquiryEnabled=\{isBuyCatalogV2Enabled\(\) && manualDeliveryIntakeEnabled\(\)\}/u);
   assert.match(marketPage, /isHostingV2Enabled/u);
   assert.match(marketPage, /requireHostingV2TransactionCapability/u);
   assert.match(marketPage, /if \(await hostingMarketReady\(\)\) return <HostingGpuMarketplace/u);

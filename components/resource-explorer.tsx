@@ -5,6 +5,8 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import purchaseStyles from "@/components/resource-purchase.module.css";
+import type { BuyCatalogClassification } from "@/lib/buy-catalog";
+import { formatCardHourValue } from "@/lib/card-hours";
 import { filterAndSortResources, formatCardHourQuote, parseResourceQuery } from "@/lib/market";
 import type { DealMode, ResourceCategory, ResourceListing } from "@/lib/types";
 
@@ -56,6 +58,12 @@ function pricingScope(resource: ResourceListing) {
   ].join(" · ");
 }
 
+function catalogDisplayQuote(resource: ResourceListing, classification: BuyCatalogClassification) {
+  return classification === "PRIMARY_INQUIRY"
+    ? `${formatCardHourValue(resource.quote.median / 1.002)} KAI 标准卡时 / 套·小时`
+    : formatCardHourQuote(resource.quote.median, resource.pricingUnit);
+}
+
 function publicCatalogText(value: string) {
   return value
     .replaceAll("（\u6f14\u793a）", "")
@@ -81,6 +89,41 @@ function SupplierIdentity({ resource }: { resource: ResourceListing }) {
       {resource.supplierLogoUrl ? <Image alt={`${resource.supplierName} Logo`} className="h-8 w-8 shrink-0 border border-[var(--border)] object-cover" height={32} src={resource.supplierLogoUrl} width={32} /> : null}
       <span>{supplierSource(resource)}</span>
     </span>
+  );
+}
+
+function ResourceInquiryAction({
+  classification,
+  inquiryEnabled,
+  resource,
+}: {
+  classification: BuyCatalogClassification;
+  inquiryEnabled: boolean;
+  resource: ResourceListing;
+}) {
+  if (classification === "PRIMARY_INQUIRY") {
+    if (!inquiryEnabled) {
+      return <span className={`${purchaseStyles.purchaseLink} cursor-not-allowed opacity-60`} aria-disabled="true">人工询价维护中</span>;
+    }
+    return (
+      <Link
+        className={purchaseStyles.purchaseLink}
+        href={`/checkout/${encodeURIComponent(resource.id)}`}
+        aria-label={`基于 ${resource.title} 提交询价，目录参考价 ${catalogDisplayQuote(resource, classification)}`}
+      >
+        <span>提交询价</span><span aria-hidden="true">→</span>
+      </Link>
+    );
+  }
+
+  return (
+    <Link
+      className={purchaseStyles.purchaseLink}
+      href={`/request?listing=${encodeURIComponent(resource.id)}`}
+      aria-label={`基于 ${resource.title} 提交相关算力需求`}
+    >
+      <span>{classification === "REFERENCE_LEAD" ? "提交相关需求" : "提交算力需求"}</span><span aria-hidden="true">→</span>
+    </Link>
   );
 }
 
@@ -118,10 +161,14 @@ function FilterSelect({
 }
 
 export function ResourceExplorer({
+  classifications,
+  inquiryEnabled,
   listings,
   heading = "算力资源市场",
   lead = "按供应商来源、GPU 型号、区域和交付形态发现候选方案；报价统一换算为 KAI 标准卡时，提交后再核验库存与成交条件。",
 }: {
+  classifications: Readonly<Record<string, BuyCatalogClassification>>;
+  inquiryEnabled: boolean;
   listings: readonly ResourceListing[];
   heading?: string;
   lead?: string;
@@ -367,7 +414,7 @@ export function ResourceExplorer({
                     </thead>
                     <tbody>
                       {[
-                        ["市场参考报价", (item: ResourceListing) => formatCardHourQuote(item.quote.median, item.pricingUnit)],
+                        ["市场参考报价", (item: ResourceListing) => catalogDisplayQuote(item, classifications[item.id] ?? "EXCLUDED")],
                         ["供应商来源", (item: ResourceListing) => supplierSource(item)],
                         ["区域 / 交付", (item: ResourceListing) => `${item.region} · ${item.deliveryForm}`],
                         ["容量样本", (item: ResourceListing) => publicCatalogText(item.capacity)],
@@ -433,7 +480,7 @@ export function ResourceExplorer({
                           <td className="min-w-40">{resource.region}<span className="mt-1 block text-xs text-[var(--muted)]">{resource.deliveryForm}</span></td>
                           <td className="min-w-44">{publicCatalogText(resource.capacity)}<span className="mt-1 block text-xs text-[var(--muted)]">SLA {publicCatalogText(resource.sla)}</span></td>
                           <td className="num min-w-44">
-                            <strong className="block whitespace-nowrap text-xl text-[var(--ink)]">{formatCardHourQuote(resource.quote.median, resource.pricingUnit)}</strong>
+                            <strong className="block whitespace-nowrap text-xl text-[var(--ink)]">{catalogDisplayQuote(resource, classifications[resource.id] ?? "EXCLUDED")}</strong>
                             <span className="mt-1 block text-xs text-[var(--warning)]">市场参考报价 · 具体以询价确认为准</span>
                             <span className="mt-1 block text-xs text-[var(--muted)]">{pricingScope(resource)}</span>
                             <span className="mt-1 block text-xs text-[var(--muted)]">样本 {resource.quote.sampleCount} 条 · 更新 {resource.quote.updatedAt}</span>
@@ -447,13 +494,7 @@ export function ResourceExplorer({
                               />
                               加入对比
                             </label>
-                            <Link
-                              className={purchaseStyles.purchaseLink}
-                              href={`/checkout/${encodeURIComponent(resource.id)}`}
-                              aria-label={`基于 ${resource.title} 提交询价，目录参考价 ${formatCardHourQuote(resource.quote.median, resource.pricingUnit)}`}
-                            >
-                              <span>提交询价</span><span aria-hidden="true">→</span>
-                            </Link>
+                            <ResourceInquiryAction classification={classifications[resource.id] ?? "EXCLUDED"} inquiryEnabled={inquiryEnabled} resource={resource} />
                           </td>
                         </tr>
                       ))}
@@ -477,13 +518,7 @@ export function ResourceExplorer({
                             <input type="checkbox" checked={compareIds.includes(resource.id)} onChange={() => toggleCompare(resource.id)} />
                             加入对比
                           </label>
-                          <Link
-                            className={purchaseStyles.purchaseLink}
-                            href={`/checkout/${encodeURIComponent(resource.id)}`}
-                            aria-label={`基于 ${resource.title} 提交询价，目录参考价 ${formatCardHourQuote(resource.quote.median, resource.pricingUnit)}`}
-                          >
-                            <span>提交询价</span><span aria-hidden="true">→</span>
-                          </Link>
+                          <ResourceInquiryAction classification={classifications[resource.id] ?? "EXCLUDED"} inquiryEnabled={inquiryEnabled} resource={resource} />
                         </div>
                       </div>
                       <p className="mt-5 mb-0 text-sm leading-6 text-[var(--text)]">{publicCatalogText(resource.summary)}</p>
@@ -496,7 +531,7 @@ export function ResourceExplorer({
                       <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
                         <div>
                           <p className="m-0 text-xs text-[var(--muted)]">市场参考报价</p>
-                          <p className="mt-1 mb-0 text-2xl font-semibold tabular-nums text-[var(--ink)]">{formatCardHourQuote(resource.quote.median, resource.pricingUnit)}</p>
+                          <p className="mt-1 mb-0 text-2xl font-semibold tabular-nums text-[var(--ink)]">{catalogDisplayQuote(resource, classifications[resource.id] ?? "EXCLUDED")}</p>
                           <p className="m-0 text-xs text-[var(--warning)]">具体以询价确认为准 · {pricingScope(resource)}</p>
                           <p className="mt-1 mb-0 text-xs text-[var(--muted)]">样本 {resource.quote.sampleCount} 条 · 更新 {resource.quote.updatedAt}</p>
                         </div>

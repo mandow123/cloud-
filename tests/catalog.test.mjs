@@ -98,8 +98,8 @@ test("Shanghai Honghuan supplier offers are complete, attributed and card-hour r
 
   const b300 = listings.find((item) => item.id === "gpu-honghuan-b300-269gb-1");
   assert.equal(b300.quote.median, 306);
-  assert.equal(b300.specs["小时挂牌"], "305.39 KAI 标准卡时 / GPU 小时");
-  assert.equal(b300.specs["24 小时挂牌"], "7329.34 KAI 标准卡时 / 24 小时");
+  assert.equal(b300.specs["小时挂牌"], "305.39 KAI 标准卡时 / 套·小时");
+  assert.equal(b300.specs["24 小时挂牌"], "7329.34 KAI 标准卡时 / 套·24 小时");
 
   const h100 = listings.find((item) => item.id === "gpu-honghuan-h100-sxm-80gb-1");
   assert.match(h100.specs["可选卡数"], /四卡价格需询价确认/u);

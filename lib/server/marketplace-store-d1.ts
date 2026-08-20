@@ -22,6 +22,7 @@ import {
   MARKETPLACE_MIGRATION_VERSION,
   marketplaceDataRepairStatements,
   marketplaceLegacyImportStatements,
+  marketplaceRegionExpansionStatements,
   marketplaceSchemaStatements,
 } from "@/lib/server/marketplace-schema";
 import {
@@ -400,6 +401,9 @@ export function createD1MarketplaceStore(value: unknown,options:{readinessOnly?:
           await db.batch(marketplaceLegacyImportStatements.map((sql) => db.prepare(sql)));
         }
         await db.batch(marketplaceDataRepairStatements.map((sql) => db.prepare(sql)));
+        if (newest && newest.version < 4) {
+          await db.batch(marketplaceRegionExpansionStatements.map((sql) => db.prepare(sql)));
+        }
         await db.prepare(`INSERT OR IGNORE INTO marketplace_schema_migrations (
           version, checksum, applied_at
         ) VALUES (?, ?, ?)`).bind(

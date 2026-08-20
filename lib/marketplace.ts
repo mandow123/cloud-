@@ -26,7 +26,7 @@ export const categoryPricingUnits: Record<ResourceCategory, PricingUnit[]> = {
   cloud_vendor: ["卡时", "服务器时", "预留容量时"],
 };
 
-export const marketplaceRegions = ["北京", "上海", "广东", "浙江", "四川", "内蒙古"] as const;
+export const marketplaceRegions = ["北京", "上海", "广东", "浙江", "四川", "内蒙古", "全国"] as const;
 export type MarketplaceRegion = (typeof marketplaceRegions)[number];
 
 export const marketplaceQuoteLeadTimes = ["48 小时内", "7 天内", "30 天内", "排期交付"] as const;

@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { ResourceExplorer } from "@/components/resource-explorer";
-import { resourceListings } from "@/lib/data";
+import { classifyBuyCatalogListing } from "@/lib/buy-catalog";
+import { resourceListings, suppliers } from "@/lib/data";
+import { isBuyCatalogV2Enabled } from "@/lib/server/buy-catalog-feature";
+import { manualDeliveryIntakeEnabled } from "@/lib/server/manual-delivery-intake";
 
 export const metadata: Metadata = {
   title: "算力资源市场",
@@ -19,9 +22,10 @@ function ResourceExplorerFallback() {
 }
 
 export default function ResourcesPage() {
+  const classifications = Object.fromEntries(resourceListings.map((listing) => [listing.id, classifyBuyCatalogListing(listing, suppliers)]));
   return (
     <Suspense fallback={<ResourceExplorerFallback />}>
-      <ResourceExplorer listings={resourceListings} />
+      <ResourceExplorer classifications={classifications} inquiryEnabled={isBuyCatalogV2Enabled() && manualDeliveryIntakeEnabled()} listings={resourceListings} />
     </Suspense>
   );
 }

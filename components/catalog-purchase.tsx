@@ -5,7 +5,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "@/components/catalog-purchase.module.css";
 import { createIdempotencyKey, marketplaceErrorMessage, marketplacePost } from "@/lib/client/marketplace-client";
 import { formatCardHourValue } from "@/lib/card-hours";
-import { formatCardHourQuote } from "@/lib/market";
 import type { MarketplaceRequestRecord } from "@/lib/marketplace";
 import type { ResourceListing } from "@/lib/types";
 import { requiresManualSshPublicKey } from "@/lib/manual-delivery";
@@ -104,13 +103,11 @@ export function CatalogPurchase({ resource, manualDeliveryEnabled }: { resource:
           <p className={styles.eyebrow}>Inquiry accepted</p>
           <h2 id="purchase-success-title">询价意向已提交</h2>
           <p>申请编号：<strong>{intent.id}</strong></p>
-          <p>{requiresSshPublicKey
-            ? "平台将先人工核验真实库存、供应商交付条件和正式价格；确认后由运营人员把你的 SSH 公钥安全交给对应供应商并协调开通。当前步骤不会锁库存、扣减卡时或自动操作任何机器。"
-            : "平台将先核验真实库存、供应商交付条件和正式价格；确认可供后再生成真实订单，并只使用卡时完成支付。当前步骤不会锁库存或扣减卡时。"}</p>
+          <p>平台将先人工确认库存、地域网络、供应商交付条件和正式卡时报价；确认后由运营人员把你的 SSH 公钥安全交给对应供应商并协调开通。当前仅为询价参考：未锁库存、未支付、未成交，也不会自动操作任何机器。</p>
           <div className={styles.successActions}>
-            <Link className="button button-primary" href={requiresSshPublicKey ? `/member/purchases/${encodeURIComponent(intent.id)}` : "/member"}>{requiresSshPublicKey ? "查看本次算力详情" : "查看交易工作台"}</Link>
-            {requiresSshPublicKey ? <Link className="button button-secondary" href="/member/purchases">查看全部申请</Link> : null}
-            <Link className="button button-secondary" href="/resources">继续选购资源</Link>
+            <Link className="button button-primary" href={`/member/purchases/${encodeURIComponent(intent.id)}`}>查看本次算力详情</Link>
+            <Link className="button button-secondary" href="/member/purchases">查看全部申请</Link>
+            <Link className="button button-secondary" href="/buy">继续选购算力</Link>
           </div>
         </section>
       </div>
@@ -119,11 +116,11 @@ export function CatalogPurchase({ resource, manualDeliveryEnabled }: { resource:
 
   return (
     <div className={`shell ${styles.page}`}>
-      <Link className={styles.backLink} href="/resources">← 返回资源市场</Link>
+      <Link className={styles.backLink} href="/buy">← 返回 GPU 套餐</Link>
       <header className={styles.heading}>
-        <p>Request a verified quote</p>
-        <h1>确认目录资源与询价范围</h1>
-        <p>目录价格、资源数量和预计卡时放在同一页作为询价参考。提交后平台核验真实库存与正式报价；本页不创建成交订单。</p>
+        <p>REQUEST A SUPPLIER QUOTE</p>
+        <h1>确认算力套餐与询价信息</h1>
+        <p>核对 GPU 套餐、数量、时长和卡时参考总计。提交后由平台确认库存、地域网络与正式报价；本页不创建成交订单。</p>
       </header>
 
       <div className={styles.layout}>
@@ -133,7 +130,7 @@ export function CatalogPurchase({ resource, manualDeliveryEnabled }: { resource:
             <h2 id="purchase-resource-title">{resource.title}</h2>
             <p>{resource.summary}</p>
             <p className={styles.meta}><span>{resource.source ? `供应商来源：${resource.source.supplierName}` : resource.supplierName}</span><span>{resource.capacity}</span><span>SLA {resource.sla}</span></p>
-            {resource.source ? <p className={styles.meta}><span>数据来源：《{resource.source.documentTitle}》</span><span>{resource.source.observedAt}</span><span>未经 KAI 验真</span></p> : null}
+            {resource.source ? <p className={styles.meta}><span>数据来源：《{resource.source.documentTitle}》</span><span>{resource.source.observedAt}</span><span>供应商提供报价 · 待确认</span></p> : null}
             <dl className={styles.specs}>
               {Object.entries(resource.specs).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
             </dl>
@@ -174,31 +171,23 @@ export function CatalogPurchase({ resource, manualDeliveryEnabled }: { resource:
         <aside className={styles.summary} aria-label="价格汇总">
           <p className={styles.eyebrow}>Price summary</p>
           <p className={styles.unitPrice}>
-            {formatCardHourQuote(resource.quote.median, resource.pricingUnit)}
-            <span>市场参考单价 · 正式价格以供应商确认为准</span>
+            {formatCardHourValue(resource.quote.median / 1.002)} 卡时
+            <span>卡时 / 套·小时 · 正式价格以供应商确认为准</span>
           </p>
           <dl className={styles.priceRows}>
             <div><dt>资源数量</dt><dd>{quantityNumber > 0 ? quantityNumber : "—"}</dd></div>
             {usesDuration ? <div><dt>服务时长</dt><dd>{durationNumber > 0 ? `${durationNumber} 小时` : "—"}</dd></div> : null}
-            <div><dt>卡时参考范围</dt><dd>{formatCardHourQuote(resource.quote.rangeMin, resource.pricingUnit)}–{formatCardHourQuote(resource.quote.rangeMax, resource.pricingUnit)}</dd></div>
-            <div><dt>预计支付卡时</dt><dd className={styles.estimated}>{estimatedCardHours > 0 ? `${formatCardHourValue(estimatedCardHours)} 卡时` : "—"}</dd></div>
+            <div><dt>卡时参考范围</dt><dd>{formatCardHourValue(resource.quote.rangeMin / 1.002)}–{formatCardHourValue(resource.quote.rangeMax / 1.002)} 卡时</dd></div>
+            <div><dt>询价参考总计</dt><dd className={styles.estimated}>{estimatedCardHours > 0 ? `${formatCardHourValue(estimatedCardHours)} 卡时` : "—"}</dd></div>
           </dl>
           <p className={styles.scope}>{resource.quote.scopeNote}</p>
-          {requiresSshPublicKey ? (
-            <ol className={styles.flow}>
-              <li>提交询价意向，不锁库存、不扣卡时</li>
-              <li>平台人工确认库存与正式价格</li>
-              <li>管理员核对公钥并协调供应商人工开通</li>
-              <li>买方验收后再进入后续结算流程</li>
-            </ol>
-          ) : (
-            <ol className={styles.flow}>
-              <li>提交询价意向，不锁库存、不扣卡时</li>
-              <li>平台确认库存与正式价格</li>
-              <li>买方使用卡时支付后启动服务</li>
-              <li>验收后平台结算供应商</li>
-            </ol>
-          )}
+          <p className={styles.scope}><strong>询价参考 · 未锁库存 · 未支付 · 未成交</strong></p>
+          <ol className={styles.flow}>
+            <li>提交询价意向，不锁库存、不扣卡时</li>
+            <li>平台人工确认库存与正式卡时报价</li>
+            <li>管理员核对公钥并协调供应商人工开通</li>
+            <li>买方收到连接信息后自行验收</li>
+          </ol>
           {accountState === "signed-out" ? (
             <Link className={styles.submit} href={`/login?returnTo=${encodeURIComponent(`/checkout/${resource.id}`)}`}>
               <span>登录后提交询价</span><span aria-hidden="true">→</span>

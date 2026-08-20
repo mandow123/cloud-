@@ -155,6 +155,8 @@ export function validateProductionEnvironment(environment = process.env, { check
     errors.push("KAI_ENABLE_HSTS must be exactly 0 or 1");
   }
   if (environment.KAI_ALIPAY_ENABLED !== "0") errors.push("KAI_ALIPAY_ENABLED must remain exactly 0 during the trial rollout");
+  const buyCatalogV2 = environment.KAI_BUY_CATALOG_V2 ?? "0";
+  if (buyCatalogV2 !== "0" && buyCatalogV2 !== "1") errors.push("KAI_BUY_CATALOG_V2 must be exactly 0 or 1");
   const accountConsoleV2 = environment.KAI_ACCOUNT_CONSOLE_V2 ?? "0";
   if (accountConsoleV2 !== "0" && accountConsoleV2 !== "1") errors.push("KAI_ACCOUNT_CONSOLE_V2 must be exactly 0 or 1");
   if (environment.KAI_HOSTING_V2 !== "0" && environment.KAI_HOSTING_V2 !== "1") errors.push("KAI_HOSTING_V2 must be exactly 0 or 1");

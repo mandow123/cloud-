@@ -2,7 +2,7 @@
  * Runtime-safe D1/SQLite schema. Each array item is exactly one SQL statement,
  * as required by D1 prepared statements.
  */
-export const MARKETPLACE_MIGRATION_VERSION = 3;
+export const MARKETPLACE_MIGRATION_VERSION = 4;
 export const MARKETPLACE_MIGRATION_CHECKSUM = "758924113b3f07d65f1db51bc7007e30d503a40dac720475dce19df6403bc2a6";
 
 export const marketplaceSchemaStatements = [
@@ -21,7 +21,7 @@ export const marketplaceSchemaStatements = [
     kind TEXT NOT NULL,
     title TEXT NOT NULL,
     category TEXT NOT NULL,
-    region TEXT NOT NULL CHECK (region IN ('北京', '上海', '广东', '浙江', '四川', '内蒙古')),
+    region TEXT NOT NULL CHECK (region IN ('北京', '上海', '广东', '浙江', '四川', '内蒙古', '全国')),
     pricing_unit TEXT NOT NULL,
     quantity REAL NOT NULL,
     duration_hours REAL,
@@ -113,6 +113,105 @@ export const marketplaceSchemaStatements = [
     last_seen_at TEXT NOT NULL,
     expires_at TEXT NOT NULL
   )`,
+] as const;
+
+/**
+ * Version 4 preserves every marketplace request and quote while widening the
+ * request service-area enum. The child quote table is rebuilt in the same
+ * transaction so foreign keys never point at a renamed or deleted parent.
+ */
+export const marketplaceRegionExpansionStatements = [
+  `CREATE TABLE marketplace_requests_v2_region_v4 (
+    id TEXT PRIMARY KEY,
+    owner_actor_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    visibility TEXT NOT NULL CHECK (visibility = 'market'),
+    request_type TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL,
+    region TEXT NOT NULL CHECK (region IN ('北京', '上海', '广东', '浙江', '四川', '内蒙古', '全国')),
+    pricing_unit TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    duration_hours REAL,
+    delivery_date TEXT,
+    summary TEXT NOT NULL,
+    offered_json TEXT,
+    wanted_json TEXT,
+    cash_direction TEXT NOT NULL,
+    cash_amount REAL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    UNIQUE (owner_actor_id, idempotency_key)
+  )`,
+  `INSERT INTO marketplace_requests_v2_region_v4 (
+    id, owner_actor_id, idempotency_key, payload_hash, visibility,
+    request_type, kind, title, category, region, pricing_unit, quantity,
+    duration_hours, delivery_date, summary, offered_json, wanted_json,
+    cash_direction, cash_amount, status, created_at, updated_at, version
+  ) SELECT
+    id, owner_actor_id, idempotency_key, payload_hash, visibility,
+    request_type, kind, title, category, region, pricing_unit, quantity,
+    duration_hours, delivery_date, summary, offered_json, wanted_json,
+    cash_direction, cash_amount, status, created_at, updated_at, version
+  FROM marketplace_requests_v2`,
+  `CREATE TABLE marketplace_quotes_v2_region_v4 (
+    id TEXT PRIMARY KEY,
+    supplier_actor_id TEXT NOT NULL,
+    request_owner_actor_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    demand_id TEXT NOT NULL,
+    demand_title TEXT NOT NULL,
+    raw_unit_price REAL NOT NULL,
+    standardized_unit_price REAL NOT NULL,
+    pricing_unit TEXT NOT NULL,
+    currency TEXT NOT NULL CHECK (currency = 'CNY'),
+    lead_time TEXT NOT NULL CHECK (lead_time IN ('48 小时内', '7 天内', '30 天内', '排期交付')),
+    valid_days INTEGER NOT NULL,
+    valid_until TEXT NOT NULL,
+    raw_scope_note TEXT NOT NULL,
+    standardized_scope_note TEXT NOT NULL,
+    standardization_version TEXT NOT NULL,
+    standardization_note TEXT NOT NULL,
+    supplier_status TEXT NOT NULL,
+    normalized_status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (supplier_actor_id, idempotency_key),
+    FOREIGN KEY (demand_id) REFERENCES marketplace_requests_v2_region_v4(id)
+  )`,
+  `INSERT INTO marketplace_quotes_v2_region_v4 (
+    id, supplier_actor_id, request_owner_actor_id, idempotency_key,
+    payload_hash, demand_id, demand_title, raw_unit_price,
+    standardized_unit_price, pricing_unit, currency, lead_time, valid_days,
+    valid_until, raw_scope_note, standardized_scope_note,
+    standardization_version, standardization_note, supplier_status,
+    normalized_status, created_at
+  ) SELECT
+    id, supplier_actor_id, request_owner_actor_id, idempotency_key,
+    payload_hash, demand_id, demand_title, raw_unit_price,
+    standardized_unit_price, pricing_unit, currency, lead_time, valid_days,
+    valid_until, raw_scope_note, standardized_scope_note,
+    standardization_version, standardization_note, supplier_status,
+    normalized_status, created_at
+  FROM marketplace_quotes_v2`,
+  `DROP TABLE marketplace_quotes_v2`,
+  `DROP TABLE marketplace_requests_v2`,
+  `ALTER TABLE marketplace_requests_v2_region_v4 RENAME TO marketplace_requests_v2`,
+  `ALTER TABLE marketplace_quotes_v2_region_v4 RENAME TO marketplace_quotes_v2`,
+  `CREATE INDEX marketplace_requests_v2_owner_created_idx
+    ON marketplace_requests_v2(owner_actor_id, created_at DESC, id DESC)`,
+  `CREATE INDEX marketplace_requests_v2_market_created_idx
+    ON marketplace_requests_v2(visibility, created_at DESC, id DESC)`,
+  `CREATE INDEX marketplace_quotes_v2_buyer_created_idx
+    ON marketplace_quotes_v2(request_owner_actor_id, created_at DESC, id DESC)`,
+  `CREATE INDEX marketplace_quotes_v2_supplier_created_idx
+    ON marketplace_quotes_v2(supplier_actor_id, created_at DESC, id DESC)`,
+  `CREATE INDEX marketplace_quotes_v2_demand_idx
+    ON marketplace_quotes_v2(demand_id, created_at DESC, id DESC)`,
 ] as const;
 
 export const marketplaceLegacyImportStatements = [

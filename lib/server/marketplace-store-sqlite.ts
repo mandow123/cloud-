@@ -25,6 +25,7 @@ import {
   MARKETPLACE_MIGRATION_VERSION,
   marketplaceDataRepairStatements,
   marketplaceLegacyImportStatements,
+  marketplaceRegionExpansionStatements,
   marketplaceSchemaStatements,
 } from "@/lib/server/marketplace-schema";
 import {
@@ -243,6 +244,9 @@ function applyMigration(db: DatabaseSync) {
       for (const statement of marketplaceLegacyImportStatements) db.exec(statement);
     }
     for (const statement of marketplaceDataRepairStatements) db.exec(statement);
+    if (newest && newest.version < 4) {
+      for (const statement of marketplaceRegionExpansionStatements) db.exec(statement);
+    }
     db.prepare("INSERT INTO marketplace_schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)").run(
       MARKETPLACE_MIGRATION_VERSION,
       MARKETPLACE_MIGRATION_CHECKSUM,

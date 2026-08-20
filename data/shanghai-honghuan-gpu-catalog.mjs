@@ -51,8 +51,8 @@ function createListing({
     summary,
     specs: Object.freeze({
       GPU: gpu,
-      "小时挂牌": `${publicCardHours(sourceHourlyCny)} / GPU 小时`,
-      "24 小时挂牌": `${publicCardHours(sourceDailyCny)} / 24 小时`,
+      "小时挂牌": `${publicCardHours(sourceHourlyCny)} / 套·小时`,
+      "24 小时挂牌": `${publicCardHours(sourceDailyCny)} / 套·24 小时`,
       "实际机房地域": "询价时确认；全国仅表示可申请服务范围",
       ...specs,
     }),

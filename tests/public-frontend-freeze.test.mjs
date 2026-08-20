@@ -9,8 +9,8 @@ const BASELINE = "bb7fd3211fdff28a448af85f53e9f40839ffa843";
 const ROOT = join(import.meta.dirname, "..");
 const EXTRA_FROZEN_FILES = ["data/model-market.snapshot.json", "lib/catalog.mjs"];
 const APPROVED_PUBLIC_FILES = Object.freeze({
-  "app/globals.css": "ec7a571de1736342b040373ae9c612cf1d1bd31a2850b7de060868b5513daca1",
-  "app/gpu/page.tsx": "69910888faf0c640cf17f419a102acdb5b9520fa4d3a96ca27bd0433dfcd0ab3",
+  "app/globals.css": "a454b81248e8cbc1f1b255c6606e5378e5e0f66a4ef51787a0212552b1386a9a",
+  "app/gpu/page.tsx": "70838ea765a886ca7313cb4b2e00914f8a616a907e0a9e9499c3f5be9d713fdd",
   "app/guides/guides.module.css": "5e12ca1ab83f648e5ea59508f851f739f6a16bc1734bdc23bf60d83cf8cca88b",
   "app/guides/page.tsx": "7953719256414cacfb75e38f12707a67e511fbcb94aa19ef8ae9c9e5e03391db",
   "app/hosting/page.tsx": "fc74f511a198159a4f4f6fa395202a6ce25a9ac33599d2695a82375133668925",
@@ -20,8 +20,9 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "app/page.tsx": "3f68b8c3587d187148946c3317dbe6675b70649ebbd423e864f552a5410cb382",
   "app/methodology/page.tsx": "07f6c0547cc216903715e626548e1d2801a0cb829df12411f522e43cae7e5135",
   "app/request/page.tsx": "29b26ddcd028966bcd41b40650a27a02ade4b7942a421569adf58e47b26d5ab3",
-  "app/resources/[id]/page.tsx": "12d153a6251b7a18c104837e2da88949765517a10c33508d81a52694c71484cd",
-  "app/checkout/[resourceId]/page.tsx": "1b8eb402de18d01b908aa8a32d6391ab6c10e55b537bdfd01b5b886f9424edf3",
+  "app/resources/page.tsx": "1640b7ca93e113f2411c6f232094f4a08429584254e74de3537412cc7b1b2a86",
+  "app/resources/[id]/page.tsx": "311e9a64a75cc8c35b8c9ea8ac572dd75f376a1c394439d26eb8d6da698f2846",
+  "app/checkout/[resourceId]/page.tsx": "42eca4156fbd4f2625f7f18b7163233c3ca1fbda02b60d746ecb4902a50e8799",
   "app/login/page.tsx": "026689be202766d6cbcfae7b18b9ea7c7b86bf6a514d848184c84025899437e3",
   "app/member/page.tsx": "86f020c26af8956409caa9216c8bf29e61871109a7c237bf28d8c79c464441ff",
   "app/partners/page.tsx": "93cd20f90ebf8f6271b1b69fd79521b00497b02975beab97019b7bce121f2b52",
@@ -29,7 +30,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "components/account-required.tsx": "eba4b05ead04f06c54a4863f0da123c8ded8d21e3071a5a3b609074f7d4cef04",
   "components/buyer-order-list.tsx": "fa15cbb70d18d19074633efc5d9fe60acd276ae4a45ab9df1e99dc3f6092d31a",
   "components/catalog-purchase.module.css": "d9e451203cbbfcb4b13a1c8f91267309cfe4be895e7ee225afb52cdfbc99d0a7",
-  "components/catalog-purchase.tsx": "e3c58f93c7ca0610d9fde2e460cbf631a1ad9c1e6892b1e617284a4046a9dcb0",
+  "components/catalog-purchase.tsx": "06a5136e7e7cce354d02dfcc88f971c0e30aab7750e7fefd2c28b53b337f83bf",
   "components/admin-login.tsx": "0ec4b26ed6e04d40422f14d6c6b471265ff65f49d78df61c99c6c20bcb7f0567",
   "components/admin-resource-page.tsx": "b11613794dbb9c8bafff882a9686bbe70b030b07b87d17011d40fd8ec719809a",
   "components/card-hour-account-panel.tsx": "bad8cbe4908decf2c6a08e1e4cb597d23e30e62947067ed233204a240019c206",
@@ -44,11 +45,11 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "components/personal-center-overview.tsx": "89f031d46092ad91738b88b32cb4fafb40792ef74c453b8e1caa0824357025e2",
   "components/personal-menu.module.css": "0813b8a2fa3d164922add93de17daf66adc0dd9c1859427097c36975708f90f2",
   "components/personal-menu.tsx": "31a492a0fdfa2e9f972f4ca5fd9d52ea094d96fdb5c8b7e1b53f29352b128fbe",
-  "components/resource-explorer.tsx": "8b03f75f7b66f631990ee1910767a826d62e0027033a5c551920e3700fe29fd1",
-  "components/resource-detail-actions.tsx": "e0b85851d955b1eed95756e520274f7462a29a5b4e4e46ab01d1d1204f50de53",
+  "components/resource-explorer.tsx": "368671c9dd31505009ea6a10b521767b12c2b497f9bf2d5d805b76d03d47c050",
+  "components/resource-detail-actions.tsx": "be0f197a8c5e9580f9fa89425cb3a6f029b1aeed9f125339b62f068878a36c7c",
   "components/resource-purchase.module.css": "6569ca7f4f35c5cd6f731ee97dba34567d002d5bb370aa9b3058c33628bc6669",
-  "components/site-footer.tsx": "323a6233a7e26f38935f2f854f5d3fa2b3b086512d07bccd87205bbd0bf178d5",
-  "components/site-header.tsx": "0d91f9aa0a9ed18877aaa7483c0c51142e058a19a17edc36aff7f452fd192354",
+  "components/site-footer.tsx": "c4dafcd873d6796853f5bfc7e29c0fd82e241d3089f2ca9285cb71fa995baec0",
+  "components/site-header.tsx": "99d6ddf70338cdf11a0141f6fde00aeef7a9d475f6ff19ae2d0ecf6254c09c9c",
   "components/supply-api-client.tsx": "60292f9e3e4a141f3a69be788b3d627f3969f67aeecb6153dc5fbc1f02a97825",
   "components/supply-listings-dashboard.tsx": "e5a24ab251eed94562f51f523590bba70a041b1551c11bdaa5234ae300a6f0d4",
   "components/supply-order-workspace.tsx": "771eca38029a65863d3012b5bc21babd084339307a9fad1c9a53e74c6b005375",
@@ -145,8 +146,9 @@ test("approved shared public files are pinned", () => {
     assert.equal(actual, expected, `${path} changed outside the approved public design`);
   }
   const explorer = readFileSync(join(ROOT, "components/resource-explorer.tsx"), "utf8");
-  assert.equal((explorer.match(/className=\{purchaseStyles\.purchaseLink\}/gu) ?? []).length, 2);
-  assert.match(explorer, /加入对比[\s\S]{0,700}className=\{purchaseStyles\.purchaseLink\}[\s\S]{0,400}<span>提交询价<\/span>/u);
+  assert.match(explorer, /classification === "PRIMARY_INQUIRY"[\s\S]*!inquiryEnabled[\s\S]*人工询价维护中/u);
+  assert.match(explorer, /classification === "REFERENCE_LEAD" \? "提交相关需求" : "提交算力需求"/u);
+  assert.match(explorer, /classifications\[resource\.id\] \?\? "EXCLUDED"/u);
   const buttonCss = readFileSync(join(ROOT, "components/resource-purchase.module.css"), "utf8");
   assert.match(buttonCss, /background:\s*#117f7b/u);
   assert.match(buttonCss, /justify-content:\s*space-between/u);
@@ -213,11 +215,11 @@ test("the admin panel stays isolated, supplier pages stay gated and transaction 
   ]) assert.ok(existsSync(join(ROOT, path)), `${path} is missing`);
 
   const purchase = readFileSync(join(ROOT, "components/catalog-purchase.tsx"), "utf8");
-  assert.match(purchase, /确认目录资源与询价范围/u);
+  assert.match(purchase, /确认算力套餐与询价信息/u);
   assert.doesNotMatch(purchase, /人民币参考价|¥/u);
   assert.match(purchase, /卡时参考范围/u);
-  assert.match(purchase, /预计支付卡时/u);
-  assert.match(purchase, /平台确认库存与正式价格/u);
+  assert.match(purchase, /询价参考总计/u);
+  assert.match(purchase, /平台人工确认库存与正式卡时报价/u);
   assert.match(purchase, /登录后提交询价/u);
   assert.match(purchase, /完善交易主体后提交/u);
   assert.match(purchase, /accountState === "loading" \? "正在核对账户…" : busy \? "正在提交…" : "提交询价"/u);

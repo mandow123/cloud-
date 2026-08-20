@@ -39,11 +39,11 @@ export function MemberPurchaseIntentList({ compact = false }: { compact?: boolea
   return <section className={styles.section} aria-labelledby={compact ? "member-compute-title" : "member-purchases-title"}>
     <div className={styles.head}>
       <div><p className={styles.eyebrow}>My compute requests</p><h2 id={compact ? "member-compute-title" : "member-purchases-title"}>{compact ? "我的算力申请" : "算力申请记录"}</h2><p className={styles.meta}>只显示当前交易主体提交的资源快照和人工交付进度。</p></div>
-      {compact ? <Link className="button button-secondary" href="/member/purchases">查看全部</Link> : <Link className="button button-primary" href="/resources?category=gpu">继续选择算力</Link>}
+      {compact ? <Link className="button button-secondary" href="/member/purchases">查看全部</Link> : <Link className="button button-primary" href="/buy">继续选择算力</Link>}
     </div>
     {error ? <p className={styles.error} role="alert">{error}</p> : null}
     {!error && records === null ? <p className={styles.empty} role="status">正在读取算力申请…</p> : null}
-    {!error && records?.length === 0 ? <div className={styles.empty}><strong>还没有算力申请</strong><p>从 GPU 资源市场选择资源并提交询价后，完整快照会保存在这里。</p><Link href="/resources?category=gpu">查看 GPU 资源 →</Link></div> : null}
+    {!error && records?.length === 0 ? <div className={styles.empty}><strong>还没有算力申请</strong><p>从 GPU 套餐中选择资源并提交询价后，完整快照会保存在这里。</p><Link href="/buy">查看 GPU 套餐 →</Link></div> : null}
     {visible?.length ? <div className={styles.grid}>{visible.map((record) => <article className={styles.card} key={record.demandId}>
       <div><div className={styles.identity}>{record.resource.supplierLogoUrl ? <Image className={styles.logo} alt={record.resource.supplierName} height={40} src={record.resource.supplierLogoUrl} width={40} /> : null}<div><span className={styles.eyebrow}>{record.demandId}</span><h3 className={styles.title}>{record.resource.title}</h3><p className={styles.meta}>{record.resource.supplierName}</p></div></div></div>
       <div><span className={styles.status}>{statusLabel()}</span><p className={styles.meta}>{record.request.quantity} 套 · 共 {record.request.totalGpuCount} 张 GPU</p></div>

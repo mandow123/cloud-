@@ -2,8 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ResourceDetailActions } from "@/components/resource-detail-actions";
-import { getResourceById, resourceListings } from "@/lib/data";
+import { classifyBuyCatalogListing } from "@/lib/buy-catalog";
+import { formatCardHourValue } from "@/lib/card-hours";
+import { getResourceById, resourceListings, suppliers } from "@/lib/data";
 import { formatCardHourQuote } from "@/lib/market";
+import { isBuyCatalogV2Enabled } from "@/lib/server/buy-catalog-feature";
+import { manualDeliveryIntakeEnabled } from "@/lib/server/manual-delivery-intake";
 import type { DealMode, ResourceCategory } from "@/lib/types";
 
 const CATEGORY_LABELS: Record<ResourceCategory, string> = {
@@ -47,12 +51,16 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
   if (!resource) notFound();
 
   const requestParams = new URLSearchParams({
-    resource: resource.id,
+    listing: resource.id,
     category: resource.category,
     deal: resource.dealModes[0],
     unit: resource.pricingUnit,
   });
   const requestHref = `/request?${requestParams.toString()}`;
+  const buyClassification = classifyBuyCatalogListing(resource, suppliers);
+  const primaryInquiry = buyClassification === "PRIMARY_INQUIRY";
+  const inquiryEnabled = primaryInquiry && isBuyCatalogV2Enabled() && manualDeliveryIntakeEnabled();
+  const packageRate = primaryInquiry ? `${formatCardHourValue(resource.quote.median / 1.002)} 卡时 / 套·小时` : formatCardHourQuote(resource.quote.median, resource.pricingUnit);
 
   return (
     <div>
@@ -91,16 +99,16 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
               <div>
                 <p className="m-0 text-xs font-semibold tracking-wide text-[var(--muted)]">市场参考报价</p>
                 <p className="mt-2 mb-0 text-3xl font-semibold tabular-nums text-[var(--ink)]">
-                  {formatCardHourQuote(resource.quote.median, resource.pricingUnit)}
+                  {packageRate}
                 </p>
               </div>
-              <span className="border border-[var(--border-strong)] bg-[var(--surface)] px-2 py-1 text-xs font-semibold text-[var(--warning)]">询价后确认</span>
+              <span className="border border-[var(--border-strong)] bg-[var(--surface)] px-2 py-1 text-xs font-semibold text-[var(--warning)]">供应商确认后生效</span>
             </div>
             <dl className="mt-6 grid grid-cols-2 gap-5 border-t border-[var(--border)] pt-5">
               <div>
                 <dt className="text-xs text-[var(--muted)]">参考区间</dt>
                 <dd className="mt-1 text-sm font-semibold tabular-nums text-[var(--ink)]">
-                  {formatCardHourQuote(resource.quote.rangeMin, resource.pricingUnit)} – {formatCardHourQuote(resource.quote.rangeMax, resource.pricingUnit)}
+                  {primaryInquiry ? `${formatCardHourValue(resource.quote.rangeMin / 1.002)}–${formatCardHourValue(resource.quote.rangeMax / 1.002)} 卡时 / 套·小时` : `${formatCardHourQuote(resource.quote.rangeMin, resource.pricingUnit)} – ${formatCardHourQuote(resource.quote.rangeMax, resource.pricingUnit)}`}
                 </dd>
               </div>
               <div>
@@ -181,7 +189,7 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
               </div>
               <div className="border-t-2 border-[var(--accent)] bg-[var(--surface)]">
                 <dl className="grid sm:grid-cols-2">
-                  <div className="border-b border-[var(--border)] p-5 sm:border-r"><dt className="text-xs text-[var(--muted)]">平台展示单位</dt><dd className="mt-2 font-semibold text-[var(--ink)]">KAI 标准卡时 / {resource.pricingUnit === "卡时" ? "GPU 小时" : resource.pricingUnit}</dd></div>
+                  <div className="border-b border-[var(--border)] p-5 sm:border-r"><dt className="text-xs text-[var(--muted)]">平台展示单位</dt><dd className="mt-2 font-semibold text-[var(--ink)]">{primaryInquiry ? "卡时 / 套·小时" : `KAI 标准卡时 / ${resource.pricingUnit}`}</dd></div>
                   <div className="border-b border-[var(--border)] p-5"><dt className="text-xs text-[var(--muted)]">税费</dt><dd className="mt-2 font-semibold text-[var(--ink)]">{yesNo(resource.quote.taxIncluded, "报价已含税", "报价未含税")}</dd></div>
                   <div className="border-b border-[var(--border)] p-5 sm:border-r"><dt className="text-xs text-[var(--muted)]">电力</dt><dd className="mt-2 font-semibold text-[var(--ink)]">{yesNo(resource.quote.energyIncluded, "已含基础电力", "不含电力费用")}</dd></div>
                   <div className="border-b border-[var(--border)] p-5"><dt className="text-xs text-[var(--muted)]">网络</dt><dd className="mt-2 font-semibold text-[var(--ink)]">{yesNo(resource.quote.networkIncluded, "已含基础网络", "不含网络费用")}</dd></div>
@@ -207,9 +215,9 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
                   <p className="mt-2 mb-0 text-lg font-semibold text-[var(--ink)]">{resource.supplierName}</p>
                   {resource.source ? (
                     <div className="mt-2 space-y-1 text-sm leading-6 text-[var(--text)]">
-                      <p className="m-0">数据来源：用户提供的《{resource.source.documentTitle}》</p>
+                      <p className="m-0">数据来源：{primaryInquiry ? "供应商提供的" : "用户提供的"}《{resource.source.documentTitle}》</p>
                       <p className="m-0">报价单日期：{resource.source.observedAt}</p>
-                      <p className="m-0 font-semibold text-[var(--warning)]">未经 KAI 验真 · 库存与成交价需重新询价</p>
+                      <p className="m-0 font-semibold text-[var(--warning)]">{primaryInquiry ? "供应商提供报价 · 库存、地域网络与正式卡时报价待确认" : "报价资料线索 · 需重新匹配与确认"}</p>
                     </div>
                   ) : (
                     <p className="mt-2 mb-0 text-sm leading-6 text-[var(--text)]">当前供应方档案为平台初始化样本，接入后核验；平台不对外披露其他供应方的原始报价。</p>
@@ -228,21 +236,21 @@ export default async function ResourceDetailPage({ params }: ResourceDetailPageP
           <aside className="border border-[var(--border)] bg-[var(--surface)] lg:sticky lg:top-28" aria-label="资源操作">
             <div className="border-b border-[var(--border)] p-5">
               <p className="m-0 text-xs font-semibold tracking-wide text-[var(--muted)]">NEXT STEP</p>
-              <h2 className="mt-2 mb-0 text-xl text-[var(--ink)]">让 KAI 标准化此方案</h2>
-              <p className="mt-2 mb-0 text-sm leading-6 text-[var(--text)]">带入资源类型、交易方式和计价单位，最少三步完成需求提交。</p>
+              <h2 className="mt-2 mb-0 text-xl text-[var(--ink)]">{primaryInquiry ? "提交套餐询价" : "提交相关算力需求"}</h2>
+              <p className="mt-2 mb-0 text-sm leading-6 text-[var(--text)]">{primaryInquiry ? "核对数量、租用时长与 SSH 公钥，平台再确认库存、地域网络和正式卡时报价。" : "此条目仅作资源线索，平台将根据你的需求重新匹配供应商。"}</p>
             </div>
             <div className="p-5">
-              <ResourceDetailActions resourceId={resource.id} resourceTitle={resource.title} requestHref={requestHref} />
+              <ResourceDetailActions inquiryHref={inquiryEnabled ? `/checkout/${encodeURIComponent(resource.id)}` : undefined} inquiryUnavailable={primaryInquiry && !inquiryEnabled} resourceId={resource.id} resourceTitle={resource.title} requestHref={requestHref} />
             </div>
             <dl className="grid grid-cols-2 border-t border-[var(--border)] bg-[var(--info-bg)] text-xs">
               <div className="border-r border-[var(--border)] p-4"><dt className="text-[var(--muted)]">报价样本</dt><dd className="mt-1 font-semibold text-[var(--ink)]">{resource.quote.sampleCount} 条</dd></div>
-              <div className="p-4"><dt className="text-[var(--muted)]">数据状态</dt><dd className="mt-1 font-semibold text-[var(--accent)]">{resource.source ? "报价来源目录 · 未验真" : "平台初始化样本"}</dd></div>
+              <div className="p-4"><dt className="text-[var(--muted)]">数据状态</dt><dd className="mt-1 font-semibold text-[var(--accent)]">{primaryInquiry ? "供应商提供报价 · 待确认" : buyClassification === "REFERENCE_LEAD" ? "报价资料线索 · 需重新确认" : "目录资料 · 需重新确认"}</dd></div>
             </dl>
           </aside>
         </div>
 
         <div className="mt-14 border-t border-[var(--border)] pt-5">
-          <Link className="text-sm font-semibold text-[var(--accent)] underline underline-offset-4" href="/resources">← 返回资源市场继续比较</Link>
+          <Link className="text-sm font-semibold text-[var(--accent)] underline underline-offset-4" href={primaryInquiry ? "/buy" : "/resources"}>← {primaryInquiry ? "返回 GPU 套餐继续比较" : "返回资源市场继续比较"}</Link>
         </div>
       </div>
     </div>

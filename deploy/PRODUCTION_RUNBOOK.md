@@ -119,6 +119,8 @@ Hosting V2 试运营固定使用管理员双人审批发放卡时，`KAI_ALIPAY_
 
 账户控制台使用独立开关 `KAI_ACCOUNT_CONSOLE_V2`，默认必须为 `0`。启用后，`/member*` 与 `/supply*` 共用账户控制台外壳，但买家和供应商仍分别读取当前登录会话的 `activeOrganization` 数据；供应资格未通过时不显示设备、挂牌、订单或收益入口。该批次没有数据库迁移，需回退时把 `KAI_ACCOUNT_CONSOLE_V2=0` 并按标准流程重启应用，即恢复旧页面；不要同时改动 Hosting V2、支付或 Agent 开关。
 
+购买目录使用独立开关 `KAI_BUY_CATALOG_V2`，默认必须为 `0`。启用后，`/buy` 公开展示经过服务端资格筛选的供应商套餐，并把历史报价资料分离为只能提交撮合需求的市场线索；登录后的询价仍由 `KAI_MANUAL_DELIVERY_INTAKE` 单独控制。该目录不会锁库存、扣卡时、创建合同或调用 Agent。需回退时把 `KAI_BUY_CATALOG_V2=0` 并重启应用，`/buy` 将返回现有 GPU 目录；不要同时开启 Hosting V2 交易或支付开关。
+
 每次状态推进都必须运行生产 Hosting 闸门，并把单行 JSON 结果存入发布记录。四个阶段不可跳级：
 
 ```bash

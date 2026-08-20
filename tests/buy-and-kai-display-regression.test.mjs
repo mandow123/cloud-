@@ -51,21 +51,18 @@ test("mobile navigation keeps both purchase and demand entry points usable", () 
   assert.match(css, /\.mobile-request-cta\s*\{[\s\S]*background:/u);
 });
 
-test("/buy is login-protected and reads only real purchase readiness, balance, and offers", () => {
+test("/buy is publicly browsable, feature-gated, and uses the shared buy catalog boundary", () => {
   const buyPage = source("app/buy/page.tsx");
   const buyWorkspace = source("components/buy-workspace.tsx");
-  const accountGate = source("components/account-required.tsx");
   const combined = `${buyPage}\n${buyWorkspace}`;
 
-  assert.match(combined, /<AccountRequired[^>]+redirectOnSignedOut(?:=\{true\})?/u);
-  assert.match(combined, /\/api\/auth\/session|AccountRequired/u);
-  assert.match(combined, /\/api\/ready/u, "the buy workspace must fail closed when purchase services are not ready");
-  assert.match(combined, /\/api\/v2\/offers/u, "the buy workspace must use real Hosting V2 offers");
-  assert.match(combined, /\/api\/v1\/member\/card-hours/u, "the buy workspace must show the authenticated subject's real card-hour balance");
-  assert.match(combined, /\/gpu\/offers\/\$\{|`\/gpu\/offers\//u, "a real offer must enter the existing contract checkout route");
-  assert.doesNotMatch(combined, /from ["']@\/lib\/catalog|from ["']\.\.\/lib\/catalog|\/checkout\//u, "static catalog entries must not masquerade as purchasable offers");
-  assert.match(accountGate, /window\.location\.pathname \+ window\.location\.search/u);
-  assert.match(accountGate, /window\.location\.replace\(`\/login\?returnTo=\$\{encodeURIComponent\(returnTo\)\}`\)/u);
+  assert.match(buyPage, /partitionBuyCatalog\(resourceListings, suppliers\)/u);
+  assert.match(buyPage, /!isBuyCatalogV2Enabled\(\)[\s\S]*redirect\("\/gpu"\)/u);
+  assert.doesNotMatch(buyPage, /AccountRequired/u);
+  assert.match(combined, /\/checkout\/\$\{encodeURIComponent\(listing\.id\)\}/u);
+  assert.match(combined, /\/api\/ready/u);
+  assert.match(combined, /\/api\/v2\/offers/u);
+  assert.match(combined, /更多供应商资源线索/u);
 });
 
 test("/request requires a signed-in trading subject before rendering the demand form", () => {
@@ -83,13 +80,24 @@ test("the offer checkout uses the same exact card-hour calculation as the server
   assert.match(checkout, /disabled=\{busy \|\| heldMicros === null/u);
 });
 
-test("the static resource directory is inquiry-only, not a fake purchase flow", () => {
+test("the static resource directory synchronizes catalog eligibility and never sends leads to checkout", () => {
   const explorer = source("components/resource-explorer.tsx");
+  const resourcesPage = source("app/resources/page.tsx");
+  const gpuPage = source("app/gpu/page.tsx");
   const inquiry = source("components/catalog-purchase.tsx");
   const checkoutPage = source("app/checkout/[resourceId]/page.tsx");
 
-  assert.equal((explorer.match(/className=\{purchaseStyles\.purchaseLink\}/gu) ?? []).length, 2);
-  assert.equal((explorer.match(/<span>提交询价<\/span>/gu) ?? []).length, 2);
+  assert.match(explorer, /classification === "PRIMARY_INQUIRY"[\s\S]*!inquiryEnabled[\s\S]*人工询价维护中[\s\S]*href=\{`\/checkout\/\$\{encodeURIComponent\(resource\.id\)\}`\}/u);
+  assert.match(explorer, /classification === "PRIMARY_INQUIRY"[\s\S]*formatCardHourValue\(resource\.quote\.median \/ 1\.002\)[\s\S]*KAI 标准卡时 \/ 套·小时/u);
+  assert.match(explorer, /catalogDisplayQuote\(item, classifications\[item\.id\] \?\? "EXCLUDED"\)/u);
+  assert.equal((explorer.match(/catalogDisplayQuote\(resource, classifications\[resource\.id\] \?\? "EXCLUDED"\)/gu) ?? []).length, 2);
+  assert.match(explorer, /href=\{`\/request\?listing=\$\{encodeURIComponent\(resource\.id\)\}`\}[\s\S]*classification === "REFERENCE_LEAD" \? "提交相关需求" : "提交算力需求"/u);
+  assert.match(explorer, /classifications\[resource\.id\] \?\? "EXCLUDED"/u);
+  assert.match(resourcesPage, /classifyBuyCatalogListing\(listing, suppliers\)/u);
+  assert.match(resourcesPage, /inquiryEnabled=\{isBuyCatalogV2Enabled\(\) && manualDeliveryIntakeEnabled\(\)\}/u);
+  assert.match(gpuPage, /classifications=\{gpuClassifications\}/u);
+  assert.match(gpuPage, /inquiryEnabled=\{isBuyCatalogV2Enabled\(\) && manualDeliveryIntakeEnabled\(\)\}/u);
+  assert.match(gpuPage, /if \(await hostingMarketReady\(\)\) return <HostingGpuMarketplace \/>;[\s\S]*<ResourceExplorer/u);
   assert.doesNotMatch(explorer, /<span>购买<\/span>/u);
   assert.match(inquiry, /本页不创建成交订单/u);
   assert.match(inquiry, /不锁库存、不扣卡时/u);

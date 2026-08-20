@@ -65,7 +65,7 @@ async function rootSession(auth, now) {
   return issued.cookie.split(";", 1)[0];
 }
 
-function purchaseRequest(session, key, sshPublicKey) {
+function purchaseRequest(session, key, sshPublicKey, resourceId = "gpu-honghuan-h200-nvl-1") {
   return new Request(`${ORIGIN}/api/v1/catalog-purchase-intents`, {
     method: "POST",
     headers: {
@@ -76,7 +76,7 @@ function purchaseRequest(session, key, sshPublicKey) {
       "x-kai-csrf": session.csrf,
       "Idempotency-Key": key,
     },
-    body: JSON.stringify({ resourceId: "gpu-h100-sxm-8-bj", quantity: 1, durationHours: 3, deliveryDate: "2026-09-01", note: "人工开通测试", sshPublicKey }),
+    body: JSON.stringify({ resourceId, quantity: 1, durationHours: 3, deliveryDate: "2026-09-01", note: "人工开通测试", sshPublicKey }),
   });
 }
 
@@ -100,12 +100,14 @@ test("buyer public key is privately persisted and only an authorized administrat
     directory: process.env.KAI_DB_DIR,
     legacy: process.env.KAI_ALLOW_LEGACY_ANON_WRITES,
     flag: process.env.KAI_MANUAL_DELIVERY_INTAKE,
+    buyFlag: process.env.KAI_BUY_CATALOG_V2,
     account: globalThis.__kaiAccountAuthStorePromise,
     marketplace: globalThis.__kaiMarketplaceStorePromise,
     admin: globalThis.__kaiAdminOperationsStorePromise,
   };
   process.env.KAI_DB_DIR = directory;
   process.env.KAI_MANUAL_DELIVERY_INTAKE = "1";
+  process.env.KAI_BUY_CATALOG_V2 = "1";
   delete process.env.KAI_ALLOW_LEGACY_ANON_WRITES;
   const auth = await createSqliteAccountAuthStore(path);
   const admin = await createSqliteAdminOperationsStore(path);
@@ -120,6 +122,18 @@ test("buyer public key is privately persisted and only an authorized administrat
     const rootCookie = await rootSession(auth, now);
     const sourceKey = ed25519PublicKey("must-not-be-stored");
     const canonical = sourceKey.split(" ").slice(0, 2).join(" ");
+    process.env.KAI_BUY_CATALOG_V2 = "0";
+    const catalogDisabled = await json(await submitPurchaseIntent(purchaseRequest(buyer, "buy-catalog-disabled", sourceKey)), 400);
+    assert.equal(catalogDisabled.error.code, "VALIDATION_ERROR");
+    process.env.KAI_BUY_CATALOG_V2 = "1";
+    process.env.KAI_MANUAL_DELIVERY_INTAKE = "0";
+    const disabled = await json(await submitPurchaseIntent(purchaseRequest(buyer, "manual-delivery-disabled", sourceKey)), 400);
+    assert.equal(disabled.error.code, "VALIDATION_ERROR");
+    process.env.KAI_MANUAL_DELIVERY_INTAKE = "1";
+    const referenceLead = await json(await submitPurchaseIntent(purchaseRequest(buyer, "manual-delivery-reference", sourceKey, "gpu-supplier-reference-001")), 400);
+    assert.equal(referenceLead.error.code, "VALIDATION_ERROR");
+    const sample = await json(await submitPurchaseIntent(purchaseRequest(buyer, "manual-delivery-sample", sourceKey, "gpu-h100-sxm-8-bj")), 400);
+    assert.equal(sample.error.code, "VALIDATION_ERROR");
     const oversized = await json(await submitPurchaseIntent(purchaseRequest(buyer, "manual-delivery-oversized", "x".repeat(12 * 1024 + 1))), 400);
     assert.equal(oversized.error.code, "VALIDATION_ERROR");
     const first = await json(await submitPurchaseIntent(purchaseRequest(buyer, "manual-delivery-h200", sourceKey)), 201);
@@ -127,6 +141,9 @@ test("buyer public key is privately persisted and only an authorized administrat
     assert.equal(first.manualDelivery.status, "PENDING_MANUAL_DELIVERY");
     assert.equal(first.purchaseDetails.href, `/member/purchases/${first.record.id}`);
     assert.doesNotMatch(JSON.stringify(first), /must-not-be-stored/u);
+    assert.match(first.priceSnapshot.unitPriceCardHours, /^\d+\.\d{2}$/u);
+    assert.match(first.priceSnapshot.estimatedCardHours, /^\d+\.\d{2}$/u);
+    assert.doesNotMatch(JSON.stringify(first.priceSnapshot), /¥|CNY|referenceCurrency|estimatedAmount|estimatedCardHourMicros/u);
 
     const replay = await json(await submitPurchaseIntent(purchaseRequest(buyer, "manual-delivery-h200", sourceKey)), 200);
     assert.equal(replay.record.id, first.record.id);
@@ -137,8 +154,8 @@ test("buyer public key is privately persisted and only an authorized administrat
     const ownList = await json(await listMemberPurchaseIntents(new Request(`${ORIGIN}/api/v1/member/purchase-intents`, { headers: { cookie: buyer.accountCookie } })), 200);
     assert.equal(ownList.records.length, 1);
     assert.equal(ownList.records[0].demandId, first.record.id);
-    assert.equal(ownList.records[0].resource.id, "gpu-h100-sxm-8-bj");
-    assert.equal(ownList.records[0].request.totalGpuCount, 8);
+    assert.equal(ownList.records[0].resource.id, "gpu-honghuan-h200-nvl-1");
+    assert.equal(ownList.records[0].request.totalGpuCount, 1);
     assert.equal(ownList.records[0].request.durationHours, 3);
     assert.equal(ownList.records[0].status, "PENDING_MANUAL_DELIVERY");
     assert.equal(ownList.records[0].sshPublicKeyFingerprint, first.manualDelivery.sshPublicKeyFingerprint);
@@ -185,7 +202,7 @@ test("buyer public key is privately persisted and only an authorized administrat
       assert.equal(JSON.stringify(audit).includes(canonical), false);
       assert.equal(JSON.stringify(receipts).includes(canonical), false);
       assert.equal(JSON.stringify(snapshot).includes(canonical), false);
-      assert.equal(JSON.parse(snapshot.resource_snapshot_json).title, "H100 SXM 80GB · 8 卡训练节点");
+      assert.equal(JSON.parse(snapshot.resource_snapshot_json).title, "H200 NVL · 单卡");
       assert.ok(snapshot.unit_card_hour_micros > 0);
       assert.ok(snapshot.estimated_card_hour_micros > snapshot.unit_card_hour_micros);
       assert.ok(audit.some((event) => event.action === "MANUAL_DELIVERY_KEY_REVEALED"));
@@ -198,6 +215,7 @@ test("buyer public key is privately persisted and only an authorized administrat
     if (previous.directory === undefined) delete process.env.KAI_DB_DIR; else process.env.KAI_DB_DIR = previous.directory;
     if (previous.legacy === undefined) delete process.env.KAI_ALLOW_LEGACY_ANON_WRITES; else process.env.KAI_ALLOW_LEGACY_ANON_WRITES = previous.legacy;
     if (previous.flag === undefined) delete process.env.KAI_MANUAL_DELIVERY_INTAKE; else process.env.KAI_MANUAL_DELIVERY_INTAKE = previous.flag;
+    if (previous.buyFlag === undefined) delete process.env.KAI_BUY_CATALOG_V2; else process.env.KAI_BUY_CATALOG_V2 = previous.buyFlag;
     rmSync(directory, { recursive: true, force: true });
   }
 });

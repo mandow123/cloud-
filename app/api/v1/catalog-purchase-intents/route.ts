@@ -1,4 +1,4 @@
-import { getResourceById } from "@/lib/data";
+import { getResourceById, suppliers } from "@/lib/data";
 import { MarketplaceInputError, parseCreateRequest } from "@/lib/marketplace";
 import {
   apiErrorResponse,
@@ -12,11 +12,13 @@ import {
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
 import { authorizeMarketplaceRequest, persistMarketplaceSession } from "@/lib/server/marketplace-auth";
 import { bindNewEntityToOrganization, requireTradingAccountSession } from "@/lib/server/entity-ownership";
-import { cnyCentsToCardHourMicros, formatCardHourMicros } from "@/lib/card-hours";
+import { cnyCentsToCardHourMicros, formatCardHourDisplayMicros } from "@/lib/card-hours";
 import { requiresManualSshPublicKey } from "@/lib/manual-delivery";
+import { buyCatalogExclusionReason } from "@/lib/buy-catalog";
 import { AccountAuthError, accountAuthDigest } from "@/lib/server/account-auth";
 import { getAdminOperationsStore } from "@/lib/server/admin-store";
 import { manualDeliveryIntakeEnabled } from "@/lib/server/manual-delivery-intake";
+import { isBuyCatalogV2Enabled } from "@/lib/server/buy-catalog-feature";
 import { normalizeSshPublicKey } from "@/lib/server/ssh-public-key";
 
 export const dynamic = "force-dynamic";
@@ -51,13 +53,27 @@ export async function POST(request: Request) {
     actor = authorization.actor;
     prepareWrite(request, actor);
     await persistMarketplaceSession(authorization);
-    await authorization.store.consumeWriteAllowance(actor.id, "requests");
 
     const body = await readJsonBody(request) as PurchaseIntentBody;
     const resourceId = text(body.resourceId, 100);
     const resource = getResourceById(resourceId);
     if (!resource) throw new MarketplaceInputError("目录资源不存在或已下架。", "resourceId");
-    const requiresSshPublicKey = manualDeliveryIntakeEnabled() && requiresManualSshPublicKey(resource);
+    if (!isBuyCatalogV2Enabled()) {
+      throw new MarketplaceInputError("供应商算力询价当前未开放，请稍后再试。", "resourceId");
+    }
+    const exclusionReason = buyCatalogExclusionReason(resource, suppliers);
+    if (exclusionReason) {
+      throw new MarketplaceInputError(
+        exclusionReason === "REFERENCE_LEAD"
+          ? "该条目是供应线索，仅供比价参考，不能直接提交套餐询价。"
+          : "该资源当前不具备有效的供应商报价与人工交付条件，不能直接提交套餐询价。",
+        "resourceId",
+      );
+    }
+    if (!manualDeliveryIntakeEnabled()) {
+      throw new MarketplaceInputError("人工 SSH 交付申请当前未开放，请稍后再试。", "resourceId");
+    }
+    const requiresSshPublicKey = requiresManualSshPublicKey(resource);
     if (requiresSshPublicKey && !account) {
       throw new AccountAuthError("ACCOUNT_AUTH_REQUIRED", 401, "请先登录账户。 ");
     }
@@ -75,11 +91,23 @@ export async function POST(request: Request) {
       throw new MarketplaceInputError("目录资源数量必须是 1–10000 的整数。", "quantity");
     }
     const durationHours = hourlyUnits.has(resource.pricingUnit) ? Number(body.durationHours) : null;
+    if (durationHours !== null && (!Number.isFinite(durationHours) || durationHours <= 0 || durationHours > 1_000_000)) {
+      throw new MarketplaceInputError("服务时长必须是 1–1000000 之间的数字。", "durationHours");
+    }
     const note = text(body.note);
-    const referencePrice = `¥${resource.quote.median.toLocaleString("zh-CN")} / ${resource.pricingUnit}`;
+    const multiplier = hourlyUnits.has(resource.pricingUnit) ? quantity * Number(durationHours) : quantity;
+    const unitPriceCnyCents = Math.max(1, Math.round(resource.quote.median * 100));
+    const estimatedCnyCents = Math.max(1, Math.round(resource.quote.median * multiplier * 100));
+    if (!Number.isSafeInteger(estimatedCnyCents) || estimatedCnyCents > 100_000_000) {
+      throw new MarketplaceInputError("申请规模超过单次目录询价上限，请提交算力需求由人工处理。", "quantity");
+    }
+    const unitCardHourMicros = cnyCentsToCardHourMicros(unitPriceCnyCents);
+    const estimatedCardHourMicros = cnyCentsToCardHourMicros(estimatedCnyCents);
+    const unitCardHours = formatCardHourDisplayMicros(unitCardHourMicros);
+    const estimatedCardHours = formatCardHourDisplayMicros(estimatedCardHourMicros);
     const requirements = [
-      `购买目录资源：${resource.title}（${resource.id}）。`,
-      `市场参考单价：${referencePrice}。`,
+      `询价目录资源：${resource.title}（${resource.id}）。`,
+      `目录参考单价：${unitCardHours} KAI 标准卡时 / 套·小时。`,
       `资源数量：${quantity}${durationHours ? `，服务时长：${durationHours} 小时` : ""}。`,
       note || "请按目录规格核验真实库存、正式报价与最早交付时间。",
       requiresSshPublicKey ? "交付方式：平台人工核对 SSH 公钥并协调供应商开通。" : null,
@@ -99,6 +127,7 @@ export async function POST(request: Request) {
     const requestPayloadHash = sshKey
       ? await mutationHash({ resourceId, input, sshPublicKeyFingerprint: sshKey.fingerprint })
       : await mutationHash({ resourceId, input });
+    await authorization.store.consumeWriteAllowance(actor.id, "requests");
     const result = await authorization.store.createRequest({
       actorId: actor.id,
       idempotencyKey,
@@ -127,12 +156,6 @@ export async function POST(request: Request) {
       idempotencyKey: `manual-delivery:${idempotencyKey}`,
       payloadHash: await accountAuthDigest(JSON.stringify(manualDeliveryPayload)),
     }, manualDeliveryPayload) : null;
-    const multiplier = hourlyUnits.has(resource.pricingUnit) ? quantity * Number(durationHours) : quantity;
-    const unitPriceCnyCents = Math.max(1, Math.round(resource.quote.median * 100));
-    const estimatedCnyCents = Math.max(1, Math.round(resource.quote.median * multiplier * 100));
-    const estimatedAmount = estimatedCnyCents / 100;
-    const unitCardHourMicros = cnyCentsToCardHourMicros(unitPriceCnyCents);
-    const estimatedCardHourMicros = cnyCentsToCardHourMicros(estimatedCnyCents);
     const purchaseSnapshotPayload = manualDelivery && account && sshKey ? {
       demandId: result.record.id,
       buyerAccountId: account.account.id,
@@ -187,13 +210,10 @@ export async function POST(request: Request) {
       priceSnapshot: {
         assetCode: "KAI_CREDIT_HOUR",
         settlementAsset: "CARD_HOUR",
-        unitPrice: resource.quote.median,
-        referenceCurrency: "CNY",
+        unitPriceCardHours: unitCardHours,
+        billingUnit: "套·小时",
         pricingUnit: resource.pricingUnit,
-        estimatedAmount,
-        estimatedCardHours: formatCardHourMicros(estimatedCardHourMicros),
-        estimatedCardHourMicros,
-        conversionRate: { cardHours: "1", cny: "1.002" },
+        estimatedCardHours,
         disclaimer: resource.quote.disclaimer,
       },
     }, result.replayed ? 200 : 201, headers, context);
