@@ -49,7 +49,7 @@ class FakeD1Statement {
 }
 
 class FakeD1Database {
-  constructor({ migration, quoteResults, versionAfterBatch, demandQuoteCount = 0, totalQuoteCount = 0 }) {
+  constructor({ migration, quoteResults, versionAfterBatch, demandQuoteCount = 0, totalQuoteCount = 0, requestLifecycle = false }) {
     this.migration = migration;
     this.quoteResults = quoteResults;
     this.versionAfterBatch = versionAfterBatch;
@@ -58,6 +58,12 @@ class FakeD1Database {
     this.quoteBatch = null;
     this.curatedBatch = null;
     this.quoteBatchCompleted = false;
+    this.requestLifecycle = requestLifecycle;
+    this.stagingBatch = null;
+    this.publishBatch = null;
+    this.staged = null;
+    this.published = null;
+    this.publishedEventCount = 0;
     this.demand = {
       id: "KAI-R-20260803-ABCDEF0123456789",
       owner_actor_id: "buyer:actor",
@@ -90,6 +96,25 @@ class FakeD1Database {
   }
 
   async batch(statements) {
+    if (statements[0]?.sql.includes("INSERT INTO marketplace_request_staging_v1")) {
+      this.stagingBatch = statements;
+      const values = statements[0].values;
+      this.staged = {
+        id: values[0], owner_actor_id: values[1], idempotency_key: values[2], payload_hash: values[3], visibility: "private",
+        request_type: values[5], kind: values[6], title: values[7], category: values[8], region: values[9], pricing_unit: values[10], quantity: values[11],
+        duration_hours: values[12], delivery_date: values[13], summary: values[14], offered_json: values[15], wanted_json: values[16], cash_direction: values[17],
+        cash_amount: values[18], status: values[19], created_at: values[20], updated_at: values[21], version: 1,
+      };
+      return statements.map(() => ({ success: true, meta: { changes: 1 } }));
+    }
+    if (statements[0]?.sql.includes("INSERT INTO marketplace_requests_v2") && statements[0]?.sql.includes("marketplace_request_staging_v1")) {
+      this.publishBatch = statements;
+      if (!this.staged) return statements.map(() => ({ success: true, meta: { changes: 0 } }));
+      this.published = { ...this.staged, visibility: "market", updated_at: statements[0].values[0], version: 2 };
+      this.publishedEventCount += 2;
+      this.staged = null;
+      return statements.map(() => ({ success: true, meta: { changes: 1 } }));
+    }
     if (statements[0]?.sql.includes("INSERT INTO marketplace_requests_v2")) {
       this.curatedBatch = statements;
       return statements.map(() => ({ success: true, meta: { changes: 1 } }));
@@ -112,6 +137,9 @@ class FakeD1Database {
 
   async first(statement) {
     if (statement.sql.includes("marketplace_schema_migrations")) return this.migration;
+    if (this.requestLifecycle && statement.sql.includes("UNION ALL SELECT * FROM marketplace_request_staging_v1")) return this.published ?? this.staged;
+    if (this.requestLifecycle && statement.sql.includes("SELECT * FROM marketplace_request_staging_v1")) return this.staged;
+    if (this.requestLifecycle && statement.sql.includes("SELECT * FROM marketplace_requests_v2") && statement.sql.includes("visibility='market'")) return this.published;
     if (statement.sql.includes("marketplace_quotes_v2 WHERE supplier_actor_id")) return null;
     if (statement.sql.includes("SELECT * FROM marketplace_requests_v2")) {
       return {
@@ -189,6 +217,52 @@ test("D1 quote batch couples conditional insert to expected demand version", asy
   assert.equal(update.values[4], result.record.id);
   assert.equal(submittedEvent.values.at(-1), result.record.id);
   assert.equal(normalizedEvent.values.at(-1), result.record.id);
+});
+
+test("D1 stages private requests outside the v4 market table and publishes them atomically", async () => {
+  const [{ createD1MarketplaceStore }, migration] = await Promise.all([loadBuiltD1Store(), migrationMetadata()]);
+  assert.equal(migration.version, 4);
+  const database = new FakeD1Database({ migration, quoteResults: [], versionAfterBatch: 1, requestLifecycle: true });
+  const store = createD1MarketplaceStore(database);
+  const mutation = { actorId: "buyer:staging", idempotencyKey: "private-request-key", payloadHash: "private-request-hash" };
+  const input = {
+    requestType: "procurement", kind: "rental", title: "H200 人工询价", category: "gpu", region: "全国", pricingUnit: "卡时",
+    quantity: 1, durationHours: 3, deliveryDate: "2026-09-01", summary: "人工交付", cashDirection: "none", cashAmount: null,
+  };
+  const created = await store.createRequest(mutation, input, { visibility: "private" });
+  assert.equal(created.replayed, false);
+  assert.equal(database.stagingBatch.length, 1);
+  assert.match(database.stagingBatch[0].sql, /INSERT INTO marketplace_request_staging_v1/u);
+  assert.equal(database.published, null);
+  const published = await store.publishRequest(mutation.actorId, created.record.id);
+  assert.equal(published.id, created.record.id);
+  assert.equal(database.staged, null);
+  assert.equal(database.published.visibility, "market");
+  assert.equal(database.publishBatch.length, 4);
+  assert.match(database.publishBatch[0].sql, /INSERT INTO marketplace_requests_v2[\s\S]*FROM marketplace_request_staging_v1/u);
+  assert.match(database.publishBatch[1].sql, /WHERE EXISTS \(SELECT 1 FROM marketplace_request_staging_v1 WHERE id = \?\)/u);
+  assert.match(database.publishBatch[2].sql, /WHERE EXISTS \(SELECT 1 FROM marketplace_request_staging_v1 WHERE id = \?\)/u);
+  assert.match(database.publishBatch[3].sql, /DELETE FROM marketplace_request_staging_v1/u);
+  assert.equal(database.publishedEventCount, 2);
+});
+
+test("concurrent D1 publication is idempotent and never duplicates audit events", async () => {
+  const [{ createD1MarketplaceStore }, migration] = await Promise.all([loadBuiltD1Store(), migrationMetadata()]);
+  const database = new FakeD1Database({ migration, quoteResults: [], versionAfterBatch: 1, requestLifecycle: true });
+  const store = createD1MarketplaceStore(database);
+  const mutation = { actorId: "buyer:concurrent", idempotencyKey: "concurrent-request-key", payloadHash: "concurrent-request-hash" };
+  const created = await store.createRequest(mutation, {
+    requestType: "procurement", kind: "rental", title: "并发 H200 询价", category: "gpu", region: "全国", pricingUnit: "卡时",
+    quantity: 1, durationHours: 3, deliveryDate: "2026-09-01", summary: "并发人工交付", cashDirection: "none", cashAmount: null,
+  }, { visibility: "private" });
+  const [first, second] = await Promise.all([
+    store.publishRequest(mutation.actorId, created.record.id),
+    store.publishRequest(mutation.actorId, created.record.id),
+  ]);
+  assert.equal(first.id, created.record.id);
+  assert.equal(second.id, created.record.id);
+  assert.deepEqual(second, first, "the racing publisher must replay the same public record");
+  assert.equal(database.publishedEventCount, 2, "only the batch that owns the staging row may write audit events");
 });
 
 test("D1 lost update returns state conflict with a no-op atomic batch", async () => {

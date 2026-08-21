@@ -23,8 +23,8 @@ import {
   marketplaceDataRepairStatements,
   marketplaceLegacyImportStatements,
   marketplaceRegionExpansionStatements,
-  marketplaceVisibilityExpansionStatements,
   marketplaceSchemaStatements,
+  marketplaceStagingGuardStatements,
 } from "@/lib/server/marketplace-schema";
 import {
   MarketplaceAccessError,
@@ -228,7 +228,7 @@ function mapDraft(row: DraftRow): MarketplaceDraftRecord {
 }
 
 type EventDependency = Readonly<{
-  kind: "request" | "quote" | "draft";
+  kind: "request" | "stagingRequest" | "quote" | "draft";
   id: string;
 }>;
 
@@ -245,6 +245,8 @@ function eventStatement(
   const id = `KAI-E-${createdAt.slice(0, 10).replaceAll("-", "")}-${crypto.randomUUID().replaceAll("-", "").toUpperCase()}`;
   const dependencyTable = dependency?.kind === "request"
     ? "marketplace_requests_v2"
+    : dependency?.kind === "stagingRequest"
+      ? "marketplace_request_staging_v1"
     : dependency?.kind === "quote"
       ? "marketplace_quotes_v2"
       : dependency?.kind === "draft"
@@ -373,6 +375,7 @@ export function createD1MarketplaceStore(value: unknown,options:{readinessOnly?:
       db.prepare("DELETE FROM marketplace_events_v2 WHERE created_at < ?").bind(cutoff),
       db.prepare("DELETE FROM marketplace_quotes_v2 WHERE created_at < ?").bind(cutoff),
       db.prepare("DELETE FROM marketplace_requests_v2 WHERE updated_at < ?").bind(cutoff),
+      db.prepare("DELETE FROM marketplace_request_staging_v1 WHERE updated_at < ?").bind(cutoff),
       db.prepare("DELETE FROM marketplace_drafts_v2 WHERE created_at < ?").bind(cutoff),
       db.prepare("DELETE FROM marketplace_sessions_v2 WHERE expires_at <= ?").bind(now),
       db.prepare(`DELETE FROM marketplace_sessions_v2 WHERE actor_id IN (
@@ -405,9 +408,6 @@ export function createD1MarketplaceStore(value: unknown,options:{readinessOnly?:
         if (newest && newest.version < 4) {
           await db.batch(marketplaceRegionExpansionStatements.map((sql) => db.prepare(sql)));
         }
-        if (newest && newest.version < 5) {
-          await db.batch(marketplaceVisibilityExpansionStatements.map((sql) => db.prepare(sql)));
-        }
         await db.prepare(`INSERT OR IGNORE INTO marketplace_schema_migrations (
           version, checksum, applied_at
         ) VALUES (?, ?, ?)`).bind(
@@ -416,6 +416,7 @@ export function createD1MarketplaceStore(value: unknown,options:{readinessOnly?:
           new Date().toISOString(),
         ).run();
       }
+      await db.batch(marketplaceStagingGuardStatements.map((sql) => db.prepare(sql)));
       if(!options.readinessOnly)await pruneExpiredMarketplaceData(true);
     })().catch((error) => {
       schemaPromise = undefined;
@@ -425,8 +426,9 @@ export function createD1MarketplaceStore(value: unknown,options:{readinessOnly?:
   };
 
   const existingRequest = (context: MarketplaceMutationContext) => db.prepare(
-    "SELECT * FROM marketplace_requests_v2 WHERE owner_actor_id = ? AND idempotency_key = ?",
-  ).bind(context.actorId, context.idempotencyKey).first<RequestRow>();
+    `SELECT * FROM marketplace_requests_v2 WHERE owner_actor_id = ? AND idempotency_key = ?
+     UNION ALL SELECT * FROM marketplace_request_staging_v1 WHERE owner_actor_id = ? AND idempotency_key = ? LIMIT 1`,
+  ).bind(context.actorId, context.idempotencyKey, context.actorId, context.idempotencyKey).first<RequestRow>();
   const existingQuote = (context: MarketplaceMutationContext) => db.prepare(
     "SELECT * FROM marketplace_quotes_v2 WHERE supplier_actor_id = ? AND idempotency_key = ?",
   ).bind(context.actorId, context.idempotencyKey).first<QuoteRow>();
@@ -532,14 +534,15 @@ export function createD1MarketplaceStore(value: unknown,options:{readinessOnly?:
       if (replay) return replay;
       const record = requestRecord(input);
       try {
-        const results = await db.batch([
-          db.prepare(`INSERT INTO marketplace_requests_v2 (
+        const target = options.visibility === "private" ? "marketplace_request_staging_v1" : "marketplace_requests_v2";
+        const insert = db.prepare(`INSERT INTO ${target} (
             id, owner_actor_id, idempotency_key, payload_hash, visibility,
             request_type, kind, title, category, region, pricing_unit, quantity,
             duration_hours, delivery_date, summary, offered_json, wanted_json,
             cash_direction, cash_amount, status, created_at, updated_at, version
           ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1
-          WHERE (SELECT COUNT(*) FROM marketplace_requests_v2 WHERE owner_actor_id <> ?) < ?`).bind(
+          WHERE ((SELECT COUNT(*) FROM marketplace_requests_v2 WHERE owner_actor_id <> ?)
+            + (SELECT COUNT(*) FROM marketplace_request_staging_v1)) < ?`).bind(
             record.id,
             context.actorId,
             context.idempotencyKey,
@@ -564,9 +567,11 @@ export function createD1MarketplaceStore(value: unknown,options:{readinessOnly?:
             record.updatedAt,
             CURATED_DEMAND_OWNER,
             capacityLimits.requests,
-          ),
-          eventStatement(db, context.actorId, "request", record.id, "REQUEST_CREATED", options.visibility === "private" ? "需求已私有暂存，等待关联记录完成。" : "需求已记录并生成匿名市场投影。", record.createdAt, { kind: "request", id: record.id }),
-        ]);
+          );
+        const statements = options.visibility === "private"
+          ? [insert]
+          : [insert, eventStatement(db, context.actorId, "request", record.id, "REQUEST_CREATED", "需求已记录并生成匿名市场投影。", record.createdAt, { kind: "request", id: record.id })];
+        const results = await db.batch(statements);
         if (d1Changes(results[0], "request_insert") !== 1) throw new MarketplaceCapacityError("requests");
         return { record, replayed: false };
       } catch (error) {
@@ -576,8 +581,17 @@ export function createD1MarketplaceStore(value: unknown,options:{readinessOnly?:
       }
     },
     async publishRequest(actorId,requestId){
-      await ensureSchema();const current=await db.prepare("SELECT * FROM marketplace_requests_v2 WHERE id=? AND owner_actor_id=?").bind(requestId,actorId).first<RequestRow>();if(!current)throw new MarketplaceAccessError("DEMAND_NOT_FOUND");
-      if(current.visibility==="private"){const at=new Date().toISOString();await db.batch([db.prepare("UPDATE marketplace_requests_v2 SET visibility='market',updated_at=?,version=version+1 WHERE id=? AND owner_actor_id=? AND visibility='private'").bind(at,requestId,actorId),eventStatement(db,actorId,"request",requestId,"REQUEST_PUBLISHED","需求关联记录完整，已生成匿名市场投影。",at,{kind:"request",id:requestId})]);}
+      await ensureSchema();const published=await db.prepare("SELECT * FROM marketplace_requests_v2 WHERE id=? AND owner_actor_id=? AND visibility='market'").bind(requestId,actorId).first<RequestRow>();if(published)return mapRequest(published);
+      const current=await db.prepare("SELECT * FROM marketplace_request_staging_v1 WHERE id=? AND owner_actor_id=?").bind(requestId,actorId).first<RequestRow>();if(!current)throw new MarketplaceAccessError("DEMAND_NOT_FOUND");
+      const at=new Date().toISOString();const results=await db.batch([
+        db.prepare(`INSERT INTO marketplace_requests_v2 (
+          id,owner_actor_id,idempotency_key,payload_hash,visibility,request_type,kind,title,category,region,pricing_unit,quantity,duration_hours,delivery_date,summary,offered_json,wanted_json,cash_direction,cash_amount,status,created_at,updated_at,version
+        ) SELECT id,owner_actor_id,idempotency_key,payload_hash,'market',request_type,kind,title,category,region,pricing_unit,quantity,duration_hours,delivery_date,summary,offered_json,wanted_json,cash_direction,cash_amount,status,created_at,?,version+1
+          FROM marketplace_request_staging_v1 WHERE id=? AND owner_actor_id=?`).bind(at,requestId,actorId),
+        eventStatement(db,actorId,"request",requestId,"REQUEST_CREATED","需求关联记录完整后公开。",current.created_at,{kind:"stagingRequest",id:requestId}),
+        eventStatement(db,actorId,"request",requestId,"REQUEST_PUBLISHED","需求关联记录完整，已生成匿名市场投影。",at,{kind:"stagingRequest",id:requestId}),
+        db.prepare("DELETE FROM marketplace_request_staging_v1 WHERE id=? AND owner_actor_id=?").bind(requestId,actorId),
+      ]);if(d1Changes(results[0],"request_publish")!==1){const raced=await db.prepare("SELECT * FROM marketplace_requests_v2 WHERE id=? AND owner_actor_id=? AND visibility='market'").bind(requestId,actorId).first<RequestRow>();if(raced)return mapRequest(raced);throw new MarketplaceAccessError("DEMAND_NOT_FOUND");}
       const row=await db.prepare("SELECT * FROM marketplace_requests_v2 WHERE id=? AND owner_actor_id=? AND visibility='market'").bind(requestId,actorId).first<RequestRow>();if(!row)throw new MarketplaceAccessError("DEMAND_NOT_FOUND");return mapRequest(row);
     },
     async listBuyerNormalizedQuotes(actorId, options) {

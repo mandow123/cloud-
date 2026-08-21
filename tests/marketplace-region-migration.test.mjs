@@ -7,9 +7,40 @@ import {
   MARKETPLACE_MIGRATION_VERSION,
   marketplaceRegionExpansionStatements,
   marketplaceSchemaStatements,
+  marketplaceStagingGuardStatements,
 } from "../db/schema.ts";
 
 const OLD_CHECKSUM = "758924113b3f07d65f1db51bc7007e30d503a40dac720475dce19df6403bc2a6";
+
+test("private request staging preserves the shared v4 rollback contract for SQLite and D1", () => {
+  assert.equal(MARKETPLACE_MIGRATION_VERSION, 4);
+  assert.equal(MARKETPLACE_MIGRATION_CHECKSUM, OLD_CHECKSUM);
+  const primary = marketplaceSchemaStatements.find((statement) => statement.includes("CREATE TABLE IF NOT EXISTS marketplace_requests_v2"));
+  const staging = marketplaceSchemaStatements.find((statement) => statement.includes("CREATE TABLE IF NOT EXISTS marketplace_request_staging_v1"));
+  assert.match(primary ?? "", /visibility TEXT NOT NULL CHECK \(visibility = 'market'\)/u);
+  assert.match(staging ?? "", /visibility TEXT NOT NULL DEFAULT 'private' CHECK \(visibility = 'private'\)/u);
+  const db = new DatabaseSync(":memory:");
+  try {
+    for (const statement of [...marketplaceSchemaStatements, ...marketplaceStagingGuardStatements]) db.exec(statement);
+    db.prepare("INSERT INTO marketplace_schema_migrations(version,checksum,applied_at) VALUES(?,?,?)")
+      .run(MARKETPLACE_MIGRATION_VERSION, MARKETPLACE_MIGRATION_CHECKSUM, "2026-08-21T00:00:00.000Z");
+    const metadata = db.prepare("SELECT version,checksum FROM marketplace_schema_migrations ORDER BY version DESC LIMIT 1").get();
+    assert.deepEqual({ ...metadata }, { version: 4, checksum: OLD_CHECKSUM });
+    assert.throws(() => db.prepare(`INSERT INTO marketplace_requests_v2(
+      id,owner_actor_id,idempotency_key,payload_hash,visibility,request_type,kind,title,category,region,pricing_unit,quantity,summary,cash_direction,status,created_at,updated_at
+    ) VALUES('private-main','buyer','key','hash','private','procurement','rental','private','gpu','全国','卡时',1,'private','none','已记录','2026-08-21','2026-08-21')`).run(), /CHECK constraint failed/u);
+    db.prepare(`INSERT INTO marketplace_request_staging_v1(
+      id,owner_actor_id,idempotency_key,payload_hash,visibility,request_type,kind,title,category,region,pricing_unit,quantity,summary,cash_direction,status,created_at,updated_at
+    ) VALUES('private-sidecar','buyer','key','hash','private','procurement','rental','private','gpu','全国','卡时',1,'private','none','已记录','2026-08-21','2026-08-21')`).run();
+    assert.throws(() => db.prepare(`INSERT INTO marketplace_requests_v2(
+      id,owner_actor_id,idempotency_key,payload_hash,visibility,request_type,kind,title,category,region,pricing_unit,quantity,summary,cash_direction,status,created_at,updated_at
+    ) VALUES('rollback-duplicate','buyer','key','hash','market','procurement','rental','duplicate','gpu','全国','卡时',1,'duplicate','none','已记录','2026-08-21','2026-08-21')`).run(), /privately staged/u);
+    assert.equal(db.prepare("SELECT COUNT(*) count FROM marketplace_requests_v2").get().count, 0);
+    assert.equal(db.prepare("SELECT COUNT(*) count FROM marketplace_request_staging_v1").get().count, 1);
+  } finally {
+    db.close();
+  }
+});
 
 test("marketplace v4 adds 全国 without rewriting existing requests or breaking quote foreign keys", () => {
   const db = new DatabaseSync(":memory:", { enableForeignKeyConstraints: true });

@@ -2,8 +2,8 @@
  * Runtime-safe D1/SQLite schema. Each array item is exactly one SQL statement,
  * as required by D1 prepared statements.
  */
-export const MARKETPLACE_MIGRATION_VERSION = 5;
-export const MARKETPLACE_MIGRATION_CHECKSUM = "01c2438553504a4db0061090243c06c150b3eccee47d33e78edbfc70a2daa4ad";
+export const MARKETPLACE_MIGRATION_VERSION = 4;
+export const MARKETPLACE_MIGRATION_CHECKSUM = "758924113b3f07d65f1db51bc7007e30d503a40dac720475dce19df6403bc2a6";
 
 export const marketplaceSchemaStatements = [
   `CREATE TABLE IF NOT EXISTS marketplace_schema_migrations (
@@ -16,7 +16,7 @@ export const marketplaceSchemaStatements = [
     owner_actor_id TEXT NOT NULL,
     idempotency_key TEXT NOT NULL,
     payload_hash TEXT NOT NULL,
-    visibility TEXT NOT NULL CHECK (visibility IN ('private','market')),
+    visibility TEXT NOT NULL CHECK (visibility = 'market'),
     request_type TEXT NOT NULL,
     kind TEXT NOT NULL,
     title TEXT NOT NULL,
@@ -41,6 +41,34 @@ export const marketplaceSchemaStatements = [
     ON marketplace_requests_v2(owner_actor_id, created_at DESC, id DESC)`,
   `CREATE INDEX IF NOT EXISTS marketplace_requests_v2_market_created_idx
     ON marketplace_requests_v2(visibility, created_at DESC, id DESC)`,
+  `CREATE TABLE IF NOT EXISTS marketplace_request_staging_v1 (
+    id TEXT PRIMARY KEY,
+    owner_actor_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    visibility TEXT NOT NULL DEFAULT 'private' CHECK (visibility = 'private'),
+    request_type TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL,
+    region TEXT NOT NULL CHECK (region IN ('北京', '上海', '广东', '浙江', '四川', '内蒙古', '全国')),
+    pricing_unit TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    duration_hours REAL,
+    delivery_date TEXT,
+    summary TEXT NOT NULL,
+    offered_json TEXT,
+    wanted_json TEXT,
+    cash_direction TEXT NOT NULL,
+    cash_amount REAL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    UNIQUE (owner_actor_id, idempotency_key)
+  )`,
+  `CREATE INDEX IF NOT EXISTS marketplace_request_staging_v1_owner_created_idx
+    ON marketplace_request_staging_v1(owner_actor_id, created_at DESC, id DESC)`,
   `CREATE TABLE IF NOT EXISTS marketplace_quotes_v2 (
     id TEXT PRIMARY KEY,
     supplier_actor_id TEXT NOT NULL,
@@ -113,6 +141,28 @@ export const marketplaceSchemaStatements = [
     last_seen_at TEXT NOT NULL,
     expires_at TEXT NOT NULL
   )`,
+] as const;
+
+/**
+ * These triggers deliberately install after versioned migrations. Version 4
+ * rebuilds the request parent table, and SQLite will otherwise reject that
+ * rebuild while a trigger on the staging table still references the old
+ * parent. Keeping them outside the shared v4 migration metadata also lets the
+ * previous application version ignore the additive staging capability.
+ */
+export const marketplaceStagingGuardStatements = [
+  `CREATE TRIGGER IF NOT EXISTS marketplace_requests_v2_no_staging_duplicate
+    BEFORE INSERT ON marketplace_requests_v2
+    WHEN EXISTS (
+      SELECT 1 FROM marketplace_request_staging_v1
+      WHERE owner_actor_id = NEW.owner_actor_id AND idempotency_key = NEW.idempotency_key AND id <> NEW.id
+    ) BEGIN SELECT RAISE(ABORT, 'marketplace request idempotency is privately staged'); END`,
+  `CREATE TRIGGER IF NOT EXISTS marketplace_request_staging_v1_no_market_duplicate
+    BEFORE INSERT ON marketplace_request_staging_v1
+    WHEN EXISTS (
+      SELECT 1 FROM marketplace_requests_v2
+      WHERE owner_actor_id = NEW.owner_actor_id AND idempotency_key = NEW.idempotency_key AND id <> NEW.id
+    ) BEGIN SELECT RAISE(ABORT, 'marketplace request idempotency is already public'); END`,
 ] as const;
 
 /**
@@ -213,15 +263,6 @@ export const marketplaceRegionExpansionStatements = [
   `CREATE INDEX marketplace_quotes_v2_demand_idx
     ON marketplace_quotes_v2(demand_id, created_at DESC, id DESC)`,
 ] as const;
-
-/** Version 5 preserves requests and quotes while allowing an application to
- * stage a request privately until all ownership and fulfillment sidecars are
- * durable. Private rows are never returned by marketplace list queries. */
-export const marketplaceVisibilityExpansionStatements = marketplaceRegionExpansionStatements.map((statement) =>
-  statement
-    .replaceAll("_region_v4", "_visibility_v5")
-    .replace("visibility = 'market'", "visibility IN ('private','market')"),
-);
 
 export const marketplaceLegacyImportStatements = [
   `INSERT OR IGNORE INTO marketplace_requests_v2 (

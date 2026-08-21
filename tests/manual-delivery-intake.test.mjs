@@ -158,7 +158,7 @@ test("buyer public key is privately persisted and only an authorized administrat
     const stagedDb = new DatabaseSync(path);
     let stagedId, stagedOwner;
     try {
-      const staged = stagedDb.prepare("SELECT id,owner_actor_id,visibility FROM marketplace_requests_v2 WHERE idempotency_key=?").get("manual-delivery-h200");
+      const staged = stagedDb.prepare("SELECT id,owner_actor_id,visibility FROM marketplace_request_staging_v1 WHERE idempotency_key=?").get("manual-delivery-h200");
       assert.equal(staged.visibility, "private");
       stagedId = staged.id;
       stagedOwner = staged.owner_actor_id;

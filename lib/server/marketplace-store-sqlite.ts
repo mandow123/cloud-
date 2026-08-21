@@ -26,8 +26,8 @@ import {
   marketplaceDataRepairStatements,
   marketplaceLegacyImportStatements,
   marketplaceRegionExpansionStatements,
-  marketplaceVisibilityExpansionStatements,
   marketplaceSchemaStatements,
+  marketplaceStagingGuardStatements,
 } from "@/lib/server/marketplace-schema";
 import {
   MarketplaceAccessError,
@@ -232,6 +232,7 @@ function applyMigration(db: DatabaseSync) {
   }
   if (newest?.version === MARKETPLACE_MIGRATION_VERSION) {
     if (newest.checksum !== MARKETPLACE_MIGRATION_CHECKSUM) throw new Error("DATABASE_MIGRATION_CHECKSUM_MISMATCH");
+    for (const statement of marketplaceStagingGuardStatements) db.exec(statement);
     return;
   }
 
@@ -248,15 +249,13 @@ function applyMigration(db: DatabaseSync) {
     if (newest && newest.version < 4) {
       for (const statement of marketplaceRegionExpansionStatements) db.exec(statement);
     }
-    if (newest && newest.version < 5) {
-      for (const statement of marketplaceVisibilityExpansionStatements) db.exec(statement);
-    }
     db.prepare("INSERT INTO marketplace_schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)").run(
       MARKETPLACE_MIGRATION_VERSION,
       MARKETPLACE_MIGRATION_CHECKSUM,
       new Date().toISOString(),
     );
     db.exec(`PRAGMA user_version = ${MARKETPLACE_MIGRATION_VERSION}`);
+    for (const statement of marketplaceStagingGuardStatements) db.exec(statement);
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
@@ -272,6 +271,7 @@ function pruneExpiredMarketplaceData(db: DatabaseSync, sessionRowLimit: number) 
     db.prepare("DELETE FROM marketplace_events_v2 WHERE created_at < ?").run(cutoff);
     db.prepare("DELETE FROM marketplace_quotes_v2 WHERE created_at < ?").run(cutoff);
     db.prepare("DELETE FROM marketplace_requests_v2 WHERE updated_at < ?").run(cutoff);
+    db.prepare("DELETE FROM marketplace_request_staging_v1 WHERE updated_at < ?").run(cutoff);
     db.prepare("DELETE FROM marketplace_drafts_v2 WHERE created_at < ?").run(cutoff);
     db.prepare("DELETE FROM marketplace_sessions_v2 WHERE expires_at <= ?").run(now);
     db.prepare(`DELETE FROM marketplace_sessions_v2 WHERE actor_id IN (
@@ -406,8 +406,9 @@ async function cursorSql(options: MarketplaceListOptions, values: SqlValue[], au
 }
 
 function existingRequestByIdempotency(db: DatabaseSync, context: MarketplaceMutationContext) {
-  return db.prepare("SELECT * FROM marketplace_requests_v2 WHERE owner_actor_id = ? AND idempotency_key = ?")
-    .get(context.actorId, context.idempotencyKey) as RequestRow | undefined;
+  return db.prepare(`SELECT * FROM marketplace_requests_v2 WHERE owner_actor_id = ? AND idempotency_key = ?
+    UNION ALL SELECT * FROM marketplace_request_staging_v1 WHERE owner_actor_id = ? AND idempotency_key = ? LIMIT 1`)
+    .get(context.actorId, context.idempotencyKey, context.actorId, context.idempotencyKey) as RequestRow | undefined;
 }
 
 function existingQuoteByIdempotency(db: DatabaseSync, context: MarketplaceMutationContext) {
@@ -564,8 +565,10 @@ export function createSqliteMarketplaceStore(options:{readinessOnly?:boolean}={}
         }
         const count = db.prepare("SELECT COUNT(*) AS count FROM marketplace_requests_v2 WHERE owner_actor_id <> ?")
           .get(CURATED_DEMAND_OWNER) as { count: number };
-        if (count.count >= capacityLimits.requests) throw new MarketplaceCapacityError("requests");
-        db.prepare(`INSERT INTO marketplace_requests_v2 (
+        const staged = db.prepare("SELECT COUNT(*) AS count FROM marketplace_request_staging_v1").get() as { count: number };
+        if (count.count + staged.count >= capacityLimits.requests) throw new MarketplaceCapacityError("requests");
+        const target = options.visibility === "private" ? "marketplace_request_staging_v1" : "marketplace_requests_v2";
+        db.prepare(`INSERT INTO ${target} (
           id, owner_actor_id, idempotency_key, payload_hash, visibility,
           request_type, kind, title, category, region, pricing_unit, quantity,
           duration_hours, delivery_date, summary, offered_json, wanted_json,
@@ -594,7 +597,7 @@ export function createSqliteMarketplaceStore(options:{readinessOnly?:boolean}={}
           record.createdAt,
           record.updatedAt,
         );
-        insertEvent(db, context.actorId, "request", record.id, "REQUEST_CREATED", options.visibility === "private" ? "需求已私有暂存，等待关联记录完成。" : "需求已记录并生成匿名市场投影。", record.createdAt);
+        if (options.visibility !== "private") insertEvent(db, context.actorId, "request", record.id, "REQUEST_CREATED", "需求已记录并生成匿名市场投影。", record.createdAt);
         db.exec("COMMIT");
         return { record, replayed: false };
       } catch (error) {
@@ -604,13 +607,22 @@ export function createSqliteMarketplaceStore(options:{readinessOnly?:boolean}={}
     },
     async publishRequest(actorId, requestId) {
       maintainIfDue();
-      const current=db.prepare("SELECT * FROM marketplace_requests_v2 WHERE id=? AND owner_actor_id=?").get(requestId,actorId) as RequestRow|undefined;
+      const published=db.prepare("SELECT * FROM marketplace_requests_v2 WHERE id=? AND owner_actor_id=? AND visibility='market'").get(requestId,actorId) as RequestRow|undefined;
+      if(published)return mapRequest(published);
+      const current=db.prepare("SELECT * FROM marketplace_request_staging_v1 WHERE id=? AND owner_actor_id=?").get(requestId,actorId) as RequestRow|undefined;
       if(!current)throw new MarketplaceAccessError("DEMAND_NOT_FOUND");
-      if(current.visibility==="private"){
-        const at=new Date().toISOString();
-        db.exec("BEGIN IMMEDIATE");
-        try{db.prepare("UPDATE marketplace_requests_v2 SET visibility='market',updated_at=?,version=version+1 WHERE id=? AND owner_actor_id=? AND visibility='private'").run(at,requestId,actorId);insertEvent(db,actorId,"request",requestId,"REQUEST_PUBLISHED","需求关联记录完整，已生成匿名市场投影。",at);db.exec("COMMIT");}catch(error){db.exec("ROLLBACK");throw error;}
-      }
+      const at=new Date().toISOString();
+      db.exec("BEGIN IMMEDIATE");
+      try{
+        db.prepare(`INSERT INTO marketplace_requests_v2 (
+          id,owner_actor_id,idempotency_key,payload_hash,visibility,request_type,kind,title,category,region,pricing_unit,quantity,duration_hours,delivery_date,summary,offered_json,wanted_json,cash_direction,cash_amount,status,created_at,updated_at,version
+        ) SELECT id,owner_actor_id,idempotency_key,payload_hash,'market',request_type,kind,title,category,region,pricing_unit,quantity,duration_hours,delivery_date,summary,offered_json,wanted_json,cash_direction,cash_amount,status,created_at,?,version+1
+          FROM marketplace_request_staging_v1 WHERE id=? AND owner_actor_id=?`).run(at,requestId,actorId);
+        db.prepare("DELETE FROM marketplace_request_staging_v1 WHERE id=? AND owner_actor_id=?").run(requestId,actorId);
+        insertEvent(db,actorId,"request",requestId,"REQUEST_CREATED","需求关联记录完整后公开。",current.created_at);
+        insertEvent(db,actorId,"request",requestId,"REQUEST_PUBLISHED","需求关联记录完整，已生成匿名市场投影。",at);
+        db.exec("COMMIT");
+      }catch(error){db.exec("ROLLBACK");throw error;}
       const row=db.prepare("SELECT * FROM marketplace_requests_v2 WHERE id=? AND owner_actor_id=? AND visibility='market'").get(requestId,actorId) as RequestRow|undefined;
       if(!row)throw new MarketplaceAccessError("DEMAND_NOT_FOUND");return mapRequest(row);
     },
