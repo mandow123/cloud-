@@ -329,7 +329,15 @@ async function main() {
   assert(runbook.includes("API 守卫会为 API 请求输出结构化日志") && runbook.includes("不记录表单正文、Cookie、会话令牌、CSRF 值或供应商原始报价"), "runbook must accurately describe structured API logs and their redaction boundary");
   assert(runbook.includes("首次安装时数据库尚不存在") && runbook.indexOf("请求 `/api/ready`") < runbook.indexOf("第一次备份"), "runbook must initialize the database before the first-install backup");
   assert(runbook.includes("升级已有实例时顺序相反") && runbook.includes("替换应用前创建并异地同步一致性备份"), "runbook must back up existing production data before an upgrade");
-  assert(runbook.includes("0032 预部署门禁") && runbook.includes("APPLY_0032_HOSTING_AGENT_CAPABILITY_MODES") && runbook.includes("新镜像切换前"), "runbook must require the additive 0032 migration before the new image switch");
+  assert(
+    runbook.includes("0032 预部署门禁")
+      && runbook.includes("--allow-uninitialized")
+      && runbook.includes("hostingInitialized=false")
+      && runbook.includes("不得执行 0032")
+      && runbook.includes("已有完整 v14 Hosting")
+      && runbook.includes("APPLY_0032_HOSTING_AGENT_CAPABILITY_MODES"),
+    "runbook must classify Hosting initialization and apply 0032 only to a complete old v14 schema",
+  );
   assert(runbook.includes(".kai-cloud-backup.lock") && runbook.includes("只有一个 timer 指向该 `KAI_STATE_ROOT`"), "runbook must prevent differently named timers from racing on one backup root");
   assert(runbook.includes("127.0.0.1:3051") && runbook.includes("KAI_ENABLE_HSTS=1"), "runbook must document the new loopback port and the gated HSTS enablement step");
   assert(runbook.includes("任何恢复包都不得超过 30 天") && runbook.includes("异地存储也必须配置不超过 30 天的生命周期"), "runbook must align local and off-host backups with the 30-day data boundary");
