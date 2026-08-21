@@ -117,6 +117,8 @@ npm run ops:image:promote -- \
 
 Hosting V2 试运营固定使用管理员双人审批发放卡时，`KAI_ALIPAY_ENABLED` 必须保持 `0`；即使主机残留完整商户凭据也不能创建付款单。申请账号使用唯一 Root，审批账号使用独立的 `KAI_ADMIN_APPROVER_USERNAME` 与 `KAI_ADMIN_APPROVER_PASSWORD_HASH`，两个用户名、密码和实际操作者都必须不同；审批账号只获得卡时审批和只读审计权限。先设置 `KAI_HOSTING_V2_SETUP=1`、`KAI_HOSTING_V2=0` 进入预上线配置模式，仅完成供应商审核、费率、Agent 配对、设备验真和挂牌草稿；公开市场、租用、开通、启动、扣减和结算仍由服务端拒绝。设备退场接口使用独立开关 `KAI_HOSTING_DEVICE_RETIREMENT`，默认必须保持 `0`，完成 Root 应急撤权和受控退场演练后才可在 Setup 或交易模式下开启。配置模式只允许 Agent 执行验真，以及既有实例的停止与清理收尾，不能领取新的开通或启动命令。启用 `KAI_HOSTING_V2=1` 前必须配置 KAI Identity、不可变交付镜像和供应协议版本，并在隔离入口完成供应商审批、有效费率、在线 Host Agent、三分钟计量及清理演练。`/api/ready` 会逐项报告供应身份、Agent、费率、卡时账本、镜像、协议、计量、清理和支付宝关闭状态，任一关键项失败时新版本不得接入流量。
 
+人工 SSH 交付应另建 `KAI_ADMIN_FULFILLMENT_USERNAME` / `KAI_ADMIN_FULFILLMENT_PASSWORD_HASH` 对应的交付管理员。该账号仅获得交付读取、交付处理和审计读取能力，不能发布市场、操作支付或结算；用户名和密码都必须与 Root、财务审批账号不同。Root 仅作为应急回退，不作为日常交付账号。公钥原文只能由授权管理员在交付工单中按需展开，供应商与买家面板只显示指纹和各自可见的真实状态。
+
 账户控制台使用独立开关 `KAI_ACCOUNT_CONSOLE_V2`，默认必须为 `0`。启用后，`/member*` 与 `/supply*` 共用账户控制台外壳，但买家和供应商仍分别读取当前登录会话的 `activeOrganization` 数据；供应资格未通过时不显示设备、挂牌、订单或收益入口。该批次没有数据库迁移，需回退时把 `KAI_ACCOUNT_CONSOLE_V2=0` 并按标准流程重启应用，即恢复旧页面；不要同时改动 Hosting V2、支付或 Agent 开关。
 
 购买目录使用独立开关 `KAI_BUY_CATALOG_V2`，默认必须为 `0`。启用后，`/buy` 公开展示经过服务端资格筛选的供应商套餐，并把历史报价资料分离为只能提交撮合需求的市场线索；登录后的询价仍由 `KAI_MANUAL_DELIVERY_INTAKE` 单独控制。该目录不会锁库存、扣卡时、创建合同或调用 Agent。需回退时把 `KAI_BUY_CATALOG_V2=0` 并重启应用，`/buy` 将返回现有 GPU 目录；不要同时开启 Hosting V2 交易或支付开关。

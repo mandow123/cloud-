@@ -132,7 +132,7 @@ export async function POST(request: Request) {
       actorId: actor.id,
       idempotencyKey,
       payloadHash: requestPayloadHash,
-    }, input);
+    }, input, { visibility: "private" });
     if (account) {
       await bindNewEntityToOrganization({
         account,
@@ -192,10 +192,14 @@ export async function POST(request: Request) {
       idempotencyKey: `catalog-purchase-snapshot:${idempotencyKey}`,
       payloadHash: await accountAuthDigest(JSON.stringify(purchaseSnapshotPayload)),
     }, purchaseSnapshotPayload) : null;
+    if (!manualDelivery || !purchaseSnapshot) {
+      throw new MarketplaceInputError("人工交付关联记录未完整保存，需求仍保持私有，请使用相同请求重试。", "resourceId");
+    }
+    const publishedRecord = await authorization.store.publishRequest(actor.id, result.record.id);
     const headers = new Headers(actor.responseHeaders);
     headers.set("idempotency-replayed", String(result.replayed));
     return jsonResponse({
-      record: result.record,
+      record: publishedRecord,
       replayed: result.replayed,
       manualDelivery: manualDelivery ? {
         mode: "MANUAL_SSH",

@@ -492,7 +492,7 @@ test("legacy marketplace tables import once without exposing supplier free text 
     assert.equal(readyResponse.status, 200);
     const ready = await readyResponse.json();
     assert.equal(ready.status, "ok");
-    assert.equal(ready.database.schemaVersion, 4);
+    assert.equal(ready.database.schemaVersion, 5);
     await stopServer(server);
 
     const migratedDb = new DatabaseSync(databasePath, { readOnly: true });
@@ -521,7 +521,7 @@ test("legacy marketplace tables import once without exposing supplier free text 
       ).get();
       const schemaSource = await readFile("db/schema.ts", "utf8");
       const declaredChecksum = schemaSource.match(/MARKETPLACE_MIGRATION_CHECKSUM = "([0-9a-f]{64})"/u)?.[1];
-      assert.equal(migration.version, 4);
+      assert.equal(migration.version, 5);
       assert.equal(migration.checksum, declaredChecksum);
     } finally {
       migratedDb.close();
@@ -588,7 +588,7 @@ test("schema v3 repairs already-migrated v2 marketplace enum values before publi
     const readyResponse = await fetch(`${server.baseUrl}/api/ready`);
     assert.equal(readyResponse.status, 200);
     const ready = await readyResponse.json();
-    assert.equal(ready.database.schemaVersion, 4);
+    assert.equal(ready.database.schemaVersion, 5);
 
     const marketResponse = await fetch(`${server.baseUrl}/api/requests?view=market&limit=50`);
     assert.equal(marketResponse.status, 200);
@@ -614,7 +614,7 @@ test("schema v3 repairs already-migrated v2 marketplace enum values before publi
       const migration = repaired.prepare(
         "SELECT version FROM marketplace_schema_migrations ORDER BY version DESC LIMIT 1",
       ).get();
-      assert.equal(migration.version, 4);
+      assert.equal(migration.version, 5);
     } finally {
       repaired.close();
     }
@@ -856,7 +856,7 @@ test("marketplace API enforces A/B/C isolation, projections, CSRF and idempotenc
     const ready = await (await fetch(`${fixture.server.baseUrl}/api/ready`)).json();
     assert.equal(ready.status, "ok");
     assert.equal(ready.database.backend, "sqlite");
-    assert.equal(ready.database.schemaVersion, 4);
+    assert.equal(ready.database.schemaVersion, 5);
     assert.equal(ready.market.source, "persistent");
     assert.equal(ready.market.ready, true);
 

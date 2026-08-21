@@ -73,9 +73,46 @@ export type AdminManualDeliveryIntake = Readonly<{
   resourceId: string;
   resourceTitle: string;
   sshPublicKeyFingerprint: string;
-  status: "PENDING_MANUAL_DELIVERY";
+  status: ManualDeliveryStatus;
+  statusVersion: number;
+  supplierOrganizationId: string | null;
+  supplierOrganizationName: string | null;
+  internalNote: string | null;
+  buyerVisibleNote: string | null;
+  connection: ManualDeliveryConnection | null;
+  deliveryTimeline: ManualDeliveryTimeline;
   createdAt: string;
   updatedAt: string;
+}>;
+
+export type ManualDeliveryConnection = Readonly<{
+  host: string;
+  port: number;
+  username: string;
+  hostKeyFingerprint: string | null;
+}>;
+
+export type ManualDeliveryStatus =
+  | "PENDING_MANUAL_DELIVERY"
+  | "SUPPLIER_ASSIGNED"
+  | "DELIVERY_IN_PROGRESS"
+  | "AWAITING_BUYER_ACCEPTANCE"
+  | "COMPLETED"
+  | "CANCELLED"
+  | "ACCESS_REVOKED";
+
+export type ManualDeliveryTimeline = Readonly<{
+  assignedAt: string | null;
+  startedAt: string | null;
+  deliveredAt: string | null;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  revokedAt: string | null;
+}>;
+
+export type ManualDeliverySupplierCandidate = Readonly<{
+  organizationId: string;
+  organizationName: string;
 }>;
 
 export type AdminManualDeliveryPublicKey = Readonly<{
@@ -86,7 +123,11 @@ export type AdminManualDeliveryPublicKey = Readonly<{
 
 export type MemberCatalogPurchaseIntent = Readonly<{
   demandId: string;
-  status: "PENDING_MANUAL_DELIVERY";
+  status: ManualDeliveryStatus;
+  statusVersion: number;
+  buyerVisibleNote: string | null;
+  connection: ManualDeliveryConnection | null;
+  deliveryTimeline: ManualDeliveryTimeline;
   resource: Readonly<{
     id: string;
     title: string;
@@ -121,13 +162,25 @@ export type MemberCatalogPurchaseIntent = Readonly<{
   updatedAt: string;
 }>;
 
+export type SupplierManualDeliveryTask = Readonly<{
+  demandId: string;
+  status: ManualDeliveryStatus;
+  statusVersion: number;
+  resource: MemberCatalogPurchaseIntent["resource"];
+  request: MemberCatalogPurchaseIntent["request"];
+  sshPublicKeyFingerprint: string | null;
+  deliveryTimeline: ManualDeliveryTimeline;
+  createdAt: string;
+  updatedAt: string;
+}>;
+
 export type MemberAccountConsoleRecords = Readonly<{
   purchaseIntents: Readonly<{
     total: number;
     pendingManualDelivery: number;
     recent: readonly Readonly<{
       demandId: string;
-      status: "PENDING_MANUAL_DELIVERY";
+      status: ManualDeliveryStatus;
       resourceTitle: string;
       supplierName: string;
       estimatedCardHourMicros: number;
@@ -177,10 +230,16 @@ export interface AdminOperationsStore {
   getMemberPersonalCounts(organizationId: string, asOf: string): Promise<MemberPersonalCounts>;
   recordManualDeliveryIntake(context: AdminMutationContext, input: Record<string, unknown>): Promise<{ record: AdminManualDeliveryIntake; replayed: boolean }>;
   listManualDeliveryIntakes(query?: AdminListQuery): Promise<AdminManualDeliveryIntake[]>;
+  getManualDeliveryIntake(demandId: string): Promise<AdminManualDeliveryIntake | null>;
+  listManualDeliverySupplierCandidates(): Promise<ManualDeliverySupplierCandidate[]>;
+  transitionManualDelivery(context: AdminMutationContext, demandId: string, action: "ASSIGN" | "START" | "MARK_DELIVERED" | "CANCEL" | "REVOKE", input: Record<string, unknown>): Promise<{ record: AdminManualDeliveryIntake; replayed: boolean }>;
   revealManualDeliveryPublicKey(principalId: string, demandId: string): Promise<AdminManualDeliveryPublicKey>;
   recordCatalogPurchaseIntentSnapshot(context: AdminMutationContext, input: Record<string, unknown>): Promise<{ record: MemberCatalogPurchaseIntent; replayed: boolean }>;
   listMemberCatalogPurchaseIntents(organizationId: string, limit?: number): Promise<MemberCatalogPurchaseIntent[]>;
   getMemberCatalogPurchaseIntent(organizationId: string, demandId: string): Promise<MemberCatalogPurchaseIntent | null>;
+  confirmMemberManualDelivery(context: AdminMutationContext, demandId: string, input: Record<string, unknown>): Promise<{ record: MemberCatalogPurchaseIntent; replayed: boolean }>;
+  listSupplierManualDeliveries(organizationId: string, limit?: number): Promise<SupplierManualDeliveryTask[]>;
+  getSupplierManualDelivery(organizationId: string, demandId: string): Promise<SupplierManualDeliveryTask | null>;
   getMemberAccountConsoleRecords(organizationId: string, recentLimit?: number): Promise<MemberAccountConsoleRecords>;
 }
 

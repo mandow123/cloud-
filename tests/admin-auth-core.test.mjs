@@ -13,10 +13,11 @@ test("Root owns full administration while the independent finance approver recei
   assert.deepEqual(ADMIN_ROLES, ["ROOT","ROLE_ADMIN","INTAKE_OPERATOR","INVENTORY_OPERATOR","VERIFICATION_REVIEWER","MARKET_OPERATOR","FULFILLMENT_OPERATOR","FINANCE_OPERATOR","FINANCE_APPROVER","SUPPORT_READONLY","AUDITOR"]);
   assert.deepEqual(adminPermissionsForRoles(["ROOT"]), ADMIN_PERMISSIONS);
   assert.deepEqual(adminPermissionsForRoles(["FINANCE_APPROVER"]), ["ADMIN_PANEL_READ", "PAYMENT_READ", "SETTLEMENT_OPERATE", "AUDIT_READ"]);
-  for (const role of ADMIN_ROLES.filter((candidate) => !["ROOT", "FINANCE_APPROVER"].includes(candidate))) {
+  assert.deepEqual(adminPermissionsForRoles(["FULFILLMENT_OPERATOR"]), ["ADMIN_PANEL_READ", "FULFILLMENT_READ", "FULFILLMENT_OPERATE", "AUDIT_READ"]);
+  for (const role of ADMIN_ROLES.filter((candidate) => !["ROOT", "FINANCE_APPROVER", "FULFILLMENT_OPERATOR"].includes(candidate))) {
     assert.deepEqual(adminPermissionsForRoles([role]), [], `${role} must not receive admin permissions`);
   }
-  assert.deepEqual(adminPermissionsForRoles(ADMIN_ROLES.filter((role) => role !== "ROOT")), ["ADMIN_PANEL_READ", "PAYMENT_READ", "SETTLEMENT_OPERATE", "AUDIT_READ"]);
+  assert.deepEqual(adminPermissionsForRoles(ADMIN_ROLES.filter((role) => role !== "ROOT")), ["ADMIN_PANEL_READ", "FULFILLMENT_READ", "FULFILLMENT_OPERATE", "PAYMENT_READ", "SETTLEMENT_OPERATE", "AUDIT_READ"]);
 });
 
 test("account sessions enforce a thirty-minute idle and eight-hour absolute limit", async () => {

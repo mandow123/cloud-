@@ -4,7 +4,7 @@ import { ADMIN_ROLES, type AdminRole } from "../admin-auth-types.ts";
 import { adminPermissionsForRoles } from "./admin-auth.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { countAdminProjection, readAdminProjection, type AdminProjectionAdapter } from "./admin-projections.ts";
-import type { AdminEntityOwnership, AdminListQuery, AdminManualDeliveryIntake, AdminManualDeliveryPublicKey, AdminMutationContext, AdminOperationsStore, AdminProjectionName, AdminRefundCase, AdminRefundExecution, AdminSourceSystem, AdminWorkItem, MemberAccountConsoleRecords, MemberCatalogPurchaseIntent, MemberPersonalCounts } from "./admin-store.ts";
+import type { AdminEntityOwnership, AdminListQuery, AdminManualDeliveryIntake, AdminManualDeliveryPublicKey, AdminMutationContext, AdminOperationsStore, AdminProjectionName, AdminRefundCase, AdminRefundExecution, AdminSourceSystem, AdminWorkItem, ManualDeliveryConnection, ManualDeliveryStatus, ManualDeliveryTimeline, MemberAccountConsoleRecords, MemberCatalogPurchaseIntent, MemberPersonalCounts, SupplierManualDeliveryTask } from "./admin-store.ts";
 
 export type AdminSql = Readonly<{ sql: string; values?: readonly unknown[] }>;
 export type AdminRunResult = Readonly<{ changes: number }>;
@@ -71,13 +71,20 @@ function workItem(row: Row): AdminWorkItem { return { id:String(row.id),sourceSy
 function refundExecution(row: Row): AdminRefundExecution { return { refundCaseId:String(row.refund_case_id),provider:"ALIPAY",refundRequestId:String(row.refund_request_id),orderId:String(row.order_id),status:row.status as AdminRefundExecution["status"],attemptCount:Number(row.attempt_count),attemptedBy:String(row.attempted_by),claimToken:String(row.claim_token),providerTransactionRef:row.provider_transaction_ref==null?null:String(row.provider_transaction_ref),lastErrorCode:row.last_error_code==null?null:String(row.last_error_code),lastErrorMessage:row.last_error_message==null?null:String(row.last_error_message),lastAttemptAt:String(row.last_attempt_at),completedAt:row.completed_at==null?null:String(row.completed_at),version:Number(row.version),createdAt:String(row.created_at),updatedAt:String(row.updated_at) }; }
 function refund(row: Row, execution: AdminRefundExecution | null = null): AdminRefundCase { return { id:String(row.id),sourceSystem:row.source_system as AdminRefundCase["sourceSystem"],entityType:String(row.entity_type),entityId:String(row.entity_id),amountCents:Number(row.amount_cents),currency:"CNY",businessExpectedVersion:Number(row.business_expected_version),status:row.status as AdminRefundCase["status"],requestedBy:String(row.requested_by),requestReason:String(row.request_reason),decidedBy:row.decided_by==null?null:String(row.decided_by),decisionReason:row.decision_reason==null?null:String(row.decision_reason),version:Number(row.version),createdAt:String(row.created_at),updatedAt:String(row.updated_at),decidedAt:row.decided_at==null?null:String(row.decided_at),execution }; }
 function ownership(row: Row): AdminEntityOwnership { return { sourceSystem:row.source_system as AdminSourceSystem,entityType:String(row.entity_type),entityId:String(row.entity_id),organizationId:String(row.organization_id),accountId:String(row.account_id),legacyActorId:row.legacy_actor_id==null?null:String(row.legacy_actor_id),boundByPrincipalId:String(row.bound_by_principal_id),createdAt:String(row.created_at),updatedAt:String(row.updated_at),version:Number(row.version),classification:"BOUND" }; }
-function manualDeliveryIntake(row:Row):AdminManualDeliveryIntake{return{demandId:String(row.demand_id),buyerOrganizationId:String(row.buyer_organization_id),buyerAccountId:String(row.buyer_account_id),buyerDisplayName:row.buyer_display_name==null?null:String(row.buyer_display_name),buyerEmail:row.buyer_email==null?null:String(row.buyer_email),organizationName:row.organization_name==null?null:String(row.organization_name),resourceId:String(row.resource_id),resourceTitle:String(row.resource_title),sshPublicKeyFingerprint:String(row.ssh_public_key_fingerprint),status:"PENDING_MANUAL_DELIVERY",createdAt:String(row.created_at),updatedAt:String(row.updated_at)};}
+function deliveryTimeline(row:Row):ManualDeliveryTimeline{return{assignedAt:row.assigned_at==null?null:String(row.assigned_at),startedAt:row.started_at==null?null:String(row.started_at),deliveredAt:row.delivered_at==null?null:String(row.delivered_at),completedAt:row.completed_at==null?null:String(row.completed_at),cancelledAt:row.cancelled_at==null?null:String(row.cancelled_at),revokedAt:row.revoked_at==null?null:String(row.revoked_at)};}
+function deliveryConnection(row:Row):ManualDeliveryConnection|null{return row.connection_host==null?null:{host:String(row.connection_host),port:Number(row.connection_port),username:String(row.connection_username),hostKeyFingerprint:row.connection_host_key_fingerprint==null?null:String(row.connection_host_key_fingerprint)};}
+function deliveryStatus(row:Row):ManualDeliveryStatus{return (row.delivery_status??row.status??"PENDING_MANUAL_DELIVERY") as ManualDeliveryStatus;}
+function manualDeliveryIntake(row:Row):AdminManualDeliveryIntake{return{demandId:String(row.demand_id),buyerOrganizationId:String(row.buyer_organization_id),buyerAccountId:String(row.buyer_account_id),buyerDisplayName:row.buyer_display_name==null?null:String(row.buyer_display_name),buyerEmail:row.buyer_email==null?null:String(row.buyer_email),organizationName:row.organization_name==null?null:String(row.organization_name),resourceId:String(row.resource_id),resourceTitle:String(row.resource_title),sshPublicKeyFingerprint:String(row.ssh_public_key_fingerprint),status:deliveryStatus(row),statusVersion:Number(row.status_version??1),supplierOrganizationId:row.supplier_organization_id==null?null:String(row.supplier_organization_id),supplierOrganizationName:row.supplier_organization_name==null?null:String(row.supplier_organization_name),internalNote:row.internal_note==null?null:String(row.internal_note),buyerVisibleNote:row.buyer_visible_note==null?null:String(row.buyer_visible_note),connection:deliveryConnection(row),deliveryTimeline:deliveryTimeline(row),createdAt:String(row.created_at),updatedAt:String(row.status_updated_at??row.updated_at)};}
 function memberCatalogPurchaseIntent(row: Row): MemberCatalogPurchaseIntent {
   const snapshot = JSON.parse(String(row.resource_snapshot_json)) as MemberCatalogPurchaseIntent["resource"];
   const quantity = Number(row.quantity);
   return {
     demandId: String(row.demand_id),
-    status: "PENDING_MANUAL_DELIVERY",
+    status: deliveryStatus(row),
+    statusVersion: Number(row.status_version ?? 1),
+    buyerVisibleNote: row.buyer_visible_note == null ? null : String(row.buyer_visible_note),
+    connection: ["AWAITING_BUYER_ACCEPTANCE","COMPLETED"].includes(deliveryStatus(row)) ? deliveryConnection(row) : null,
+    deliveryTimeline: deliveryTimeline(row),
     resource: snapshot,
     request: {
       quantity,
@@ -95,6 +102,7 @@ function memberCatalogPurchaseIntent(row: Row): MemberCatalogPurchaseIntent {
     updatedAt: String(row.updated_at),
   };
 }
+function supplierManualDeliveryTask(row:Row):SupplierManualDeliveryTask{const member=memberCatalogPurchaseIntent(row);return{demandId:member.demandId,status:member.status,statusVersion:member.statusVersion,resource:member.resource,request:member.request,sshPublicKeyFingerprint:member.sshPublicKeyFingerprint,deliveryTimeline:member.deliveryTimeline,createdAt:member.createdAt,updatedAt:member.updatedAt};}
 function purchaseResourceSnapshot(value: unknown): MemberCatalogPurchaseIntent["resource"] {
   const raw = jsonObject(value, "resourceSnapshot");
   const rawSpecs = jsonObject(raw.specs, "resourceSnapshot.specs");
@@ -323,16 +331,79 @@ export async function createAdminOperationsStore(db: AdminDatabaseAdapter): Prom
       const demandId=text(input.demandId,"demandId",160),organizationId=adminOrganizationId(context),accountId=text(input.buyerAccountId,"buyerAccountId",160),resourceId=text(input.resourceId,"resourceId",160),resourceTitle=text(input.resourceTitle,"resourceTitle",300),canonicalKey=text(input.canonicalSshPublicKey,"canonicalSshPublicKey",12288),fingerprint=text(input.sshPublicKeyFingerprint,"sshPublicKeyFingerprint",160),at=now();
       if(!/^(?:ssh-ed25519|ssh-rsa) [A-Za-z0-9+/]+={0,2}$/u.test(canonicalKey))throw new ExchangeInputError("canonicalSshPublicKey must be a canonical OpenSSH public key.","canonicalSshPublicKey");
       if(!/^SHA256:[A-Za-z0-9+/]{43}$/u.test(fingerprint))throw new ExchangeInputError("sshPublicKeyFingerprint is invalid.","sshPublicKeyFingerprint");
-      const existing=await db.first<Row>("SELECT i.*,a.display_name buyer_display_name,a.primary_email buyer_email,o.name organization_name FROM admin_manual_delivery_intakes i LEFT JOIN admin_user_accounts a ON a.id=i.buyer_account_id LEFT JOIN admin_organizations o ON o.id=i.buyer_organization_id WHERE i.demand_id=?",[demandId]);
+      const existing=await db.first<Row>(`SELECT i.*,COALESCE(ds.status,i.status) delivery_status,COALESCE(ds.version,1) status_version,
+        ds.supplier_organization_id,so.name supplier_organization_name,ds.internal_note,ds.buyer_visible_note,ds.connection_host,ds.connection_port,ds.connection_username,ds.connection_host_key_fingerprint,
+        ds.assigned_at,ds.started_at,ds.delivered_at,ds.completed_at,ds.cancelled_at,ds.revoked_at,ds.updated_at status_updated_at,
+        a.display_name buyer_display_name,a.primary_email buyer_email,o.name organization_name
+        FROM admin_manual_delivery_intakes i LEFT JOIN admin_manual_delivery_statuses ds ON ds.demand_id=i.demand_id
+        LEFT JOIN admin_user_accounts a ON a.id=i.buyer_account_id LEFT JOIN admin_organizations o ON o.id=i.buyer_organization_id
+        LEFT JOIN admin_organizations so ON so.id=ds.supplier_organization_id WHERE i.demand_id=?`,[demandId]);
       if(existing){if(String(existing.ssh_public_key_fingerprint)!==fingerprint||String(existing.buyer_organization_id)!==organizationId||String(existing.buyer_account_id)!==accountId)throw new ExchangeIdempotencyConflictError();return{record:manualDeliveryIntake(existing),replayed:true};}
-      const record:AdminManualDeliveryIntake={demandId,buyerOrganizationId:organizationId,buyerAccountId:accountId,buyerDisplayName:null,buyerEmail:null,organizationName:null,resourceId,resourceTitle,sshPublicKeyFingerprint:fingerprint,status:"PENDING_MANUAL_DELIVERY",createdAt:at,updatedAt:at};
+      const record:AdminManualDeliveryIntake={demandId,buyerOrganizationId:organizationId,buyerAccountId:accountId,buyerDisplayName:null,buyerEmail:null,organizationName:null,resourceId,resourceTitle,sshPublicKeyFingerprint:fingerprint,status:"PENDING_MANUAL_DELIVERY",statusVersion:1,supplierOrganizationId:null,supplierOrganizationName:null,internalNote:null,buyerVisibleNote:null,connection:null,deliveryTimeline:{assignedAt:null,startedAt:null,deliveredAt:null,completedAt:null,cancelledAt:null,revokedAt:null},createdAt:at,updatedAt:at};
       const response={record};
-      await db.batch([{sql:"INSERT INTO admin_manual_delivery_intakes(demand_id,buyer_organization_id,buyer_account_id,resource_id,resource_title,canonical_ssh_public_key,ssh_public_key_fingerprint,status,idempotency_key,payload_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'PENDING_MANUAL_DELIVERY',?,?,?,?)",values:[demandId,organizationId,accountId,resourceId,resourceTitle,canonicalKey,fingerprint,context.idempotencyKey,context.payloadHash,at,at]},auditSql(context.principalId,"MARKETPLACE","MANUAL_DELIVERY_INTAKE",demandId,"MANUAL_DELIVERY_INTAKE_RECORDED","Buyer SSH public key fingerprint recorded for manual fulfillment.",context.payloadHash,at),receiptSql(context,command,response,at)]);
+      await db.batch([{sql:"INSERT INTO admin_manual_delivery_intakes(demand_id,buyer_organization_id,buyer_account_id,resource_id,resource_title,canonical_ssh_public_key,ssh_public_key_fingerprint,status,idempotency_key,payload_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'PENDING_MANUAL_DELIVERY',?,?,?,?)",values:[demandId,organizationId,accountId,resourceId,resourceTitle,canonicalKey,fingerprint,context.idempotencyKey,context.payloadHash,at,at]},{sql:"INSERT INTO admin_manual_delivery_statuses(demand_id,status,version,created_at,updated_at) VALUES(?,'PENDING_MANUAL_DELIVERY',1,?,?)",values:[demandId,at,at]},auditSql(context.principalId,"MARKETPLACE","MANUAL_DELIVERY_INTAKE",demandId,"MANUAL_DELIVERY_INTAKE_RECORDED","Buyer SSH public key fingerprint recorded for manual fulfillment.",context.payloadHash,at),receiptSql(context,command,response,at)]);
       return{record,replayed:false};
     },
     async listManualDeliveryIntakes(query={}) {
-      const values:unknown[]=[];let where="";if(query.status){where="WHERE i.status=?";values.push(query.status);}values.push(limit(query));
-      return(await db.all<Row>(`SELECT i.*,a.display_name buyer_display_name,a.primary_email buyer_email,o.name organization_name FROM admin_manual_delivery_intakes i LEFT JOIN admin_user_accounts a ON a.id=i.buyer_account_id LEFT JOIN admin_organizations o ON o.id=i.buyer_organization_id ${where} ORDER BY i.created_at DESC LIMIT ?`,values)).map(manualDeliveryIntake);
+      const values:unknown[]=[];let where="";if(query.status){where="WHERE COALESCE(ds.status,i.status)=?";values.push(query.status);}values.push(limit(query));
+      return(await db.all<Row>(`SELECT i.*,COALESCE(ds.status,i.status) delivery_status,COALESCE(ds.version,1) status_version,
+        ds.supplier_organization_id,so.name supplier_organization_name,ds.internal_note,ds.buyer_visible_note,ds.connection_host,ds.connection_port,ds.connection_username,ds.connection_host_key_fingerprint,
+        ds.assigned_at,ds.started_at,ds.delivered_at,ds.completed_at,ds.cancelled_at,ds.revoked_at,ds.updated_at status_updated_at,
+        a.display_name buyer_display_name,a.primary_email buyer_email,o.name organization_name
+        FROM admin_manual_delivery_intakes i LEFT JOIN admin_manual_delivery_statuses ds ON ds.demand_id=i.demand_id
+        LEFT JOIN admin_user_accounts a ON a.id=i.buyer_account_id LEFT JOIN admin_organizations o ON o.id=i.buyer_organization_id
+        LEFT JOIN admin_organizations so ON so.id=ds.supplier_organization_id ${where} ORDER BY i.created_at DESC LIMIT ?`,values)).map(manualDeliveryIntake);
+    },
+    async getManualDeliveryIntake(demandIdValue) {
+      const demandId=text(demandIdValue,"demandId",160);
+      const row=await db.first<Row>(`SELECT i.*,COALESCE(ds.status,i.status) delivery_status,COALESCE(ds.version,1) status_version,
+        ds.supplier_organization_id,so.name supplier_organization_name,ds.internal_note,ds.buyer_visible_note,ds.connection_host,ds.connection_port,ds.connection_username,ds.connection_host_key_fingerprint,
+        ds.assigned_at,ds.started_at,ds.delivered_at,ds.completed_at,ds.cancelled_at,ds.revoked_at,ds.updated_at status_updated_at,
+        a.display_name buyer_display_name,a.primary_email buyer_email,o.name organization_name
+        FROM admin_manual_delivery_intakes i LEFT JOIN admin_manual_delivery_statuses ds ON ds.demand_id=i.demand_id
+        LEFT JOIN admin_user_accounts a ON a.id=i.buyer_account_id LEFT JOIN admin_organizations o ON o.id=i.buyer_organization_id
+        LEFT JOIN admin_organizations so ON so.id=ds.supplier_organization_id WHERE i.demand_id=?`,[demandId]);
+      return row?manualDeliveryIntake(row):null;
+    },
+    async listManualDeliverySupplierCandidates() {
+      const rows=await db.all<Row>(`SELECT DISTINCT o.id organization_id,o.name organization_name
+        FROM admin_organizations o JOIN admin_entity_ownership own ON own.organization_id=o.id
+        JOIN supply_offers offer ON offer.id=own.entity_id
+        WHERE o.status='ACTIVE' AND own.source_system='SUPPLY_PILOT' AND own.entity_type='SUPPLY_OFFER'
+          AND offer.status IN ('VERIFIED','PUBLISHED')
+        ORDER BY o.name ASC,o.id ASC LIMIT 100`);
+      return rows.map((row)=>({organizationId:String(row.organization_id),organizationName:String(row.organization_name)}));
+    },
+    async transitionManualDelivery(context,demandIdValue,action,input) {
+      const demandId=text(demandIdValue,"demandId",160),expected=positiveInt(input.expectedVersion,"expectedVersion");
+      const command=`MANUAL_DELIVERY_${action}:${demandId}`;
+      const replay=await receipt<{record:AdminManualDeliveryIntake}>(db,context,command);if(replay)return{...replay,replayed:true};
+      const current=await store.getManualDeliveryIntake(demandId);if(!current)throw new ExchangeDomainError("EXCHANGE_NOT_FOUND",404,"Manual delivery intake not found.");
+      if(current.statusVersion!==expected)throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT",409,"Manual delivery status changed. Refresh and retry.");
+      const allowed:Record<typeof action,readonly ManualDeliveryStatus[]>={ASSIGN:["PENDING_MANUAL_DELIVERY","SUPPLIER_ASSIGNED"],START:["SUPPLIER_ASSIGNED"],MARK_DELIVERED:["DELIVERY_IN_PROGRESS"],CANCEL:["PENDING_MANUAL_DELIVERY","SUPPLIER_ASSIGNED","DELIVERY_IN_PROGRESS"],REVOKE:["AWAITING_BUYER_ACCEPTANCE","COMPLETED"]};
+      if(!allowed[action].includes(current.status))throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT",409,`Action ${action} is not allowed from ${current.status}.`);
+      const next:Record<typeof action,ManualDeliveryStatus>={ASSIGN:"SUPPLIER_ASSIGNED",START:"DELIVERY_IN_PROGRESS",MARK_DELIVERED:"AWAITING_BUYER_ACCEPTANCE",CANCEL:"CANCELLED",REVOKE:"ACCESS_REVOKED"};
+      const supplierOrganizationId=action==="ASSIGN"?text(input.supplierOrganizationId,"supplierOrganizationId",160):current.supplierOrganizationId;
+      let supplierOrganizationName=current.supplierOrganizationName;
+      if(action==="ASSIGN"){const supplier=await db.first<Row>(`SELECT DISTINCT o.id,o.name FROM admin_organizations o
+        JOIN admin_entity_ownership own ON own.organization_id=o.id JOIN supply_offers offer ON offer.id=own.entity_id
+        WHERE o.id=? AND o.status='ACTIVE' AND own.source_system='SUPPLY_PILOT' AND own.entity_type='SUPPLY_OFFER'
+          AND offer.status IN ('VERIFIED','PUBLISHED')`,[supplierOrganizationId]);if(!supplier)throw new ExchangeInputError("supplierOrganizationId must identify an active qualified supplier organization.","supplierOrganizationId");if(supplierOrganizationId===current.buyerOrganizationId)throw new ExchangeInputError("Buyer organization cannot fulfill its own manual delivery.","supplierOrganizationId");supplierOrganizationName=String(supplier.name);}
+      const internalNote=action==="CANCEL"||action==="REVOKE"?reason(input.reason):optionalText(input.note,"note",2000)??current.internalNote;
+      const buyerVisibleNote=action==="MARK_DELIVERED"?optionalText(input.buyerVisibleNote,"buyerVisibleNote",4000):current.buyerVisibleNote;
+      let connection=current.connection;
+      if(action==="MARK_DELIVERED"){
+        const raw=jsonObject(input.connection,"connection"),host=text(raw.host,"connection.host",255),port=positiveInt(raw.port,"connection.port"),username=text(raw.username,"connection.username",64),hostKeyFingerprint=text(raw.hostKeyFingerprint,"connection.hostKeyFingerprint",160);
+        if(port>65535)throw new ExchangeInputError("connection.port must be between 1 and 65535.","connection.port");
+        if(!/^(?:\[[0-9A-Fa-f:]+\]|[A-Za-z0-9](?:[A-Za-z0-9.-]{0,253}[A-Za-z0-9])?)$/u.test(host)||host.includes(".."))throw new ExchangeInputError("connection.host must be a safe hostname or IP address without a URL scheme.","connection.host");
+        if(!/^[a-z_][a-z0-9_-]{0,63}$/iu.test(username))throw new ExchangeInputError("connection.username is invalid.","connection.username");
+        if(!/^SHA256:[A-Za-z0-9+/]{43}$/u.test(hostKeyFingerprint))throw new ExchangeInputError("connection.hostKeyFingerprint is invalid.","connection.hostKeyFingerprint");
+        connection={host,port,username,hostKeyFingerprint};
+      }
+      const at=now(),column:Record<typeof action,string>={ASSIGN:"assigned_at",START:"started_at",MARK_DELIVERED:"delivered_at",CANCEL:"cancelled_at",REVOKE:"revoked_at"};
+      const record:AdminManualDeliveryIntake={...current,status:next[action],statusVersion:expected+1,supplierOrganizationId,supplierOrganizationName,internalNote,buyerVisibleNote,connection,deliveryTimeline:{...current.deliveryTimeline,[action==="ASSIGN"?"assignedAt":action==="START"?"startedAt":action==="MARK_DELIVERED"?"deliveredAt":action==="CANCEL"?"cancelledAt":"revokedAt"]:at},updatedAt:at};
+      const response={record};
+      await db.batch([{sql:`UPDATE admin_manual_delivery_statuses SET status=?,supplier_organization_id=?,internal_note=?,buyer_visible_note=?,connection_host=?,connection_port=?,connection_username=?,connection_host_key_fingerprint=?,${column[action]}=?,version=version+1,updated_at=? WHERE demand_id=? AND version=?`,values:[next[action],supplierOrganizationId,internalNote,buyerVisibleNote,connection?.host??null,connection?.port??null,connection?.username??null,connection?.hostKeyFingerprint??null,at,at,demandId,expected]},{sql:"SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END"},auditSql(context.principalId,"MARKETPLACE","MANUAL_DELIVERY_INTAKE",demandId,command,internalNote??`Manual delivery moved to ${next[action]}.`,context.payloadHash,at),receiptSql(context,command,response,at)]);return{...response,replayed:false};
     },
     async revealManualDeliveryPublicKey(principalIdValue,demandIdValue) {
       const principalId=text(principalIdValue,"principalId",160),demandId=text(demandIdValue,"demandId",160),row=await db.first<Row>("SELECT demand_id,canonical_ssh_public_key,ssh_public_key_fingerprint FROM admin_manual_delivery_intakes WHERE demand_id=?",[demandId]);
@@ -353,8 +424,10 @@ export async function createAdminOperationsStore(db: AdminDatabaseAdapter): Prom
       const unitPriceCnyCents=positiveInt(input.unitPriceCnyCents,"unitPriceCnyCents"),unitCardHourMicros=positiveInt(input.unitCardHourMicros,"unitCardHourMicros"),estimatedCardHourMicros=positiveInt(input.estimatedCardHourMicros,"estimatedCardHourMicros");
       const fingerprint=text(input.sshPublicKeyFingerprint,"sshPublicKeyFingerprint",160);
       if(!/^SHA256:[A-Za-z0-9+/]{43}$/u.test(fingerprint))throw new ExchangeInputError("sshPublicKeyFingerprint is invalid.","sshPublicKeyFingerprint");
-      const existing=await db.first<Row>(`SELECT s.*,i.ssh_public_key_fingerprint FROM admin_catalog_purchase_intent_snapshots s
-        LEFT JOIN admin_manual_delivery_intakes i ON i.demand_id=s.demand_id WHERE s.demand_id=?`,[demandId]);
+      const existing=await db.first<Row>(`SELECT s.*,i.ssh_public_key_fingerprint,COALESCE(ds.status,s.status) delivery_status,COALESCE(ds.version,1) status_version,ds.buyer_visible_note,ds.connection_host,ds.connection_port,ds.connection_username,ds.connection_host_key_fingerprint,
+        ds.assigned_at,ds.started_at,ds.delivered_at,ds.completed_at,ds.cancelled_at,ds.revoked_at,ds.updated_at status_updated_at FROM admin_catalog_purchase_intent_snapshots s
+        LEFT JOIN admin_manual_delivery_intakes i ON i.demand_id=s.demand_id
+        LEFT JOIN admin_manual_delivery_statuses ds ON ds.demand_id=s.demand_id WHERE s.demand_id=?`,[demandId]);
       if(existing){
         if(String(existing.payload_hash)!==context.payloadHash||String(existing.buyer_organization_id)!==organizationId||String(existing.buyer_account_id)!==accountId)throw new ExchangeIdempotencyConflictError();
         return{record:memberCatalogPurchaseIntent(existing),replayed:true};
@@ -371,28 +444,62 @@ export async function createAdminOperationsStore(db: AdminDatabaseAdapter): Prom
     },
     async listMemberCatalogPurchaseIntents(organizationIdValue,limitValue=50) {
       const organizationId=text(organizationIdValue,"organizationId",160),rowLimit=Math.min(100,Math.max(1,Number(limitValue)||50));
-      const rows=await db.all<Row>(`SELECT s.*,i.ssh_public_key_fingerprint FROM admin_catalog_purchase_intent_snapshots s
+      const rows=await db.all<Row>(`SELECT s.*,i.ssh_public_key_fingerprint,COALESCE(ds.status,s.status) delivery_status,COALESCE(ds.version,1) status_version,ds.buyer_visible_note,ds.connection_host,ds.connection_port,ds.connection_username,ds.connection_host_key_fingerprint,
+        ds.assigned_at,ds.started_at,ds.delivered_at,ds.completed_at,ds.cancelled_at,ds.revoked_at,ds.updated_at status_updated_at FROM admin_catalog_purchase_intent_snapshots s
         JOIN admin_entity_ownership own ON own.source_system='MARKETPLACE' AND own.entity_type='DEMAND' AND own.entity_id=s.demand_id
         LEFT JOIN admin_manual_delivery_intakes i ON i.demand_id=s.demand_id
+        LEFT JOIN admin_manual_delivery_statuses ds ON ds.demand_id=s.demand_id
         WHERE own.organization_id=? AND s.buyer_organization_id=?
         ORDER BY s.created_at DESC,s.demand_id DESC LIMIT ?`,[organizationId,organizationId,rowLimit]);
       return rows.map(memberCatalogPurchaseIntent);
     },
     async getMemberCatalogPurchaseIntent(organizationIdValue,demandIdValue) {
       const organizationId=text(organizationIdValue,"organizationId",160),demandId=text(demandIdValue,"demandId",160);
-      const row=await db.first<Row>(`SELECT s.*,i.ssh_public_key_fingerprint FROM admin_catalog_purchase_intent_snapshots s
+      const row=await db.first<Row>(`SELECT s.*,i.ssh_public_key_fingerprint,COALESCE(ds.status,s.status) delivery_status,COALESCE(ds.version,1) status_version,ds.buyer_visible_note,ds.connection_host,ds.connection_port,ds.connection_username,ds.connection_host_key_fingerprint,
+        ds.assigned_at,ds.started_at,ds.delivered_at,ds.completed_at,ds.cancelled_at,ds.revoked_at,ds.updated_at status_updated_at FROM admin_catalog_purchase_intent_snapshots s
         JOIN admin_entity_ownership own ON own.source_system='MARKETPLACE' AND own.entity_type='DEMAND' AND own.entity_id=s.demand_id
         LEFT JOIN admin_manual_delivery_intakes i ON i.demand_id=s.demand_id
+        LEFT JOIN admin_manual_delivery_statuses ds ON ds.demand_id=s.demand_id
         WHERE own.organization_id=? AND s.buyer_organization_id=? AND s.demand_id=?`,[organizationId,organizationId,demandId]);
       return row?memberCatalogPurchaseIntent(row):null;
+    },
+    async confirmMemberManualDelivery(context,demandIdValue,input) {
+      const demandId=text(demandIdValue,"demandId",160),organizationId=adminOrganizationId(context),expected=positiveInt(input.expectedVersion,"expectedVersion"),command=`CONFIRM_MANUAL_DELIVERY:${demandId}`;
+      const replay=await receipt<{record:MemberCatalogPurchaseIntent}>(db,context,command);if(replay)return{...replay,replayed:true};
+      const current=await store.getMemberCatalogPurchaseIntent(organizationId,demandId);if(!current)throw new ExchangeDomainError("EXCHANGE_NOT_FOUND",404,"Purchase intent not found.");
+      const owner=await store.getEntityOwnership("MARKETPLACE","DEMAND",demandId);if(!owner||owner.organizationId!==organizationId)throw new ExchangeDomainError("EXCHANGE_NOT_FOUND",404,"Purchase intent not found.");
+      if(current.statusVersion!==expected)throw new ExchangeDomainError("EXCHANGE_VERSION_CONFLICT",409,"Manual delivery status changed. Refresh and retry.");
+      if(current.status!=="AWAITING_BUYER_ACCEPTANCE")throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT",409,"Manual delivery is not awaiting buyer acceptance.");
+      const at=now(),record:MemberCatalogPurchaseIntent={...current,status:"COMPLETED",statusVersion:expected+1,deliveryTimeline:{...current.deliveryTimeline,completedAt:at},updatedAt:at},response={record};
+      await db.batch([{sql:"UPDATE admin_manual_delivery_statuses SET status='COMPLETED',completed_at=?,version=version+1,updated_at=? WHERE demand_id=? AND version=? AND status='AWAITING_BUYER_ACCEPTANCE'",values:[at,at,demandId,expected]},{sql:"SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END"},auditSql(context.principalId,"MARKETPLACE","MANUAL_DELIVERY_INTAKE",demandId,"MANUAL_DELIVERY_CONFIRMED_BY_BUYER",optionalText(input.note,"note",1000)??"Buyer confirmed receipt of manual delivery.",context.payloadHash,at),receiptSql(context,command,response,at)]);
+      return{...response,replayed:false};
+    },
+    async listSupplierManualDeliveries(organizationIdValue,limitValue=50) {
+      const organizationId=text(organizationIdValue,"organizationId",160),rowLimit=Math.min(100,Math.max(1,Number(limitValue)||50));
+      const rows=await db.all<Row>(`SELECT s.*,i.ssh_public_key_fingerprint,ds.status delivery_status,ds.version status_version,ds.connection_host,ds.connection_port,ds.connection_username,ds.connection_host_key_fingerprint,
+        ds.assigned_at,ds.started_at,ds.delivered_at,ds.completed_at,ds.cancelled_at,ds.revoked_at,ds.updated_at status_updated_at
+        FROM admin_catalog_purchase_intent_snapshots s JOIN admin_manual_delivery_intakes i ON i.demand_id=s.demand_id
+        JOIN admin_manual_delivery_statuses ds ON ds.demand_id=s.demand_id
+        WHERE ds.supplier_organization_id=? ORDER BY ds.updated_at DESC,s.demand_id DESC LIMIT ?`,[organizationId,rowLimit]);
+      return rows.map(supplierManualDeliveryTask);
+    },
+    async getSupplierManualDelivery(organizationIdValue,demandIdValue) {
+      const organizationId=text(organizationIdValue,"organizationId",160),demandId=text(demandIdValue,"demandId",160);
+      const row=await db.first<Row>(`SELECT s.*,i.ssh_public_key_fingerprint,ds.status delivery_status,ds.version status_version,ds.connection_host,ds.connection_port,ds.connection_username,ds.connection_host_key_fingerprint,
+        ds.assigned_at,ds.started_at,ds.delivered_at,ds.completed_at,ds.cancelled_at,ds.revoked_at,ds.updated_at status_updated_at
+        FROM admin_catalog_purchase_intent_snapshots s JOIN admin_manual_delivery_intakes i ON i.demand_id=s.demand_id
+        JOIN admin_manual_delivery_statuses ds ON ds.demand_id=s.demand_id
+        WHERE ds.supplier_organization_id=? AND s.demand_id=?`,[organizationId,demandId]);
+      return row?supplierManualDeliveryTask(row):null;
     },
     async getMemberAccountConsoleRecords(organizationIdValue,recentLimitValue=5) {
       const organizationId=text(organizationIdValue,"organizationId",160);
       const recentLimit=Math.min(10,Math.max(1,Number(recentLimitValue)||5));
       const [purchaseCounts,supplyCounts,purchaseRows,supplyRows]=await Promise.all([
         db.first<Row>(`SELECT COUNT(*) AS total,
-          SUM(CASE WHEN s.status='PENDING_MANUAL_DELIVERY' THEN 1 ELSE 0 END) AS pending_manual_delivery
+          SUM(CASE WHEN COALESCE(ds.status,s.status) NOT IN ('COMPLETED','CANCELLED','ACCESS_REVOKED') THEN 1 ELSE 0 END) AS pending_manual_delivery
           FROM admin_catalog_purchase_intent_snapshots s
+          LEFT JOIN admin_manual_delivery_statuses ds ON ds.demand_id=s.demand_id
           JOIN admin_entity_ownership own
             ON own.source_system='MARKETPLACE' AND own.entity_type='DEMAND' AND own.entity_id=s.demand_id
           WHERE own.organization_id=? AND s.buyer_organization_id=?`,[organizationId,organizationId]),
@@ -406,9 +513,10 @@ export async function createAdminOperationsStore(db: AdminDatabaseAdapter): Prom
           JOIN admin_entity_ownership own
             ON own.source_system='SUPPLY_PILOT' AND own.entity_type='SUPPLY_OFFER' AND own.entity_id=offer.id
           WHERE own.organization_id=?`,[organizationId]),
-        db.all<Row>(`SELECT s.demand_id,s.status,s.resource_title,s.resource_snapshot_json,
-          s.estimated_card_hour_micros,s.created_at,s.updated_at
+        db.all<Row>(`SELECT s.demand_id,COALESCE(ds.status,s.status) delivery_status,s.resource_title,s.resource_snapshot_json,
+          s.estimated_card_hour_micros,s.created_at,COALESCE(ds.updated_at,s.updated_at) updated_at
           FROM admin_catalog_purchase_intent_snapshots s
+          LEFT JOIN admin_manual_delivery_statuses ds ON ds.demand_id=s.demand_id
           JOIN admin_entity_ownership own
             ON own.source_system='MARKETPLACE' AND own.entity_type='DEMAND' AND own.entity_id=s.demand_id
           WHERE own.organization_id=? AND s.buyer_organization_id=?
@@ -428,7 +536,7 @@ export async function createAdminOperationsStore(db: AdminDatabaseAdapter): Prom
             const resource=JSON.parse(String(row.resource_snapshot_json)) as MemberCatalogPurchaseIntent["resource"];
             return{
               demandId:String(row.demand_id),
-              status:"PENDING_MANUAL_DELIVERY" as const,
+              status:deliveryStatus(row),
               resourceTitle:String(row.resource_title),
               supplierName:resource.supplierName,
               estimatedCardHourMicros:Number(row.estimated_card_hour_micros),

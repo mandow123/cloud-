@@ -31,6 +31,14 @@
 .specs dt { color: var(--muted); }
 .specs dd { margin: 0; overflow-wrap: anywhere; }
 .fingerprint { font-family: var(--font-mono); font-size: .78rem; overflow-wrap: anywhere; }
+.deliveryNote { display: grid; gap: .35rem; margin: 1rem 0 0; border-left: 3px solid var(--accent); background: var(--info-bg); padding: .9rem 1rem; color: var(--text); }
+.connectionPanel { border-top: 3px solid var(--accent); }
+.command { display: block; margin: 1rem 0; overflow-wrap: anywhere; border: 1px solid var(--border); background: var(--info-bg); padding: 1rem; color: var(--ink); }
+.acceptance { display: grid; gap: .7rem; margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 1rem; }
+.acceptance label { color: var(--ink); font-weight: 700; }
+.acceptance textarea { min-height: 6rem; resize: vertical; border: 1px solid var(--border-strong); background: var(--surface); padding: .75rem; color: var(--ink); }
+.success { border-left: 3px solid var(--success); background: var(--success-bg); padding: 1rem; color: var(--ink); }
+.revoked { border-left: 3px solid var(--error); background: var(--error-bg); }
 @media (min-width: 760px) {
   .card { grid-template-columns: minmax(0, 1.6fr) minmax(9rem, .6fr) minmax(10rem, .7fr) auto; }
   .hero { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }

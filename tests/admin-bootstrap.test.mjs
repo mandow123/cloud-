@@ -15,6 +15,10 @@ const APPROVER_PASSWORD = "separate-finance-approval-password-2026";
 const APPROVER_SALT = Buffer.from("fedcba9876543210", "utf8");
 const APPROVER_HASH = `pbkdf2-sha256:310000:${APPROVER_SALT.toString("base64")}:${pbkdf2Sync(APPROVER_PASSWORD, APPROVER_SALT, 310000, 32, "sha256").toString("base64")}`;
 const DUAL_CONTROL_ENV = { ...ENV, KAI_ADMIN_APPROVER_USERNAME: "kai-finance-approver", KAI_ADMIN_APPROVER_PASSWORD_HASH: APPROVER_HASH, KAI_ADMIN_APPROVER_DISPLAY_NAME: "KAI Finance Approver" };
+const FULFILLMENT_PASSWORD = "separate-fulfillment-password-2026";
+const FULFILLMENT_SALT = Buffer.from("delivery987654321", "utf8");
+const FULFILLMENT_HASH = `pbkdf2-sha256:310000:${FULFILLMENT_SALT.toString("base64")}:${pbkdf2Sync(FULFILLMENT_PASSWORD, FULFILLMENT_SALT, 310000, 32, "sha256").toString("base64")}`;
+const DELIVERY_ENV = { ...DUAL_CONTROL_ENV, KAI_ADMIN_FULFILLMENT_USERNAME: "kai-fulfillment", KAI_ADMIN_FULFILLMENT_PASSWORD_HASH: FULFILLMENT_HASH, KAI_ADMIN_FULFILLMENT_DISPLAY_NAME: "KAI Fulfillment" };
 
 function request(cookie) {
   return new Request("https://cloud.kai.com/api/auth/admin/password", {
@@ -71,6 +75,24 @@ test("a separate password principal receives only the finance approval role", as
       const finance = await requireAdminPermission(request(approver.cookie), ["PAYMENT_READ", "SETTLEMENT_OPERATE"]);
       assert.deepEqual(finance.principal.roles, ["FINANCE_APPROVER"]);
       await assert.rejects(requireAdminPermission(request(approver.cookie), ["MARKET_PUBLISH"]), (error) => error.code === "ADMIN_ACCESS_FORBIDDEN" && error.status === 403);
+    } finally {
+      globalThis.__kaiAccountAuthStorePromise = previous;
+    }
+  } finally { store.close(); }
+});
+
+test("a separate fulfillment password principal can operate delivery but cannot publish or settle", async () => {
+  const store = await createSqliteAccountAuthStore(":memory:");
+  try {
+    const issued = await createAdminPasswordSession(request(), { username: "kai-fulfillment", password: FULFILLMENT_PASSWORD }, { store, env: DELIVERY_ENV });
+    assert.deepEqual(issued.context.membership.roles, ["FULFILLMENT_OPERATOR"]);
+    const previous = globalThis.__kaiAccountAuthStorePromise;
+    globalThis.__kaiAccountAuthStorePromise = Promise.resolve(store);
+    try {
+      const fulfillment = await requireAdminPermission(request(issued.cookie), ["FULFILLMENT_READ", "FULFILLMENT_OPERATE"]);
+      assert.deepEqual(fulfillment.principal.roles, ["FULFILLMENT_OPERATOR"]);
+      await assert.rejects(requireAdminPermission(request(issued.cookie), ["MARKET_PUBLISH"]), (error) => error.code === "ADMIN_ACCESS_FORBIDDEN" && error.status === 403);
+      await assert.rejects(requireAdminPermission(request(issued.cookie), ["SETTLEMENT_OPERATE"]), (error) => error.code === "ADMIN_ACCESS_FORBIDDEN" && error.status === 403);
     } finally {
       globalThis.__kaiAccountAuthStorePromise = previous;
     }

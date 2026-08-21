@@ -10,7 +10,7 @@ const ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly AdminPermission[]>> 
   INVENTORY_OPERATOR: [],
   VERIFICATION_REVIEWER: [],
   MARKET_OPERATOR: [],
-  FULFILLMENT_OPERATOR: [],
+  FULFILLMENT_OPERATOR: ["ADMIN_PANEL_READ", "FULFILLMENT_READ", "FULFILLMENT_OPERATE", "AUDIT_READ"],
   FINANCE_OPERATOR: [],
   FINANCE_APPROVER: ["ADMIN_PANEL_READ", "PAYMENT_READ", "SETTLEMENT_OPERATE", "AUDIT_READ"],
   SUPPORT_READONLY: [],
@@ -42,7 +42,7 @@ export async function authenticateAdminRequest(request: Request): Promise<AdminA
   }
   const roles = accountContext.membership.roles;
   const permissions = adminPermissionsForRoles(roles);
-  if (!roles.some((role) => role === "ROOT" || role === "FINANCE_APPROVER") || permissions.length === 0) {
+  if (permissions.length === 0) {
     throw new AccountAuthError("ADMIN_ACCESS_FORBIDDEN", 403, "当前账号不是已授权的密码管理员。 ");
   }
   return {

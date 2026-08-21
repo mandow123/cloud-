@@ -22,6 +22,7 @@ const base = {
 };
 const ROOT_HASH = `pbkdf2-sha256:310000:AAAAAAAAAAAAAAAAAAAAAA==:${"A".repeat(43)}=`;
 const APPROVER_HASH = `pbkdf2-sha256:310000:QkJCQkJCQkJCQkJCQkJCQg==:${"B".repeat(43)}=`;
+const FULFILLMENT_HASH = `pbkdf2-sha256:310000:Q0NDQ0NDQ0NDQ0NDQ0NDQw==:${"C".repeat(43)}=`;
 
 function rejection(environment, expected) {
   assert.throws(
@@ -33,6 +34,15 @@ function rejection(environment, expected) {
 test("production trial gate keeps Alipay disabled even if credentials are present", () => {
   validateProductionEnvironment({ ...base, KAI_ALIPAY_APP_ID: "configured-but-closed" });
   rejection({ ...base, KAI_ALIPAY_ENABLED: "1" }, "KAI_ALIPAY_ENABLED");
+});
+
+test("optional fulfillment administrator is least-privilege and must use independent credentials", () => {
+  const enabled = { ...base, KAI_ADMIN_FULFILLMENT_USERNAME: "kai-fulfillment", KAI_ADMIN_FULFILLMENT_PASSWORD_HASH: FULFILLMENT_HASH };
+  validateProductionEnvironment(enabled);
+  rejection({ ...enabled, KAI_ADMIN_FULFILLMENT_USERNAME: "" }, "KAI_ADMIN_FULFILLMENT_USERNAME");
+  rejection({ ...enabled, KAI_ADMIN_FULFILLMENT_PASSWORD_HASH: "" }, "KAI_ADMIN_FULFILLMENT_PASSWORD_HASH");
+  rejection({ ...enabled, KAI_ADMIN_USERNAME: "kai-fulfillment" }, "KAI_ADMIN_FULFILLMENT_USERNAME");
+  rejection({ ...enabled, KAI_ADMIN_PASSWORD_HASH: FULFILLMENT_HASH }, "different password");
 });
 
 test("Hosting V2 cannot start without identity, immutable image and terms policy", () => {
@@ -89,6 +99,8 @@ test("production templates carry the rollback and payment gates into the contain
   assert.match(compose, /KAI_ALIPAY_ENABLED: "\$\{KAI_ALIPAY_ENABLED:-0\}"/u);
   assert.match(compose, /KAI_ADMIN_APPROVER_USERNAME/u);
   assert.match(compose, /KAI_ADMIN_APPROVER_PASSWORD_HASH/u);
+  assert.match(compose, /KAI_ADMIN_FULFILLMENT_USERNAME/u);
+  assert.match(compose, /KAI_ADMIN_FULFILLMENT_PASSWORD_HASH/u);
   assert.match(environment, /^KAI_HOSTING_V2=0$/mu);
   assert.match(environment, /^KAI_ACCOUNT_CONSOLE_V2=0$/mu);
   assert.match(environment, /^KAI_HOSTING_V2_SETUP=0$/mu);
@@ -96,4 +108,6 @@ test("production templates carry the rollback and payment gates into the contain
   assert.match(environment, /^KAI_ALIPAY_ENABLED=0$/mu);
   assert.match(environment, /^KAI_ADMIN_APPROVER_USERNAME=/mu);
   assert.match(environment, /^KAI_ADMIN_APPROVER_PASSWORD_HASH=/mu);
+  assert.match(environment, /^KAI_ADMIN_FULFILLMENT_USERNAME=/mu);
+  assert.match(environment, /^KAI_ADMIN_FULFILLMENT_PASSWORD_HASH=/mu);
 });

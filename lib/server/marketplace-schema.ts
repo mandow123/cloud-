@@ -4,5 +4,6 @@ export {
   marketplaceDataRepairStatements,
   marketplaceLegacyImportStatements,
   marketplaceRegionExpansionStatements,
+  marketplaceVisibilityExpansionStatements,
   marketplaceSchemaStatements,
 } from "@/db/schema";

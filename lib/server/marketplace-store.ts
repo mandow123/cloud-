@@ -64,7 +64,8 @@ export interface MarketplaceStore {
   consumeWriteAllowance(actorId: string, routeScope: "requests" | "quotes" | "drafts"): Promise<void>;
   listOwnedRequests(actorId: string, options: MarketplaceListOptions): Promise<MarketplacePage<MarketplaceRequestRecord>>;
   listPublicRequests(options: MarketplaceListOptions): Promise<MarketplacePage<MarketplaceRequestRecord>>;
-  createRequest(context: MarketplaceMutationContext, input: CreateMarketplaceRequest): Promise<MarketplaceMutationResult<MarketplaceRequestRecord>>;
+  createRequest(context: MarketplaceMutationContext, input: CreateMarketplaceRequest, options?: { visibility?: "private" | "market" }): Promise<MarketplaceMutationResult<MarketplaceRequestRecord>>;
+  publishRequest(actorId: string, requestId: string): Promise<MarketplaceRequestRecord>;
   listBuyerNormalizedQuotes(actorId: string, options: MarketplaceListOptions): Promise<MarketplacePage<MarketplaceNormalizedQuoteRecord>>;
   listSupplierQuotes(actorId: string, options: MarketplaceListOptions): Promise<MarketplacePage<MarketplaceSupplierQuoteRecord>>;
   createQuote(context: MarketplaceMutationContext, input: CreateMarketplaceQuote): Promise<MarketplaceMutationResult<MarketplaceSupplierQuoteRecord>>;

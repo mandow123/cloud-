@@ -23,6 +23,7 @@ import {
   marketplaceDataRepairStatements,
   marketplaceLegacyImportStatements,
   marketplaceRegionExpansionStatements,
+  marketplaceVisibilityExpansionStatements,
   marketplaceSchemaStatements,
 } from "@/lib/server/marketplace-schema";
 import {
@@ -67,7 +68,7 @@ type RequestRow = {
   owner_actor_id: string;
   idempotency_key: string;
   payload_hash: string;
-  visibility: "market";
+  visibility: "private" | "market";
   request_type: "procurement" | "swap";
   kind: MarketplaceRequestRecord["kind"];
   title: string;
@@ -404,6 +405,9 @@ export function createD1MarketplaceStore(value: unknown,options:{readinessOnly?:
         if (newest && newest.version < 4) {
           await db.batch(marketplaceRegionExpansionStatements.map((sql) => db.prepare(sql)));
         }
+        if (newest && newest.version < 5) {
+          await db.batch(marketplaceVisibilityExpansionStatements.map((sql) => db.prepare(sql)));
+        }
         await db.prepare(`INSERT OR IGNORE INTO marketplace_schema_migrations (
           version, checksum, applied_at
         ) VALUES (?, ?, ?)`).bind(
@@ -506,7 +510,7 @@ export function createD1MarketplaceStore(value: unknown,options:{readinessOnly?:
       const cursor = await cursorFragment(options, values, audience);
       values.push(options.limit + 1);
       const result = await db.prepare(`SELECT * FROM marketplace_requests_v2
-        WHERE owner_actor_id = ?${cursor}
+        WHERE owner_actor_id = ? AND visibility = 'market'${cursor}
         ORDER BY created_at DESC, id DESC LIMIT ?`).bind(...values).all<RequestRow>();
       return marketplacePage((result.results ?? []).map(mapRequest), options.limit, audience);
     },
@@ -522,7 +526,7 @@ export function createD1MarketplaceStore(value: unknown,options:{readinessOnly?:
         ORDER BY created_at DESC, id DESC LIMIT ?`).bind(...values).all<RequestRow>();
       return marketplacePage((result.results ?? []).map(mapRequest).map(publicRequestRecord), options.limit, audience);
     },
-    async createRequest(context, input: CreateMarketplaceRequest) {
+    async createRequest(context, input: CreateMarketplaceRequest, options = {}) {
       await ensureSchema();
       const replay = replayOrConflict(await existingRequest(context), context.payloadHash, mapRequest);
       if (replay) return replay;
@@ -534,12 +538,13 @@ export function createD1MarketplaceStore(value: unknown,options:{readinessOnly?:
             request_type, kind, title, category, region, pricing_unit, quantity,
             duration_hours, delivery_date, summary, offered_json, wanted_json,
             cash_direction, cash_amount, status, created_at, updated_at, version
-          ) SELECT ?, ?, ?, ?, 'market', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1
+          ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1
           WHERE (SELECT COUNT(*) FROM marketplace_requests_v2 WHERE owner_actor_id <> ?) < ?`).bind(
             record.id,
             context.actorId,
             context.idempotencyKey,
             context.payloadHash,
+            options.visibility ?? "market",
             record.requestType,
             record.kind,
             record.title,
@@ -560,7 +565,7 @@ export function createD1MarketplaceStore(value: unknown,options:{readinessOnly?:
             CURATED_DEMAND_OWNER,
             capacityLimits.requests,
           ),
-          eventStatement(db, context.actorId, "request", record.id, "REQUEST_CREATED", "需求已记录并生成匿名市场投影。", record.createdAt, { kind: "request", id: record.id }),
+          eventStatement(db, context.actorId, "request", record.id, "REQUEST_CREATED", options.visibility === "private" ? "需求已私有暂存，等待关联记录完成。" : "需求已记录并生成匿名市场投影。", record.createdAt, { kind: "request", id: record.id }),
         ]);
         if (d1Changes(results[0], "request_insert") !== 1) throw new MarketplaceCapacityError("requests");
         return { record, replayed: false };
@@ -569,6 +574,11 @@ export function createD1MarketplaceStore(value: unknown,options:{readinessOnly?:
         if (raced) return raced;
         throw error;
       }
+    },
+    async publishRequest(actorId,requestId){
+      await ensureSchema();const current=await db.prepare("SELECT * FROM marketplace_requests_v2 WHERE id=? AND owner_actor_id=?").bind(requestId,actorId).first<RequestRow>();if(!current)throw new MarketplaceAccessError("DEMAND_NOT_FOUND");
+      if(current.visibility==="private"){const at=new Date().toISOString();await db.batch([db.prepare("UPDATE marketplace_requests_v2 SET visibility='market',updated_at=?,version=version+1 WHERE id=? AND owner_actor_id=? AND visibility='private'").bind(at,requestId,actorId),eventStatement(db,actorId,"request",requestId,"REQUEST_PUBLISHED","需求关联记录完整，已生成匿名市场投影。",at,{kind:"request",id:requestId})]);}
+      const row=await db.prepare("SELECT * FROM marketplace_requests_v2 WHERE id=? AND owner_actor_id=? AND visibility='market'").bind(requestId,actorId).first<RequestRow>();if(!row)throw new MarketplaceAccessError("DEMAND_NOT_FOUND");return mapRequest(row);
     },
     async listBuyerNormalizedQuotes(actorId, options) {
       await ensureSchema();

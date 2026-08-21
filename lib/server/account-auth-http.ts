@@ -6,7 +6,7 @@ export async function accountSessionEnvelope(context: AccountSessionContext, sto
   const finalStore = store ?? await getAccountAuthStore();
   const memberships = await finalStore.listMemberships(context.account.id);
   const roles = context.membership.status === "ACTIVE" ? context.membership.roles : [];
-  const adminRoles = roles.filter((role) => role === "ROOT" || role === "FINANCE_APPROVER");
+  const adminRoles = roles.filter((role) => adminPermissionsForRoles([role]).length > 0);
   const permissions = adminPermissionsForRoles(adminRoles);
   return {
     authenticated: true as const,

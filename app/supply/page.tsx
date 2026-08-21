@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AccountConsoleOverview } from "@/components/account-console-overview";
 import { SupplyDashboard } from "@/components/supply-dashboard";
+import { SupplierManualDeliveries } from "@/components/supplier-manual-deliveries";
 import { isAccountConsoleV2Enabled } from "@/lib/server/account-console-feature";
 
 export const metadata: Metadata = {
@@ -9,5 +10,5 @@ export const metadata: Metadata = {
 };
 
 export default function SupplyPage() {
-  return isAccountConsoleV2Enabled() ? <AccountConsoleOverview mode="supplier" /> : <SupplyDashboard />;
+  return <>{isAccountConsoleV2Enabled() ? <AccountConsoleOverview mode="supplier" /> : <SupplyDashboard />}<SupplierManualDeliveries /></>;
 }

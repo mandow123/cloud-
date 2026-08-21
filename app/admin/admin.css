@@ -337,6 +337,7 @@ body:has(.admin-app) #main-content {
 .admin-search input,
 .admin-select-filter select,
 .admin-action-fields select,
+.admin-action-fields input[type="text"],
 .admin-action-fields input[type="number"],
 .admin-action-fields textarea {
   width: 100%;
@@ -349,6 +350,7 @@ body:has(.admin-app) #main-content {
 .admin-search input,
 .admin-select-filter select,
 .admin-action-fields select,
+.admin-action-fields input[type="text"],
 .admin-action-fields input[type="number"] {
   min-height: 42px;
 }
@@ -494,6 +496,22 @@ body:has(.admin-app) #main-content {
   font-size: .68rem;
   white-space: normal;
 }
+
+.admin-manual-timeline {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 16px 0;
+  background: var(--admin-line);
+}
+
+.admin-manual-timeline > div {
+  background: var(--info-bg);
+  padding: 9px 11px;
+}
+
+.admin-manual-timeline dt { color: var(--muted); font-size: .6875rem; }
+.admin-manual-timeline dd { margin: 4px 0 0; color: var(--ink); font-size: .78rem; font-weight: 700; }
 
 @media (max-width: 820px) {
   .admin-manual-delivery-head { flex-direction: column; }

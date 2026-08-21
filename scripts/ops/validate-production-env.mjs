@@ -159,6 +159,20 @@ export function validateProductionEnvironment(environment = process.env, { check
   if (buyCatalogV2 !== "0" && buyCatalogV2 !== "1") errors.push("KAI_BUY_CATALOG_V2 must be exactly 0 or 1");
   const accountConsoleV2 = environment.KAI_ACCOUNT_CONSOLE_V2 ?? "0";
   if (accountConsoleV2 !== "0" && accountConsoleV2 !== "1") errors.push("KAI_ACCOUNT_CONSOLE_V2 must be exactly 0 or 1");
+  const fulfillmentUsername = environment.KAI_ADMIN_FULFILLMENT_USERNAME ?? "";
+  const fulfillmentHash = environment.KAI_ADMIN_FULFILLMENT_PASSWORD_HASH ?? "";
+  if (fulfillmentUsername || fulfillmentHash) {
+    if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(fulfillmentUsername)
+      || fulfillmentUsername === environment.KAI_ADMIN_USERNAME
+      || fulfillmentUsername === environment.KAI_ADMIN_APPROVER_USERNAME) {
+      errors.push("KAI_ADMIN_FULFILLMENT_USERNAME must be a separate valid password administrator");
+    }
+    if (!validAdminPasswordHash(fulfillmentHash)) {
+      errors.push("KAI_ADMIN_FULFILLMENT_PASSWORD_HASH must be a valid PBKDF2 hash");
+    } else if (fulfillmentHash === environment.KAI_ADMIN_PASSWORD_HASH || fulfillmentHash === environment.KAI_ADMIN_APPROVER_PASSWORD_HASH) {
+      errors.push("KAI_ADMIN_FULFILLMENT_PASSWORD_HASH must use a different password from other administrators");
+    }
+  }
   if (environment.KAI_HOSTING_V2 !== "0" && environment.KAI_HOSTING_V2 !== "1") errors.push("KAI_HOSTING_V2 must be exactly 0 or 1");
   if (environment.KAI_HOSTING_V2_SETUP !== "0" && environment.KAI_HOSTING_V2_SETUP !== "1") errors.push("KAI_HOSTING_V2_SETUP must be exactly 0 or 1");
   if (environment.KAI_HOSTING_DEVICE_RETIREMENT !== "0" && environment.KAI_HOSTING_DEVICE_RETIREMENT !== "1") errors.push("KAI_HOSTING_DEVICE_RETIREMENT must be exactly 0 or 1");

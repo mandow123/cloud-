@@ -8,9 +8,17 @@ import test from "node:test";
 import { GET as openMarketplaceSession } from "../app/api/session/route.ts";
 import { POST as submitPurchaseIntent } from "../app/api/v1/catalog-purchase-intents/route.ts";
 import { GET as listManualDeliveries } from "../app/api/v1/admin/manual-deliveries/route.ts";
+import { GET as listSupplierCandidates } from "../app/api/v1/admin/manual-deliveries/supplier-candidates/route.ts";
+import { POST as assignManualDelivery } from "../app/api/v1/admin/manual-deliveries/[demandId]/assign/route.ts";
+import { POST as startManualDelivery } from "../app/api/v1/admin/manual-deliveries/[demandId]/start/route.ts";
+import { POST as markManualDeliveryDelivered } from "../app/api/v1/admin/manual-deliveries/[demandId]/mark-delivered/route.ts";
+import { POST as revokeManualDelivery } from "../app/api/v1/admin/manual-deliveries/[demandId]/revoke/route.ts";
 import { GET as revealManualDeliveryKey } from "../app/api/v1/admin/manual-deliveries/[demandId]/ssh-public-key/route.ts";
 import { GET as listMemberPurchaseIntents } from "../app/api/v1/member/purchase-intents/route.ts";
 import { GET as getMemberPurchaseIntent } from "../app/api/v1/member/purchase-intents/[demandId]/route.ts";
+import { POST as confirmMemberDelivery } from "../app/api/v1/member/purchase-intents/[demandId]/confirm-delivery/route.ts";
+import { GET as listSupplierDeliveries } from "../app/api/v1/supply/manual-deliveries/route.ts";
+import { GET as getSupplierDelivery } from "../app/api/v1/supply/manual-deliveries/[demandId]/route.ts";
 import { createAccountSession } from "../lib/server/account-auth.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
 import { createSqliteAdminOperationsStore } from "../lib/server/admin-store-sqlite.ts";
@@ -80,6 +88,10 @@ function purchaseRequest(session, key, sshPublicKey, resourceId = "gpu-honghuan-
   });
 }
 
+function writeRequest(path, cookie, idempotencyKey, body) {
+  return new Request(`${ORIGIN}${path}`, { method:"POST", headers:{ cookie, origin:ORIGIN, "sec-fetch-site":"same-origin", "content-type":"application/json", "Idempotency-Key":`manual-${idempotencyKey}-0001` }, body:JSON.stringify(body) });
+}
+
 test("manual delivery flag is explicit and SSH keys are structurally validated", async () => {
   assert.equal(manualDeliveryIntakeEnabled({}), false);
   assert.equal(manualDeliveryIntakeEnabled({ KAI_MANUAL_DELIVERY_INTAKE: "1" }), true);
@@ -136,7 +148,25 @@ test("buyer public key is privately persisted and only an authorized administrat
     assert.equal(sample.error.code, "VALIDATION_ERROR");
     const oversized = await json(await submitPurchaseIntent(purchaseRequest(buyer, "manual-delivery-oversized", "x".repeat(12 * 1024 + 1))), 400);
     assert.equal(oversized.error.code, "VALIDATION_ERROR");
-    const first = await json(await submitPurchaseIntent(purchaseRequest(buyer, "manual-delivery-h200", sourceKey)), 201);
+    let failSnapshotOnce = true;
+    globalThis.__kaiAdminOperationsStorePromise = Promise.resolve(new Proxy(admin, { get(target, property, receiver) {
+      if (property === "recordCatalogPurchaseIntentSnapshot" && failSnapshotOnce) return async () => { failSnapshotOnce = false; throw new Error("simulated snapshot outage"); };
+      const value = Reflect.get(target, property, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    } }));
+    await json(await submitPurchaseIntent(purchaseRequest(buyer, "manual-delivery-h200", sourceKey)), 500);
+    const stagedDb = new DatabaseSync(path);
+    let stagedId, stagedOwner;
+    try {
+      const staged = stagedDb.prepare("SELECT id,owner_actor_id,visibility FROM marketplace_requests_v2 WHERE idempotency_key=?").get("manual-delivery-h200");
+      assert.equal(staged.visibility, "private");
+      stagedId = staged.id;
+      stagedOwner = staged.owner_actor_id;
+    } finally { stagedDb.close(); }
+    assert.equal((await marketplace.listOwnedRequests(stagedOwner, { limit: 100, cursor: null })).items.some((item) => item.id === stagedId), false);
+    assert.equal((await marketplace.listPublicRequests({ limit: 100, cursor: null })).items.some((item) => item.id === stagedId), false);
+    globalThis.__kaiAdminOperationsStorePromise = Promise.resolve(admin);
+    const first = await json(await submitPurchaseIntent(purchaseRequest(buyer, "manual-delivery-h200", sourceKey)), 200);
     assert.equal(first.manualDelivery.mode, "MANUAL_SSH");
     assert.equal(first.manualDelivery.status, "PENDING_MANUAL_DELIVERY");
     assert.equal(first.purchaseDetails.href, `/member/purchases/${first.record.id}`);
@@ -178,12 +208,65 @@ test("buyer public key is privately persisted and only an authorized administrat
     assert.equal(repaired.purchaseDetails.demandId, first.record.id);
     assert.equal((await admin.listMemberCatalogPurchaseIntents(buyer.context.activeOrganization.id)).length, 1);
 
+    const supplier = await buyerSession(auth, now, "manual-delivery-supplier");
+    const qualificationDb = new DatabaseSync(path);
+    try {
+      qualificationDb.exec("CREATE TABLE IF NOT EXISTS supply_offers(id TEXT PRIMARY KEY,status TEXT NOT NULL)");
+      qualificationDb.prepare("INSERT INTO supply_offers(id,status) VALUES(?,?)").run("qualified-offer", "VERIFIED");
+      qualificationDb.prepare("INSERT INTO supply_offers(id,status) VALUES(?,?)").run("unqualified-offer", "SUBMITTED");
+      qualificationDb.prepare(`INSERT INTO admin_entity_ownership(source_system,entity_type,entity_id,organization_id,account_id,legacy_actor_id,bound_by_principal_id,created_at,updated_at,version)
+        VALUES('SUPPLY_PILOT','SUPPLY_OFFER',?,?,?,?,?,?,?,1)`).run("qualified-offer", supplier.context.activeOrganization.id, supplier.context.account.id, null, "test", now, now);
+      qualificationDb.prepare(`INSERT INTO admin_entity_ownership(source_system,entity_type,entity_id,organization_id,account_id,legacy_actor_id,bound_by_principal_id,created_at,updated_at,version)
+        VALUES('SUPPLY_PILOT','SUPPLY_OFFER',?,?,?,?,?,?,?,1)`).run("unqualified-offer", otherBuyer.context.activeOrganization.id, otherBuyer.context.account.id, null, "test", now, now);
+    } finally { qualificationDb.close(); }
+    const candidateBody=await json(await listSupplierCandidates(new Request(`${ORIGIN}/api/v1/admin/manual-deliveries/supplier-candidates`,{headers:{cookie:rootCookie}})),200);
+    assert.deepEqual(candidateBody.records,[{organizationId:supplier.context.activeOrganization.id,organizationName:supplier.context.activeOrganization.name}]);
+    await json(await listSupplierCandidates(new Request(`${ORIGIN}/api/v1/admin/manual-deliveries/supplier-candidates`,{headers:{cookie:buyer.accountCookie}})),403);
+    const params={params:Promise.resolve({demandId:first.record.id})};
+    const assigned=await json(await assignManualDelivery(writeRequest(`/api/v1/admin/manual-deliveries/${first.record.id}/assign`,rootCookie,"assign",{expectedVersion:1,supplierOrganizationId:supplier.context.activeOrganization.id}),params),201);
+    assert.equal(assigned.record.status,"SUPPLIER_ASSIGNED");
+    const assignedReplay=await json(await assignManualDelivery(writeRequest(`/api/v1/admin/manual-deliveries/${first.record.id}/assign`,rootCookie,"assign",{expectedVersion:1,supplierOrganizationId:supplier.context.activeOrganization.id}),params),200);
+    assert.equal(assignedReplay.record.statusVersion,2);
+    assert.equal((await json(await startManualDelivery(writeRequest(`/api/v1/admin/manual-deliveries/${first.record.id}/start`,rootCookie,"start",{expectedVersion:2}),params),201)).record.status,"DELIVERY_IN_PROGRESS");
+    await json(await markManualDeliveryDelivered(writeRequest(`/api/v1/admin/manual-deliveries/${first.record.id}/mark-delivered`,rootCookie,"bad-delivery",{expectedVersion:3,connection:{host:"gpu.example.com",port:22,username:"root",hostKeyFingerprint:"unsafe"}}),params),400);
+    await json(await markManualDeliveryDelivered(writeRequest(`/api/v1/admin/manual-deliveries/${first.record.id}/mark-delivered`,rootCookie,"malicious-host",{expectedVersion:3,connection:{host:"$(touch /tmp/pwn)",port:22,username:"root",hostKeyFingerprint:`SHA256:${"A".repeat(43)}`}}),params),400);
+    const delivered=await json(await markManualDeliveryDelivered(writeRequest(`/api/v1/admin/manual-deliveries/${first.record.id}/mark-delivered`,rootCookie,"delivered",{expectedVersion:3,buyerVisibleNote:"实例已经开通。",connection:{host:"gpu.example.com",port:22,username:"root",hostKeyFingerprint:`SHA256:${"A".repeat(43)}`}}),params),201);
+    assert.equal(delivered.record.status,"AWAITING_BUYER_ACCEPTANCE");
+    const supplierList=await json(await listSupplierDeliveries(new Request(`${ORIGIN}/api/v1/supply/manual-deliveries`,{headers:{cookie:supplier.accountCookie,"x-kai-workspace-role":"supplier"}})),200);
+    assert.equal(supplierList.records.length,1);
+    assert.doesNotMatch(JSON.stringify(supplierList),/buyerAccountId|buyerOrganizationId|internalNote|canonicalSshPublicKey|ssh-ed25519|pricing|connection/u);
+    const supplierDetail=await json(await getSupplierDelivery(new Request(`${ORIGIN}/api/v1/supply/manual-deliveries/${first.record.id}`,{headers:{cookie:supplier.accountCookie,"x-kai-workspace-role":"supplier"}}),params),200);
+    assert.deepEqual(supplierDetail.record,supplierList.records[0]);
+    assert.equal((await json(await listSupplierDeliveries(new Request(`${ORIGIN}/api/v1/supply/manual-deliveries`,{headers:{cookie:otherBuyer.accountCookie,"x-kai-workspace-role":"supplier"}})),200)).records.length,0);
+    await json(await getSupplierDelivery(new Request(`${ORIGIN}/api/v1/supply/manual-deliveries/${first.record.id}`,{headers:{cookie:otherBuyer.accountCookie,"x-kai-workspace-role":"supplier"}}),params),404);
+    await json(await confirmMemberDelivery(writeRequest(`/api/v1/member/purchase-intents/${first.record.id}/confirm-delivery`,otherBuyer.accountCookie,"cross-confirm",{expectedVersion:4}),params),404);
+    const completed=await json(await confirmMemberDelivery(writeRequest(`/api/v1/member/purchase-intents/${first.record.id}/confirm-delivery`,buyer.accountCookie,"confirm",{expectedVersion:4}),params),201);
+    assert.equal(completed.record.status,"COMPLETED");
+    assert.equal(completed.record.connection.host,"gpu.example.com");
+    assert.equal((await json(await confirmMemberDelivery(writeRequest(`/api/v1/member/purchase-intents/${first.record.id}/confirm-delivery`,buyer.accountCookie,"confirm",{expectedVersion:4}),params),200)).record.statusVersion,5);
+    await json(await revokeManualDelivery(writeRequest(`/api/v1/admin/manual-deliveries/${first.record.id}/revoke`,rootCookie,"revoke",{expectedVersion:5,reason:"Access was explicitly revoked after buyer acceptance."}),params),201);
+    const revoked=await json(await getMemberPurchaseIntent(new Request(`${ORIGIN}/api/v1/member/purchase-intents/${first.record.id}`,{headers:{cookie:buyer.accountCookie}}),params),200);
+    assert.equal(revoked.record.status,"ACCESS_REVOKED");
+    assert.equal(revoked.record.connection,null);
+
     const deniedList = await json(await listManualDeliveries(new Request(`${ORIGIN}/api/v1/admin/manual-deliveries`, { headers: { cookie: buyer.accountCookie } })), 403);
     assert.equal(deniedList.error.code, "ADMIN_ACCESS_FORBIDDEN");
     const listed = await json(await listManualDeliveries(new Request(`${ORIGIN}/api/v1/admin/manual-deliveries`, { headers: { cookie: rootCookie } })), 200);
     assert.equal(listed.length, 1);
     assert.equal(listed[0].sshPublicKeyFingerprint, first.manualDelivery.sshPublicKeyFingerprint);
     assert.equal(JSON.stringify(listed).includes(canonical), false);
+
+    const second = await json(await submitPurchaseIntent(purchaseRequest(buyer, "manual-delivery-second", sourceKey, "gpu-honghuan-h100-sxm-80gb-1")), 201);
+    const secondParams = { params: Promise.resolve({ demandId: second.record.id }) };
+    const crossTaskAdminReplay = await json(await assignManualDelivery(writeRequest(`/api/v1/admin/manual-deliveries/${second.record.id}/assign`, rootCookie, "assign", { expectedVersion: 1, supplierOrganizationId: supplier.context.activeOrganization.id }), secondParams), 409);
+    assert.equal(crossTaskAdminReplay.error.code, "IDEMPOTENCY_CONFLICT");
+    assert.equal((await admin.getManualDeliveryIntake(second.record.id)).status, "PENDING_MANUAL_DELIVERY");
+    await json(await assignManualDelivery(writeRequest(`/api/v1/admin/manual-deliveries/${second.record.id}/assign`, rootCookie, "assign-second", { expectedVersion: 1, supplierOrganizationId: supplier.context.activeOrganization.id }), secondParams), 201);
+    await json(await startManualDelivery(writeRequest(`/api/v1/admin/manual-deliveries/${second.record.id}/start`, rootCookie, "start-second", { expectedVersion: 2 }), secondParams), 201);
+    await json(await markManualDeliveryDelivered(writeRequest(`/api/v1/admin/manual-deliveries/${second.record.id}/mark-delivered`, rootCookie, "delivered-second", { expectedVersion: 3, connection: { host: "gpu-2.example.com", port: 22, username: "root", hostKeyFingerprint: `SHA256:${"B".repeat(43)}` } }), secondParams), 201);
+    const crossTaskBuyerReplay = await json(await confirmMemberDelivery(writeRequest(`/api/v1/member/purchase-intents/${second.record.id}/confirm-delivery`, buyer.accountCookie, "confirm", { expectedVersion: 4 }), secondParams), 409);
+    assert.equal(crossTaskBuyerReplay.error.code, "IDEMPOTENCY_CONFLICT");
+    assert.equal((await admin.getMemberCatalogPurchaseIntent(buyer.context.activeOrganization.id, second.record.id)).status, "AWAITING_BUYER_ACCEPTANCE");
 
     const deniedReveal = await json(await revealManualDeliveryKey(new Request(`${ORIGIN}/api/v1/admin/manual-deliveries/${first.record.id}/ssh-public-key`, { headers: { cookie: buyer.accountCookie } }), { params: Promise.resolve({ demandId: first.record.id }) }), 403);
     assert.equal(deniedReveal.error.code, "ADMIN_ACCESS_FORBIDDEN");
