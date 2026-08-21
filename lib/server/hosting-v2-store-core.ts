@@ -1,10 +1,11 @@
-import { HOSTING_FEE_LEGACY_QUALIFICATION_MODEL, HOSTING_FEE_QUALIFICATION_MODEL, HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, hostingActualFeeBreakdown, hostingCardHourMicrosForSeconds, hostingCurrentCalendarMonth, hostingDefaultFeeTiers, hostingFeeBreakdown, hostingFeeRatesAreValid, hostingSelectFeeTier, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDeviceRetirement, type HostingDisputeCase, type HostingFeeSchedule, type HostingFeeTier, type HostingGoldenLoopAudit, type HostingOffer, type HostingStopIncident, type HostingSupplierFeePreview, type HostingSupplierMonthlySettlement, type HostingSupplierProfile } from "../hosting-v2.ts";
+import { HOSTING_FEE_LEGACY_QUALIFICATION_MODEL, HOSTING_FEE_QUALIFICATION_MODEL, HOSTING_V2_ACCEPTANCE_WINDOW_SECONDS, HOSTING_V2_AGENT_STALE_SECONDS, hostingActualFeeBreakdown, hostingCardHourMicrosForSeconds, hostingCurrentCalendarMonth, hostingDefaultFeeTiers, hostingFeeBreakdown, hostingFeeRatesAreValid, hostingSelectFeeTier, type HostingAgentCapabilityMode, type HostingAgentChallenge, type HostingAgentCommand, type HostingCleanupIncident, type HostingContract, type HostingContractEvidence, type HostingDashboard, type HostingDevice, type HostingDeviceInventory, type HostingDeviceRetirement, type HostingDisputeCase, type HostingFeeSchedule, type HostingFeeTier, type HostingGoldenLoopAudit, type HostingOffer, type HostingStopIncident, type HostingSupplierFeePreview, type HostingSupplierMonthlySettlement, type HostingSupplierProfile } from "../hosting-v2.ts";
 import { HOSTING_V2_SCHEMA_COMPATIBILITY_VERSION, HOSTING_V2_SCHEMA_VERSION, hostingV2SchemaStatements } from "../../db/hosting-v2-schema.ts";
 import { ExchangeDomainError, ExchangeIdempotencyConflictError, ExchangeInputError } from "./exchange-errors.ts";
 import { assertHostingAgentWindow, hostingAgentCanonicalJson, hostingAgentDigest, verifyHostingAgentSignature } from "./hosting-agent-crypto.ts";
 import { assertHostingV2ApprovedImage, HOSTING_V2_OCI_IMAGE_PATTERN, hostingV2ApprovedImages } from "./hosting-v2-image-policy.ts";
 import { gpuTradingEligibility, physicalGpuAudit } from "./hosting-v2-audit-policy.ts";
 import type { HostingMutationContext, HostingV2DatabaseAdapter, HostingV2Sql, HostingV2Store } from "./hosting-v2-store.ts";
+import { isAgentTelemetryV1Enabled } from "./agent-telemetry-feature.ts";
 
 type Row = Record<string, unknown>;
 const value = (row: Row, key: string) => String(row[key]);
@@ -197,6 +198,7 @@ function profile(row: Row): HostingSupplierProfile {
 function challenge(row: Row): HostingAgentChallenge {
   return {
     id: value(row, "id"), organizationId: value(row, "organization_id"), accountId: value(row, "account_id"),
+    applicationId: nullable(row, "application_id"), capabilityMode: (nullable(row, "capability_mode") ?? "FULL_HOST") as HostingAgentCapabilityMode,
     nonce: value(row, "nonce"), minimumAgentVersion: value(row, "minimum_agent_version"), expiresAt: value(row, "expires_at"),
     consumedAt: nullable(row, "consumed_at"), revokedAt: nullable(row, "revoked_at"), createdAt: value(row, "created_at"),
   };
@@ -211,6 +213,7 @@ const agentChallengeProjection = `SELECT c.*,
 function device(row: Row): HostingDevice {
   return {
     id: value(row, "id"), organizationId: value(row, "organization_id"), accountId: value(row, "account_id"),
+    applicationId: nullable(row, "application_id"), capabilityMode: (nullable(row, "capability_mode") ?? "FULL_HOST") as HostingAgentCapabilityMode,
     displayName: value(row, "display_name"), deviceKeyId: value(row, "device_key_id"), devicePublicKey: value(row, "device_public_key"),
     agentVersion: value(row, "agent_version"), inventory: json<HostingDeviceInventory>(row, "inventory_json"), inventoryDigest: value(row, "inventory_digest"),
     status: value(row, "status") as HostingDevice["status"], verificationStatus: value(row, "verification_status") as HostingDevice["verificationStatus"],
@@ -526,6 +529,11 @@ function createReadinessMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2
         // malformed or non-additive migration remains fail-closed.
         await db.first("SELECT device_id,organization_id,mode,status,requested_at,finalized_at FROM hosting_v2_device_retirements LIMIT 1");
       }
+      await db.first("SELECT application_id,capability_mode FROM hosting_v2_agent_challenges LIMIT 1");
+      await db.first("SELECT application_id,capability_mode FROM hosting_v2_devices LIMIT 1");
+      const capabilityIndexes = await db.all<Row>(`SELECT name FROM sqlite_master
+        WHERE type='index' AND name IN ('hosting_v2_challenge_application_idx','hosting_v2_devices_application_idx')`);
+      if (new Set(capabilityIndexes.map((row) => value(row, "name"))).size !== 2) throw new Error("HOSTING_AGENT_CAPABILITY_SCHEMA_NOT_READY");
       await db.first("SELECT tier_code FROM hosting_v2_lifetime_fee_tiers LIMIT 1");
       const invalidFeeVolume = await db.first<Row>(`SELECT supplier_organization_id
         FROM hosting_v2_supplier_fee_volume_events
@@ -844,9 +852,46 @@ function randomBase64Url(bytes = 32) {
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 }
 
+async function eligibleTelemetryApplications(db: HostingV2DatabaseAdapter, organizationId: string, applicationIds: readonly string[], now: string) {
+  const uniqueIds = [...new Set(applicationIds)].filter((item) => /^[A-Za-z0-9-]{8,96}$/u.test(item));
+  if (!isAgentTelemetryV1Enabled() || uniqueIds.length === 0) return [];
+  const rows = await db.all<Row>(`SELECT offer.id
+    FROM supply_offers offer
+    JOIN admin_entity_ownership own
+      ON own.source_system='SUPPLY_PILOT' AND own.entity_type='SUPPLY_OFFER'
+     AND own.entity_id=offer.id AND own.organization_id=?
+    JOIN hosting_v2_supplier_profiles profile ON profile.organization_id=own.organization_id
+    WHERE offer.id IN (${uniqueIds.map(() => "?").join(",")})
+      AND offer.status='VERIFIED' AND offer.supplier_type='INDIVIDUAL'
+      AND offer.resource_type IN ('GPU_CARD','GPU_SERVER') AND profile.status='APPROVED' AND profile.supplier_type='INDIVIDUAL'
+      AND profile.agreement_version IS NOT NULL AND profile.evidence_digest IS NOT NULL
+      AND (
+        (SELECT COUNT(*) FROM hosting_v2_devices device
+          WHERE device.application_id=offer.id AND device.status<>'REVOKED')
+        +
+        (SELECT COUNT(*) FROM hosting_v2_agent_challenges challenge
+          WHERE challenge.application_id=offer.id AND challenge.capability_mode='TELEMETRY_ONLY'
+            AND challenge.consumed_at IS NULL AND challenge.expires_at>=?)
+      ) < offer.quantity`, [organizationId, ...uniqueIds, now]);
+  return rows.map((row) => value(row, "id"));
+}
+
 function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Store> {
   return {
-    async issueAgentChallenge(account, context) {
+    async telemetryEligibleApplicationIds(organizationId, applicationIds, now) {
+      return eligibleTelemetryApplications(db, organizationId, applicationIds, now);
+    },
+
+    async issueAgentChallenge(account, context, input = {}) {
+      const capabilityMode = input.capabilityMode ?? "FULL_HOST";
+      const applicationId = input.applicationId ?? null;
+      if (capabilityMode !== "FULL_HOST" && capabilityMode !== "TELEMETRY_ONLY") throw new ExchangeInputError("Agent 能力模式无效。", "capabilityMode");
+      if (capabilityMode === "TELEMETRY_ONLY") {
+        if (!isAgentTelemetryV1Enabled()) throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "设备遥测接入尚未开放。");
+        if (!applicationId || !/^[A-Za-z0-9-]{8,96}$/u.test(applicationId)) throw new ExchangeInputError("供应申请编号无效。", "applicationId");
+      } else if (applicationId != null) {
+        throw new ExchangeInputError("完整托管挑战不接受供应申请绑定。", "applicationId");
+      }
       const profileRow = await db.first<Row>("SELECT * FROM hosting_v2_supplier_profiles WHERE organization_id=?", [account.activeOrganization.id]);
       if (!profileRow || value(profileRow, "status") !== "APPROVED" || !nullable(profileRow, "agreement_version") || !nullable(profileRow, "evidence_digest")) throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "供应主体完成协议签署和有证据审核后才能登记设备。");
       const replayed = await replay(db, context, "ISSUE_AGENT_CHALLENGE");
@@ -857,11 +902,39 @@ function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       }
       const recordId = id("hac");
       const expiresAt = new Date(Date.parse(context.now) + 5 * 60_000).toISOString();
-      await db.batch([
-        { sql: "INSERT INTO hosting_v2_agent_challenges(id,organization_id,account_id,nonce,minimum_agent_version,expires_at,created_at) VALUES(?,?,?,?,?,?,?)", values: [recordId, account.activeOrganization.id, account.account.id, randomBase64Url(), HOSTING_V2_MIN_AGENT_VERSION, expiresAt, context.now] },
-        event(context, account.activeOrganization.id, "AGENT_CHALLENGE", recordId, "AGENT_CHALLENGE_ISSUED"),
-        receipt(context, "ISSUE_AGENT_CHALLENGE", "AGENT_CHALLENGE", recordId),
-      ]);
+      if (capabilityMode === "TELEMETRY_ONLY") {
+        const eligible = await eligibleTelemetryApplications(db, account.activeOrganization.id, [applicationId!], context.now);
+        if (!eligible.includes(applicationId!)) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "供应申请不符合遥测接入条件，或可登记设备数量已满。");
+      }
+      const insert = capabilityMode === "FULL_HOST"
+        ? { sql: "INSERT INTO hosting_v2_agent_challenges(id,organization_id,account_id,application_id,capability_mode,nonce,minimum_agent_version,expires_at,created_at) VALUES(?,?,?,NULL,'FULL_HOST',?,?,?,?)", values: [recordId, account.activeOrganization.id, account.account.id, randomBase64Url(), HOSTING_V2_MIN_AGENT_VERSION, expiresAt, context.now] }
+        : { sql: `INSERT INTO hosting_v2_agent_challenges(id,organization_id,account_id,application_id,capability_mode,nonce,minimum_agent_version,expires_at,created_at)
+          SELECT ?,own.organization_id,? ,offer.id,'TELEMETRY_ONLY',?,?,?,?
+          FROM supply_offers offer
+          JOIN admin_entity_ownership own
+            ON own.source_system='SUPPLY_PILOT' AND own.entity_type='SUPPLY_OFFER' AND own.entity_id=offer.id
+          JOIN hosting_v2_supplier_profiles profile ON profile.organization_id=own.organization_id
+          WHERE offer.id=? AND own.organization_id=? AND offer.status='VERIFIED'
+            AND offer.supplier_type='INDIVIDUAL' AND offer.resource_type IN ('GPU_CARD','GPU_SERVER')
+            AND profile.status='APPROVED' AND profile.supplier_type='INDIVIDUAL' AND profile.agreement_version IS NOT NULL AND profile.evidence_digest IS NOT NULL
+            AND ((SELECT COUNT(*) FROM hosting_v2_devices device WHERE device.application_id=offer.id AND device.status<>'REVOKED')
+              +(SELECT COUNT(*) FROM hosting_v2_agent_challenges challenge WHERE challenge.application_id=offer.id
+                AND challenge.capability_mode='TELEMETRY_ONLY' AND challenge.consumed_at IS NULL AND challenge.expires_at>=?)) < offer.quantity`,
+          values: [recordId, account.account.id, randomBase64Url(), HOSTING_V2_MIN_AGENT_VERSION, expiresAt, context.now, applicationId, account.activeOrganization.id, context.now] };
+      try {
+        await db.batch([
+          insert,
+          { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+          event(context, account.activeOrganization.id, "AGENT_CHALLENGE", recordId, "AGENT_CHALLENGE_ISSUED"),
+          receipt(context, "ISSUE_AGENT_CHALLENGE", "AGENT_CHALLENGE", recordId),
+        ]);
+      } catch (error) {
+        if (capabilityMode === "TELEMETRY_ONLY") {
+          const eligible = await eligibleTelemetryApplications(db, account.activeOrganization.id, [applicationId!], context.now);
+          if (!eligible.includes(applicationId!)) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "供应申请不符合遥测接入条件，或可登记设备数量已满。");
+        }
+        throw error;
+      }
       const row = await db.first<Row>(`${agentChallengeProjection} WHERE c.id=?`, [recordId]);
       if (!row) throw new Error("HOSTING_AGENT_CHALLENGE_CREATE_FAILED");
       return challenge(row);
@@ -940,13 +1013,31 @@ function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       if (!challengeRow || challengeRow.consumed_at != null || challengeRow.revoked_at != null || Date.parse(value(challengeRow, "expires_at")) < Date.parse(context.now)) {
         throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 410, "设备登记挑战已过期、已使用或已废弃。");
       }
+      if ((nullable(challengeRow, "capability_mode") ?? "FULL_HOST") === "TELEMETRY_ONLY" && !isAgentTelemetryV1Enabled()) {
+        throw new ExchangeDomainError("EXCHANGE_NOT_FOUND", 404, "设备遥测接入尚未开放。");
+      }
       const profileRow = await db.first<Row>("SELECT status,agreement_version,evidence_digest FROM hosting_v2_supplier_profiles WHERE organization_id=?", [value(challengeRow, "organization_id")]);
       if (!profileRow || value(profileRow, "status") !== "APPROVED" || !nullable(profileRow, "agreement_version") || !nullable(profileRow, "evidence_digest")) throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "供应主体当前缺少有效协议或审核证据，不能登记设备。");
       const recordId = id("had");
+      const insertDevice = (nullable(challengeRow, "capability_mode") ?? "FULL_HOST") === "TELEMETRY_ONLY"
+        ? { sql: `INSERT INTO hosting_v2_devices(id,organization_id,account_id,application_id,capability_mode,display_name,device_key_id,device_public_key,agent_version,inventory_json,inventory_digest,status,verification_status,last_sequence,last_seen_at,version,created_at,updated_at)
+          SELECT ?,c.organization_id,c.account_id,c.application_id,c.capability_mode,?,?,?,?,?,?,'ONLINE','NOT_RUN',0,NULL,1,?,?
+          FROM hosting_v2_agent_challenges c
+          WHERE c.id=? AND c.consumed_at IS NULL AND c.expires_at>=? AND EXISTS(
+              SELECT 1 FROM supply_offers offer
+              JOIN admin_entity_ownership own ON own.source_system='SUPPLY_PILOT' AND own.entity_type='SUPPLY_OFFER'
+                AND own.entity_id=offer.id AND own.organization_id=c.organization_id
+              JOIN hosting_v2_supplier_profiles profile ON profile.organization_id=c.organization_id
+              WHERE offer.id=c.application_id AND offer.status='VERIFIED' AND offer.supplier_type='INDIVIDUAL'
+                AND offer.resource_type IN ('GPU_CARD','GPU_SERVER') AND profile.status='APPROVED' AND profile.supplier_type='INDIVIDUAL'
+                AND profile.agreement_version IS NOT NULL AND profile.evidence_digest IS NOT NULL
+                AND (SELECT COUNT(*) FROM hosting_v2_devices device WHERE device.application_id=offer.id AND device.status<>'REVOKED') < offer.quantity
+            )`, values: [recordId, input.displayName, input.deviceKeyId, input.devicePublicKey, input.agentVersion, JSON.stringify(input.inventory), input.inventoryDigest, context.now, context.now, challengeId, context.now] }
+        : { sql: `INSERT INTO hosting_v2_devices(id,organization_id,account_id,application_id,capability_mode,display_name,device_key_id,device_public_key,agent_version,inventory_json,inventory_digest,status,verification_status,last_sequence,last_seen_at,version,created_at,updated_at)
+          SELECT ?,c.organization_id,c.account_id,NULL,'FULL_HOST',?,?,?,?,?,?,'ONLINE','NOT_RUN',0,NULL,1,?,?
+          FROM hosting_v2_agent_challenges c WHERE c.id=? AND c.consumed_at IS NULL AND c.expires_at>=?`, values: [recordId, input.displayName, input.deviceKeyId, input.devicePublicKey, input.agentVersion, JSON.stringify(input.inventory), input.inventoryDigest, context.now, context.now, challengeId, context.now] };
       await db.batch([
-        { sql: `INSERT INTO hosting_v2_devices(id,organization_id,account_id,display_name,device_key_id,device_public_key,agent_version,inventory_json,inventory_digest,status,verification_status,last_sequence,last_seen_at,version,created_at,updated_at)
-          SELECT ?,organization_id,account_id,?,?,?,?,?,?,'ONLINE','NOT_RUN',0,NULL,1,?,? FROM hosting_v2_agent_challenges c
-          WHERE c.id=? AND consumed_at IS NULL AND expires_at>=?`, values: [recordId, input.displayName, input.deviceKeyId, input.devicePublicKey, input.agentVersion, JSON.stringify(input.inventory), input.inventoryDigest, context.now, context.now, challengeId, context.now] },
+        insertDevice,
         { sql: `INSERT INTO hosting_v2_agent_registrations(challenge_id,device_id,organization_id,registered_at)
           VALUES(?,?,(SELECT organization_id FROM hosting_v2_devices WHERE id=?),?)`, values: [challengeId, recordId, recordId, context.now] },
         { sql: "UPDATE hosting_v2_agent_challenges SET consumed_at=? WHERE id=? AND consumed_at IS NULL", values: [context.now, challengeId] },
@@ -1179,6 +1270,7 @@ function createDeviceMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
       const current = await db.first<Row>(`SELECT *,${DEVICE_RETIREMENT_EVENT_SQL} AS retirement_requested
         FROM hosting_v2_devices WHERE id=? AND organization_id=?`, [deviceId, organizationId]);
       if (!current || !["ONLINE", "VERIFIED"].includes(value(current, "status")) || number(current, "retirement_requested") === 1) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备需在线且未进入退场后才能验真。");
+      if ((nullable(current, "capability_mode") ?? "FULL_HOST") !== "FULL_HOST") throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 409, "遥测设备不支持验真或远程控制命令。");
       if (!nullable(current, "last_seen_at") || Date.parse(value(current, "last_seen_at")) < Date.parse(context.now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "设备尚未发送有效心跳，不能开始验真。");
       const commandId = id("hcmd");
       const approvedImages = [...hostingV2ApprovedImages()].sort();
@@ -1263,6 +1355,7 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         db.first<Row>("SELECT * FROM hosting_v2_fee_schedules WHERE status='ACTIVE' AND effective_from<=? ORDER BY effective_from DESC LIMIT 1", [context.now]),
       ]);
       if (!profileRow || value(profileRow, "status") !== "APPROVED" || !nullable(profileRow, "agreement_version") || !nullable(profileRow, "evidence_digest")) throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 403, "供应主体未完成有证据审核。");
+      if (deviceRow && (nullable(deviceRow, "capability_mode") ?? "FULL_HOST") !== "FULL_HOST") throw new ExchangeDomainError("EXCHANGE_ROLE_FORBIDDEN", 409, "遥测设备不能挂牌交易；请完成完整托管接入。");
       if (!deviceRow || value(deviceRow, "status") !== "VERIFIED" || value(deviceRow, "verification_status") !== "PASSED" || !deviceRow.verified_until || Date.parse(value(deviceRow, "verified_until")) <= Date.parse(context.now) || !deviceRow.last_seen_at || Date.parse(value(deviceRow, "last_seen_at")) < Date.parse(context.now) - HOSTING_V2_AGENT_STALE_SECONDS * 1_000) {
         throw new ExchangeDomainError("EXCHANGE_VERIFICATION_REQUIRED", 409, "设备需保持在线且验真有效后才能挂牌。");
       }

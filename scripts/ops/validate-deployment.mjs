@@ -45,6 +45,7 @@ function productionEnvironment(overrides = {}) {
     KAI_ACCOUNT_CONSOLE_V2: "0",
     KAI_HOSTING_V2: "0",
     KAI_HOSTING_V2_SETUP: "0",
+    KAI_AGENT_TELEMETRY_V1: "0",
     KAI_HOSTING_DEVICE_RETIREMENT: "0",
     KAI_DB_DIR: "/app/db",
     KAI_MARKET_DATA_DIR: "/app/market",
@@ -127,6 +128,7 @@ async function main() {
       KAI_ACCOUNT_CONSOLE_V2: process.env.KAI_ACCOUNT_CONSOLE_V2 ?? "0",
       KAI_HOSTING_V2: process.env.KAI_HOSTING_V2 ?? "0",
       KAI_HOSTING_V2_SETUP: process.env.KAI_HOSTING_V2_SETUP ?? "0",
+      KAI_AGENT_TELEMETRY_V1: process.env.KAI_AGENT_TELEMETRY_V1 ?? "0",
       KAI_HOSTING_DEVICE_RETIREMENT: process.env.KAI_HOSTING_DEVICE_RETIREMENT ?? "0",
       KAI_HOSTING_APPROVED_IMAGES: process.env.KAI_HOSTING_APPROVED_IMAGES,
       KAI_HOSTING_TERMS_VERSION: process.env.KAI_HOSTING_TERMS_VERSION,
@@ -182,6 +184,7 @@ async function main() {
       KAI_HOSTING_V2: candidateEnvironment.KAI_HOSTING_V2,
       KAI_HOSTING_V2_SETUP: candidateEnvironment.KAI_HOSTING_V2_SETUP,
       KAI_HOSTING_DEVICE_RETIREMENT: candidateEnvironment.KAI_HOSTING_DEVICE_RETIREMENT,
+      KAI_AGENT_TELEMETRY_V1: candidateEnvironment.KAI_AGENT_TELEMETRY_V1,
       KAI_HOSTING_APPROVED_IMAGES: candidateEnvironment.KAI_HOSTING_APPROVED_IMAGES,
       KAI_HOSTING_TERMS_VERSION: candidateEnvironment.KAI_HOSTING_TERMS_VERSION,
       KAI_ACCOUNT_OIDC_CLIENT_ID: candidateEnvironment.KAI_ACCOUNT_OIDC_CLIENT_ID,
@@ -241,7 +244,7 @@ async function main() {
     "KAI_ADMIN_APPROVER_USERNAME", "KAI_ADMIN_APPROVER_PASSWORD_HASH", "KAI_ADMIN_APPROVER_DISPLAY_NAME",
     "KAI_ADMIN_FULFILLMENT_USERNAME", "KAI_ADMIN_FULFILLMENT_PASSWORD_HASH", "KAI_ADMIN_FULFILLMENT_DISPLAY_NAME",
     "KAI_ACCOUNT_OIDC_CLIENT_ID", "KAI_ACCOUNT_OIDC_CLIENT_SECRET", "KAI_ACCOUNT_OIDC_ISSUER", "KAI_ACCOUNT_OIDC_SCOPES", "KAI_ACCOUNT_OIDC_TRANSACTION_SECRET",
-    "KAI_BUY_CATALOG_V2", "KAI_ACCOUNT_CONSOLE_V2", "KAI_HOSTING_V2", "KAI_HOSTING_V2_SETUP", "KAI_HOSTING_DEVICE_RETIREMENT", "KAI_HOSTING_APPROVED_IMAGES", "KAI_HOSTING_TERMS_VERSION", "KAI_ALIPAY_ENABLED",
+    "KAI_BUY_CATALOG_V2", "KAI_ACCOUNT_CONSOLE_V2", "KAI_HOSTING_V2", "KAI_HOSTING_V2_SETUP", "KAI_AGENT_TELEMETRY_V1", "KAI_HOSTING_DEVICE_RETIREMENT", "KAI_HOSTING_APPROVED_IMAGES", "KAI_HOSTING_TERMS_VERSION", "KAI_ALIPAY_ENABLED",
     "KAI_ALIPAY_APP_ID", "KAI_ALIPAY_PRIVATE_KEY", "KAI_ALIPAY_PUBLIC_KEY", "KAI_ALIPAY_SELLER_ID",
     "KAI_SSH_PROVISIONER_URL", "KAI_SSH_PROVISIONER_TOKEN",
   ]) {
@@ -265,7 +268,7 @@ async function main() {
   assert(volumeByTarget(backup, "/app/market")?.read_only === true, "backup market mount must be read-only");
   assert(volumeByTarget(backup, "/app/backups") && !volumeByTarget(backup, "/app/backups").read_only, "backup output mount must be writable");
 
-  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, runbook, appEnvironmentExample, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator] = await Promise.all([
+  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, capabilitySchemaGate, runbook, appEnvironmentExample, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator] = await Promise.all([
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.timer"), "utf8"),
@@ -274,6 +277,7 @@ async function main() {
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup-run.sh"), "utf8"),
     readFile(resolve(projectRoot, "Dockerfile"), "utf8"),
     readFile(resolve(projectRoot, "scripts/ops/production-entrypoint.sh"), "utf8"),
+    readFile(resolve(projectRoot, "scripts/ops/verify-hosting-agent-capability-schema.mjs"), "utf8"),
     readFile(resolve(projectRoot, "deploy/PRODUCTION_RUNBOOK.md"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-app.env.example"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-release.env.example"), "utf8"),
@@ -317,11 +321,15 @@ async function main() {
   assert(Dockerfile.includes('ENTRYPOINT ["/bin/sh", "/app/scripts/ops/production-entrypoint.sh"]'), "runtime image must invoke the production environment gate before its command");
   assert(productionEntrypoint.includes("node:scripts/model-market/cli.mjs|node:scripts/ops/backup-marketplace.mjs"), "production entrypoint may bypass the app gate only for the two supported maintenance commands");
   assert(productionEntrypoint.indexOf("validate-production-env.mjs --check-filesystem") < productionEntrypoint.lastIndexOf('exec "$@"'), "production entrypoint must validate before starting the default server command");
+  assert(productionEntrypoint.includes("verify-hosting-agent-capability-schema.mjs --allow-uninitialized"), "production entrypoint must enforce the 0032 schema gate independently of the telemetry feature flag");
+  assert(productionEntrypoint.indexOf("verify-hosting-agent-capability-schema.mjs --allow-uninitialized") < productionEntrypoint.lastIndexOf('exec "$@"'), "the 0032 schema gate must run before the default server command");
+  assert(capabilitySchemaGate.includes("hosting_v2_challenge_application_idx") && capabilitySchemaGate.includes("hosting_v2_devices_application_idx") && capabilitySchemaGate.includes("APPLY_0032_HOSTING_AGENT_CAPABILITY_MODES"), "the 0032 gate must verify both indexes and require explicit migration confirmation");
   assert(runbook.includes("/api/session") && runbook.includes("每分钟 30 次、突发 10 次"), "runbook must require a concrete reverse-proxy rate limit for /api/session");
   assert(runbook.includes("POST /api/*") && runbook.includes("每分钟 20 次、突发 5 次"), "runbook must require a concrete reverse-proxy rate limit for API writes");
   assert(runbook.includes("API 守卫会为 API 请求输出结构化日志") && runbook.includes("不记录表单正文、Cookie、会话令牌、CSRF 值或供应商原始报价"), "runbook must accurately describe structured API logs and their redaction boundary");
   assert(runbook.includes("首次安装时数据库尚不存在") && runbook.indexOf("请求 `/api/ready`") < runbook.indexOf("第一次备份"), "runbook must initialize the database before the first-install backup");
   assert(runbook.includes("升级已有实例时顺序相反") && runbook.includes("替换应用前创建并异地同步一致性备份"), "runbook must back up existing production data before an upgrade");
+  assert(runbook.includes("0032 预部署门禁") && runbook.includes("APPLY_0032_HOSTING_AGENT_CAPABILITY_MODES") && runbook.includes("新镜像切换前"), "runbook must require the additive 0032 migration before the new image switch");
   assert(runbook.includes(".kai-cloud-backup.lock") && runbook.includes("只有一个 timer 指向该 `KAI_STATE_ROOT`"), "runbook must prevent differently named timers from racing on one backup root");
   assert(runbook.includes("127.0.0.1:3051") && runbook.includes("KAI_ENABLE_HSTS=1"), "runbook must document the new loopback port and the gated HSTS enablement step");
   assert(runbook.includes("任何恢复包都不得超过 30 天") && runbook.includes("异地存储也必须配置不超过 30 天的生命周期"), "runbook must align local and off-host backups with the 30-day data boundary");

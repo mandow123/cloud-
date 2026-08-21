@@ -13,7 +13,12 @@ case "${1:-}:${2:-}" in
   node:scripts/model-market/cli.mjs|node:scripts/ops/backup-marketplace.mjs)
     exec "$@"
     ;;
+  node:scripts/ops/verify-hosting-agent-capability-schema.mjs)
+    node /app/scripts/ops/validate-production-env.mjs --check-filesystem
+    exec "$@"
+    ;;
 esac
 
 node /app/scripts/ops/validate-production-env.mjs --check-filesystem
+node /app/scripts/ops/verify-hosting-agent-capability-schema.mjs --allow-uninitialized
 exec "$@"

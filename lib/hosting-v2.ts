@@ -97,10 +97,14 @@ export function isHostingSupplierProfileReady(profile: HostingSupplierProfile | 
   );
 }
 
+export type HostingAgentCapabilityMode = "FULL_HOST" | "TELEMETRY_ONLY";
+
 export type HostingAgentChallenge = Readonly<{
   id: string;
   organizationId: string;
   accountId: string;
+  applicationId: string | null;
+  capabilityMode: HostingAgentCapabilityMode;
   nonce: string;
   minimumAgentVersion: string;
   expiresAt: string;
@@ -133,6 +137,8 @@ export type HostingDevice = Readonly<{
   id: string;
   organizationId: string;
   accountId: string;
+  applicationId: string | null;
+  capabilityMode: HostingAgentCapabilityMode;
   displayName: string;
   deviceKeyId: string;
   devicePublicKey: string;

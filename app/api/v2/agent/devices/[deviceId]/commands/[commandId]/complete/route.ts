@@ -14,13 +14,14 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request, contextValue: { params: Promise<{ deviceId: string; commandId: string }> }) {
   const context = beginApiRequest(request);
   try {
-    requireHostingV2SetupEnabled();
     requireHostingAgentTransport(request);
     const body = hostingObject(await readJsonBody(request));
     const { deviceId, commandId } = await contextValue.params;
     const store = await getHostingV2Store();
     const device = await store.getDevice(deviceId);
     if (!device || device.status === "REVOKED") throw new AccountAuthError("AGENT_DEVICE_INVALID", 403, "设备凭据无效。 ");
+    if (device.capabilityMode === "TELEMETRY_ONLY") throw new AccountAuthError("HOSTING_CAPABILITY_FORBIDDEN", 409, "遥测设备不能完成控制命令。 ");
+    requireHostingV2SetupEnabled();
     const command = await store.getCommand(deviceId, commandId);
     if (!command) throw new AccountAuthError("AGENT_COMMAND_INVALID", 404, "设备任务不存在。 ");
     if (device.status === "DRAINING" && command.type !== "STOP" && command.type !== "CLEANUP") {

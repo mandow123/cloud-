@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SupplyOfferRecords } from "@/components/supply-offer-records";
+import { isAgentTelemetryV1Enabled } from "@/lib/server/agent-telemetry-feature";
 
 export const metadata: Metadata = {
   title: "上架申请",
@@ -7,5 +8,7 @@ export const metadata: Metadata = {
 };
 
 export default function SupplyApplicationsPage() {
-  return <SupplyOfferRecords />;
+  return isAgentTelemetryV1Enabled()
+    ? <SupplyOfferRecords telemetryEnabled />
+    : <SupplyOfferRecords />;
 }

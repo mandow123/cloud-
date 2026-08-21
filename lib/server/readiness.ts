@@ -11,7 +11,6 @@ import { getAdminOperationsStore } from "./admin-store.ts";
 import { getExchangeStore } from "./exchange-store.ts";
 import { getCardHourStore } from "./card-hour-store.ts";
 import { evaluateHostingV2Capability } from "./hosting-v2-readiness.ts";
-import { isHostingV2ConfigurationEnabled } from "./hosting-v2-feature.ts";
 import { getHostingV2Store } from "./hosting-v2-store.ts";
 import { isKaiIdentityConfigured, probeKaiIdentityDiscovery } from "./kai-identity-oidc.ts";
 import { readMarketSnapshot } from "./market-snapshot.ts";
@@ -72,17 +71,16 @@ export async function evaluateReadiness(){
   const identityProbePromise=configuredCapabilities.kaiIdentityLogin.available
     ? probeKaiIdentityDiscovery({env:environment})
     : Promise.resolve(null);
-  const hostingV2StoragePromise=isHostingV2ConfigurationEnabled(environment)?(async()=>{
+  // The runtime schema projection includes the additive 0032 capability
+  // columns even when telemetry enrollment is disabled. Probe it on every
+  // readiness evaluation so a disabled feature flag cannot hide an
+  // incomplete pre-deploy migration.
+  const hostingV2StoragePromise=(async()=>{
     try{
       const snapshot=await (await getHostingV2Store()).readiness(checkedAt);
       return{ready:true,schemaVersion:HOSTING_V2_SCHEMA_VERSION,probe:"read-only" as const,snapshot};
     }catch(error){return{ready:false,schemaVersion:HOSTING_V2_SCHEMA_VERSION,probe:"read-only" as const,errorCode:errorCode(error),snapshot:null};}
-  })():Promise.resolve({
-    ready:true,
-    schemaVersion:HOSTING_V2_SCHEMA_VERSION,
-    probe:"deferred" as const,
-    snapshot:null,
-  });
+  })();
   const marketplacePromise=(async()=>{
     try{
       await assertMarketplaceSecurityConfiguration();

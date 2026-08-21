@@ -23,6 +23,8 @@ export const hostingV2SchemaStatements = [
     id TEXT PRIMARY KEY,
     organization_id TEXT NOT NULL,
     account_id TEXT NOT NULL,
+    application_id TEXT,
+    capability_mode TEXT NOT NULL DEFAULT 'FULL_HOST' CHECK (capability_mode IN ('FULL_HOST','TELEMETRY_ONLY')),
     nonce TEXT NOT NULL UNIQUE,
     minimum_agent_version TEXT NOT NULL,
     expires_at TEXT NOT NULL,
@@ -30,6 +32,7 @@ export const hostingV2SchemaStatements = [
     created_at TEXT NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS hosting_v2_challenge_org_idx ON hosting_v2_agent_challenges(organization_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS hosting_v2_challenge_application_idx ON hosting_v2_agent_challenges(application_id, capability_mode, expires_at)`,
   `CREATE TABLE IF NOT EXISTS hosting_v2_agent_registrations (
     challenge_id TEXT PRIMARY KEY,
     device_id TEXT NOT NULL UNIQUE,
@@ -43,6 +46,8 @@ export const hostingV2SchemaStatements = [
     id TEXT PRIMARY KEY,
     organization_id TEXT NOT NULL,
     account_id TEXT NOT NULL,
+    application_id TEXT,
+    capability_mode TEXT NOT NULL DEFAULT 'FULL_HOST' CHECK (capability_mode IN ('FULL_HOST','TELEMETRY_ONLY')),
     display_name TEXT NOT NULL,
     device_key_id TEXT NOT NULL UNIQUE,
     device_public_key TEXT NOT NULL,
@@ -60,6 +65,7 @@ export const hostingV2SchemaStatements = [
     updated_at TEXT NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS hosting_v2_devices_org_idx ON hosting_v2_devices(organization_id, updated_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS hosting_v2_devices_application_idx ON hosting_v2_devices(application_id, capability_mode, status)`,
   `CREATE TABLE IF NOT EXISTS hosting_v2_device_retirements (
     id TEXT PRIMARY KEY,
     device_id TEXT NOT NULL UNIQUE,

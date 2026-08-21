@@ -20,8 +20,22 @@ function agentRegistrationEndpoint() {
   return origin.toString();
 }
 
-type PairingDevice = Pick<HostingDevice, "id" | "displayName" | "agentVersion" | "status" | "verificationStatus" | "lastSequence" | "lastSeenAt"> & Readonly<{ gpuModel: HostingDevice["inventory"]["gpuModel"] }>;
-type PairingStatus = Readonly<{ challengeId: string; expiresAt: string; consumedAt: string | null; revokedAt: string | null; device: PairingDevice | null }>;
+type AgentCapabilityMode = "FULL_HOST" | "TELEMETRY_ONLY";
+type PairingChallenge = HostingAgentChallenge & Readonly<{ applicationId?: string | null; capabilityMode?: AgentCapabilityMode }>;
+type PairingDevice = Pick<HostingDevice, "id" | "displayName" | "agentVersion" | "status" | "verificationStatus" | "lastSequence" | "lastSeenAt"> & Readonly<{
+  gpuModel: HostingDevice["inventory"]["gpuModel"];
+  applicationId?: string | null;
+  capabilityMode?: AgentCapabilityMode;
+}>;
+type PairingStatus = Readonly<{
+  challengeId: string;
+  expiresAt: string;
+  consumedAt: string | null;
+  revokedAt: string | null;
+  applicationId?: string | null;
+  capabilityMode?: AgentCapabilityMode;
+  device: PairingDevice | null;
+}>;
 
 const templates = [
   { id: "personal-gpu", code: "01", title: "个人 GPU", description: "单台 Ubuntu 主机，首期支持 1× RTX 4090 或 H100。", enabled: true },
@@ -29,23 +43,30 @@ const templates = [
   { id: "connector", code: "03", title: "云资源连接器", description: "需单独完成 reserve / provision / cleanup 生产验收。", enabled: false },
 ] as const;
 
-export function SupplyResourceRegistration() {
+export function SupplyResourceRegistration({ telemetryApplicationId = null }: { telemetryApplicationId?: string | null }) {
+  const telemetryMode = Boolean(telemetryApplicationId);
   const [dashboard, setDashboard] = useState<SupplierHostingDashboard | null>(null);
   const [policy, setPolicy] = useState<SupplierHostingPolicy | null>(null);
   const [selected, setSelected] = useState<(typeof templates)[number]["id"]>("personal-gpu");
-  const [challenge, setChallenge] = useState<HostingAgentChallenge | null>(null);
+  const [challenge, setChallenge] = useState<PairingChallenge | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [pairedDevice, setPairedDevice] = useState<PairingDevice | null>(null);
+  const [observedAt, setObservedAt] = useState<number | null>(null);
   const [pairingExpired, setPairingExpired] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const issueKey = useRef<string | null>(null);
   const revokeKey = useRef<string | null>(null);
   const connectionVerified = Boolean(pairedDevice && pairedDevice.lastSequence > 0);
-  const agentOnline = Boolean(connectionVerified && pairedDevice && ["ONLINE", "VERIFIED"].includes(pairedDevice.status));
+  const lastSeenAt = pairedDevice?.lastSeenAt ? Date.parse(pairedDevice.lastSeenAt) : Number.NaN;
+  const telemetryHeartbeatFresh = observedAt !== null && Number.isFinite(lastSeenAt)
+    && observedAt - lastSeenAt <= 90_000 && observedAt - lastSeenAt >= -10_000;
+  const agentOnline = Boolean(connectionVerified && pairedDevice && ["ONLINE", "VERIFIED"].includes(pairedDevice.status)
+    && (!telemetryMode || telemetryHeartbeatFresh));
 
   const load = useCallback(async () => {
+    if (telemetryMode) return;
     try {
       const [dashboardResult, policyResult] = await Promise.all([
         marketplaceGet<{ dashboard: SupplierHostingDashboard }>("/api/v2/supply/dashboard"),
@@ -56,7 +77,7 @@ export function SupplyResourceRegistration() {
     } catch (cause) {
       setError(marketplaceErrorMessage(cause, "供应主体状态暂时无法读取。"));
     }
-  }, []);
+  }, [telemetryMode]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => { void load(); });
@@ -64,11 +85,12 @@ export function SupplyResourceRegistration() {
   }, [load]);
 
   useEffect(() => {
-    if (!challenge || agentOnline || pairingExpired) return;
+    if (!challenge || (!telemetryMode && agentOnline) || pairingExpired) return;
     let cancelled = false;
     const check = async () => {
       try {
         const result = await marketplaceGet<{ record: PairingStatus }>(`/api/v2/supply/agent-challenges/${encodeURIComponent(challenge.id)}`);
+        if (!cancelled) setObservedAt(Date.now());
         if (!cancelled && result.record.revokedAt) {
           setChallenge(null);
           setPairedDevice(null);
@@ -88,7 +110,7 @@ export function SupplyResourceRegistration() {
     void check();
     const interval = window.setInterval(() => { void check(); }, 3_000);
     return () => { cancelled = true; window.clearInterval(interval); };
-  }, [agentOnline, challenge, pairingExpired]);
+  }, [agentOnline, challenge, pairingExpired, telemetryMode]);
 
   const pairingBundle = useMemo(() => challenge ? JSON.stringify({
     version: 1,
@@ -100,10 +122,15 @@ export function SupplyResourceRegistration() {
   }, null, 2) : "", [challenge]);
 
   async function issueChallenge() {
-    setBusy(true); setError(null); setNotice(null); setCopied(false); setPairedDevice(null); setPairingExpired(false);
+    setBusy(true); setError(null); setNotice(null); setCopied(false); setPairedDevice(null); setObservedAt(null); setPairingExpired(false);
     try {
       issueKey.current ??= createIdempotencyKey("agent-pairing");
-      const result = await marketplacePost<HostingAgentChallenge>("/api/v2/supply/agent-challenges", {}, issueKey.current);
+      const result = telemetryApplicationId
+        ? await marketplacePost<PairingChallenge>("/api/v2/supply/agent-challenges", {
+          applicationId: telemetryApplicationId,
+          capabilityMode: "TELEMETRY_ONLY",
+        }, issueKey.current)
+        : await marketplacePost<HostingAgentChallenge>("/api/v2/supply/agent-challenges", {}, issueKey.current);
       issueKey.current = null;
       setChallenge(result.record);
     } catch (cause) {
@@ -118,13 +145,14 @@ export function SupplyResourceRegistration() {
     setBusy(true); setError(null); setNotice(null);
     try {
       revokeKey.current ??= createIdempotencyKey("agent-pairing-revoke");
-      await marketplacePost<HostingAgentChallenge>(
+      await marketplacePost<PairingChallenge>(
         `/api/v2/supply/agent-challenges/${encodeURIComponent(challenge.id)}/revoke`,
         {},
         revokeKey.current,
       );
       setChallenge(null);
       setPairedDevice(null);
+      setObservedAt(null);
       setPairingExpired(false);
       setCopied(false);
       issueKey.current = null;
@@ -158,8 +186,102 @@ export function SupplyResourceRegistration() {
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
-  if (!dashboard && !error) return <div className={styles.loading} role="status">正在确认供应主体是否具备设备登记权限…</div>;
-  const approved = dashboard?.readiness.supplierApproved === true;
+  if (!telemetryMode && !dashboard && !error) return <div className={styles.loading} role="status">正在确认供应主体是否具备设备登记权限…</div>;
+  const approved = telemetryMode || dashboard?.readiness.supplierApproved === true;
+
+  if (telemetryMode && telemetryApplicationId) {
+    return (
+      <>
+        <div className={styles.pageHeading}>
+          <div><h1>连接个人 GPU</h1><p>把审核通过的申请连接到资源采集服务，平台只读取设备基础信息与连接状态。</p></div>
+          <Link className={styles.secondaryAction} href="/supply/applications">返回上架申请</Link>
+        </div>
+
+        <ol className={styles.telemetrySteps} aria-label="个人 GPU 连接进度">
+          <li className={styles.telemetryStepDone}><span>01</span><strong>申请审核通过</strong></li>
+          <li className={agentOnline ? styles.telemetryStepDone : styles.telemetryStepCurrent}><span>02</span><strong>连接资源采集 Agent</strong></li>
+          <li className={agentOnline ? styles.telemetryStepCurrent : ""}><span>03</span><strong>平台复核</strong></li>
+        </ol>
+
+        {error ? <div className={`${styles.message} ${styles.messageError}`} role="alert">{error}</div> : null}
+        {notice ? <div className={styles.message} role="status">{notice}</div> : null}
+
+        {agentOnline && pairedDevice ? (
+          <section className={styles.pairingPanel} aria-labelledby="telemetry-connected-title">
+            <header className={styles.panelHeader}><h2 id="telemetry-connected-title">资源采集已连接</h2><span>TELEMETRY ONLY</span></header>
+            <div className={styles.pairingBody}>
+              <div className={styles.connectionSuccess} role="status">
+                <div><span>COLLECTOR CONNECTED</span><strong>{pairedDevice.displayName}</strong><p>{pairedDevice.gpuModel.replace("_", " ")} · Agent {pairedDevice.agentVersion}</p></div>
+              </div>
+              <details className={styles.telemetryDetails}>
+                <summary>查看采集信息</summary>
+                <dl className={styles.pairingFacts}>
+                  <div><dt>关联申请</dt><dd>{telemetryApplicationId}</dd></div>
+                  <div><dt>设备编号</dt><dd>{pairedDevice.id}</dd></div>
+                  <div><dt>最近连接</dt><dd>{pairedDevice.lastSeenAt ? new Date(pairedDevice.lastSeenAt).toLocaleString("zh-CN") : "已完成首次连接"}</dd></div>
+                </dl>
+              </details>
+              <div className={styles.actionRow}><Link className={styles.secondaryAction} href="/supply/applications">返回上架申请</Link></div>
+            </div>
+          </section>
+        ) : (
+          <section className={styles.pairingPanel} aria-labelledby="telemetry-pairing-title">
+            <header className={styles.panelHeader}><h2 id="telemetry-pairing-title">资源采集连接</h2><span>申请 {telemetryApplicationId}</span></header>
+            <div className={styles.pairingBody}>
+              <div className={styles.telemetryIntro}>
+                <h3>平台将采集什么</h3>
+                <p>采集 GPU 型号、显存与设备标识摘要，以及驱动、CUDA、CPU、内存、磁盘和 Agent 连接状态；不读取你的业务文件、模型、密钥或命令历史。</p>
+              </div>
+              <div className={styles.warningBox}>当前试用仅支持设备直接连接 KAI Cloud。NAT 转发、堡垒机中转和仅内网可达设备暂不支持。</div>
+              <div className={styles.telemetryRelease}>
+                <div><strong>资源采集组件</strong><p>采集组件待平台完成受控发布后开放下载；页面不会提供未经验证的安装包。</p></div>
+                <button className={styles.secondaryAction} disabled type="button">采集组件待平台发布</button>
+              </div>
+
+              {!challenge ? (
+                <div className={styles.actionRow}>
+                  <button className={styles.actionButton} disabled={busy} onClick={() => void issueChallenge()} type="button">{busy ? "正在生成…" : "生成一次性连接凭证"}</button>
+                </div>
+              ) : pairedDevice ? (
+                <>
+                  <div className={styles.connectionWaiting} role="status"><span aria-hidden="true" /><div><strong>{connectionVerified ? `${pairedDevice.displayName} 的资源采集连接已中断` : `${pairedDevice.displayName} 已完成签名注册`}</strong><p>{connectionVerified ? `设备状态 ${pairedDevice.status}；最近有效心跳 ${pairedDevice.lastSeenAt ? new Date(pairedDevice.lastSeenAt).toLocaleString("zh-CN") : "时间未知"}。` : "平台尚未收到首个有效心跳，当前不能标记为“资源采集已连接”。"}</p></div></div>
+                  <details className={styles.telemetryDetails}>
+                    <summary>查看采集信息</summary>
+                    <dl className={styles.pairingFacts}>
+                      <div><dt>关联申请</dt><dd>{telemetryApplicationId}</dd></div>
+                      <div><dt>设备编号</dt><dd>{pairedDevice.id}</dd></div>
+                      <div><dt>连接序列</dt><dd>{pairedDevice.lastSequence}</dd></div>
+                    </dl>
+                  </details>
+                  <div className={styles.actionRow}><Link className={styles.secondaryAction} href="/supply/applications">返回上架申请</Link></div>
+                </>
+              ) : (
+                <>
+                  <div className={styles.warningBox}>连接凭证只用于这一条申请，5 分钟内有效。不要发送到聊天群、工单或公开日志。</div>
+                  <dl className={styles.pairingFacts}>
+                    <div><dt>挑战编号</dt><dd>{challenge.id}</dd></div>
+                    <div><dt>关联申请</dt><dd>{telemetryApplicationId}</dd></div>
+                    <div><dt>失效时间</dt><dd>{new Date(challenge.expiresAt).toLocaleString("zh-CN")}</dd></div>
+                  </dl>
+                  <pre className={styles.credentialBlock} tabIndex={0}>{pairingBundle}</pre>
+                  <div className={styles.actionRow}>
+                    <button className={styles.actionButton} onClick={downloadBundle} type="button">下载私有配对文件</button>
+                    <button className={styles.actionButton} onClick={() => void copyBundle()} type="button">{copied ? "已复制" : "复制配对内容"}</button>
+                    <button className={styles.secondaryAction} disabled={busy} onClick={() => void revokeChallenge()} type="button">{busy ? "正在废弃…" : "废弃这份凭证"}</button>
+                  </div>
+                  {pairingExpired ? (
+                    <div className={styles.connectionExpired} role="alert"><div><strong>这份一次性凭证已过期</strong><p>请废弃旧内容并重新生成。</p></div><button className={styles.secondaryAction} onClick={() => { setChallenge(null); setPairingExpired(false); issueKey.current = null; }} type="button">重新生成</button></div>
+                  ) : (
+                    <div className={styles.connectionWaiting} role="status"><span aria-hidden="true" /><div><strong>正在等待采集组件连接</strong><p>设备完成签名注册后，本页会自动更新为“资源采集已连接”。</p></div></div>
+                  )}
+                </>
+              )}
+            </div>
+          </section>
+        )}
+      </>
+    );
+  }
 
   return (
     <>

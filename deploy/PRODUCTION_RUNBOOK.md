@@ -117,6 +117,8 @@ npm run ops:image:promote -- \
 
 Hosting V2 试运营固定使用管理员双人审批发放卡时，`KAI_ALIPAY_ENABLED` 必须保持 `0`；即使主机残留完整商户凭据也不能创建付款单。申请账号使用唯一 Root，审批账号使用独立的 `KAI_ADMIN_APPROVER_USERNAME` 与 `KAI_ADMIN_APPROVER_PASSWORD_HASH`，两个用户名、密码和实际操作者都必须不同；审批账号只获得卡时审批和只读审计权限。先设置 `KAI_HOSTING_V2_SETUP=1`、`KAI_HOSTING_V2=0` 进入预上线配置模式，仅完成供应商审核、费率、Agent 配对、设备验真和挂牌草稿；公开市场、租用、开通、启动、扣减和结算仍由服务端拒绝。设备退场接口使用独立开关 `KAI_HOSTING_DEVICE_RETIREMENT`，默认必须保持 `0`，完成 Root 应急撤权和受控退场演练后才可在 Setup 或交易模式下开启。配置模式只允许 Agent 执行验真，以及既有实例的停止与清理收尾，不能领取新的开通或启动命令。启用 `KAI_HOSTING_V2=1` 前必须配置 KAI Identity、不可变交付镜像和供应协议版本，并在隔离入口完成供应商审批、有效费率、在线 Host Agent、三分钟计量及清理演练。`/api/ready` 会逐项报告供应身份、Agent、费率、卡时账本、镜像、协议、计量、清理和支付宝关闭状态，任一关键项失败时新版本不得接入流量。
 
+Telemetry-only Agent 使用独立开关 `KAI_AGENT_TELEMETRY_V1`，默认固定为 `0`。只有完成 `0032_hosting_agent_capability_modes.sql` 后才可独立置为 `1`，不需要开启 Hosting V2 Setup 或交易；它只开放绑定已审核个人 GPU 供应申请的登记与心跳，不开放验真、挂牌、实例开通或任何控制命令。回退时先把开关恢复为 `0`：停止签发和登记新遥测设备，但保留既有设备心跳、序列及审计记录；旧应用会忽略新增的 nullable/default 列，无需破坏性回滚数据库。
+
 人工 SSH 交付应另建 `KAI_ADMIN_FULFILLMENT_USERNAME` / `KAI_ADMIN_FULFILLMENT_PASSWORD_HASH` 对应的交付管理员。该账号仅获得交付读取、交付处理和审计读取能力，不能发布市场、操作支付或结算；用户名和密码都必须与 Root、财务审批账号不同。Root 仅作为应急回退，不作为日常交付账号。公钥原文只能由授权管理员在交付工单中按需展开，供应商与买家面板只显示指纹和各自可见的真实状态。
 
 账户控制台使用独立开关 `KAI_ACCOUNT_CONSOLE_V2`，默认必须为 `0`。启用后，`/member*` 与 `/supply*` 共用账户控制台外壳，但买家和供应商仍分别读取当前登录会话的 `activeOrganization` 数据；供应资格未通过时不显示设备、挂牌、订单或收益入口。该批次没有数据库迁移，需回退时把 `KAI_ACCOUNT_CONSOLE_V2=0` 并按标准流程重启应用，即恢复旧页面；不要同时改动 Hosting V2、支付或 Agent 开关。
@@ -152,6 +154,42 @@ KAI Identity 上游修复后，在 Cloud 源码目录运行 `npm run ops:identit
 6. 只有恢复演练成功后，才启用 backup/update timers，并把 HTTPS 反向代理流量切入应用。
 
 升级已有实例时顺序相反：必须在替换应用前创建并异地同步一致性备份、验证恢复包，再用隔离数据库副本启动新 digest 的 canary。迁移、`/api/ready` 和业务冒烟通过后才允许短暂停写、替换应用并切换流量。不得用首次安装的“启动后首次备份”顺序处理已有生产数据。
+
+### 0032 预部署门禁
+
+包含 Telemetry-only Agent 数据投影的新镜像无论 `KAI_AGENT_TELEMETRY_V1` 是 `0` 还是 `1`，都依赖 `0032_hosting_agent_capability_modes.sql` 新增的列和索引。必须先用候选 digest 对真实持久化数据库做只读分类，不能无条件执行迁移：
+
+```bash
+docker compose -f deploy/compose.production.yml run --rm app \
+  node scripts/ops/verify-hosting-agent-capability-schema.mjs \
+  --allow-uninitialized
+```
+
+- 返回 `status=ok` 且 `hostingInitialized=false`：共享数据库已有其他业务，但 Hosting 完全未初始化。**不得执行 0032**；直接按首次安装流程启动新镜像，让应用一次性创建完整 Hosting schema。启动后必须再次执行不带参数的只读门禁，并确认 `/api/ready` 通过，才能接入流量。
+- 返回 `status=ok` 且 `hostingInitialized=true`：0032 已就绪，无需重复迁移；继续只读复核和新镜像冒烟。
+- 返回 `HOSTING_AGENT_CAPABILITY_SCHEMA_NOT_READY` 且状态明确为完整 v14 Hosting schema、仅缺少 0032 的四列和两个索引：走下述“已有 Hosting 升级”分支。
+- 返回 `HOSTING_AGENT_CAPABILITY_SCHEMA_PARTIAL`、版本标记异常、索引异常或任何其他错误：立即停止发布并从已验证恢复包排查，禁止执行 0032 或人工补列。
+
+已有完整 v14 Hosting 的升级步骤：
+
+1. 完成一致性备份、异地同步和恢复验证，并先在恢复副本执行相同迁移与门禁。
+2. 进入短暂停写，停止当前应用容器；不得让旧、新两个 SQLite 写实例并行。
+3. 使用候选 digest 和真实持久化数据库挂载执行受控迁移：
+
+```bash
+docker compose -f deploy/compose.production.yml run --rm app \
+  node scripts/ops/verify-hosting-agent-capability-schema.mjs \
+  --apply --confirm APPLY_0032_HOSTING_AGENT_CAPABILITY_MODES
+```
+
+4. 再以只读模式执行同一门禁；它必须确认 schema marker 仍为 v14、两个表的 `application_id` / `capability_mode` 列以及两个查询索引全部存在：
+
+```bash
+docker compose -f deploy/compose.production.yml run --rm app \
+  node scripts/ops/verify-hosting-agent-capability-schema.mjs
+```
+
+5. 只有门禁返回单行 `status=ok` 且 `hostingInitialized=true` 后才可启动新镜像、请求 `/api/ready` 并执行业务冒烟。门禁失败时不得切换镜像；恢复上一 digest 前无需删除新增列，因为 0032 保持 marker v14 且旧应用会忽略这些向后兼容列。任何部分迁移都会 fail-closed，必须从已验证恢复包恢复后重试，禁止人工补列绕过门禁。
 
 ## 备份格式
 

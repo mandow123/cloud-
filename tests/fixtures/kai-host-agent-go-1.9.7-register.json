@@ -1,0 +1,27 @@
+{
+  "source": "KAI-Cloud-Agent-Handoff-1.9.7-go.1/integration/examples/register-request.example.json",
+  "operation": "REGISTER_DEVICE",
+  "challengeId": "challenge_demo_2026",
+  "nonce": "MDEyMzQ1Njc4OWFiY2RlZmdoaWprbG1u",
+  "displayName": "4090 工作站 01",
+  "devicePublicKey": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+  "agentVersion": "1.9.7",
+  "inventory": {
+    "hostnameDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "gpuModel": "RTX_4090",
+    "gpuUuidDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "gpuMemoryMiB": 24564,
+    "driverVersion": "570.124.06",
+    "cudaVersion": "12.8",
+    "cpuModel": "AMD Ryzen 9 7950X 16-Core Processor",
+    "memoryMiB": 65536,
+    "storageGiB": 1863,
+    "publicHost": "gpu.example.com",
+    "sshPortStart": 22000,
+    "sshPortEnd": 22019
+  },
+  "inventoryDigest": "sha256:2cdded313b94a802ca27fc548277c1c93a6412d248f28d02241b4a61d1b1d878",
+  "issuedAt": "2026-08-21T08:00:00.000Z",
+  "expiresAt": "2026-08-21T08:01:00.000Z",
+  "signature": "GFrykHxWplH473PP5r8hBtkpIqeZ3nZ6QBCxypxdbHMvLcjgcjZs2erZWs6WkbVuoOSKJ2K-fY2RNfaG-ct9BQ"
+}

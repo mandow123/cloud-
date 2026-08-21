@@ -27,19 +27,21 @@ const resourceLabels: Record<SupplyOffer["resourceType"], string> = {
   CLOUD_RESOURCE: "云厂商资源",
 };
 
+type TelemetryEligibleSupplyOffer = SupplyOffer & Readonly<{ telemetryConnectionEligible?: boolean }>;
+
 function dateTime(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
-export function SupplyOfferRecords() {
-  const [records, setRecords] = useState<SupplyOffer[] | null>(null);
+export function SupplyOfferRecords({ telemetryEnabled = false }: { telemetryEnabled?: boolean }) {
+  const [records, setRecords] = useState<TelemetryEligibleSupplyOffer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      setRecords(await getSupplyOffers());
+      setRecords(await getSupplyOffers() as TelemetryEligibleSupplyOffer[]);
     } catch (cause) {
       setError(supplyApiUnavailable(cause)
         ? "上架申请服务暂时不可用；页面不会生成本地假记录。"
@@ -82,7 +84,12 @@ export function SupplyOfferRecords() {
                   <td data-label="资源"><strong>{record.productName}</strong><br /><small>{resourceLabels[record.resourceType]} · {record.id}</small><details className="mt-2"><summary>查看规格</summary><p className="mb-0 mt-2 whitespace-pre-wrap text-sm">{record.specification}</p>{record.notes ? <p className="mb-0 mt-2 text-sm text-[var(--muted)]">备注：{record.notes}</p> : null}</details></td>
                   <td data-label="数量">{record.quantity.toLocaleString("zh-CN")}<br /><small>{record.quantityUnit} / {record.pricingUnit}</small></td>
                   <td data-label="地区 / 交付">{record.region}<br /><small>{record.deliveryForm}</small></td>
-                  <td data-label="状态"><span className={`${styles.statusBadge} ${record.status === "REJECTED" ? styles.statusError : ["SUBMITTED", "UNDER_VERIFICATION"].includes(record.status) ? styles.statusWarning : ""}`}>{statusLabels[record.status]}</span></td>
+                  <td data-label="状态">
+                    <span className={`${styles.statusBadge} ${record.status === "REJECTED" ? styles.statusError : ["SUBMITTED", "UNDER_VERIFICATION"].includes(record.status) ? styles.statusWarning : ""}`}>{statusLabels[record.status]}</span>
+                    {telemetryEnabled && record.telemetryConnectionEligible ? (
+                      <Link className={styles.recordAction} href={`/supply/devices/new?applicationId=${encodeURIComponent(record.id)}`}>连接个人 GPU</Link>
+                    ) : null}
+                  </td>
                   <td data-label="提交时间">{dateTime(record.createdAt)}</td>
                 </tr>
               )) : <tr><td className={styles.emptyRow} colSpan={5}>还没有上架申请。提交第一条申请后，记录会保存在服务端数据库并同步进入管理员后台。</td></tr>}

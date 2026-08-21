@@ -1,5 +1,6 @@
 import type {
   HostingAgentChallenge,
+  HostingAgentCapabilityMode,
   HostingAgentRegistration,
   HostingAgentCommand,
   HostingCleanupIncident,
@@ -54,7 +55,8 @@ export interface HostingV2Store {
   submitProfile(organizationId: string, expectedVersion: number, agreementVersion: string, context: HostingMutationContext): Promise<HostingSupplierProfile>;
   listProfiles(): Promise<HostingSupplierProfile[]>;
   reviewProfile(organizationId: string, input: { decision: "APPROVE" | "REJECT" | "SUSPEND"; expectedVersion: number; reviewNote: string; evidenceDigest?: string | null }, context: HostingMutationContext): Promise<HostingSupplierProfile>;
-  issueAgentChallenge(account: AccountSessionContext, context: HostingMutationContext): Promise<HostingAgentChallenge>;
+  issueAgentChallenge(account: AccountSessionContext, context: HostingMutationContext, input?: { applicationId?: string | null; capabilityMode?: HostingAgentCapabilityMode }): Promise<HostingAgentChallenge>;
+  telemetryEligibleApplicationIds(organizationId: string, applicationIds: readonly string[], now: string): Promise<string[]>;
   revokeAgentChallenge(organizationId: string, challengeId: string, context: HostingMutationContext): Promise<HostingAgentChallenge>;
   getAgentChallenge(id: string): Promise<HostingAgentChallenge | null>;
   getAgentRegistration(organizationId: string, challengeId: string): Promise<HostingAgentRegistration | null>;

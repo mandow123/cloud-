@@ -175,6 +175,8 @@ export function validateProductionEnvironment(environment = process.env, { check
   }
   if (environment.KAI_HOSTING_V2 !== "0" && environment.KAI_HOSTING_V2 !== "1") errors.push("KAI_HOSTING_V2 must be exactly 0 or 1");
   if (environment.KAI_HOSTING_V2_SETUP !== "0" && environment.KAI_HOSTING_V2_SETUP !== "1") errors.push("KAI_HOSTING_V2_SETUP must be exactly 0 or 1");
+  const agentTelemetryV1 = environment.KAI_AGENT_TELEMETRY_V1 ?? "0";
+  if (agentTelemetryV1 !== "0" && agentTelemetryV1 !== "1") errors.push("KAI_AGENT_TELEMETRY_V1 must be exactly 0 or 1");
   if (environment.KAI_HOSTING_DEVICE_RETIREMENT !== "0" && environment.KAI_HOSTING_DEVICE_RETIREMENT !== "1") errors.push("KAI_HOSTING_DEVICE_RETIREMENT must be exactly 0 or 1");
   if (environment.KAI_HOSTING_DEVICE_RETIREMENT === "1" && environment.KAI_HOSTING_V2_SETUP !== "1" && environment.KAI_HOSTING_V2 !== "1") {
     errors.push("KAI_HOSTING_DEVICE_RETIREMENT requires Hosting V2 setup or trading to be enabled");
@@ -238,6 +240,7 @@ export function validateProductionEnvironment(environment = process.env, { check
     accountConsoleV2Enabled: environment.KAI_ACCOUNT_CONSOLE_V2 === "1",
     hostingV2Enabled: environment.KAI_HOSTING_V2 === "1",
     hostingV2SetupEnabled: environment.KAI_HOSTING_V2_SETUP === "1" || environment.KAI_HOSTING_V2 === "1",
+    agentTelemetryV1Enabled: agentTelemetryV1 === "1",
     hostingDeviceRetirementEnabled: environment.KAI_HOSTING_DEVICE_RETIREMENT === "1",
     alipayEnabled: false,
     dbDirectory: environment.KAI_DB_DIR,

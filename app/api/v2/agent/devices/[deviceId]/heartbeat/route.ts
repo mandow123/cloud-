@@ -10,13 +10,13 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request, contextValue: { params: Promise<{ deviceId: string }> }) {
   const context = beginApiRequest(request);
   try {
-    requireHostingV2SetupEnabled();
     requireHostingAgentTransport(request);
     const body = hostingObject(await readJsonBody(request));
     const { deviceId } = await contextValue.params;
     const store = await getHostingV2Store();
     const device = await store.getDevice(deviceId);
     if (!device || device.status === "REVOKED") throw new AccountAuthError("AGENT_DEVICE_INVALID", 403, "设备凭据无效。 ");
+    if (device.capabilityMode !== "TELEMETRY_ONLY") requireHostingV2SetupEnabled();
     const proof = parseAgentProof(body);
     const sequence = agentInteger(body, "sequence", 1, Number.MAX_SAFE_INTEGER);
     const inventoryDigest = agentDigest(body, "inventoryDigest");

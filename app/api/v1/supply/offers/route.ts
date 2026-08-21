@@ -5,16 +5,23 @@ import { getSupplyStore } from "@/lib/server/supply-store";
 import { authorizeMarketplaceRequest, persistMarketplaceSession } from "@/lib/server/marketplace-auth";
 import type { MarketplaceActor } from "@/lib/server/marketplace-actor";
 import { bindNewEntityToOrganization, requireTradingAccountSession } from "@/lib/server/entity-ownership";
+import { isAgentTelemetryV1Enabled } from "@/lib/server/agent-telemetry-feature";
+import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const context = beginApiRequest(request); let actor: MarketplaceActor | undefined;
   try {
+    const account = await requireTradingAccountSession(request);
     await supplyWorkspaceRole(request, ["supplier"]);
     const authorization = await authorizeMarketplaceRequest(request); actor = authorization.actor;
     const items = await (await getSupplyStore()).listOffers(actor.id);
-    return jsonResponse({ items, count: items.length }, 200, actor.responseHeaders, context);
+    const eligibleIds = account && isAgentTelemetryV1Enabled()
+      ? new Set(await (await getHostingV2Store()).telemetryEligibleApplicationIds(account.activeOrganization.id, items.map((item) => item.id), new Date().toISOString()))
+      : new Set<string>();
+    const records = items.map((item) => ({ ...item, telemetryConnectionEligible: eligibleIds.has(item.id) }));
+    return jsonResponse({ items: records, count: records.length }, 200, actor.responseHeaders, context);
   } catch (error) { return apiErrorResponse(error, actor?.responseHeaders, context); }
 }
 
