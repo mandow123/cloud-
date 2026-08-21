@@ -191,6 +191,32 @@ docker compose -f deploy/compose.production.yml run --rm app \
 
 5. 只有门禁返回单行 `status=ok` 且 `hostingInitialized=true` 后才可启动新镜像、请求 `/api/ready` 并执行业务冒烟。门禁失败时不得切换镜像；恢复上一 digest 前无需删除新增列，因为 0032 保持 marker v14 且旧应用会忽略这些向后兼容列。任何部分迁移都会 fail-closed，必须从已验证恢复包恢复后重试，禁止人工补列绕过门禁。
 
+### 0033 七相卡时充值预部署门禁
+
+新镜像即使 `KAI_QIXIANG_PAY_ENABLED=0` 也会读取 0033 增加的充值通道与收银台快照列，因此必须在切换镜像前执行只读门禁：
+
+```sh
+docker run --rm --network none --read-only --user 1000:1000 \
+  -v /opt/kai-cloud-3051/db:/app/db \
+  --env-file /opt/kai-cloud-3051/app.env \
+  "$KAI_IMAGE" node scripts/ops/verify-qixiang-card-hour-schema.mjs --allow-uninitialized
+```
+
+- `cardHourInitialized=false` 表示共享数据库中卡时系统完全未初始化：不得单独执行 0033，由新应用首次启动创建完整结构。
+- `QIXIANG_CARD_HOUR_SCHEMA_NOT_READY` 且确认是完整旧 v3、仅缺 0033 时，先备份并在隔离副本演练，然后执行：
+
+```sh
+docker run --rm --network none --read-only --user 1000:1000 \
+  -v /opt/kai-cloud-3051/db:/app/db \
+  --env-file /opt/kai-cloud-3051/app.env \
+  "$KAI_IMAGE" node scripts/ops/verify-qixiang-card-hour-schema.mjs \
+  --apply --confirm APPLY_0033_QIXIANG_CARD_HOUR_TOPUPS
+```
+
+- 任何部分表、部分列、marker 异常或外键检查错误必须停止发布，不得手工补列。
+- 回退先设置 `KAI_QIXIANG_PAY_ENABLED=0` 停止新单。只要仍有 `PENDING`、`PROCESSING` 或 `RECONCILIATION_REQUIRED` 七相订单，就不得回退到不含七相签名回调的旧镜像；须保留回调处理能力直至全部订单完成或人工关单。0033 保持卡时 marker v3，旧应用可以忽略新增列，但不能替代存量回调责任。
+- 不配置也不调用把商户密钥放入 URL 的主动查单；回跳页只读本地状态。退款保持人工待处理，未取得可验证退款协议前不得宣称退款成功。
+
 ## 备份格式
 
 `npm run ops:backup` 创建以下原子目录：

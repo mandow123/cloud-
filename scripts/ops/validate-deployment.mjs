@@ -41,6 +41,7 @@ function productionEnvironment(overrides = {}) {
     KAI_REQUIRE_HTTPS_WRITES: "1",
     KAI_ENABLE_HSTS: "0",
     KAI_ALIPAY_ENABLED: "0",
+    KAI_QIXIANG_PAY_ENABLED: "0",
     KAI_BUY_CATALOG_V2: "0",
     KAI_ACCOUNT_CONSOLE_V2: "0",
     KAI_HOSTING_V2: "0",
@@ -89,6 +90,8 @@ function validateNegativeEnvironmentCases() {
   assertEnvironmentRejected({ KAI_REQUIRE_HTTPS_WRITES: "0" }, "KAI_REQUIRE_HTTPS_WRITES");
   assertEnvironmentRejected({ KAI_ENABLE_HSTS: "2" }, "KAI_ENABLE_HSTS");
   assertEnvironmentRejected({ KAI_ALIPAY_ENABLED: "1" }, "KAI_ALIPAY_ENABLED");
+  assertEnvironmentRejected({ KAI_QIXIANG_PAY_ENABLED: "2" }, "KAI_QIXIANG_PAY_ENABLED");
+  assertEnvironmentRejected({ KAI_QIXIANG_PAY_ENABLED: "1", KAI_QIXIANG_PAY_PID: "10086", KAI_QIXIANG_PAY_KEY: "approved-looking-secret-1234", KAI_QIXIANG_PAY_CHANNELS: "ALIPAY,WXPAY" }, "KAI_QIXIANG_PAY_ENABLED");
   assertEnvironmentRejected({ KAI_BUY_CATALOG_V2: "2" }, "KAI_BUY_CATALOG_V2");
   assertEnvironmentRejected({ KAI_ACCOUNT_CONSOLE_V2: "2" }, "KAI_ACCOUNT_CONSOLE_V2");
   assertEnvironmentRejected({ KAI_HOSTING_V2: "2" }, "KAI_HOSTING_V2");
@@ -124,6 +127,11 @@ async function main() {
       KAI_REQUIRE_HTTPS_WRITES: process.env.KAI_REQUIRE_HTTPS_WRITES,
       KAI_ENABLE_HSTS: process.env.KAI_ENABLE_HSTS ?? "0",
       KAI_ALIPAY_ENABLED: process.env.KAI_ALIPAY_ENABLED ?? "0",
+      KAI_QIXIANG_PAY_ENABLED: process.env.KAI_QIXIANG_PAY_ENABLED ?? "0",
+      KAI_QIXIANG_PAY_PID: process.env.KAI_QIXIANG_PAY_PID,
+      KAI_QIXIANG_PAY_KEY: process.env.KAI_QIXIANG_PAY_KEY,
+      KAI_QIXIANG_PAY_CHANNELS: process.env.KAI_QIXIANG_PAY_CHANNELS,
+      KAI_QIXIANG_PAY_GATEWAY: process.env.KAI_QIXIANG_PAY_GATEWAY,
       KAI_BUY_CATALOG_V2: process.env.KAI_BUY_CATALOG_V2 ?? "0",
       KAI_ACCOUNT_CONSOLE_V2: process.env.KAI_ACCOUNT_CONSOLE_V2 ?? "0",
       KAI_HOSTING_V2: process.env.KAI_HOSTING_V2 ?? "0",
@@ -179,6 +187,11 @@ async function main() {
       KAI_REQUIRE_HTTPS_WRITES: candidateEnvironment.KAI_REQUIRE_HTTPS_WRITES,
       KAI_ENABLE_HSTS: candidateEnvironment.KAI_ENABLE_HSTS,
       KAI_ALIPAY_ENABLED: candidateEnvironment.KAI_ALIPAY_ENABLED,
+      KAI_QIXIANG_PAY_ENABLED: candidateEnvironment.KAI_QIXIANG_PAY_ENABLED,
+      KAI_QIXIANG_PAY_PID: candidateEnvironment.KAI_QIXIANG_PAY_PID,
+      KAI_QIXIANG_PAY_KEY: candidateEnvironment.KAI_QIXIANG_PAY_KEY,
+      KAI_QIXIANG_PAY_CHANNELS: candidateEnvironment.KAI_QIXIANG_PAY_CHANNELS,
+      KAI_QIXIANG_PAY_GATEWAY: candidateEnvironment.KAI_QIXIANG_PAY_GATEWAY,
       KAI_BUY_CATALOG_V2: candidateEnvironment.KAI_BUY_CATALOG_V2,
       KAI_ACCOUNT_CONSOLE_V2: candidateEnvironment.KAI_ACCOUNT_CONSOLE_V2,
       KAI_HOSTING_V2: candidateEnvironment.KAI_HOSTING_V2,
@@ -212,6 +225,7 @@ async function main() {
       candidateEnvironment.KAI_ADMIN_PASSWORD_HASH,
       candidateEnvironment.KAI_ADMIN_APPROVER_PASSWORD_HASH,
       candidateEnvironment.KAI_ADMIN_FULFILLMENT_PASSWORD_HASH,
+      candidateEnvironment.KAI_QIXIANG_PAY_KEY,
     ])}`);
   }
   const configuration = JSON.parse(compose.stdout);
@@ -246,6 +260,7 @@ async function main() {
     "KAI_ACCOUNT_OIDC_CLIENT_ID", "KAI_ACCOUNT_OIDC_CLIENT_SECRET", "KAI_ACCOUNT_OIDC_ISSUER", "KAI_ACCOUNT_OIDC_SCOPES", "KAI_ACCOUNT_OIDC_TRANSACTION_SECRET",
     "KAI_BUY_CATALOG_V2", "KAI_ACCOUNT_CONSOLE_V2", "KAI_HOSTING_V2", "KAI_HOSTING_V2_SETUP", "KAI_AGENT_TELEMETRY_V1", "KAI_HOSTING_DEVICE_RETIREMENT", "KAI_HOSTING_APPROVED_IMAGES", "KAI_HOSTING_TERMS_VERSION", "KAI_ALIPAY_ENABLED",
     "KAI_ALIPAY_APP_ID", "KAI_ALIPAY_PRIVATE_KEY", "KAI_ALIPAY_PUBLIC_KEY", "KAI_ALIPAY_SELLER_ID",
+    "KAI_QIXIANG_PAY_ENABLED", "KAI_QIXIANG_PAY_PID", "KAI_QIXIANG_PAY_KEY", "KAI_QIXIANG_PAY_CHANNELS", "KAI_QIXIANG_PAY_GATEWAY",
     "KAI_SSH_PROVISIONER_URL", "KAI_SSH_PROVISIONER_TOKEN",
   ]) {
     assert(Object.hasOwn(app.environment, name), `app must declare the ${name} production integration boundary`);
@@ -268,7 +283,7 @@ async function main() {
   assert(volumeByTarget(backup, "/app/market")?.read_only === true, "backup market mount must be read-only");
   assert(volumeByTarget(backup, "/app/backups") && !volumeByTarget(backup, "/app/backups").read_only, "backup output mount must be writable");
 
-  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, capabilitySchemaGate, runbook, appEnvironmentExample, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator] = await Promise.all([
+  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, capabilitySchemaGate, qixiangSchemaGate, runbook, appEnvironmentExample, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator] = await Promise.all([
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.timer"), "utf8"),
@@ -278,6 +293,7 @@ async function main() {
     readFile(resolve(projectRoot, "Dockerfile"), "utf8"),
     readFile(resolve(projectRoot, "scripts/ops/production-entrypoint.sh"), "utf8"),
     readFile(resolve(projectRoot, "scripts/ops/verify-hosting-agent-capability-schema.mjs"), "utf8"),
+    readFile(resolve(projectRoot, "scripts/ops/verify-qixiang-card-hour-schema.mjs"), "utf8"),
     readFile(resolve(projectRoot, "deploy/PRODUCTION_RUNBOOK.md"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-app.env.example"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-release.env.example"), "utf8"),
@@ -324,6 +340,8 @@ async function main() {
   assert(productionEntrypoint.includes("verify-hosting-agent-capability-schema.mjs --allow-uninitialized"), "production entrypoint must enforce the 0032 schema gate independently of the telemetry feature flag");
   assert(productionEntrypoint.indexOf("verify-hosting-agent-capability-schema.mjs --allow-uninitialized") < productionEntrypoint.lastIndexOf('exec "$@"'), "the 0032 schema gate must run before the default server command");
   assert(capabilitySchemaGate.includes("hosting_v2_challenge_application_idx") && capabilitySchemaGate.includes("hosting_v2_devices_application_idx") && capabilitySchemaGate.includes("APPLY_0032_HOSTING_AGENT_CAPABILITY_MODES"), "the 0032 gate must verify both indexes and require explicit migration confirmation");
+  assert(productionEntrypoint.includes("verify-qixiang-card-hour-schema.mjs --allow-uninitialized") && productionEntrypoint.indexOf("verify-qixiang-card-hour-schema.mjs --allow-uninitialized") < productionEntrypoint.lastIndexOf('exec "$@"'), "production entrypoint must enforce the 0033 schema gate before the default server command");
+  assert(qixiangSchemaGate.includes("provider_merchant_ref") && qixiangSchemaGate.includes("checkout_url") && qixiangSchemaGate.includes("APPLY_0033_QIXIANG_CARD_HOUR_TOPUPS"), "the 0033 gate must verify provider and private checkout snapshots with explicit confirmation");
   assert(runbook.includes("/api/session") && runbook.includes("每分钟 30 次、突发 10 次"), "runbook must require a concrete reverse-proxy rate limit for /api/session");
   assert(runbook.includes("POST /api/*") && runbook.includes("每分钟 20 次、突发 5 次"), "runbook must require a concrete reverse-proxy rate limit for API writes");
   assert(runbook.includes("API 守卫会为 API 请求输出结构化日志") && runbook.includes("不记录表单正文、Cookie、会话令牌、CSRF 值或供应商原始报价"), "runbook must accurately describe structured API logs and their redaction boundary");
@@ -338,6 +356,7 @@ async function main() {
       && runbook.includes("APPLY_0032_HOSTING_AGENT_CAPABILITY_MODES"),
     "runbook must classify Hosting initialization and apply 0032 only to a complete old v14 schema",
   );
+  assert(runbook.includes("0033 七相卡时充值预部署门禁") && runbook.includes("cardHourInitialized=false") && runbook.includes("APPLY_0033_QIXIANG_CARD_HOUR_TOPUPS") && runbook.includes("不得回退到不含七相签名回调"), "runbook must gate 0033 and preserve callback responsibility for pending Qixiang top-ups");
   assert(runbook.includes(".kai-cloud-backup.lock") && runbook.includes("只有一个 timer 指向该 `KAI_STATE_ROOT`"), "runbook must prevent differently named timers from racing on one backup root");
   assert(runbook.includes("127.0.0.1:3051") && runbook.includes("KAI_ENABLE_HSTS=1"), "runbook must document the new loopback port and the gated HSTS enablement step");
   assert(runbook.includes("任何恢复包都不得超过 30 天") && runbook.includes("异地存储也必须配置不超过 30 天的生命周期"), "runbook must align local and off-host backups with the 30-day data boundary");

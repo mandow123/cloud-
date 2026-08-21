@@ -26,9 +26,9 @@ export async function POST(request: Request) {
     const event = await verifyAlipayNotification(new URLSearchParams(rawBody), rawBody);
     if (event.providerOrderId.startsWith("KAI_CH_")) {
       const store = await getCardHourStore();
-      const topup = await store.getTopup(event.providerOrderId) as { id?: string; amountCents?: number; status?: string } | null;
-      if (!topup || topup.id !== event.providerOrderId || topup.amountCents !== event.amountCents) return notifyResponse("failure", 400);
-      await store.applyTopupEvent({ orderId: event.providerOrderId, providerEventId: event.providerEventId, providerTransactionId: event.providerTransactionId, eventType: event.eventType, amountCents: event.amountCents, payloadDigest: event.rawPayloadDigest, occurredAt: event.occurredAt, receivedAt: event.verifiedAt });
+      const topup = await store.getTopup(event.providerOrderId) as { id?: string; amountCents?: number; status?: string; provider?: string } | null;
+      if (!topup || topup.id !== event.providerOrderId || topup.provider !== "ALIPAY" || topup.amountCents !== event.amountCents) return notifyResponse("failure", 400);
+      await store.applyTopupEvent({ orderId: event.providerOrderId, provider: "ALIPAY", providerEventId: event.providerEventId, providerTransactionId: event.providerTransactionId, eventType: event.eventType, amountCents: event.amountCents, payloadDigest: event.rawPayloadDigest, occurredAt: event.occurredAt, receivedAt: event.verifiedAt });
       return notifyResponse("success");
     }
     const store = await getSupplyStore();

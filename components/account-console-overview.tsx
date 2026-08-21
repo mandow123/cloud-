@@ -74,7 +74,7 @@ function BuyerOverview({ summary }: { summary: AccountConsoleSummary }) {
     </header>
 
     <section className={styles.metrics} aria-label="采购账户摘要">
-      <article id="card-hours"><span>可用 KAI 标准卡时</span><strong>{formatCardHourDisplayMicros(summary.buyer.cardHours.availableMicros)}</strong><small>真实账本余额 · 两位小数</small></article>
+      <article id="card-hours"><span>可用 KAI 标准卡时</span><strong>{formatCardHourDisplayMicros(summary.buyer.cardHours.availableMicros)}</strong><small>真实账本余额 · 两位小数</small><Link className={styles.metricLink} href="/member/card-hours">进入我的资产 / 充值卡时</Link></article>
       <article><span>算力申请</span><strong>{intents.total}</strong><small>当前组织的不可变申请快照</small></article>
       <article><span>待人工确认与交付</span><strong>{intents.pendingManualDelivery}</strong><small>未锁库存、未付款、未扣卡时</small></article>
       <article><span>已锁定卡时</span><strong>{formatCardHourDisplayMicros(summary.buyer.cardHours.heldMicros)}</strong><small>只读取真实账本，不由页面估算</small></article>

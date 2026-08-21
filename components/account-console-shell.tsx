@@ -21,7 +21,7 @@ type ConsoleCapabilitySnapshot = {
 const buyerNavigation = [
   { href: "/member", label: "账户总览", exact: true },
   { href: "/member/purchases", label: "算力申请" },
-  { href: "/member#card-hours", label: "卡时账户", anchor: "card-hours" },
+  { href: "/member/card-hours", label: "卡时账户" },
   { href: "/member#compare", label: "资源对比", anchor: "compare" },
   { href: "/gpu", label: "GPU 市场", external: true },
 ] as const;

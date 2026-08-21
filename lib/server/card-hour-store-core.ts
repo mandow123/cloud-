@@ -21,10 +21,18 @@ async function referralCode(organizationId: string) {
 }
 
 function topupRecord(row: Row) {
+  const provider = text(row, "provider");
+  const paymentType = row.provider_payment_type == null ? null : text(row, "provider_payment_type");
   return {
     id: text(row, "id"), cardHourMicros: number(row, "card_hour_micros"), amountCents: number(row, "amount_cents"),
-    currency: "CNY", status: text(row, "status"), expiresAt: text(row, "expires_at"), createdAt: text(row, "created_at"), updatedAt: text(row, "updated_at"),
+    currency: "CNY", provider, channel: paymentType === "alipay" ? "ALIPAY" : paymentType === "wxpay" ? "WXPAY" : null,
+    status: text(row, "status"), credited: text(row, "status") === "CAPTURED",
+    expiresAt: text(row, "expires_at"), createdAt: text(row, "created_at"), updatedAt: text(row, "updated_at"),
   };
+}
+
+function privateTopupRecord(row: Row) {
+  return { ...topupRecord(row), checkoutUrl: row.checkout_url == null ? null : text(row, "checkout_url") };
 }
 
 function paymentRecord(row: Row) {
@@ -78,6 +86,8 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       await db.first("SELECT id FROM card_hour_ledger_entries LIMIT 1");
       await db.first("SELECT id FROM card_hour_order_holds LIMIT 1");
       await db.first("SELECT id FROM hosting_v2_supplier_fee_volume_events LIMIT 1");
+      const schema = await db.first<{ sql: string }>("SELECT sql FROM sqlite_master WHERE type='table' AND name='card_hour_topup_orders'");
+      if (!schema?.sql.includes("QIXIANG_PAY") || !schema.sql.includes("provider_merchant_ref") || !schema.sql.includes("provider_payment_type") || !schema.sql.includes("checkout_url") || !schema.sql.includes("RECONCILIATION_REQUIRED")) throw new Error("CARD_HOUR_QIXIANG_SCHEMA_MISSING");
       return { schemaVersion: CARD_HOUR_SCHEMA_VERSION, integrity: "ok" as const };
     },
     async dashboard(organizationId, now) {
@@ -123,40 +133,90 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
         if (text(existing, "payload_hash") !== input.payloadHash) throw new AccountAuthError("IDEMPOTENCY_CONFLICT", 409, "同一提交标识对应了不同的充值内容。 ");
         return { record: topupRecord(existing), replayed: true };
       }
+      const provider = input.provider ?? "ALIPAY";
+      const providerMerchantRef = input.providerMerchantRef?.trim() || null;
+      const providerPaymentType = input.providerPaymentType ?? null;
+      if (provider === "QIXIANG_PAY" && (!/^\d{1,18}$/u.test(providerMerchantRef ?? "") || (providerPaymentType !== "alipay" && providerPaymentType !== "wxpay"))) throw new AccountAuthError("CARD_HOUR_TOPUP_PROVIDER_INVALID", 400, "充值通道快照无效。 ");
+      if (provider === "ALIPAY" && (providerMerchantRef !== null || providerPaymentType !== null)) throw new AccountAuthError("CARD_HOUR_TOPUP_PROVIDER_INVALID", 400, "充值通道快照无效。 ");
       const id = `KAI_CH_${crypto.randomUUID().replaceAll("-", "")}`;
-      await db.batch([{ sql: `INSERT INTO card_hour_topup_orders(id,organization_id,account_id,card_hour_micros,amount_cents,currency,provider,status,idempotency_key,payload_hash,provider_transaction_id,expires_at,created_at,updated_at)
-        VALUES(?,?,?,?,?,'CNY','ALIPAY','PENDING',?,?,NULL,?,?,?)`, values: [id, input.account.activeOrganization.id, input.account.account.id, input.cardHourMicros, input.amountCents, input.idempotencyKey, input.payloadHash, input.expiresAt, input.now, input.now] }]);
+      await db.batch([{ sql: `INSERT INTO card_hour_topup_orders(id,organization_id,account_id,card_hour_micros,amount_cents,currency,provider,provider_merchant_ref,provider_payment_type,status,idempotency_key,payload_hash,provider_transaction_id,checkout_url,checkout_created_at,expires_at,created_at,updated_at)
+        VALUES(?,?,?,?,?,'CNY',?,?,?,'PENDING',?,?,NULL,NULL,NULL,?,?,?)`, values: [id, input.account.activeOrganization.id, input.account.account.id, input.cardHourMicros, input.amountCents, provider, providerMerchantRef, providerPaymentType, input.idempotencyKey, input.payloadHash, input.expiresAt, input.now, input.now] }]);
       const created = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=?", [id]);
       if (!created) throw new Error("CARD_HOUR_TOPUP_CREATE_FAILED");
       return { record: topupRecord(created), replayed: false };
     },
+    async claimTopupCheckout(input) {
+      const results = await db.batch([{ sql: "UPDATE card_hour_topup_orders SET status='PROCESSING',updated_at=? WHERE id=? AND organization_id=? AND provider='QIXIANG_PAY' AND status='PENDING' AND checkout_url IS NULL", values: [input.now, input.orderId, input.organizationId] }]);
+      let row = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=? AND organization_id=?", [input.orderId, input.organizationId]);
+      if (!row) throw new AccountAuthError("CARD_HOUR_TOPUP_NOT_FOUND", 404, "充值记录不存在。 ");
+      if (results[0]?.changes !== 1 && text(row, "status") === "PROCESSING" && Date.parse(input.now) - Date.parse(text(row, "updated_at")) >= 120_000) {
+        await db.batch([{ sql: "UPDATE card_hour_topup_orders SET status='RECONCILIATION_REQUIRED',updated_at=? WHERE id=? AND organization_id=? AND provider='QIXIANG_PAY' AND status='PROCESSING' AND checkout_url IS NULL AND updated_at=?", values: [input.now, input.orderId, input.organizationId, text(row, "updated_at")] }]);
+        row = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=? AND organization_id=?", [input.orderId, input.organizationId]);
+        if (!row) throw new AccountAuthError("CARD_HOUR_TOPUP_NOT_FOUND", 404, "充值记录不存在。 ");
+      }
+      return { claimed: results[0]?.changes === 1, record: privateTopupRecord(row) };
+    },
+    async attachTopupCheckout(input) {
+      if (!/^https:\/\//u.test(input.checkoutUrl) || input.checkoutUrl.length > 2_048) throw new AccountAuthError("CARD_HOUR_TOPUP_CHECKOUT_INVALID", 400, "充值收银台地址无效。 ");
+      const current = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=? AND organization_id=?", [input.orderId, input.organizationId]);
+      if (!current) throw new AccountAuthError("CARD_HOUR_TOPUP_NOT_FOUND", 404, "充值记录不存在。 ");
+      if (current.checkout_url != null) {
+        if (text(current, "checkout_url") !== input.checkoutUrl) throw new AccountAuthError("CARD_HOUR_TOPUP_CHECKOUT_CONFLICT", 409, "充值收银台快照不一致，需人工核对。 ");
+        return { record: privateTopupRecord(current), replayed: true };
+      }
+      await db.batch([{ sql: `UPDATE card_hour_topup_orders SET checkout_url=?,checkout_created_at=?,status=CASE WHEN status='PROCESSING' THEN 'PENDING' ELSE status END,updated_at=?
+        WHERE id=? AND organization_id=? AND provider='QIXIANG_PAY' AND checkout_url IS NULL AND status IN ('PROCESSING','CAPTURED')`, values: [input.checkoutUrl, input.now, input.now, input.orderId, input.organizationId] }]);
+      const row = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=? AND organization_id=?", [input.orderId, input.organizationId]);
+      if (!row?.checkout_url || text(row, "checkout_url") !== input.checkoutUrl) throw new AccountAuthError("CARD_HOUR_TOPUP_CHECKOUT_ATTACH_FAILED", 409, "充值收银台未能安全保存，需人工核对。 ");
+      return { record: privateTopupRecord(row), replayed: false };
+    },
+    async markTopupReconciliationRequired(input) {
+      await db.batch([{ sql: "UPDATE card_hour_topup_orders SET status='RECONCILIATION_REQUIRED',updated_at=? WHERE id=? AND organization_id=? AND provider='QIXIANG_PAY' AND status='PROCESSING' AND checkout_url IS NULL", values: [input.now, input.orderId, input.organizationId] }]);
+    },
     async getTopup(orderId) {
       const row = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=?", [orderId]);
-      return row ? { ...topupRecord(row), organizationId: text(row, "organization_id"), accountId: text(row, "account_id"), provider: "ALIPAY", providerTransactionId: row.provider_transaction_id == null ? null : text(row, "provider_transaction_id") } : null;
+      return row ? { ...topupRecord(row), organizationId: text(row, "organization_id"), accountId: text(row, "account_id"), provider: text(row, "provider"), providerMerchantRef: row.provider_merchant_ref == null ? null : text(row, "provider_merchant_ref"), providerPaymentType: row.provider_payment_type == null ? null : text(row, "provider_payment_type"), providerTransactionId: row.provider_transaction_id == null ? null : text(row, "provider_transaction_id"), checkoutUrl: row.checkout_url == null ? null : text(row, "checkout_url") } : null;
+    },
+    async getTopupForOrganization(organizationId, orderId) {
+      const row = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=? AND organization_id=?", [orderId, organizationId]);
+      return row ? topupRecord(row) : null;
     },
     async applyTopupEvent(input) {
+      const provider = input.provider ?? "ALIPAY";
       if (await db.first<Row>("SELECT id FROM card_hour_topup_events WHERE provider_event_id=?", [input.providerEventId])) return { applied: false };
       const order = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=?", [input.orderId]);
-      if (!order || number(order, "amount_cents") !== input.amountCents) throw new Error("CARD_HOUR_TOPUP_EVENT_MISMATCH");
-      if (text(order, "status") !== "PENDING") return { applied: false };
+      if (!order || text(order, "provider") !== provider || number(order, "amount_cents") !== input.amountCents) throw new Error("CARD_HOUR_TOPUP_EVENT_MISMATCH");
+      const currentStatus = text(order, "status");
+      if (!["PENDING", "PROCESSING"].includes(currentStatus) && !(currentStatus === "RECONCILIATION_REQUIRED" && input.eventType === "CAPTURED")) return { applied: false };
       const organizationId = text(order, "organization_id");
       const amountMicros = number(order, "card_hour_micros");
       const eventId = `chte_${crypto.randomUUID()}`;
       const batchId = `chb_${crypto.randomUUID()}`;
       const nextStatus = input.eventType === "CAPTURED" ? "CAPTURED" : "CLOSED";
       const statements: CardHourSql[] = [
-        { sql: "INSERT INTO card_hour_topup_events(id,topup_order_id,provider_event_id,provider_transaction_id,event_type,amount_cents,payload_digest,occurred_at,received_at) VALUES(?,?,?,?,?,?,?,?,?)", values: [eventId, input.orderId, input.providerEventId, input.providerTransactionId, input.eventType, input.amountCents, input.payloadDigest, input.occurredAt, input.receivedAt] },
-        { sql: "UPDATE card_hour_topup_orders SET status=?,provider_transaction_id=?,updated_at=? WHERE id=? AND status='PENDING'", values: [nextStatus, input.providerTransactionId, input.receivedAt, input.orderId] },
+        { sql: `INSERT INTO card_hour_topup_events(id,topup_order_id,provider_event_id,provider_transaction_id,event_type,amount_cents,payload_digest,occurred_at,received_at)
+          SELECT ?,?,?,?,?,?,?,?,? FROM card_hour_topup_orders WHERE id=? AND provider=? AND amount_cents=? AND (status IN ('PENDING','PROCESSING') OR (status='RECONCILIATION_REQUIRED' AND ?='CAPTURED'))`, values: [eventId, input.orderId, input.providerEventId, input.providerTransactionId, input.eventType, input.amountCents, input.payloadDigest, input.occurredAt, input.receivedAt, input.orderId, provider, input.amountCents, input.eventType] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        { sql: "UPDATE card_hour_topup_orders SET status=?,provider_transaction_id=?,updated_at=? WHERE id=? AND provider=? AND (status IN ('PENDING','PROCESSING') OR (status='RECONCILIATION_REQUIRED' AND ?='CAPTURED')) AND EXISTS(SELECT 1 FROM card_hour_topup_events WHERE id=?)", values: [nextStatus, input.providerTransactionId, input.receivedAt, input.orderId, provider, input.eventType, eventId] },
       ];
       if (input.eventType === "CAPTURED") statements.push(
         { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [organizationId, input.receivedAt, input.receivedAt] },
         { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,lifetime_topup_micros=lifetime_topup_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS (SELECT 1 FROM card_hour_topup_orders WHERE id=? AND status='CAPTURED' AND provider_transaction_id=?)", values: [amountMicros, amountMicros, input.receivedAt, organizationId, input.orderId, input.providerTransactionId] },
-        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) SELECT ?,?,'TOPUP',?,?,'POSTED',?,? WHERE EXISTS (SELECT 1 FROM card_hour_topup_orders WHERE id=? AND status='CAPTURED' AND provider_transaction_id=?)", values: [batchId, organizationId, `topup:${input.orderId}`, amountMicros, JSON.stringify({ amountCents: input.amountCents, provider: "ALIPAY" }), input.receivedAt, input.orderId, input.providerTransactionId] },
-        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, batchId, organizationId, amountMicros, input.receivedAt, organizationId] },
-        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) VALUES(?,?,NULL,'PLATFORM_ISSUANCE','DEBIT',?,NULL,?)", values: [`che_${crypto.randomUUID()}`, batchId, amountMicros, input.receivedAt] },
+        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) SELECT ?,?,'TOPUP',?,?,'POSTED',?,? WHERE EXISTS (SELECT 1 FROM card_hour_topup_orders WHERE id=? AND provider=? AND status='CAPTURED' AND provider_transaction_id=?)", values: [batchId, organizationId, `topup:${input.orderId}`, amountMicros, JSON.stringify({ amountCents: input.amountCents, provider }), input.receivedAt, input.orderId, provider, input.providerTransactionId] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, batchId, organizationId, amountMicros, input.receivedAt, organizationId, batchId] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,NULL,'PLATFORM_ISSUANCE','DEBIT',?,NULL,? WHERE EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, batchId, amountMicros, input.receivedAt, batchId] },
       );
-      const results = await db.batch(statements);
-      return { applied: results[1]?.changes === 1 };
+      try {
+        const results = await db.batch(statements);
+        return { applied: results[2]?.changes === 1 };
+      } catch (error) {
+        const [event, current] = await Promise.all([
+          db.first<Row>("SELECT id FROM card_hour_topup_events WHERE provider_event_id=?", [input.providerEventId]),
+          db.first<Row>("SELECT status FROM card_hour_topup_orders WHERE id=?", [input.orderId]),
+        ]);
+        if (event || (current && (!['PENDING', 'PROCESSING'].includes(text(current, "status")) && !(text(current, "status") === "RECONCILIATION_REQUIRED" && input.eventType === "CAPTURED")))) return { applied: false };
+        throw error;
+      }
     },
     async captureOrder(input) {
       const organizationId = input.account.activeOrganization.id;

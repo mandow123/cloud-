@@ -31,12 +31,19 @@ export type CardHourDashboard = Readonly<{
   }>[];
 }>;
 
+export type CardHourTopupProvider = "ALIPAY" | "QIXIANG_PAY";
+export type CardHourTopupPaymentType = "alipay" | "wxpay";
+
 export interface CardHourStore {
   health(): Promise<Readonly<{ schemaVersion: number; integrity: "ok" }>>;
   dashboard(organizationId: string, now: string): Promise<CardHourDashboard>;
-  createTopup(input: { account: AccountSessionContext; cardHourMicros: number; amountCents: number; idempotencyKey: string; payloadHash: string; now: string; expiresAt: string }): Promise<{ record: Record<string, unknown>; replayed: boolean }>;
+  createTopup(input: { account: AccountSessionContext; cardHourMicros: number; amountCents: number; provider?: CardHourTopupProvider; providerMerchantRef?: string | null; providerPaymentType?: CardHourTopupPaymentType | null; idempotencyKey: string; payloadHash: string; now: string; expiresAt: string }): Promise<{ record: Record<string, unknown>; replayed: boolean }>;
+  claimTopupCheckout(input: { organizationId: string; orderId: string; now: string }): Promise<{ claimed: boolean; record: Record<string, unknown> }>;
+  attachTopupCheckout(input: { organizationId: string; orderId: string; checkoutUrl: string; now: string }): Promise<{ record: Record<string, unknown>; replayed: boolean }>;
+  markTopupReconciliationRequired(input: { organizationId: string; orderId: string; now: string }): Promise<void>;
   getTopup(orderId: string): Promise<Record<string, unknown> | null>;
-  applyTopupEvent(input: { orderId: string; providerEventId: string; providerTransactionId: string; eventType: "CAPTURED" | "CLOSED"; amountCents: number; payloadDigest: string; occurredAt: string; receivedAt: string }): Promise<{ applied: boolean }>;
+  getTopupForOrganization(organizationId: string, orderId: string): Promise<Record<string, unknown> | null>;
+  applyTopupEvent(input: { orderId: string; provider?: CardHourTopupProvider; providerEventId: string; providerTransactionId: string; eventType: "CAPTURED" | "CLOSED"; amountCents: number; payloadDigest: string; occurredAt: string; receivedAt: string }): Promise<{ applied: boolean }>;
   captureOrder(input: { account: AccountSessionContext; sourceSystem: "SUPPLY_PILOT" | "EXCHANGE"; orderId: string; amountMicros: number; cnyReferenceCents: number; idempotencyKey: string; payloadHash: string; now: string }): Promise<{ record: Record<string, unknown>; replayed: boolean }>;
   holdHostingOrder(input: { account: AccountSessionContext; orderId: string; amountMicros: number; idempotencyKey: string; payloadHash: string; now: string }): Promise<{ record: Record<string, unknown>; replayed: boolean }>;
   settleHostingOrder(input: { buyerOrganizationId: string; orderId: string; measuredSeconds: number; settledMicros: number; supplierOrganizationId: string; supplierIncomeMicros: number; commissionMicros: number; acceptanceMode: "BUYER" | "TIMEOUT"; acceptanceDeadlineAt: string; acceptanceActorId: string; acceptancePayloadHash: string; payloadHash: string; now: string }): Promise<{ record: Record<string, unknown>; referrerOrganizationId: string | null; applied: boolean }>;

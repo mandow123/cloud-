@@ -71,6 +71,9 @@
 .metrics span { color: var(--muted); font-size: 0.72rem; font-weight: 700; }
 .metrics strong { display: block; margin-top: 17px; color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.8rem; font-variant-numeric: tabular-nums; }
 .metrics small { display: block; margin-top: 5px; color: var(--muted); font-size: 0.68rem; line-height: 1.5; }
+.metricLink { display: inline-flex; min-height: 44px; align-items: center; margin-top: 6px; color: var(--accent); font-size: 0.7rem; font-weight: 750; text-decoration: none; }
+.metricLink:hover,
+.metricLink:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .panel,
 .compactPanel,

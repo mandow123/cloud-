@@ -155,6 +155,15 @@ export function validateProductionEnvironment(environment = process.env, { check
     errors.push("KAI_ENABLE_HSTS must be exactly 0 or 1");
   }
   if (environment.KAI_ALIPAY_ENABLED !== "0") errors.push("KAI_ALIPAY_ENABLED must remain exactly 0 during the trial rollout");
+  const qixiangPayEnabled = environment.KAI_QIXIANG_PAY_ENABLED ?? "0";
+  if (qixiangPayEnabled !== "0") errors.push("KAI_QIXIANG_PAY_ENABLED must remain exactly 0 until the payment scenario is formally approved");
+  if (qixiangPayEnabled === "1") {
+    if (!/^\d{1,18}$/.test(environment.KAI_QIXIANG_PAY_PID ?? "")) errors.push("KAI_QIXIANG_PAY_PID must be a valid merchant identifier when Qixiang Pay is enabled");
+    if (Buffer.byteLength(environment.KAI_QIXIANG_PAY_KEY?.trim() ?? "", "utf8") < 16 || PLACEHOLDER_SECRET_PATTERN.test(environment.KAI_QIXIANG_PAY_KEY ?? "")) errors.push("KAI_QIXIANG_PAY_KEY must be a non-placeholder secret of at least 16 bytes when Qixiang Pay is enabled");
+    const channels = (environment.KAI_QIXIANG_PAY_CHANNELS ?? "").split(",").map((value) => value.trim()).filter(Boolean);
+    if (channels.length < 1 || channels.some((value) => value !== "ALIPAY" && value !== "WXPAY") || new Set(channels).size !== channels.length) errors.push("KAI_QIXIANG_PAY_CHANNELS must contain unique ALIPAY/WXPAY values when Qixiang Pay is enabled");
+    if ((environment.KAI_QIXIANG_PAY_GATEWAY || "https://api.payqixiang.cn/mapi.php") !== "https://api.payqixiang.cn/mapi.php") errors.push("KAI_QIXIANG_PAY_GATEWAY must use the approved HTTPS mapi.php endpoint");
+  }
   const buyCatalogV2 = environment.KAI_BUY_CATALOG_V2 ?? "0";
   if (buyCatalogV2 !== "0" && buyCatalogV2 !== "1") errors.push("KAI_BUY_CATALOG_V2 must be exactly 0 or 1");
   const accountConsoleV2 = environment.KAI_ACCOUNT_CONSOLE_V2 ?? "0";
@@ -243,6 +252,7 @@ export function validateProductionEnvironment(environment = process.env, { check
     agentTelemetryV1Enabled: agentTelemetryV1 === "1",
     hostingDeviceRetirementEnabled: environment.KAI_HOSTING_DEVICE_RETIREMENT === "1",
     alipayEnabled: false,
+    qixiangPayEnabled: qixiangPayEnabled === "1",
     dbDirectory: environment.KAI_DB_DIR,
     marketDirectory: environment.KAI_MARKET_DATA_DIR,
   });

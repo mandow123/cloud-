@@ -27,7 +27,8 @@
     "ops:image:validate": "node scripts/ops/validate-local-image.mjs",
     "ops:hosting:local-agent": "node scripts/ops/run-local-host-agent-acceptance.mjs",
     "ops:hosting:verify": "node scripts/ops/verify-hosting-production-readiness.mjs",
-    "ops:db:agent-capabilities": "node scripts/ops/verify-hosting-agent-capability-schema.mjs"
+    "ops:db:agent-capabilities": "node scripts/ops/verify-hosting-agent-capability-schema.mjs",
+    "ops:db:qixiang-card-hours": "node scripts/ops/verify-qixiang-card-hour-schema.mjs"
   },
   "dependencies": {
     "alipay-sdk": "^4.14.0",
