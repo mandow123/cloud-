@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
 
@@ -18,6 +18,29 @@ const projectRoot = resolve(import.meta.dirname, "..");
 const releaseSha = "0123456789abcdef0123456789abcdef01234567";
 const digest = "a1b2c3d4".repeat(8);
 const imageReference = `127.0.0.1:5443/kai-cloud-market@sha256:${digest}`;
+
+test("the production graph excludes the vulnerable image-size runtime", async () => {
+  const [packageJson, packageLock, standaloneVinext, metadataStub, workerImageStub] = await Promise.all([
+    readFile(resolve(projectRoot, "package.json"), "utf8").then(JSON.parse),
+    readFile(resolve(projectRoot, "package-lock.json"), "utf8").then(JSON.parse),
+    readFile(resolve(projectRoot, "dist/standalone/node_modules/vinext/package.json"), "utf8").then(JSON.parse),
+    readFile(resolve(projectRoot, "dist/standalone/node_modules/vinext/dist/server/metadata-route-build-data.js"), "utf8"),
+    readFile(resolve(projectRoot, "dist/standalone/node_modules/vinext/dist/plugins/worker-image-imports.js"), "utf8"),
+  ]);
+
+  assert.equal(packageJson.devDependencies.vinext, "1.0.0-beta.8");
+  assert.equal(packageJson.devDependencies["@vitejs/plugin-rsc"], "0.5.34");
+  assert.equal(packageLock.packages["node_modules/vinext"].version, "1.0.0-beta.8");
+  assert.equal(packageLock.packages["node_modules/image-size"], undefined);
+  assert.equal(standaloneVinext.version, "1.0.0-beta.8");
+  assert.equal(standaloneVinext.devDependencies?.["image-size"], undefined);
+  await assert.rejects(access(resolve(projectRoot, "dist/standalone/node_modules/image-size")));
+  await assert.rejects(access(resolve(projectRoot, "dist/standalone/node_modules/vinext/dist/deps/.pnpm/image-size@2.0.2")));
+  assert.doesNotMatch(metadataStub, /image-size|imageSize/u);
+  assert.match(metadataStub, /VINEXT_BUILD_ONLY_METADATA_UNAVAILABLE_IN_STANDALONE/u);
+  assert.doesNotMatch(workerImageStub, /image-size|imageSize/u);
+  assert.match(workerImageStub, /VINEXT_BUILD_ONLY_IMAGE_IMPORTS_UNAVAILABLE_IN_STANDALONE/u);
+});
 
 test("immutable image references and clean Git state fail closed", () => {
   assert.equal(parseImmutableImageReference(imageReference).reference, imageReference);

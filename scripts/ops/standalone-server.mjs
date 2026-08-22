@@ -4,7 +4,7 @@ import path, { join } from "node:path";
 
 const originalRelative = path.relative;
 
-// Vinext 0.0.50 builds static cache keys with path.relative(). On Windows that
+// Vinext standalone builds static cache keys with path.relative(). On Windows that
 // produces backslashes, while incoming URL paths use forward slashes. Normalize
 // only during server startup, when the cache is created; Linux production is
 // unaffected.
