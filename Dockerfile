@@ -25,6 +25,8 @@ ENV NODE_ENV=production \
     KAI_BUILD_REVISION="${KAI_RELEASE_SHA}" \
     HOST=0.0.0.0 \
     PORT=3000
+RUN rm -r /usr/local/lib/node_modules/npm \
+    && rm /usr/local/bin/npm /usr/local/bin/npx
 
 COPY --from=build --chown=node:node /app/dist/standalone ./
 COPY --from=build --chown=node:node /app/scripts/model-market ./scripts/model-market

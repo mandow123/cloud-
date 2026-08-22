@@ -147,6 +147,8 @@ test("registry, application, and systemd templates enforce bounded immutable ope
   assert.match(Dockerfile, /\/app\/drizzle \.\/drizzle/);
   assert.match(Dockerfile, /RUN rm \/app\/scripts\/ops\/finalize-standalone\.mjs/);
   assert.ok(Dockerfile.indexOf("RUN rm /app/scripts/ops/finalize-standalone.mjs") < Dockerfile.lastIndexOf("FROM node:24-alpine@"));
+  assert.match(Dockerfile, /RUN rm -r \/usr\/local\/lib\/node_modules\/npm/);
+  assert.ok(Dockerfile.indexOf("RUN rm -r /usr/local/lib/node_modules/npm") > Dockerfile.lastIndexOf("FROM node:24-alpine@"));
   assert.match(productionCompose, /KAI_ENVIRONMENT: LIVE/);
   const strictRunnerPattern = /\^\[a-z0-9\]\+\(\[\._-\]\[a-z0-9\]\+\)\*\(:\[0-9\]\+\)\?\(\/\[a-z0-9\]\+\(\[\._-\]\[a-z0-9\]\+\)\*\)\*@sha256:\[0-9a-f\]\{64\}\$/;
   assert.match(updater, strictRunnerPattern);
