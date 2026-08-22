@@ -21,6 +21,7 @@ const buildOnlyMetadataModule = join(
   "server",
   "metadata-route-build-data.js",
 );
+const buildOnlyVinextPluginModule = join(standaloneVinextDir, "dist", "index.js");
 const buildOnlyWorkerImageModule = join(
   standaloneVinextDir,
   "dist",
@@ -54,7 +55,7 @@ await copyFile(join(projectRoot, "scripts", "ops", "standalone-server.mjs"), sta
 // Vinext 1.0.0-beta.8 no longer declares image-size as a runtime dependency,
 // but its published tarball still carries the vulnerable build-only parser in
 // dist/deps. The Node production server never needs metadata/image-import build
-// plugins. Remove the parser from the standalone artifact and replace the two
+// plugins. Remove the parser from the standalone artifact and replace the three
 // build-only entry points with fail-closed stubs so an accidental runtime import
 // cannot silently reintroduce it.
 const standaloneVinextPackage = JSON.parse(await readFile(standaloneVinextPackagePath, "utf8"));
@@ -68,6 +69,15 @@ await writeFile(
   [
     'const unavailable = () => { throw new Error("VINEXT_BUILD_ONLY_METADATA_UNAVAILABLE_IN_STANDALONE"); };',
     "export { unavailable as createMetadataRouteEntriesSource, unavailable as createMetadataRouteEntryData, unavailable as createMetadataRouteEntrySource };",
+    "",
+  ].join("\n"),
+  "utf8",
+);
+await writeFile(
+  buildOnlyVinextPluginModule,
+  [
+    'throw new Error("VINEXT_BUILD_ONLY_PLUGIN_UNAVAILABLE_IN_STANDALONE");',
+    "export default function unavailable() { throw new Error(\"VINEXT_BUILD_ONLY_PLUGIN_UNAVAILABLE_IN_STANDALONE\"); }",
     "",
   ].join("\n"),
   "utf8",

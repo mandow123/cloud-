@@ -20,10 +20,11 @@ const digest = "a1b2c3d4".repeat(8);
 const imageReference = `127.0.0.1:5443/kai-cloud-market@sha256:${digest}`;
 
 test("the production graph excludes the vulnerable image-size runtime", async () => {
-  const [packageJson, packageLock, standaloneVinext, metadataStub, workerImageStub] = await Promise.all([
+  const [packageJson, packageLock, standaloneVinext, vinextPluginStub, metadataStub, workerImageStub] = await Promise.all([
     readFile(resolve(projectRoot, "package.json"), "utf8").then(JSON.parse),
     readFile(resolve(projectRoot, "package-lock.json"), "utf8").then(JSON.parse),
     readFile(resolve(projectRoot, "dist/standalone/node_modules/vinext/package.json"), "utf8").then(JSON.parse),
+    readFile(resolve(projectRoot, "dist/standalone/node_modules/vinext/dist/index.js"), "utf8"),
     readFile(resolve(projectRoot, "dist/standalone/node_modules/vinext/dist/server/metadata-route-build-data.js"), "utf8"),
     readFile(resolve(projectRoot, "dist/standalone/node_modules/vinext/dist/plugins/worker-image-imports.js"), "utf8"),
   ]);
@@ -36,6 +37,8 @@ test("the production graph excludes the vulnerable image-size runtime", async ()
   assert.equal(standaloneVinext.devDependencies?.["image-size"], undefined);
   await assert.rejects(access(resolve(projectRoot, "dist/standalone/node_modules/image-size")));
   await assert.rejects(access(resolve(projectRoot, "dist/standalone/node_modules/vinext/dist/deps/.pnpm/image-size@2.0.2")));
+  assert.doesNotMatch(vinextPluginStub, /image-size|imageSize/u);
+  assert.match(vinextPluginStub, /VINEXT_BUILD_ONLY_PLUGIN_UNAVAILABLE_IN_STANDALONE/u);
   assert.doesNotMatch(metadataStub, /image-size|imageSize/u);
   assert.match(metadataStub, /VINEXT_BUILD_ONLY_METADATA_UNAVAILABLE_IN_STANDALONE/u);
   assert.doesNotMatch(workerImageStub, /image-size|imageSize/u);
