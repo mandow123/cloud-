@@ -1,0 +1,17 @@
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+stages:
+  - validate
+
+validate:cloud-source:
+  image: alpine:3.20
+  stage: validate
+  script:
+    - test -f package.json
+    - test -d app
+    - test -d lib
+    - echo "Cloud PC source contract is present."
+
