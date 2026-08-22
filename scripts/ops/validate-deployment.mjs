@@ -256,9 +256,9 @@ async function main() {
     ])}`);
   }
   const configuration = JSON.parse(compose.stdout);
-  const { app, backup, "market-update": marketUpdate } = configuration.services;
-  assert(app && backup && marketUpdate, "compose must define app, backup, and market-update services");
-  for (const [name, service] of Object.entries({ app, backup, marketUpdate })) {
+  const { app, backup, "market-update": marketUpdate, "schema-gate": schemaGate } = configuration.services;
+  assert(app && backup && marketUpdate && schemaGate, "compose must define app, schema-gate, backup, and market-update services");
+  for (const [name, service] of Object.entries({ app, schemaGate, backup, marketUpdate })) {
     assert(service.image === candidateEnvironment.KAI_IMAGE_REFERENCE, `${name} must use the same immutable image digest`);
     assert(service.pull_policy === "always", `${name} must always resolve the configured immutable digest`);
     assert(service.read_only === true, `${name} root filesystem must be read-only`);
@@ -297,6 +297,12 @@ async function main() {
   assert(volumeByTarget(app, "/app/db") && !volumeByTarget(app, "/app/db").read_only, "app requires a writable /app/db mount");
   assert(volumeByTarget(app, "/app/market")?.read_only === true, "app market mount must be read-only");
 
+  assert(schemaGate.network_mode === "none", "schema gate must have networking disabled");
+  assert(!schemaGate.ports?.length, "schema gate must not publish a host port");
+  assert(JSON.stringify(schemaGate.environment) === JSON.stringify(app.environment), "schema gate must receive the exact Compose-rendered application environment");
+  assert(volumeByTarget(schemaGate, "/app/db") && !volumeByTarget(schemaGate, "/app/db").read_only, "schema gate requires writable /app/db for explicitly confirmed migrations");
+  assert(volumeByTarget(schemaGate, "/app/market")?.read_only === true, "schema gate market mount must be read-only");
+
   assert(marketUpdate.volumes?.length === 1, "market update must have exactly one host mount");
   assert(volumeByTarget(marketUpdate, "/app/market") && !volumeByTarget(marketUpdate, "/app/market").read_only, "market update requires only writable /app/market");
   assert(!volumeByTarget(marketUpdate, "/app/db"), "market update must never mount the business database");
@@ -310,7 +316,7 @@ async function main() {
   assert(volumeByTarget(backup, "/app/market")?.read_only === true, "backup market mount must be read-only");
   assert(volumeByTarget(backup, "/app/backups") && !volumeByTarget(backup, "/app/backups").read_only, "backup output mount must be writable");
 
-  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, capabilitySchemaGate, qixiangSchemaGate, appealSchemaGate, appealReadSchemaGate, reconciliationSchemaGate, runbook, appEnvironmentExample, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator] = await Promise.all([
+  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, capabilitySchemaGate, qixiangSchemaGate, appealSchemaGate, appealReadSchemaGate, reconciliationSchemaGate, runbook, appEnvironmentExample, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator, schemaGateRunner] = await Promise.all([
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.timer"), "utf8"),
@@ -332,6 +338,7 @@ async function main() {
     readFile(resolve(projectRoot, "deploy/kai-cloud-registry.env.example"), "utf8"),
     readFile(resolve(projectRoot, "scripts/ops/promote-release.mjs"), "utf8"),
     readFile(resolve(projectRoot, "scripts/ops/validate-local-image.mjs"), "utf8"),
+    readFile(resolve(projectRoot, "scripts/ops/run-production-schema-gate.sh"), "utf8"),
   ]);
   for (const [name, unit] of Object.entries({ updateUnit, backupUnit })) {
     assert(unit.includes("OnFailure=kai-cloud-ops-alert@%n.service"), `${name} must have a failure hook`);
@@ -359,6 +366,23 @@ async function main() {
   assert(registryEnvironmentExample.includes("KAI_REGISTRY_ROOT=/opt/kai-cloud-registry") && !/(PASSWORD|SECRET|PRIVATE_KEY)=/.test(registryEnvironmentExample), "registry environment template must contain paths only, not credentials");
   assert(promotionScript.includes("git\", [\"archive\", \"--format=tar\", \"HEAD\"]") && promotionScript.includes("selectRepositoryDigest") && promotionScript.includes("--initial-release"), "promotion must build the exact commit, capture its digest, and require explicit rollback context");
   assert(localImageValidator.includes("validateImageInspection") && localImageValidator.includes("{{.Server.Os}}/{{.Server.Arch}}"), "target-host gate must validate local digest, revision, and platform");
+  assert(
+    schemaGateRunner.includes("--project-name kai-cloud-schema-gate")
+      && schemaGateRunner.includes('--env-file "$APP_ENV"')
+      && schemaGateRunner.includes('--env-file "$CANDIDATE_RELEASE_ENV"')
+      && schemaGateRunner.indexOf('--env-file "$APP_ENV"') < schemaGateRunner.indexOf('--env-file "$CANDIDATE_RELEASE_ENV"')
+      && schemaGateRunner.includes("exec env -i")
+      && schemaGateRunner.includes("/usr/bin/docker compose")
+      && schemaGateRunner.includes("application env must not redefine release-owned keys")
+      && schemaGateRunner.includes("candidate release SHA must match its immutable filename")
+      && schemaGateRunner.includes("candidate release env must contain exactly the generated production release policy")
+      && schemaGateRunner.includes("release artifact directory must be a non-writable root:root directory")
+      && schemaGateRunner.includes("/etc/kai-cloud/kai-cloud-schema-gate.compose.yml")
+      && schemaGateRunner.includes("/usr/local/lib/kai-cloud/run-production-schema-gate.sh")
+      && schemaGateRunner.includes("run --rm --no-deps schema-gate")
+      && schemaGateRunner.includes("schema gate command is not allowlisted"),
+    "schema gate runner must use fixed root-owned files, a clean environment, candidate-final Compose rendering, and an allowlist",
+  );
   assert(Dockerfile.includes("/app/scripts/ops ./scripts/ops"), "runtime image must contain operations scripts");
   assert(Dockerfile.includes("/app/drizzle ./drizzle"), "runtime image must contain SQLite exchange migrations");
   assert(Dockerfile.includes("/app/.openai/drizzle ./.openai/drizzle"), "runtime image must contain the D1 migration mirror used by payment gates");
@@ -404,29 +428,34 @@ async function main() {
       && paymentMigrationRunbook.includes('systemctl start "$KAI_BACKUP_UNIT"'),
     "payment migration runbook must fail fast while selecting a supported backup unit and synchronously creating a recovery bundle before mutation",
   );
-  const paymentMigrationCommands = [...paymentMigrationRunbook.matchAll(/docker run --rm[\s\S]*?(?=\n(?:\s{2})?docker run|\n\))/gu)].map((match) => match[0]);
+  assert(
+    paymentMigrationRunbook.includes("/opt/kai-cloud-release-sources/<完整提交 SHA>")
+      && paymentMigrationRunbook.includes("/usr/local/lib/kai-cloud/run-production-schema-gate.sh")
+      && paymentMigrationRunbook.includes("/etc/kai-cloud/kai-cloud-schema-gate.compose.yml")
+      && paymentMigrationRunbook.includes("status --porcelain --untracked-files=all")
+      && paymentMigrationRunbook.includes("! -user root -o ! -group root -o -perm /022")
+      && paymentMigrationRunbook.includes("不得通过 `sudo` 执行普通用户工作区中的 runner"),
+    "payment migration runbook must install the audited runner and Compose file from a root-owned candidate source",
+  );
+  assert(
+    paymentMigrationRunbook.indexOf('systemctl start "$KAI_BACKUP_UNIT"')
+      < paymentMigrationRunbook.indexOf("APPLY_0033_QIXIANG_CARD_HOUR_TOPUPS"),
+    "payment migration backup must complete before the first 0033 write",
+  );
+  assert(!paymentMigrationRunbook.includes("docker run --rm"), "payment migrations must not bypass Compose env rendering with raw docker env-file parsing");
+  const paymentMigrationCommands = [...paymentMigrationRunbook.matchAll(/sudo \/usr\/local\/lib\/kai-cloud\/run-production-schema-gate\.sh[\s\S]*?(?=\n(?:\s{2})?sudo \/usr\/local\/lib\/kai-cloud\/run-production-schema-gate\.sh|\n\))/gu)].map((match) => match[0]);
   assert(paymentMigrationCommands.length === 9, "payment migration runbook must contain all nine preflight, apply, and verification commands");
   for (const command of paymentMigrationCommands) {
     assert(
-      command.includes('-v "$KAI_STATE_ROOT/db:/app/db"')
-        && command.includes('-v "$KAI_STATE_ROOT/market:/app/market:ro"')
-        && command.includes("--env-file /etc/kai-cloud/kai-cloud-release.env")
-        && command.includes("--env-file /etc/kai-cloud/kai-cloud-app.env")
-        && command.includes('-e KAI_IMAGE_REFERENCE="$KAI_IMAGE"')
-        && command.includes("-e KAI_DB_DIR=/app/db")
-        && command.includes("-e KAI_MARKET_DATA_DIR=/app/market"),
-      "every payment migration container must recreate the production Compose environment and filesystem boundary",
+      command.includes('"$KAI_CANDIDATE_RELEASE_ENV"') && command.includes("node scripts/ops/verify-"),
+      "every payment migration must use the immutable candidate release artifact and an allowlisted verifier",
     );
   }
   assert(
-    runbook.includes("--env-file /etc/kai-cloud/kai-cloud-release.env")
-      && runbook.includes("--env-file /etc/kai-cloud/kai-cloud-app.env")
-      && runbook.includes('-e KAI_IMAGE_REFERENCE="$KAI_IMAGE"')
-      && runbook.includes("-e KAI_DB_DIR=/app/db")
-      && runbook.includes("-e KAI_MARKET_DATA_DIR=/app/market")
-      && runbook.includes('-v "$KAI_STATE_ROOT/db:/app/db"')
-      && runbook.includes('-v "$KAI_STATE_ROOT/market:/app/market:ro"'),
-    "payment migration runbook must recreate the production Compose environment and filesystem boundary",
+    paymentMigrationRunbook.includes("KAI_CANDIDATE_RELEASE_ENV")
+      && paymentMigrationRunbook.includes("运行器以清洁环境调用 Compose")
+      && paymentMigrationRunbook.includes("先读取应用 env、再由候选 release env 最终确定镜像、提交和状态目录"),
+    "payment migration runbook must keep the current release untouched while Compose renders the candidate and application environments",
   );
   assert(runbook.includes("0036 充值申诉侧车预部署门禁") && runbook.includes("APPLY_0036_CARD_HOUR_TOPUP_APPEALS") && runbook.includes("D1") && runbook.includes("禁止手工删表或改 marker"), "runbook must gate 0036, enforce migration mirrors, and document non-destructive rollback");
   assert(runbook.includes("0037 申诉站内通知预部署门禁") && runbook.includes("APPLY_0037_CARD_HOUR_TOPUP_APPEAL_READS") && runbook.includes("marker v5"), "runbook must provide an executable 0037 migration path before 0038");

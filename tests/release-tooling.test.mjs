@@ -31,15 +31,16 @@ test("immutable image references and clean Git state fail closed", () => {
 test("promotion artifacts keep immutable current and previous releases without secrets", () => {
   const previousReference = `127.0.0.1:5443/kai-cloud-market@sha256:${"b2c3d4e5".repeat(8)}`;
   const previousSha = "89abcdef0123456789abcdef0123456789abcdef";
-  const previous = parseReleaseEnvironment([
-    `KAI_IMAGE=${previousReference}`,
-    `KAI_RELEASE_SHA=${previousSha}`,
-    "KAI_IMAGE_PLATFORM=linux/amd64",
-  ].join("\n"));
+  const previousEnvironment = buildReleaseEnvironment({ imageReference: previousReference, releaseSha: previousSha, platform: "linux/amd64" });
+  const previous = parseReleaseEnvironment(previousEnvironment);
   const environment = buildReleaseEnvironment({ imageReference, releaseSha, platform: "linux/amd64" });
   assert.match(environment, new RegExp(`KAI_IMAGE=${imageReference}`));
   assert.match(environment, /KAI_STATE_ROOT=\/opt\/kai-cloud-3051/);
   assert.doesNotMatch(environment, /PASSWORD|TOKEN|CURSOR_SECRET/);
+  assert.throws(() => parseReleaseEnvironment(`${environment}KAI_QIXIANG_PAY_ENABLED=1\n`), /unexpected/);
+  assert.throws(() => parseReleaseEnvironment(environment.replace(`KAI_RELEASE_SHA=${releaseSha}`, `KAI_RELEASE_SHA=${releaseSha}\nKAI_RELEASE_SHA=${releaseSha}`)), /duplicate/);
+  assert.throws(() => parseReleaseEnvironment(environment.replace("KAI_STATE_ROOT=/opt/kai-cloud-3051\n", "")), /missing/);
+  assert.throws(() => parseReleaseEnvironment(environment.replace("KAI_STATE_ROOT=/opt/kai-cloud-3051", "KAI_STATE_ROOT=/tmp/unsafe")), /state root/);
   const record = buildReleaseRecord({
     imageReference,
     releaseSha,
@@ -85,7 +86,7 @@ test("local image verification binds RepoDigest, revision and OS/architecture", 
 });
 
 test("registry, application, and systemd templates enforce bounded immutable operation", async () => {
-  const [registryCompose, registryConfig, productionCompose, Dockerfile, updater, backup, promotion, updateUnit, backupUnit, updateTimer, backupTimer] = await Promise.all([
+  const [registryCompose, registryConfig, productionCompose, Dockerfile, updater, backup, promotion, updateUnit, backupUnit, updateTimer, backupTimer, schemaGateRunner] = await Promise.all([
     readFile(resolve(projectRoot, "deploy/compose.registry.yml"), "utf8"),
     readFile(resolve(projectRoot, "deploy/registry/config.yml"), "utf8"),
     readFile(resolve(projectRoot, "deploy/compose.production.yml"), "utf8"),
@@ -97,13 +98,24 @@ test("registry, application, and systemd templates enforce bounded immutable ope
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.timer"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup.timer"), "utf8"),
+    readFile(resolve(projectRoot, "scripts/ops/run-production-schema-gate.sh"), "utf8"),
   ]);
   assert.match(registryCompose, /registry:3\.1\.1@sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33/);
   assert.match(registryCompose, /127\.0\.0\.1:\$\{KAI_REGISTRY_PORT:-5443\}:5000/);
   assert.match(registryCompose, /\/opt\/kai-cloud-registry/);
   assert.match(registryConfig, /certificate: \/certs\/registry\.crt/);
   assert.match(registryConfig, /path: \/auth\/htpasswd/);
-  assert.equal((productionCompose.match(/pull_policy: always/g) ?? []).length, 3);
+  assert.equal((productionCompose.match(/pull_policy: always/g) ?? []).length, 4);
+  assert.match(productionCompose, /schema-gate:[\s\S]*network_mode: none[\s\S]*environment: \*kai-app-environment[\s\S]*volumes: \*kai-app-volumes/);
+  assert.match(schemaGateRunner, /--project-name kai-cloud-schema-gate/);
+  assert.match(schemaGateRunner, /exec env -i/);
+  assert.match(schemaGateRunner, /\/usr\/bin\/docker compose/);
+  assert.match(schemaGateRunner, /\/etc\/kai-cloud\/kai-cloud-schema-gate\.compose\.yml/);
+  assert.match(schemaGateRunner, /\/usr\/local\/lib\/kai-cloud\/run-production-schema-gate\.sh/);
+  assert.match(schemaGateRunner, /application env must not redefine release-owned keys/);
+  assert.ok(schemaGateRunner.indexOf('--env-file "$APP_ENV"') < schemaGateRunner.indexOf('--env-file "$CANDIDATE_RELEASE_ENV"'));
+  assert.match(schemaGateRunner, /run --rm --no-deps schema-gate/);
+  assert.match(schemaGateRunner, /schema gate command is not allowlisted/);
   assert.match(Dockerfile, /ARG KAI_RELEASE_SHA/);
   assert.match(Dockerfile, /org\.opencontainers\.image\.revision="\$\{KAI_RELEASE_SHA\}"/);
   assert.match(Dockerfile, /\/app\/drizzle \.\/drizzle/);

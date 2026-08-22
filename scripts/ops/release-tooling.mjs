@@ -2,6 +2,18 @@ const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const RELEASE_SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const REPOSITORY_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$/;
 const SUPPORTED_PLATFORMS = new Set(["linux/amd64", "linux/arm64"]);
+const RELEASE_ENVIRONMENT_KEYS = new Set([
+  "KAI_IMAGE",
+  "KAI_RELEASE_SHA",
+  "KAI_IMAGE_PLATFORM",
+  "KAI_STATE_ROOT",
+  "KAI_UPDATE_CONTAINER_PREFIX",
+  "KAI_BACKUP_CONTAINER_PREFIX",
+  "KAI_BACKUP_RETENTION_HOURLY",
+  "KAI_BACKUP_RETENTION_DAILY",
+  "KAI_BACKUP_RETENTION_MONTHLY",
+  "KAI_BACKUP_RETENTION_MAX_AGE_DAYS",
+]);
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -68,12 +80,20 @@ export function parseReleaseEnvironment(text) {
     invariant(separator > 0, "release environment contains an invalid line");
     const key = line.slice(0, separator);
     const value = line.slice(separator + 1);
-    invariant(/^[A-Z][A-Z0-9_]*$/.test(key) && !values.has(key), "release environment contains an invalid or duplicate key");
+    invariant(/^[A-Z][A-Z0-9_]*$/.test(key) && RELEASE_ENVIRONMENT_KEYS.has(key) && !values.has(key), "release environment contains an invalid, unexpected, or duplicate key");
     values.set(key, value);
   }
+  invariant(values.size === RELEASE_ENVIRONMENT_KEYS.size && [...RELEASE_ENVIRONMENT_KEYS].every((key) => values.has(key)), "release environment is missing a required release key");
   const image = parseImmutableImageReference(values.get("KAI_IMAGE"));
   const releaseSha = validateReleaseSha(values.get("KAI_RELEASE_SHA"));
-  const platform = validatePlatform(values.get("KAI_IMAGE_PLATFORM") ?? "linux/amd64");
+  const platform = validatePlatform(values.get("KAI_IMAGE_PLATFORM"));
+  invariant(values.get("KAI_STATE_ROOT") === "/opt/kai-cloud-3051", "release environment has an invalid state root");
+  invariant(values.get("KAI_UPDATE_CONTAINER_PREFIX") === "kai-cloud-market-update-3051", "release environment has an invalid update prefix");
+  invariant(values.get("KAI_BACKUP_CONTAINER_PREFIX") === "kai-cloud-backup-3051", "release environment has an invalid backup prefix");
+  invariant(values.get("KAI_BACKUP_RETENTION_HOURLY") === "48", "release environment has an invalid hourly retention policy");
+  invariant(values.get("KAI_BACKUP_RETENTION_DAILY") === "30", "release environment has an invalid daily retention policy");
+  invariant(values.get("KAI_BACKUP_RETENTION_MONTHLY") === "0", "release environment has an invalid monthly retention policy");
+  invariant(values.get("KAI_BACKUP_RETENTION_MAX_AGE_DAYS") === "30", "release environment has an invalid maximum retention policy");
   return Object.freeze({ imageReference: image.reference, releaseSha, platform });
 }
 

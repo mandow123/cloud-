@@ -193,44 +193,65 @@ docker compose -f deploy/compose.production.yml run --rm app \
 
 ### 0033 七相卡时充值预部署门禁
 
-新镜像即使 `KAI_QIXIANG_PAY_ENABLED=0` 也会读取 0033 增加的充值通道与收银台快照列，因此必须在切换镜像前执行只读门禁：
+新镜像即使 `KAI_QIXIANG_PAY_ENABLED=0` 也会读取 0033 增加的充值通道与收银台快照列，因此必须在切换镜像前执行只读门禁。先把候选提交克隆或解包到 `/opt/kai-cloud-release-sources/<完整提交 SHA>`，整个目录必须是 `root:root` 且不能由组或其他用户写；以 root 核对 `git rev-parse HEAD`、干净工作树和候选 release env 文件名中的 SHA 完全相同。然后只用系统 `install` 从该 root-owned 候选源安装本提交中受审的两个固定副本，不得通过 `sudo` 执行普通用户工作区中的 runner 或引用其中的 Compose：
 
 ```sh
 (
   set -eu
-  set -a
-  . /etc/kai-cloud/kai-cloud-release.env
-  set +a
-  docker run --rm --network none --read-only --user 1000:1000 \
-    -v "$KAI_STATE_ROOT/db:/app/db" \
-    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
-    --env-file /etc/kai-cloud/kai-cloud-release.env \
-    --env-file /etc/kai-cloud/kai-cloud-app.env \
-    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
-    -e KAI_DB_DIR=/app/db \
-    -e KAI_MARKET_DATA_DIR=/app/market \
-    "$KAI_IMAGE" node scripts/ops/verify-qixiang-card-hour-schema.mjs --allow-uninitialized
+  : "${KAI_CANDIDATE_RELEASE_ENV:?set the generated candidate release env path}"
+  KAI_CANDIDATE_SHA=${KAI_CANDIDATE_RELEASE_ENV##*/kai-cloud-release-}
+  KAI_CANDIDATE_SHA=${KAI_CANDIDATE_SHA%.env}
+  printf '%s\n' "$KAI_CANDIDATE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+  KAI_CANDIDATE_SOURCE="/opt/kai-cloud-release-sources/$KAI_CANDIDATE_SHA"
+  test "$(sudo git -C "$KAI_CANDIDATE_SOURCE" rev-parse HEAD)" = "$KAI_CANDIDATE_SHA"
+  test -z "$(sudo git -C "$KAI_CANDIDATE_SOURCE" status --porcelain --untracked-files=all)"
+  test -z "$(sudo find "$KAI_CANDIDATE_SOURCE" -xdev \( ! -user root -o ! -group root -o -perm /022 \) -print -quit)"
+  sudo install -d -o root -g root -m 0755 /usr/local/lib/kai-cloud /etc/kai-cloud
+  sudo install -o root -g root -m 0755 \
+    "$KAI_CANDIDATE_SOURCE/scripts/ops/run-production-schema-gate.sh" \
+    /usr/local/lib/kai-cloud/run-production-schema-gate.sh
+  sudo install -o root -g root -m 0644 \
+    "$KAI_CANDIDATE_SOURCE/deploy/compose.production.yml" \
+    /etc/kai-cloud/kai-cloud-schema-gate.compose.yml
+)
+```
+
+运行器会再次拒绝符号链接、错误 owner/mode、可被组或其他用户写入的发布目录、应用 env 中重复的 release-owned 键、继承的宿主环境以及任何未列入白名单的命令。候选 env 只能包含晋级工具生成的 10 个发布字段：文件内 SHA 必须等于文件名 SHA，镜像必须是非零不可变 digest，平台、状态目录、容器前缀和备份保留策略必须符合本机固定策略；任何额外、重复、缺失或异常字段都会在 Compose 前阻断。`KAI_CANDIDATE_RELEASE_ENV` 必须指向晋级脚本生成的、尚未替换现网配置的候选 release env；运行器以清洁环境调用 Compose，先读取应用 env、再由候选 release env 最终确定镜像、提交和状态目录。禁止把包含密钥的应用 env 当 shell 文件加载：
+
+```sh
+(
+  set -eu
+  : "${KAI_CANDIDATE_RELEASE_ENV:?set the generated candidate release env path}"
+  sudo /usr/local/lib/kai-cloud/run-production-schema-gate.sh "$KAI_CANDIDATE_RELEASE_ENV" \
+    node scripts/ops/verify-qixiang-card-hour-schema.mjs --allow-uninitialized
 )
 ```
 
 - `cardHourInitialized=false` 表示共享数据库中卡时系统完全未初始化：不得单独执行 0033，由新应用首次启动创建完整结构。
-- `QIXIANG_CARD_HOUR_SCHEMA_NOT_READY` 且确认是完整旧 v3、仅缺 0033 时，先备份并在隔离副本演练，然后执行：
+- `QIXIANG_CARD_HOUR_SCHEMA_NOT_READY` 且确认是完整旧 v3、仅缺 0033 时，必须先执行下面的统一迁移前备份门禁，并在隔离副本演练。该备份发生在 0033 的第一笔写入之前；不得把后续 0036 章节中的备份当作 0033 的恢复点：
 
 ```sh
 (
   set -eu
-  set -a
-  . /etc/kai-cloud/kai-cloud-release.env
-  set +a
-  docker run --rm --network none --read-only --user 1000:1000 \
-    -v "$KAI_STATE_ROOT/db:/app/db" \
-    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
-    --env-file /etc/kai-cloud/kai-cloud-release.env \
-    --env-file /etc/kai-cloud/kai-cloud-app.env \
-    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
-    -e KAI_DB_DIR=/app/db \
-    -e KAI_MARKET_DATA_DIR=/app/market \
-    "$KAI_IMAGE" node scripts/ops/verify-qixiang-card-hour-schema.mjs \
+  KAI_BACKUP_UNIT=kai-cloud-backup.service
+  if sudo systemctl cat kai-cloud-backup-3051.service >/dev/null 2>&1; then
+    KAI_BACKUP_UNIT=kai-cloud-backup-3051.service
+  elif ! sudo systemctl cat "$KAI_BACKUP_UNIT" >/dev/null 2>&1; then
+    printf '%s\n' "KAI Cloud backup unit is not installed" >&2
+    exit 1
+  fi
+  sudo systemctl start "$KAI_BACKUP_UNIT"
+)
+```
+
+只有同步备份成功、恢复包 manifest/哈希/`quick_check`/外键检查通过且已在隔离目录完成恢复验证后，才能执行 0033 写迁移：
+
+```sh
+(
+  set -eu
+  : "${KAI_CANDIDATE_RELEASE_ENV:?set the generated candidate release env path}"
+  sudo /usr/local/lib/kai-cloud/run-production-schema-gate.sh "$KAI_CANDIDATE_RELEASE_ENV" \
+    node scripts/ops/verify-qixiang-card-hour-schema.mjs \
     --apply --confirm APPLY_0033_QIXIANG_CARD_HOUR_TOPUPS
 )
 ```
@@ -253,18 +274,9 @@ docker compose -f deploy/compose.production.yml run --rm app \
     exit 1
   fi
   sudo systemctl start "$KAI_BACKUP_UNIT"
-  set -a
-  . /etc/kai-cloud/kai-cloud-release.env
-  set +a
-  docker run --rm --network none --read-only --user 1000:1000 \
-    -v "$KAI_STATE_ROOT/db:/app/db" \
-    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
-    --env-file /etc/kai-cloud/kai-cloud-release.env \
-    --env-file /etc/kai-cloud/kai-cloud-app.env \
-    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
-    -e KAI_DB_DIR=/app/db \
-    -e KAI_MARKET_DATA_DIR=/app/market \
-    "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-appeals-schema.mjs --allow-uninitialized
+  : "${KAI_CANDIDATE_RELEASE_ENV:?set the generated candidate release env path}"
+  sudo /usr/local/lib/kai-cloud/run-production-schema-gate.sh "$KAI_CANDIDATE_RELEASE_ENV" \
+    node scripts/ops/verify-card-hour-topup-appeals-schema.mjs --allow-uninitialized
 )
 ```
 
@@ -274,28 +286,12 @@ docker compose -f deploy/compose.production.yml run --rm app \
 ```sh
 (
   set -eu
-  set -a
-  . /etc/kai-cloud/kai-cloud-release.env
-  set +a
-  docker run --rm --network none --read-only --user 1000:1000 \
-    -v "$KAI_STATE_ROOT/db:/app/db" \
-    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
-    --env-file /etc/kai-cloud/kai-cloud-release.env \
-    --env-file /etc/kai-cloud/kai-cloud-app.env \
-    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
-    -e KAI_DB_DIR=/app/db \
-    -e KAI_MARKET_DATA_DIR=/app/market \
-    "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-appeals-schema.mjs \
+  : "${KAI_CANDIDATE_RELEASE_ENV:?set the generated candidate release env path}"
+  sudo /usr/local/lib/kai-cloud/run-production-schema-gate.sh "$KAI_CANDIDATE_RELEASE_ENV" \
+    node scripts/ops/verify-card-hour-topup-appeals-schema.mjs \
     --apply --confirm APPLY_0036_CARD_HOUR_TOPUP_APPEALS
-  docker run --rm --network none --read-only --user 1000:1000 \
-    -v "$KAI_STATE_ROOT/db:/app/db" \
-    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
-    --env-file /etc/kai-cloud/kai-cloud-release.env \
-    --env-file /etc/kai-cloud/kai-cloud-app.env \
-    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
-    -e KAI_DB_DIR=/app/db \
-    -e KAI_MARKET_DATA_DIR=/app/market \
-    "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-appeals-schema.mjs
+  sudo /usr/local/lib/kai-cloud/run-production-schema-gate.sh "$KAI_CANDIDATE_RELEASE_ENV" \
+    node scripts/ops/verify-card-hour-topup-appeals-schema.mjs
 )
 ```
 
@@ -308,28 +304,12 @@ docker compose -f deploy/compose.production.yml run --rm app \
 ```sh
 (
   set -eu
-  set -a
-  . /etc/kai-cloud/kai-cloud-release.env
-  set +a
-  docker run --rm --network none --read-only --user 1000:1000 \
-    -v "$KAI_STATE_ROOT/db:/app/db" \
-    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
-    --env-file /etc/kai-cloud/kai-cloud-release.env \
-    --env-file /etc/kai-cloud/kai-cloud-app.env \
-    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
-    -e KAI_DB_DIR=/app/db \
-    -e KAI_MARKET_DATA_DIR=/app/market \
-    "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-appeal-reads-schema.mjs \
+  : "${KAI_CANDIDATE_RELEASE_ENV:?set the generated candidate release env path}"
+  sudo /usr/local/lib/kai-cloud/run-production-schema-gate.sh "$KAI_CANDIDATE_RELEASE_ENV" \
+    node scripts/ops/verify-card-hour-topup-appeal-reads-schema.mjs \
     --apply --confirm APPLY_0037_CARD_HOUR_TOPUP_APPEAL_READS
-  docker run --rm --network none --read-only --user 1000:1000 \
-    -v "$KAI_STATE_ROOT/db:/app/db" \
-    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
-    --env-file /etc/kai-cloud/kai-cloud-release.env \
-    --env-file /etc/kai-cloud/kai-cloud-app.env \
-    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
-    -e KAI_DB_DIR=/app/db \
-    -e KAI_MARKET_DATA_DIR=/app/market \
-    "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-appeal-reads-schema.mjs
+  sudo /usr/local/lib/kai-cloud/run-production-schema-gate.sh "$KAI_CANDIDATE_RELEASE_ENV" \
+    node scripts/ops/verify-card-hour-topup-appeal-reads-schema.mjs
 )
 ```
 
@@ -342,28 +322,12 @@ docker compose -f deploy/compose.production.yml run --rm app \
 ```sh
 (
   set -eu
-  set -a
-  . /etc/kai-cloud/kai-cloud-release.env
-  set +a
-  docker run --rm --network none --read-only --user 1000:1000 \
-    -v "$KAI_STATE_ROOT/db:/app/db" \
-    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
-    --env-file /etc/kai-cloud/kai-cloud-release.env \
-    --env-file /etc/kai-cloud/kai-cloud-app.env \
-    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
-    -e KAI_DB_DIR=/app/db \
-    -e KAI_MARKET_DATA_DIR=/app/market \
-    "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs \
+  : "${KAI_CANDIDATE_RELEASE_ENV:?set the generated candidate release env path}"
+  sudo /usr/local/lib/kai-cloud/run-production-schema-gate.sh "$KAI_CANDIDATE_RELEASE_ENV" \
+    node scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs \
     --apply --confirm APPLY_0038_CARD_HOUR_TOPUP_RECONCILIATION
-  docker run --rm --network none --read-only --user 1000:1000 \
-    -v "$KAI_STATE_ROOT/db:/app/db" \
-    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
-    --env-file /etc/kai-cloud/kai-cloud-release.env \
-    --env-file /etc/kai-cloud/kai-cloud-app.env \
-    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
-    -e KAI_DB_DIR=/app/db \
-    -e KAI_MARKET_DATA_DIR=/app/market \
-    "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs
+  sudo /usr/local/lib/kai-cloud/run-production-schema-gate.sh "$KAI_CANDIDATE_RELEASE_ENV" \
+    node scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs
 )
 ```
 

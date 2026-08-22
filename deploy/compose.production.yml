@@ -6,7 +6,7 @@ services:
     init: true
     user: "1000:1000"
     read_only: true
-    environment:
+    environment: &kai-app-environment
       NODE_ENV: production
       KAI_ENVIRONMENT: LIVE
       HOST: 0.0.0.0
@@ -84,7 +84,7 @@ services:
       KAI_SSH_PROVISIONER_TOKEN: "${KAI_SSH_PROVISIONER_TOKEN:-}"
     ports:
       - "127.0.0.1:${KAI_APP_PORT:-3051}:3000"
-    volumes:
+    volumes: &kai-app-volumes
       - type: bind
         source: "${KAI_STATE_ROOT:-/opt/kai-cloud-3051}/db"
         target: /app/db
@@ -118,6 +118,33 @@ services:
       options:
         max-size: 10m
         max-file: "5"
+
+  schema-gate:
+    profiles: ["ops"]
+    image: "${KAI_IMAGE:?KAI_IMAGE must be an immutable repository@sha256 digest}"
+    pull_policy: always
+    restart: "no"
+    init: true
+    network_mode: none
+    user: "1000:1000"
+    read_only: true
+    environment: *kai-app-environment
+    volumes: *kai-app-volumes
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    mem_reservation: 128m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
 
   market-update:
     profiles: ["ops"]
