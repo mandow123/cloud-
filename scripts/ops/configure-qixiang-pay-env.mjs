@@ -3,7 +3,7 @@
 import { constants, lstat, open, rename, unlink } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { isRevokedQixiangMerchantKey } from "../../lib/server/qixiang-pay-revoked-policy.mjs";
+import { isRevokedQixiangMerchantKey, qixiangMerchantKeyDigest } from "../../lib/server/qixiang-pay-revoked-policy.mjs";
 
 const CONFIRMATION = "CONFIGURE_QIXIANG_PRODUCTION_PAYMENT";
 const MODES = new Set(["reconciliation", "payment"]);
@@ -44,27 +44,34 @@ export function parseQixiangProductionCredentials(text) {
   let value;
   try { value = JSON.parse(text); } catch { fail("credential file must contain JSON"); }
   if (!value || typeof value !== "object" || Array.isArray(value)) fail("credential file must contain an object");
-  const expected = ["approvalReference", "channel", "credentialRotatedAt", "credentialVersion", "key", "organizations", "pid", "queryCredentialId", "queryCredentialRotatedAt", "queryCredentialVersion", "riskReference"].sort();
+  const expected = ["approvalReference", "channel", "credentialRotatedAt", "credentialVersion", "key", "keyReuseApprovalReference", "keyReuseApprovedAt", "keyReuseDigest", "organizations", "pid", "queryCredentialId", "queryCredentialRotatedAt", "queryCredentialVersion", "riskReference"].sort();
   if (Object.keys(value).sort().join(",") !== expected.join(",")) fail("credential file contains unexpected or missing fields");
   const rawKeys = [...text.matchAll(/"((?:\\.|[^"\\])*)"\s*:/gu)].map((match) => match[1]);
   if (rawKeys.some((key) => key.includes("\\")) || rawKeys.sort().join(",") !== expected.join(",")) fail("credential file contains duplicate or escaped field names");
   const pid = exactString(value.pid, /^\d{1,18}$/u, "credential file contains an invalid merchant identifier");
   const key = exactString(value.key, KEY_PATTERN, "credential file contains an invalid merchant key");
   if (/(?:change[-_ ]?me|dummy|example|placeholder|replace|secret[-_ ]?here|your[-_ ])/iu.test(key)) fail("credential file contains a placeholder merchant key");
-  if (isRevokedQixiangMerchantKey(key)) fail("credential file contains a revoked merchant key");
   const approvalReference = exactString(value.approvalReference, REFERENCE_PATTERN, "credential file contains an invalid approval reference");
   const credentialVersion = exactString(value.credentialVersion, VERSION_PATTERN, "credential file contains an invalid credential version");
-  const credentialRotatedAt = exactTimestamp(value.credentialRotatedAt, "credential file contains an invalid credential rotation time");
+  const credentialRotatedAt = optionalTimestamp(value.credentialRotatedAt, "credential file contains an invalid credential rotation time");
   const riskReference = exactString(value.riskReference, RISK_REFERENCE_PATTERN, "credential file contains an invalid risk reference");
   const queryCredentialId = exactString(value.queryCredentialId, QUERY_ID_PATTERN, "credential file contains an invalid query credential ID");
   const queryCredentialVersion = exactString(value.queryCredentialVersion, VERSION_PATTERN, "credential file contains an invalid query credential version");
-  const queryCredentialRotatedAt = exactTimestamp(value.queryCredentialRotatedAt, "credential file contains an invalid query credential rotation time");
+  const queryCredentialRotatedAt = optionalTimestamp(value.queryCredentialRotatedAt, "credential file contains an invalid query credential rotation time");
+  const revoked = isRevokedQixiangMerchantKey(key);
+  const keyReuseApprovalReference = value.keyReuseApprovalReference === "" ? "" : exactString(value.keyReuseApprovalReference, RISK_REFERENCE_PATTERN, "credential file contains an invalid key reuse approval reference");
+  const keyReuseApprovedAt = value.keyReuseApprovedAt === "" ? "" : exactTimestamp(value.keyReuseApprovedAt, "credential file contains an invalid key reuse approval time");
+  const keyReuseDigest = value.keyReuseDigest === "" ? "" : exactString(value.keyReuseDigest, /^[0-9a-f]{64}$/u, "credential file contains an invalid key reuse digest");
+  if (revoked && (!keyReuseApprovalReference || !keyReuseApprovedAt || keyReuseDigest !== qixiangMerchantKeyDigest(key))) fail("revoked merchant key reuse requires an exact digest-bound approval");
+  if (!revoked && (keyReuseApprovalReference || keyReuseApprovedAt || keyReuseDigest)) fail("key reuse approval is only valid for an explicitly revoked merchant key");
   if (value.channel !== "ALIPAY") fail("the production rollout channel must be ALIPAY");
   if (!Array.isArray(value.organizations) || value.organizations.length < 1 || value.organizations.length > 20) fail("credential file must contain 1 to 20 organizations");
   const organizations = value.organizations.map((entry) => exactString(entry, ORGANIZATION_PATTERN, "credential file contains an invalid organization"));
   if (new Set(organizations).size !== organizations.length) fail("credential file contains duplicate organizations");
-  return Object.freeze({ pid, key, approvalReference, credentialVersion, credentialRotatedAt, riskReference, queryCredentialId, queryCredentialVersion, queryCredentialRotatedAt, channel: "ALIPAY", organizations: Object.freeze(organizations) });
+  return Object.freeze({ pid, key, approvalReference, credentialVersion, credentialRotatedAt, riskReference, queryCredentialId, queryCredentialVersion, queryCredentialRotatedAt, keyReuseApprovalReference, keyReuseApprovedAt, keyReuseDigest, channel: "ALIPAY", organizations: Object.freeze(organizations) });
 }
+
+function optionalTimestamp(value, message) { return value === "" ? "" : exactTimestamp(value, message); }
 
 function exactTimestamp(value, message) {
   const text = exactString(value, UTC_PATTERN, message);
@@ -102,6 +109,10 @@ function approvedValues(credentials) {
     KAI_QIXIANG_PAY_APPROVAL_REFERENCE: credentials.approvalReference,
     KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT: credentials.credentialRotatedAt,
     KAI_QIXIANG_PAY_CREDENTIAL_VERSION: credentials.credentialVersion,
+    KAI_QIXIANG_PAY_KEY_REUSE_APPROVED: credentials.keyReuseApprovedAt ? "1" : "0",
+    KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE: credentials.keyReuseApprovalReference,
+    KAI_QIXIANG_PAY_KEY_REUSE_APPROVED_AT: credentials.keyReuseApprovedAt,
+    KAI_QIXIANG_PAY_KEY_REUSE_DIGEST: credentials.keyReuseDigest,
     KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED: "1",
     KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE: credentials.riskReference,
     KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID: credentials.queryCredentialId,

@@ -71,6 +71,17 @@ test("Qixiang Pay defaults closed and opens only with approved rotated credentia
   rejection({ ...enabled, KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS: "" }, "KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS");
   rejection({ ...enabled, KAI_QIXIANG_PAY_PILOT_CHANNEL: "WXPAY" }, "KAI_QIXIANG_PAY_PILOT_CHANNEL");
   rejection({ ...enabled, KAI_QIXIANG_PAY_GATEWAY: "https://example.com/mapi.php" }, "KAI_QIXIANG_PAY_GATEWAY");
+  const reused = {
+    ...enabled,
+    KAI_QIXIANG_PAY_KEY: "revoked-fixture-key-1234567890",
+    KAI_QIXIANG_PAY_KEY_REUSE_APPROVED: "1",
+    KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE: "RISK-KAI-QIXIANG-KEY-REUSE-20260822",
+    KAI_QIXIANG_PAY_KEY_REUSE_APPROVED_AT: "2026-08-22T09:20:00.000Z",
+    KAI_QIXIANG_PAY_KEY_REUSE_DIGEST: "48b179abed3a6cbe4f69dfacfeaea8eeec6cc9a405144fb23727fbdb6f37c94b",
+  };
+  validateProductionEnvironment(reused);
+  rejection({ ...reused, KAI_QIXIANG_PAY_KEY_REUSE_APPROVED: "0" }, "digest-bound production approval");
+  rejection({ ...reused, KAI_QIXIANG_PAY_KEY_REUSE_DIGEST: "0".repeat(64) }, "digest-bound production approval");
 });
 
 test("optional fulfillment administrator is least-privilege and must use independent credentials", () => {
@@ -140,6 +151,7 @@ test("production templates carry the rollback and payment gates into the contain
   assert.match(compose, /KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT/u);
   assert.match(compose, /KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED/u);
   assert.match(compose, /KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID/u);
+  assert.match(compose, /KAI_QIXIANG_PAY_KEY_REUSE_APPROVED/u);
   assert.match(compose, /KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS/u);
   assert.match(compose, /KAI_QIXIANG_PAY_PILOT_CHANNEL/u);
   assert.match(compose, /KAI_ADMIN_APPROVER_USERNAME/u);
@@ -160,6 +172,7 @@ test("production templates carry the rollback and payment gates into the contain
   assert.match(environment, /^KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE=$/mu);
   assert.match(environment, /^KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID=$/mu);
   assert.match(environment, /^KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION=$/mu);
+  assert.match(environment, /^KAI_QIXIANG_PAY_KEY_REUSE_APPROVED=0$/mu);
   assert.match(environment, /^KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS=$/mu);
   assert.match(environment, /^KAI_QIXIANG_PAY_PILOT_CHANNEL=$/mu);
   assert.match(environment, /^KAI_ADMIN_APPROVER_USERNAME=/mu);

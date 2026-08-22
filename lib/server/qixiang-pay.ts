@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
-import { isRevokedQixiangMerchantKey } from "./qixiang-pay-revoked-policy.mjs";
+import { isRevokedQixiangMerchantKey, qixiangMerchantKeyDigest } from "./qixiang-pay-revoked-policy.mjs";
 
 export const QIXIANG_PAY_REQUIRED_ENV = [
   "KAI_QIXIANG_PAY_PID",
@@ -135,18 +135,26 @@ function validCredentialLifecycle(environment: QixiangPayEnvironment, rotatedAtN
     || QIXIANG_PAY_CREDENTIAL_VERSION_PATTERN.test(environment[versionName]?.trim() || "");
 }
 
-function validMerchantKey(value: string | undefined) {
+function validMerchantKeyReuse(environment: QixiangPayEnvironment, key: string) {
+  if (!isRevokedQixiangMerchantKey(key)) return true;
+  return environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVED?.trim() === "1"
+    && QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE_PATTERN.test(environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE?.trim() || "")
+    && validCredentialRotation(environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVED_AT)
+    && environment.KAI_QIXIANG_PAY_KEY_REUSE_DIGEST?.trim() === qixiangMerchantKeyDigest(key);
+}
+
+function validMerchantKey(value: string | undefined, environment: QixiangPayEnvironment) {
   const key = value?.trim() || "";
   return value === key
     && Buffer.byteLength(key, "utf8") >= 16
     && !QIXIANG_PAY_PLACEHOLDER_SECRET_PATTERN.test(key)
-    && !isRevokedQixiangMerchantKey(key);
+    && validMerchantKeyReuse(environment, key);
 }
 
 export function qixiangPayReadiness(environment: QixiangPayEnvironment = runtimeEnvironment()) {
   const missing: string[] = QIXIANG_PAY_REQUIRED_ENV.filter((name) => !environment[name]?.trim());
   if (!/^\d{1,18}$/u.test(environment.KAI_QIXIANG_PAY_PID?.trim() || "")) missing.push("KAI_QIXIANG_PAY_PID(valid)");
-  if (!validMerchantKey(environment.KAI_QIXIANG_PAY_KEY)) missing.push("KAI_QIXIANG_PAY_KEY(valid secret)");
+  if (!validMerchantKey(environment.KAI_QIXIANG_PAY_KEY, environment)) missing.push("KAI_QIXIANG_PAY_KEY(valid secret and reuse approval)");
   if (!validApprovalReference(environment.KAI_QIXIANG_PAY_APPROVAL_REFERENCE)) missing.push("KAI_QIXIANG_PAY_APPROVAL_REFERENCE(valid)");
   if (!validCredentialLifecycle(environment, "KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT", "KAI_QIXIANG_PAY_CREDENTIAL_VERSION")) missing.push("KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT_OR_VERSION(valid)");
   if (environment.KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED?.trim() !== "1") missing.push("KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED(explicit)");
@@ -196,14 +204,14 @@ export function qixiangPayPilotAccess(organizationId: string, environment: Qixia
 export function qixiangPayCredentialReadiness(environment: QixiangPayEnvironment = runtimeEnvironment()) {
   const missing: string[] = [];
   if (!/^\d{1,18}$/u.test(environment.KAI_QIXIANG_PAY_PID?.trim() || "")) missing.push("KAI_QIXIANG_PAY_PID(valid)");
-  if (!validMerchantKey(environment.KAI_QIXIANG_PAY_KEY)) missing.push("KAI_QIXIANG_PAY_KEY(valid secret)");
+  if (!validMerchantKey(environment.KAI_QIXIANG_PAY_KEY, environment)) missing.push("KAI_QIXIANG_PAY_KEY(valid secret and reuse approval)");
   return { configured: missing.length === 0, missing, merchantAccountRef: environment.KAI_QIXIANG_PAY_PID?.trim() || null } as const;
 }
 
 export function qixiangPayReconciliationReadiness(environment: QixiangPayEnvironment = runtimeEnvironment()) {
   const missing: string[] = [];
   if (!/^\d{1,18}$/u.test(environment.KAI_QIXIANG_PAY_PID?.trim() || "")) missing.push("KAI_QIXIANG_PAY_PID(valid)");
-  if (!validMerchantKey(environment.KAI_QIXIANG_PAY_KEY)) missing.push("KAI_QIXIANG_PAY_KEY(valid secret)");
+  if (!validMerchantKey(environment.KAI_QIXIANG_PAY_KEY, environment)) missing.push("KAI_QIXIANG_PAY_KEY(valid secret and reuse approval)");
   if (!validApprovalReference(environment.KAI_QIXIANG_PAY_APPROVAL_REFERENCE)) missing.push("KAI_QIXIANG_PAY_APPROVAL_REFERENCE(valid)");
   if (environment.KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED?.trim() !== "1") missing.push("KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED(explicit)");
   if (!QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE_PATTERN.test(environment.KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE?.trim() || "")) missing.push("KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE(valid)");

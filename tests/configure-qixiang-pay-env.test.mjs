@@ -16,6 +16,9 @@ const credentials = Object.freeze({
   queryCredentialId: "QRY-qixiang-production-v1",
   queryCredentialVersion: "query-v1",
   queryCredentialRotatedAt: "2026-08-22T09:20:00.000Z",
+  keyReuseApprovalReference: "",
+  keyReuseApprovedAt: "",
+  keyReuseDigest: "",
   channel: "ALIPAY",
   organizations: ["org_primary", "org_supplier"],
 });
@@ -28,6 +31,18 @@ test("Qixiang credential input is exact and rejects unsafe rollout data", () => 
   assert.throws(() => parseQixiangProductionCredentials(JSON.stringify({ ...credentials, organizations: ["org_primary", "org_primary"] })), /duplicate/u);
   assert.throws(() => parseQixiangProductionCredentials(JSON.stringify(credentials).replace('"pid":"4611"', '"pid":"9999","pid":"4611"')), /duplicate or escaped/u);
   assert.throws(() => parseQixiangProductionCredentials(JSON.stringify(credentials).replace('"pid"', '"\\u0070id"')), /duplicate or escaped/u);
+  const revoked = {
+    ...credentials,
+    key: "revoked-fixture-key-1234567890",
+    credentialRotatedAt: "",
+    queryCredentialRotatedAt: "",
+    keyReuseApprovalReference: "RISK-KAI-QIXIANG-KEY-REUSE-20260822",
+    keyReuseApprovedAt: "2026-08-22T09:20:00.000Z",
+    keyReuseDigest: "48b179abed3a6cbe4f69dfacfeaea8eeec6cc9a405144fb23727fbdb6f37c94b",
+  };
+  assert.deepEqual(parseQixiangProductionCredentials(JSON.stringify(revoked)), revoked);
+  assert.throws(() => parseQixiangProductionCredentials(JSON.stringify({ ...revoked, keyReuseDigest: "0".repeat(64) })), /digest-bound approval/u);
+  assert.throws(() => parseQixiangProductionCredentials(JSON.stringify({ ...credentials, keyReuseApprovedAt: "2026-08-22T09:20:00.000Z" })), /only valid/u);
 });
 
 test("reconciliation mode configures the complete gate without enabling checkout", () => {
@@ -40,6 +55,7 @@ test("reconciliation mode configures the complete gate without enabling checkout
   assert.match(rendered, /^KAI_QIXIANG_PAY_QUERY_ENDPOINT=https:\/\/api\.payqixiang\.cn\/api\.php$/mu);
   assert.equal((rendered.match(/^KAI_QIXIANG_PAY_KEY=/gmu) ?? []).length, 1);
   assert.match(rendered, /^KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT=2026-08-22T09:20:00.000Z$/mu);
+  assert.match(rendered, /^KAI_QIXIANG_PAY_KEY_REUSE_APPROVED=0$/mu);
 });
 
 test("payment mode requires an identical verified reconciliation configuration", () => {

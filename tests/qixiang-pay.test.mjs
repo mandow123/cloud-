@@ -78,6 +78,21 @@ test("Qixiang checkout stays closed without approval and legacy-query compensati
   assert.equal(qixiangPayReadiness({ ...environment, KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS: "" }).canCreatePayment, false);
 });
 
+test("an explicitly revoked merchant key opens only with a digest-bound user reuse approval", () => {
+  const key = "revoked-fixture-key-1234567890";
+  const reused = {
+    ...environment,
+    KAI_QIXIANG_PAY_KEY: key,
+    KAI_QIXIANG_PAY_KEY_REUSE_APPROVED: "1",
+    KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE: "RISK-KAI-QIXIANG-KEY-REUSE-20260822",
+    KAI_QIXIANG_PAY_KEY_REUSE_APPROVED_AT: "2026-08-22T09:20:00.000Z",
+    KAI_QIXIANG_PAY_KEY_REUSE_DIGEST: "48b179abed3a6cbe4f69dfacfeaea8eeec6cc9a405144fb23727fbdb6f37c94b",
+  };
+  assert.equal(qixiangPayReadiness({ ...reused, KAI_QIXIANG_PAY_KEY_REUSE_APPROVED: "0" }).canCreatePayment, false);
+  assert.equal(qixiangPayReadiness({ ...reused, KAI_QIXIANG_PAY_KEY_REUSE_DIGEST: "0".repeat(64) }).canCreatePayment, false);
+  assert.equal(qixiangPayReadiness(reused).canCreatePayment, true);
+});
+
 test("disabled reconciliation never sends an active order query", async () => {
   let fetchCalls = 0;
   await assert.rejects(

@@ -337,7 +337,7 @@ docker compose -f deploy/compose.production.yml run --rm app \
 
 启用七相新订单必须按顺序执行，任何一步失败都保持 `KAI_QIXIANG_PAY_ENABLED=0`：
 
-生产配置必须使用 `scripts/ops/configure-qixiang-pay-env.mjs`，禁止用文本编辑器或 Shell 替换密钥。先在七相后台轮换商户密钥并作废曾进入聊天、日志或工单的旧密钥；配置器和运行时门禁都会拒绝已撤销密钥的 SHA-256 指纹。将以下精确 JSON 字段写入 `/root/kai-qixiang-production.json`，文件必须是 `0600 root:root`，父目录不能由非 root 写入：`pid`、`key`、`approvalReference`、`credentialVersion`、`credentialRotatedAt`、`riskReference`、`queryCredentialId`、`queryCredentialVersion`、`queryCredentialRotatedAt`、`channel`、`organizations`。两个时间必须是七相后台实际轮换时刻的 UTC ISO 8601 值，不能使用部署时间冒充轮换时间；`channel` 固定为 `ALIPAY`，`organizations` 必须逐项等于本次获批且仍为 `ACTIVE` 的组织 ID。当前首批必须核对工具输出 `organizationCount=7`。
+生产配置必须使用 `scripts/ops/configure-qixiang-pay-env.mjs`，禁止用文本编辑器或 Shell 替换密钥。默认必须在七相后台轮换并作废曾进入聊天、日志或工单的旧密钥。仅当商户责任人明确书面批准继续使用某一已识别密钥时，才允许例外复用：审批必须同时绑定该密钥的 SHA-256 摘要、`RISK-` 参考号和真实批准时间；配置器、生产校验器与运行时会逐项核对，不能用该例外放行其他密钥。将以下精确 JSON 字段写入 `/root/kai-qixiang-production.json`，文件必须是 `0600 root:root`，父目录不能由非 root 写入：`pid`、`key`、`approvalReference`、`credentialVersion`、`credentialRotatedAt`、`keyReuseApprovalReference`、`keyReuseApprovedAt`、`keyReuseDigest`、`riskReference`、`queryCredentialId`、`queryCredentialVersion`、`queryCredentialRotatedAt`、`channel`、`organizations`。未发生轮换时，两个 `RotatedAt` 字段必须为空字符串并通过版本字段登记生命周期，禁止用部署时间冒充轮换时间；复用批准时间写入 `keyReuseApprovedAt`。新密钥的三个复用字段必须为空字符串。`channel` 固定为 `ALIPAY`，`organizations` 必须逐项等于本次获批且仍为 `ACTIVE` 的组织 ID。当前首批必须核对工具输出 `organizationCount=7`。
 
 第一阶段只启用主动查单。应用环境必须仍为 `KAI_QIXIANG_PAY_ENABLED=0`、`KAI_QIXIANG_PAY_RECONCILIATION_ENABLED=0`：
 
