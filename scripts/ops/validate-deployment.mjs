@@ -394,6 +394,40 @@ async function main() {
     "runbook must classify Hosting initialization and apply 0032 only to a complete old v14 schema",
   );
   assert(runbook.includes("0033 七相卡时充值预部署门禁") && runbook.includes("cardHourInitialized=false") && runbook.includes("APPLY_0033_QIXIANG_CARD_HOUR_TOPUPS") && runbook.includes("存量 `PENDING`"), "runbook must gate 0033 and preserve manual responsibility for pending Qixiang top-ups");
+  assert(!runbook.includes("/opt/kai-cloud-3051/app.env"), "payment migration runbook must not reference the retired single-file environment path");
+  const paymentMigrationRunbook = runbook.slice(runbook.indexOf("### 0033 七相卡时充值预部署门禁"), runbook.indexOf("## 备份格式"));
+  assert(!paymentMigrationRunbook.includes(". /etc/kai-cloud/kai-cloud-app.env"), "payment migration runbook must not source the secret application env into the operator shell");
+  assert(!paymentMigrationRunbook.includes("npm run ops:backup"), "payment migration runbook must use the production backup unit instead of repository-local defaults");
+  assert(
+    paymentMigrationRunbook.includes("(\n  set -eu\n  KAI_BACKUP_UNIT=kai-cloud-backup.service")
+      && paymentMigrationRunbook.includes("systemctl cat kai-cloud-backup-3051.service")
+      && paymentMigrationRunbook.includes('systemctl start "$KAI_BACKUP_UNIT"'),
+    "payment migration runbook must fail fast while selecting a supported backup unit and synchronously creating a recovery bundle before mutation",
+  );
+  const paymentMigrationCommands = [...paymentMigrationRunbook.matchAll(/docker run --rm[\s\S]*?(?=\n(?:\s{2})?docker run|\n\))/gu)].map((match) => match[0]);
+  assert(paymentMigrationCommands.length === 9, "payment migration runbook must contain all nine preflight, apply, and verification commands");
+  for (const command of paymentMigrationCommands) {
+    assert(
+      command.includes('-v "$KAI_STATE_ROOT/db:/app/db"')
+        && command.includes('-v "$KAI_STATE_ROOT/market:/app/market:ro"')
+        && command.includes("--env-file /etc/kai-cloud/kai-cloud-release.env")
+        && command.includes("--env-file /etc/kai-cloud/kai-cloud-app.env")
+        && command.includes('-e KAI_IMAGE_REFERENCE="$KAI_IMAGE"')
+        && command.includes("-e KAI_DB_DIR=/app/db")
+        && command.includes("-e KAI_MARKET_DATA_DIR=/app/market"),
+      "every payment migration container must recreate the production Compose environment and filesystem boundary",
+    );
+  }
+  assert(
+    runbook.includes("--env-file /etc/kai-cloud/kai-cloud-release.env")
+      && runbook.includes("--env-file /etc/kai-cloud/kai-cloud-app.env")
+      && runbook.includes('-e KAI_IMAGE_REFERENCE="$KAI_IMAGE"')
+      && runbook.includes("-e KAI_DB_DIR=/app/db")
+      && runbook.includes("-e KAI_MARKET_DATA_DIR=/app/market")
+      && runbook.includes('-v "$KAI_STATE_ROOT/db:/app/db"')
+      && runbook.includes('-v "$KAI_STATE_ROOT/market:/app/market:ro"'),
+    "payment migration runbook must recreate the production Compose environment and filesystem boundary",
+  );
   assert(runbook.includes("0036 充值申诉侧车预部署门禁") && runbook.includes("APPLY_0036_CARD_HOUR_TOPUP_APPEALS") && runbook.includes("D1") && runbook.includes("禁止手工删表或改 marker"), "runbook must gate 0036, enforce migration mirrors, and document non-destructive rollback");
   assert(runbook.includes("0037 申诉站内通知预部署门禁") && runbook.includes("APPLY_0037_CARD_HOUR_TOPUP_APPEAL_READS") && runbook.includes("marker v5"), "runbook must provide an executable 0037 migration path before 0038");
   assert(runbook.includes("0038 支付核单租约预部署门禁") && runbook.includes("APPLY_0038_CARD_HOUR_TOPUP_RECONCILIATION") && runbook.includes("KAI_QIXIANG_PAY_RECONCILIATION_ENABLED"), "runbook must gate durable payment reconciliation separately from new checkout creation");

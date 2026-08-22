@@ -196,21 +196,43 @@ docker compose -f deploy/compose.production.yml run --rm app \
 新镜像即使 `KAI_QIXIANG_PAY_ENABLED=0` 也会读取 0033 增加的充值通道与收银台快照列，因此必须在切换镜像前执行只读门禁：
 
 ```sh
-docker run --rm --network none --read-only --user 1000:1000 \
-  -v /opt/kai-cloud-3051/db:/app/db \
-  --env-file /opt/kai-cloud-3051/app.env \
-  "$KAI_IMAGE" node scripts/ops/verify-qixiang-card-hour-schema.mjs --allow-uninitialized
+(
+  set -eu
+  set -a
+  . /etc/kai-cloud/kai-cloud-release.env
+  set +a
+  docker run --rm --network none --read-only --user 1000:1000 \
+    -v "$KAI_STATE_ROOT/db:/app/db" \
+    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
+    --env-file /etc/kai-cloud/kai-cloud-release.env \
+    --env-file /etc/kai-cloud/kai-cloud-app.env \
+    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
+    -e KAI_DB_DIR=/app/db \
+    -e KAI_MARKET_DATA_DIR=/app/market \
+    "$KAI_IMAGE" node scripts/ops/verify-qixiang-card-hour-schema.mjs --allow-uninitialized
+)
 ```
 
 - `cardHourInitialized=false` 表示共享数据库中卡时系统完全未初始化：不得单独执行 0033，由新应用首次启动创建完整结构。
 - `QIXIANG_CARD_HOUR_SCHEMA_NOT_READY` 且确认是完整旧 v3、仅缺 0033 时，先备份并在隔离副本演练，然后执行：
 
 ```sh
-docker run --rm --network none --read-only --user 1000:1000 \
-  -v /opt/kai-cloud-3051/db:/app/db \
-  --env-file /opt/kai-cloud-3051/app.env \
-  "$KAI_IMAGE" node scripts/ops/verify-qixiang-card-hour-schema.mjs \
-  --apply --confirm APPLY_0033_QIXIANG_CARD_HOUR_TOPUPS
+(
+  set -eu
+  set -a
+  . /etc/kai-cloud/kai-cloud-release.env
+  set +a
+  docker run --rm --network none --read-only --user 1000:1000 \
+    -v "$KAI_STATE_ROOT/db:/app/db" \
+    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
+    --env-file /etc/kai-cloud/kai-cloud-release.env \
+    --env-file /etc/kai-cloud/kai-cloud-app.env \
+    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
+    -e KAI_DB_DIR=/app/db \
+    -e KAI_MARKET_DATA_DIR=/app/market \
+    "$KAI_IMAGE" node scripts/ops/verify-qixiang-card-hour-schema.mjs \
+    --apply --confirm APPLY_0033_QIXIANG_CARD_HOUR_TOPUPS
+)
 ```
 
 - 任何部分表、部分列、marker 异常或外键检查错误必须停止发布，不得手工补列。
@@ -221,26 +243,60 @@ docker run --rm --network none --read-only --user 1000:1000 \
 0036 只新增申诉与不可变事件侧车，不会修改付款、卡时钱包、账本、退款或支付状态。发布前必须先做备份，再运行独立只读验证器；验证器同时逐字比对 SQLite `drizzle/0036_card_hour_topup_appeals.sql` 与 D1 `.openai/drizzle/0036_card_hour_topup_appeals.sql`，任何镜像差异都阻断发布：
 
 ```sh
-npm run ops:backup
-docker run --rm --network none --read-only --user 1000:1000 \
-  -v /opt/kai-cloud-3051/db:/app/db \
-  --env-file /opt/kai-cloud-3051/app.env \
-  "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-appeals-schema.mjs --allow-uninitialized
+(
+  set -eu
+  KAI_BACKUP_UNIT=kai-cloud-backup.service
+  if sudo systemctl cat kai-cloud-backup-3051.service >/dev/null 2>&1; then
+    KAI_BACKUP_UNIT=kai-cloud-backup-3051.service
+  elif ! sudo systemctl cat "$KAI_BACKUP_UNIT" >/dev/null 2>&1; then
+    printf '%s\n' "KAI Cloud backup unit is not installed" >&2
+    exit 1
+  fi
+  sudo systemctl start "$KAI_BACKUP_UNIT"
+  set -a
+  . /etc/kai-cloud/kai-cloud-release.env
+  set +a
+  docker run --rm --network none --read-only --user 1000:1000 \
+    -v "$KAI_STATE_ROOT/db:/app/db" \
+    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
+    --env-file /etc/kai-cloud/kai-cloud-release.env \
+    --env-file /etc/kai-cloud/kai-cloud-app.env \
+    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
+    -e KAI_DB_DIR=/app/db \
+    -e KAI_MARKET_DATA_DIR=/app/market \
+    "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-appeals-schema.mjs --allow-uninitialized
+)
 ```
 
 - `cardHourInitialized=false` 表示卡时库尚未初始化，由新应用首次启动创建完整结构，不单独应用 0036。
 - 只有完整 marker v3、两个申诉表及其索引/触发器全不存在时，才可先在备份副本演练，再显式应用：
 
 ```sh
-docker run --rm --network none --read-only --user 1000:1000 \
-  -v /opt/kai-cloud-3051/db:/app/db \
-  --env-file /opt/kai-cloud-3051/app.env \
-  "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-appeals-schema.mjs \
-  --apply --confirm APPLY_0036_CARD_HOUR_TOPUP_APPEALS
-docker run --rm --network none --read-only --user 1000:1000 \
-  -v /opt/kai-cloud-3051/db:/app/db \
-  --env-file /opt/kai-cloud-3051/app.env \
-  "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-appeals-schema.mjs
+(
+  set -eu
+  set -a
+  . /etc/kai-cloud/kai-cloud-release.env
+  set +a
+  docker run --rm --network none --read-only --user 1000:1000 \
+    -v "$KAI_STATE_ROOT/db:/app/db" \
+    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
+    --env-file /etc/kai-cloud/kai-cloud-release.env \
+    --env-file /etc/kai-cloud/kai-cloud-app.env \
+    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
+    -e KAI_DB_DIR=/app/db \
+    -e KAI_MARKET_DATA_DIR=/app/market \
+    "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-appeals-schema.mjs \
+    --apply --confirm APPLY_0036_CARD_HOUR_TOPUP_APPEALS
+  docker run --rm --network none --read-only --user 1000:1000 \
+    -v "$KAI_STATE_ROOT/db:/app/db" \
+    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
+    --env-file /etc/kai-cloud/kai-cloud-release.env \
+    --env-file /etc/kai-cloud/kai-cloud-app.env \
+    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
+    -e KAI_DB_DIR=/app/db \
+    -e KAI_MARKET_DATA_DIR=/app/market \
+    "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-appeals-schema.mjs
+)
 ```
 
 验证必须确认 marker v4-v6、两个表、三个索引、两个不可变触发器、两条外键和 `PRAGMA foreign_key_check` 均正常。D1 只能从镜像中完全相同的 0036 文件走受控迁移流水线。回退时先将支付与核对开关都设为 `0`，不得删除侧车表；应用只能回退到支持 marker v4-v6 的镜像。若迁移后尚无任何新写入且必须恢复数据库，只能由当班负责人从迁移前已验证备份整体恢复，禁止手工删表或改 marker。
@@ -250,15 +306,31 @@ docker run --rm --network none --read-only --user 1000:1000 \
 0037 新增按组织隔离的申诉已读回执，不修改付款、卡时、账本或申诉状态。它必须在 0036 完成、卡时 marker 为 v4 后显式应用；验证器会逐字比对 SQLite 与 D1 迁移镜像，并拒绝任何部分表、部分索引或外键异常：
 
 ```sh
-docker run --rm --network none --read-only --user 1000:1000 \
-  -v /opt/kai-cloud-3051/db:/app/db \
-  --env-file /opt/kai-cloud-3051/app.env \
-  "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-appeal-reads-schema.mjs \
-  --apply --confirm APPLY_0037_CARD_HOUR_TOPUP_APPEAL_READS
-docker run --rm --network none --read-only --user 1000:1000 \
-  -v /opt/kai-cloud-3051/db:/app/db \
-  --env-file /opt/kai-cloud-3051/app.env \
-  "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-appeal-reads-schema.mjs
+(
+  set -eu
+  set -a
+  . /etc/kai-cloud/kai-cloud-release.env
+  set +a
+  docker run --rm --network none --read-only --user 1000:1000 \
+    -v "$KAI_STATE_ROOT/db:/app/db" \
+    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
+    --env-file /etc/kai-cloud/kai-cloud-release.env \
+    --env-file /etc/kai-cloud/kai-cloud-app.env \
+    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
+    -e KAI_DB_DIR=/app/db \
+    -e KAI_MARKET_DATA_DIR=/app/market \
+    "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-appeal-reads-schema.mjs \
+    --apply --confirm APPLY_0037_CARD_HOUR_TOPUP_APPEAL_READS
+  docker run --rm --network none --read-only --user 1000:1000 \
+    -v "$KAI_STATE_ROOT/db:/app/db" \
+    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
+    --env-file /etc/kai-cloud/kai-cloud-release.env \
+    --env-file /etc/kai-cloud/kai-cloud-app.env \
+    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
+    -e KAI_DB_DIR=/app/db \
+    -e KAI_MARKET_DATA_DIR=/app/market \
+    "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-appeal-reads-schema.mjs
+)
 ```
 
 门禁必须确认 marker v5、已读回执表、组织时间索引、申诉外键和 `PRAGMA foreign_key_check` 全部正常；随后才能执行 0038。D1 必须使用镜像中完全相同的 0037 文件走受控迁移流水线。回退不得删表或回退 marker；只有迁移后尚无新写入且发生无法修复的结构异常时，才允许由当班负责人整体恢复迁移前备份。
@@ -268,15 +340,31 @@ docker run --rm --network none --read-only --user 1000:1000 \
 0038 新增持久化核单租约和到期索引，保证回调、会员回跳页和多实例并发时同一付款单只有一个服务端查单请求。它必须在 0037 完成、卡时 marker 为 v5 后应用；不得跳过 marker 或手工建表：
 
 ```sh
-docker run --rm --network none --read-only --user 1000:1000 \
-  -v /opt/kai-cloud-3051/db:/app/db \
-  --env-file /opt/kai-cloud-3051/app.env \
-  "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs \
-  --apply --confirm APPLY_0038_CARD_HOUR_TOPUP_RECONCILIATION
-docker run --rm --network none --read-only --user 1000:1000 \
-  -v /opt/kai-cloud-3051/db:/app/db \
-  --env-file /opt/kai-cloud-3051/app.env \
-  "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs
+(
+  set -eu
+  set -a
+  . /etc/kai-cloud/kai-cloud-release.env
+  set +a
+  docker run --rm --network none --read-only --user 1000:1000 \
+    -v "$KAI_STATE_ROOT/db:/app/db" \
+    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
+    --env-file /etc/kai-cloud/kai-cloud-release.env \
+    --env-file /etc/kai-cloud/kai-cloud-app.env \
+    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
+    -e KAI_DB_DIR=/app/db \
+    -e KAI_MARKET_DATA_DIR=/app/market \
+    "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs \
+    --apply --confirm APPLY_0038_CARD_HOUR_TOPUP_RECONCILIATION
+  docker run --rm --network none --read-only --user 1000:1000 \
+    -v "$KAI_STATE_ROOT/db:/app/db" \
+    -v "$KAI_STATE_ROOT/market:/app/market:ro" \
+    --env-file /etc/kai-cloud/kai-cloud-release.env \
+    --env-file /etc/kai-cloud/kai-cloud-app.env \
+    -e KAI_IMAGE_REFERENCE="$KAI_IMAGE" \
+    -e KAI_DB_DIR=/app/db \
+    -e KAI_MARKET_DATA_DIR=/app/market \
+    "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs
+)
 ```
 
 门禁必须确认 SQLite/D1 迁移逐字一致、marker 为 v6、租约表、请求幂等表、两个索引、订单外键和 `foreign_key_check` 全部正常。新单开关保持 `0`，直到此门禁和 `/api/ready` 都通过。
