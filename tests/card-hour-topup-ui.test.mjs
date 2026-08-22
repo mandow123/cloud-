@@ -99,6 +99,9 @@ test("disabled payment blocks both member reconciliation and callback-side provi
 
   assert.match(memberRoute, /if \(!qixiangPayReconciliationReadiness\(\)\.canReconcilePayment\)/u);
   assert.match(memberRoute, /CARD_HOUR_TOPUP_RECONCILIATION_DISABLED/u);
+  assert.match(memberRoute, /registerTopupReconciliationRequest/u);
+  assert.match(memberRoute, /requireIdempotencyKey\(request\)/u);
+  assert.match(memberRoute, /mutationHash\(\{ action: "RECONCILE_QIXIANG_TOPUP", orderId \}\)/u);
   assert.match(notifyRoute, /if \(!qixiangPayReconciliationReadiness\(\)\.canReconcilePayment\) return notifyResponse\("failure", 503\)/u);
   assert.match(provider, /const config = activeOrderQueryConfiguration\(environment\)/u);
 });

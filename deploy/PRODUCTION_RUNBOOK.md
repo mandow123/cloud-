@@ -279,7 +279,7 @@ docker run --rm --network none --read-only --user 1000:1000 \
   "$KAI_IMAGE" node scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs
 ```
 
-门禁必须确认 SQLite/D1 迁移逐字一致、marker 为 v6、租约表、到期索引、订单外键和 `foreign_key_check` 全部正常。新单开关保持 `0`，直到此门禁和 `/api/ready` 都通过。
+门禁必须确认 SQLite/D1 迁移逐字一致、marker 为 v6、租约表、请求幂等表、两个索引、订单外键和 `foreign_key_check` 全部正常。新单开关保持 `0`，直到此门禁和 `/api/ready` 都通过。
 
 - 七相旧版协议的查单接口要求把商户密钥放入查询参数，因此只有 `KAI_QIXIANG_PAY_RECONCILIATION_ENABLED=1` 且全部门禁就绪时，专用服务端客户端才可调用固定的 `https://api.payqixiang.cn/api.php`：禁止重定向、代理、浏览器调用、完整 URL 日志和错误原文回显。签名通知本身不得直接入账；必须主动查单确认 `status=1`，并逐项核对 PID、商户订单号、七相订单号、通道、商品名、金额和扩展参数。浏览器回跳页只调用本平台鉴权接口，由服务端抢占持久化租约后查单；浏览器不接触密钥，也不读取回跳参数作为成功依据。退款保持人工待处理，未取得可验证退款协议前不得宣称退款成功。
 

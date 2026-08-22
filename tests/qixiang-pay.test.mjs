@@ -251,6 +251,14 @@ async function assertIdempotentQixiangCredit(store) {
   assert.equal(concurrent.filter((entry) => entry.replayed).length, 1);
 
   const created = await store.createTopup({ account, provider: "QIXIANG_PAY", providerMerchantRef: "10086", providerPaymentType: "alipay", cardHourMicros: 5_000_000, amountCents: 501, idempotencyKey: `qixiang-${crypto.randomUUID()}`, payloadHash: "qixiang-payload", now: "2026-08-21T00:00:00Z", expiresAt: "2026-08-21T00:15:00Z" });
+  const reconciliationRequestKey = `qixiang-reconcile-${crypto.randomUUID()}`;
+  const reconciliationRequest = { organizationId: "org-qixiang", orderId: created.record.id, idempotencyKey: reconciliationRequestKey, payloadHash: "qixiang-reconcile-payload", now: "2026-08-21T00:00:00Z" };
+  const reconciliationRequests = await Promise.all([
+    store.registerTopupReconciliationRequest(reconciliationRequest),
+    store.registerTopupReconciliationRequest(reconciliationRequest),
+  ]);
+  assert.equal(reconciliationRequests.filter((entry) => entry.replayed).length, 1);
+  await assert.rejects(store.registerTopupReconciliationRequest({ ...reconciliationRequest, payloadHash: "different-reconciliation-payload" }), (error) => error.code === "IDEMPOTENCY_CONFLICT");
   const claim = await store.claimTopupCheckout({ organizationId: "org-qixiang", orderId: created.record.id, now: "2026-08-21T00:00:01Z" });
   assert.equal(claim.claimed, true);
   const attached = await store.attachTopupCheckout({ organizationId: "org-qixiang", orderId: created.record.id, checkoutUrl: "https://api.payqixiang.cn/cashier/private-token", now: "2026-08-21T00:00:02Z" });
