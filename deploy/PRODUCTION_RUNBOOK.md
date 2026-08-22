@@ -337,6 +337,42 @@ docker compose -f deploy/compose.production.yml run --rm app \
 
 启用七相新订单必须按顺序执行，任何一步失败都保持 `KAI_QIXIANG_PAY_ENABLED=0`：
 
+生产配置必须使用 `scripts/ops/configure-qixiang-pay-env.mjs`，禁止用文本编辑器或 Shell 替换密钥。先在七相后台轮换商户密钥并作废曾进入聊天、日志或工单的旧密钥；配置器和运行时门禁都会拒绝已撤销密钥的 SHA-256 指纹。将以下精确 JSON 字段写入 `/root/kai-qixiang-production.json`，文件必须是 `0600 root:root`，父目录不能由非 root 写入：`pid`、`key`、`approvalReference`、`credentialVersion`、`credentialRotatedAt`、`riskReference`、`queryCredentialId`、`queryCredentialVersion`、`queryCredentialRotatedAt`、`channel`、`organizations`。两个时间必须是七相后台实际轮换时刻的 UTC ISO 8601 值，不能使用部署时间冒充轮换时间；`channel` 固定为 `ALIPAY`，`organizations` 必须逐项等于本次获批且仍为 `ACTIVE` 的组织 ID。当前首批必须核对工具输出 `organizationCount=7`。
+
+第一阶段只启用主动查单。应用环境必须仍为 `KAI_QIXIANG_PAY_ENABLED=0`、`KAI_QIXIANG_PAY_RECONCILIATION_ENABLED=0`：
+
+```sh
+sudo node /opt/kai-cloud-release-sources/<受审完整提交>/scripts/ops/configure-qixiang-pay-env.mjs \
+  --env-file /etc/kai-cloud/kai-cloud-app.env \
+  --credential-file /root/kai-qixiang-production.json \
+  --mode reconciliation \
+  --confirm CONFIGURE_QIXIANG_PRODUCTION_PAYMENT
+sudo docker compose -p kai-cloud-3051 \
+  -f /opt/kai-cloud-release-sources/<受审完整提交>/deploy/compose.production.yml \
+  --env-file /etc/kai-cloud/kai-cloud-app.env \
+  --env-file /etc/kai-cloud/kai-cloud-release.env up -d --wait app
+curl -fsS https://cloud.kai.com/api/ready | jq -e \
+  '.capabilities.qixiangPayCardHourTopup | .reconciliationAvailable == true and .reconciliationEnabled == true and .available == false and .enabled == false'
+```
+
+产品、发布与财务复核第一阶段的 `/api/ready`、固定查单端点和 7 个组织后，第二阶段只能从 `PAY=0/RECON=1` 且所有非密钥配置和密钥完全未漂移的状态单独开启新单；配置器不会重写凭据轮换时间：
+
+```sh
+sudo node /opt/kai-cloud-release-sources/<受审完整提交>/scripts/ops/configure-qixiang-pay-env.mjs \
+  --env-file /etc/kai-cloud/kai-cloud-app.env \
+  --credential-file /root/kai-qixiang-production.json \
+  --mode payment \
+  --confirm CONFIGURE_QIXIANG_PRODUCTION_PAYMENT
+sudo docker compose -p kai-cloud-3051 \
+  -f /opt/kai-cloud-release-sources/<受审完整提交>/deploy/compose.production.yml \
+  --env-file /etc/kai-cloud/kai-cloud-app.env \
+  --env-file /etc/kai-cloud/kai-cloud-release.env up -d --wait app
+curl -fsS https://cloud.kai.com/api/ready | jq -e \
+  '.capabilities.qixiangPayCardHourTopup | .reconciliationAvailable == true and .reconciliationEnabled == true and .available == true and .enabled == true'
+```
+
+每次配置都会输出不含密钥的 `backupFile`。任一验证失败，立即以 `install -o root -g root -m 0640 <backupFile> /etc/kai-cloud/kai-cloud-app.env` 原子恢复对应阶段前配置并重新创建应用容器；同时验证支付开关、`/api/ready` 和存量订单核对状态。全部上线记录完成后删除 `/root/kai-qixiang-production.json`，不得把凭据文件加入常规备份、源码或工单。
+
 1. 将经审批的变更单号写入 `KAI_QIXIANG_PAY_APPROVAL_REFERENCE`；用 `KAI_QIXIANG_PAY_CREDENTIAL_VERSION` 或 UTC ISO 8601 的 `KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT` 登记当前商户凭据生命周期。密钥只允许写入服务器密钥配置，不得输出到日志、就绪接口或工单正文。
 2. 七相旧查单协议会把密钥放入 GET URL，必须由责任人书面接受该残余风险：设置 `KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED=1`、`KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE=RISK-...`，以非密钥的 `KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID=QRY-...` 登记查单凭据，并用查单凭据版本或轮换时间登记生命周期。未完成这些字段时生产校验器与应用就绪门禁都保持关闭。
 3. 配置首测组织 ID 与单一支付通道。下单和查单目标固定为 `https://api.payqixiang.cn/mapi.php`、`https://api.payqixiang.cn/api.php`；客户端禁止重定向且不记录完整 URL。主动查单按凭据每进程限制为每分钟 12 次，连续 3 次传输/格式失败后熔断 60 秒；网络出口还必须只允许该固定 HTTPS 主机。上游仍可能记录 GET 查询串，因此书面风险接受不能省略，查单凭据必须可独立识别并按计划轮换。

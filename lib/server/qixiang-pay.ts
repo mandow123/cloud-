@@ -17,6 +17,7 @@ const QIXIANG_PAY_CREDENTIAL_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,63
 const QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE_PATTERN = /^RISK-[A-Za-z0-9][A-Za-z0-9._:/-]{7,119}$/u;
 const QIXIANG_PAY_QUERY_CREDENTIAL_ID_PATTERN = /^QRY-[A-Za-z0-9][A-Za-z0-9._:-]{7,95}$/u;
 const QIXIANG_PAY_PLACEHOLDER_SECRET_PATTERN = /(?:change[-_ ]?me|dummy|example|insert|placeholder|replace|secret[-_ ]?here|test[-_ ]?secret|your[-_ ])/iu;
+const QIXIANG_PAY_REVOKED_KEY_DIGESTS = new Set(["4d81683f5583c963560a31d39b8fcadfd7fa686b97519e26d9feaa6b7d523956"]);
 const QIXIANG_PAY_QUERY_WINDOW_MS = 60_000;
 const QIXIANG_PAY_QUERY_MAX_REQUESTS_PER_WINDOW = 12;
 const QIXIANG_PAY_QUERY_CIRCUIT_FAILURE_THRESHOLD = 3;
@@ -138,7 +139,8 @@ function validMerchantKey(value: string | undefined) {
   const key = value?.trim() || "";
   return value === key
     && Buffer.byteLength(key, "utf8") >= 16
-    && !QIXIANG_PAY_PLACEHOLDER_SECRET_PATTERN.test(key);
+    && !QIXIANG_PAY_PLACEHOLDER_SECRET_PATTERN.test(key)
+    && !QIXIANG_PAY_REVOKED_KEY_DIGESTS.has(createHash("sha256").update(key).digest("hex"));
 }
 
 export function qixiangPayReadiness(environment: QixiangPayEnvironment = runtimeEnvironment()) {
