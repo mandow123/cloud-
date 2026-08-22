@@ -3,6 +3,7 @@ import { AccountAuthError } from "@/lib/server/account-auth";
 import { apiErrorResponse, beginApiRequest, jsonResponse, mutationHash, prepareWrite, readJsonBody, requireIdempotencyKey } from "@/lib/server/api-guard";
 import { getCardHourStore } from "@/lib/server/card-hour-store";
 import { requireTradingAccountSession } from "@/lib/server/entity-ownership";
+import { isKaiIdentityConfigured, probeKaiIdentityDiscovery } from "@/lib/server/kai-identity-oidc";
 import { authorizeMarketplaceRequest, persistMarketplaceSession } from "@/lib/server/marketplace-auth";
 import { createQixiangPayCheckout, qixiangPayPilotAccess, qixiangPayReadiness, QixiangPayError, type QixiangCheckoutOrder, type QixiangPaymentChannel, trustedQixiangClientIp, validateQixiangPayCheckout } from "@/lib/server/qixiang-pay";
 
@@ -28,6 +29,10 @@ export async function POST(request: Request) {
     if (!pilot.ready || channel !== pilot.channel || cardHourMicros !== pilot.cardHours * 1_000_000) throw new AccountAuthError("CARD_HOUR_TOPUP_PILOT_RESTRICTED", 403, "当前账户仅可在获准渠道充值 5.00 卡时。 ");
     if (!readiness.canCreatePayment || !readiness.channels.includes(channel)) throw new QixiangPayError("QIXIANG_PAY_NOT_CONFIGURED", readiness.enabled ? "所选充值渠道尚未就绪。" : "人民币充值通道当前保持关闭。");
     if (!readiness.merchantAccountRef) throw new QixiangPayError("QIXIANG_PAY_NOT_CONFIGURED", "充值商户配置未完成。");
+    if (account.authMethod !== "KAI_IDENTITY_OIDC") throw new AccountAuthError("KAI_IDENTITY_REAUTH_REQUIRED", 503, "请使用 KAI 统一账户重新登录后再充值。 ");
+    if (!isKaiIdentityConfigured()) throw new AccountAuthError("KAI_IDENTITY_NOT_CONFIGURED", 503, "统一账户配置未完成，人民币充值保持关闭。 ");
+    const identity = await probeKaiIdentityDiscovery();
+    if (!identity.available) throw new AccountAuthError("KAI_IDENTITY_UNAVAILABLE", 503, "统一账户暂时不可用，人民币充值保持关闭，请稍后重试。 ");
     const clientIp = trustedQixiangClientIp(request);
     const amountCents = topupAmountCents(cardHourMicros);
     const idempotencyKey = requireIdempotencyKey(request);

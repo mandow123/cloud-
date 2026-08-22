@@ -55,11 +55,23 @@ test("topup catalog and checkout enforce the same five-card-hour production pilo
   const checkoutRoute = readFileSync("app/api/v1/member/card-hours/topups/route.ts", "utf8");
 
   assert.match(catalogRoute, /qixiangPayPilotAccess\(account\.activeOrganization\.id\)/u);
-  assert.match(catalogRoute, /pilot\.ready\s*\? \[\{ code: "PRODUCTION_ACCEPTANCE"[\s\S]*cardHours: 5, amountCents: 501/u);
+  assert.match(catalogRoute, /await probeKaiIdentityDiscovery\(\)/u);
+  assert.match(catalogRoute, /const identitySession = account\.authMethod === "KAI_IDENTITY_OIDC"/u);
+  assert.match(catalogRoute, /const identity = pilot\.ready && identitySession && identityConfigured[\s\S]*const paymentReady = pilot\.ready && identitySession && identity\?\.available === true/u);
+  assert.match(catalogRoute, /paymentReady\s*\? \[\{ code: "PRODUCTION_ACCEPTANCE"[\s\S]*cardHours: 5, amountCents: 501/u);
   assert.match(catalogRoute, /code: "STARTER"[\s\S]*cardHours: 100, amountCents: 10_020/u);
   assert.match(catalogRoute, /code: "STANDARD"[\s\S]*cardHours: 500, amountCents: 50_100/u);
   assert.match(catalogRoute, /code: "TEAM"[\s\S]*cardHours: 1_000, amountCents: 100_200/u);
   assert.match(checkoutRoute, /qixiangPayPilotAccess\(account\.activeOrganization\.id\)/u);
+  assert.match(checkoutRoute, /await probeKaiIdentityDiscovery\(\)/u);
+  assert.match(checkoutRoute, /isKaiIdentityConfigured\(\)/u);
+  assert.match(checkoutRoute, /account\.authMethod !== "KAI_IDENTITY_OIDC"/u);
+  assert.match(checkoutRoute, /KAI_IDENTITY_REAUTH_REQUIRED/u);
+  assert.match(checkoutRoute, /KAI_IDENTITY_UNAVAILABLE/u);
+  assert.ok(checkoutRoute.indexOf("qixiangPayReadiness()") < checkoutRoute.indexOf("await probeKaiIdentityDiscovery()"));
+  assert.ok(checkoutRoute.indexOf("qixiangPayPilotAccess(account.activeOrganization.id)") < checkoutRoute.indexOf("await probeKaiIdentityDiscovery()"));
+  assert.ok(checkoutRoute.indexOf("await probeKaiIdentityDiscovery()") < checkoutRoute.indexOf("store.createTopup"));
+  assert.ok(checkoutRoute.indexOf("await probeKaiIdentityDiscovery()") < checkoutRoute.indexOf("await createQixiangPayCheckout"));
   assert.match(checkoutRoute, /channel !== pilot\.channel \|\| cardHourMicros !== pilot\.cardHours \* 1_000_000/u);
   assert.match(checkoutRoute, /CARD_HOUR_TOPUP_PILOT_RESTRICTED/u);
   assert.match(checkoutRoute, /获准渠道充值 5\.00 卡时/u);

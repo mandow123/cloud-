@@ -18,6 +18,7 @@ test("readiness probes every storage domain without creating identities or grant
   assert.doesNotMatch(readiness,/resolveOrCreateIdentity|activateMembership|invitePrincipal|createOffer|createResource|createCheckout/);
   assert.match(readiness,/failClosed:true/);
   assert.match(readiness,/qixiangPayCardHourTopup:\{[\s\S]*available:qixiangPay\.canCreatePayment,[\s\S]*reconciliationAvailable:qixiangPay\.canReconcilePayment,[\s\S]*reconciliationEnabled:qixiangPay\.reconciliationEnabled,[\s\S]*failClosed:true,[\s\S]*\}/u);
+  assert.match(readiness,/capabilities\.qixiangPayCardHourTopup=\{[\s\S]*available:qixiangPay\.canCreatePayment&&capabilities\.kaiIdentityLogin\.available&&kaiIdentityLoginAudited/u);
   assert.match(readiness,/const paymentGateReady=\(!qixiangPay\.enabled\|\|qixiangPay\.canCreatePayment\)[\s\S]*&&\(!qixiangPay\.reconciliationEnabled\|\|qixiangPay\.canReconcilePayment\)/u);
   assert.doesNotMatch(readiness,/qixiangPayCardHourTopup:\{[^\n]*(?:missing|channels|merchantAccountRef)/u);
   assert.match(readiness,/const hostingV2StoragePromise=\(async\(\)=>/);

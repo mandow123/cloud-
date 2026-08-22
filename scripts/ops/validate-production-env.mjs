@@ -102,6 +102,35 @@ function validAdminPasswordHash(value) {
   return Boolean(match && Number(match[1]) >= 310_000 && Number(match[1]) <= 1_000_000);
 }
 
+function validateAccountOidc(environment, errors, reason, { modernOnly = false } = {}) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/.test(environment.KAI_ACCOUNT_OIDC_CLIENT_ID ?? "")) {
+    errors.push(`KAI_ACCOUNT_OIDC_CLIENT_ID must be a valid Client ID when ${reason}`);
+  }
+  const issuer = environment.KAI_ACCOUNT_OIDC_ISSUER?.trim() || "https://account.kai.com/connect";
+  if ((modernOnly && issuer !== "https://auth.kai.com/api/auth")
+    || (!modernOnly && issuer !== "https://account.kai.com/connect" && issuer !== "https://auth.kai.com/api/auth")) {
+    errors.push(`KAI_ACCOUNT_OIDC_ISSUER must be an approved KAI Identity issuer when ${reason}`);
+  }
+  const clientSecret = environment.KAI_ACCOUNT_OIDC_CLIENT_SECRET?.trim() ?? "";
+  if (issuer === "https://auth.kai.com/api/auth" && (environment.KAI_ACCOUNT_OIDC_CLIENT_SECRET !== clientSecret
+    || Buffer.byteLength(clientSecret, "utf8") < 16 || Buffer.byteLength(clientSecret, "utf8") > 2048
+    || PLACEHOLDER_SECRET_PATTERN.test(clientSecret))) {
+    errors.push("KAI_ACCOUNT_OIDC_CLIENT_SECRET must be configured for the auth.kai.com server Web client");
+  }
+  if (modernOnly && environment.KAI_PUBLIC_ORIGIN !== "https://cloud.kai.com") {
+    errors.push("KAI_PUBLIC_ORIGIN must be exactly https://cloud.kai.com when new Qixiang Pay orders are enabled");
+  }
+  const scopes = (environment.KAI_ACCOUNT_OIDC_SCOPES?.trim() || (issuer === "https://auth.kai.com/api/auth" ? "openid profile email" : "openid kai:name email")).replace(/\s+/g, " ");
+  const scopeList = scopes.split(" ");
+  if (!/^[A-Za-z0-9:._-]+(?: [A-Za-z0-9:._-]+)*$/.test(scopes) || scopeList.length > 12 || new Set(scopeList).size !== scopeList.length || !scopeList.includes("openid") || !scopeList.includes("email")) {
+    errors.push("KAI_ACCOUNT_OIDC_SCOPES must contain unique openid and email scopes");
+  }
+  const transactionSecret = environment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET ?? "";
+  if (Buffer.byteLength(transactionSecret, "utf8") < 32 || PLACEHOLDER_SECRET_PATTERN.test(transactionSecret)) {
+    errors.push(`KAI_ACCOUNT_OIDC_TRANSACTION_SECRET must be a non-placeholder secret of at least 32 bytes when ${reason}`);
+  }
+}
+
 function validateContainerStatePath(name, value, expected, errors, checkFilesystem) {
   if (typeof value !== "string"
     || hasControlCharacters(value)
@@ -211,6 +240,7 @@ export function validateProductionEnvironment(environment = process.env, { check
     const pilotChannel = environment.KAI_QIXIANG_PAY_PILOT_CHANNEL?.trim() ?? "";
     if (pilotChannel !== "ALIPAY" || channels[0] !== pilotChannel) errors.push("KAI_QIXIANG_PAY_PILOT_CHANNEL must be ALIPAY during production acceptance");
     if ((environment.KAI_QIXIANG_PAY_GATEWAY || "https://api.payqixiang.cn/mapi.php") !== "https://api.payqixiang.cn/mapi.php") errors.push("KAI_QIXIANG_PAY_GATEWAY must use the approved HTTPS mapi.php endpoint");
+    validateAccountOidc(environment, errors, "new Qixiang Pay orders are enabled", { modernOnly: true });
   }
   const buyCatalogV2 = environment.KAI_BUY_CATALOG_V2 ?? "0";
   if (buyCatalogV2 !== "0" && buyCatalogV2 !== "1") errors.push("KAI_BUY_CATALOG_V2 must be exactly 0 or 1");
@@ -257,25 +287,7 @@ export function validateProductionEnvironment(environment = process.env, { check
     if (!/^KAI_HOSTING_TERMS_\d{4}_\d{2}$/.test(environment.KAI_HOSTING_TERMS_VERSION ?? "")) {
       errors.push("KAI_HOSTING_TERMS_VERSION must be a dated immutable version when Hosting V2 setup or trading is enabled");
     }
-    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/.test(environment.KAI_ACCOUNT_OIDC_CLIENT_ID ?? "")) {
-      errors.push("KAI_ACCOUNT_OIDC_CLIENT_ID must be a valid Client ID when Hosting V2 setup or trading is enabled");
-    }
-    const issuer = environment.KAI_ACCOUNT_OIDC_ISSUER?.trim() || "https://account.kai.com/connect";
-    if (issuer !== "https://account.kai.com/connect" && issuer !== "https://auth.kai.com/api/auth") {
-      errors.push("KAI_ACCOUNT_OIDC_ISSUER must be an approved KAI Identity issuer when Hosting V2 setup or trading is enabled");
-    }
-    if (issuer === "https://auth.kai.com/api/auth" && Buffer.byteLength(environment.KAI_ACCOUNT_OIDC_CLIENT_SECRET?.trim() ?? "", "utf8") < 16) {
-      errors.push("KAI_ACCOUNT_OIDC_CLIENT_SECRET must be configured for the auth.kai.com server Web client");
-    }
-    const scopes = (environment.KAI_ACCOUNT_OIDC_SCOPES?.trim() || (issuer === "https://auth.kai.com/api/auth" ? "openid profile email" : "openid kai:name email")).replace(/\s+/g, " ");
-    const scopeList = scopes.split(" ");
-    if (!/^[A-Za-z0-9:._-]+(?: [A-Za-z0-9:._-]+)*$/.test(scopes) || scopeList.length > 12 || new Set(scopeList).size !== scopeList.length || !scopeList.includes("openid") || !scopeList.includes("email")) {
-      errors.push("KAI_ACCOUNT_OIDC_SCOPES must contain unique openid and email scopes");
-    }
-    const transactionSecret = environment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET ?? "";
-    if (Buffer.byteLength(transactionSecret, "utf8") < 32 || PLACEHOLDER_SECRET_PATTERN.test(transactionSecret)) {
-      errors.push("KAI_ACCOUNT_OIDC_TRANSACTION_SECRET must be a non-placeholder secret of at least 32 bytes when Hosting V2 setup or trading is enabled");
-    }
+    validateAccountOidc(environment, errors, "Hosting V2 setup or trading is enabled");
     const approverUsername = environment.KAI_ADMIN_APPROVER_USERNAME ?? "";
     if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(approverUsername) || approverUsername === rootUsername) {
       errors.push("KAI_ADMIN_APPROVER_USERNAME must be a separate valid password administrator when Hosting V2 setup or trading is enabled");

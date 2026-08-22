@@ -145,6 +145,11 @@ export async function evaluateReadiness(){
       ? {...configuredCapabilities.kaiIdentityLogin,...identityProbe,configured:true,missing:identityProbe.available?[]:[identityProbe.errorCode??"KAI_IDENTITY_UNAVAILABLE"]}
       : {...configuredCapabilities.kaiIdentityLogin,configured:false,probe:"deferred" as const},
   };
+  const qixiangPay=qixiangPayReadiness(environment);
+  capabilities.qixiangPayCardHourTopup={
+    ...capabilities.qixiangPayCardHourTopup,
+    available:qixiangPay.canCreatePayment&&capabilities.kaiIdentityLogin.available&&kaiIdentityLoginAudited,
+  };
   const hostingV2=evaluateHostingV2Capability({
     environment,
     hostingStorage:hostingV2Storage,
@@ -156,7 +161,8 @@ export async function evaluateReadiness(){
     financeApprovalAvailable:capabilities.financeApprovalLogin.available,
     alipay:alipayReadiness(environment),
   });
-  const qixiangPay=qixiangPayReadiness(environment);
+  // Identity unavailability closes only new checkout creation. Keeping the
+  // service ready preserves callbacks, reconciliation and existing orders.
   const paymentGateReady=(!qixiangPay.enabled||qixiangPay.canCreatePayment)
     &&(!qixiangPay.reconciliationEnabled||qixiangPay.canReconcilePayment);
   const ready=market.ready&&Object.values(storage).every((item)=>item.ready)&&hostingV2.ready&&paymentGateReady;

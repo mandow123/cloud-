@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
-import { formatCardHourQuote, resourceListings, serviceAliases } from "../lib/catalog.mjs";
+import { resourceListings, serviceAliases } from "../lib/catalog.mjs";
 
 process.env.KAI_BUY_CATALOG_V2 = "1";
 process.env.KAI_MANUAL_DELIVERY_INTAKE = "1";

@@ -39,14 +39,27 @@ export function CardHourTopupAppealForm({ orderId }: { orderId: string }) {
     const response = await fetch(`/api/v1/member/card-hours/topups/${encodeURIComponent(orderId)}/appeal`, { credentials: "same-origin", cache: "no-store", signal });
     const payload = await response.json().catch(() => null) as { topup?: Topup; record?: Appeal | null; error?: { message?: string } } | null;
     if (!response.ok || !payload?.topup) throw new Error(payload?.error?.message ?? "充值申诉信息暂时无法读取。");
+    if (signal?.aborted) return;
     setTopup(payload.topup); setRecord(payload.record ?? null);
     if (payload.record?.unread) {
       void marketplacePost<Appeal>(`/api/v1/member/card-hours/topups/${encodeURIComponent(orderId)}/appeal/read`, {}, createIdempotencyKey("card-hour-topup-appeal-read"))
-        .then((result) => setRecord(result.record))
+        .then((result) => { if (!signal?.aborted) setRecord(result.record); })
         .catch(() => undefined);
     }
   }, [orderId]);
-  useEffect(() => { const controller = new AbortController(); void load(controller.signal).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "充值申诉信息暂时无法读取。")).finally(() => setLoading(false)); return () => controller.abort(); }, [load]);
+  useEffect(() => {
+    const controller = new AbortController();
+    async function refresh() {
+      try { await load(controller.signal); }
+      catch (reason) {
+        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "充值申诉信息暂时无法读取。");
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }
+    void refresh();
+    return () => controller.abort();
+  }, [load]);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const reason = topup ? reasonFor(topup.status) : null;
