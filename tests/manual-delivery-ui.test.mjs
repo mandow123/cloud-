@@ -40,5 +40,6 @@ test("supplier manual delivery task list is organization scoped and contains no 
   assert.match(component, /分配给本组织的人工交付/u);
   assert.match(component, /record\.sshPublicKeyFingerprint/u);
   assert.doesNotMatch(component, /buyerEmail|buyerDisplayName|buyerAccountId|canonicalSshPublicKey|internalNote|record\.connection|record\.pricing|询价参考/u);
-  assert.match(page, /<SupplierManualDeliveries \/>/u);
+  assert.match(page, /<SupplierManualDeliveries appealsEnabled=\{manualAppealsEnabled\(\)\} \/>/u);
+  assert.match(page, /import \{ manualAppealsEnabled \} from "@\/lib\/server\/manual-appeals"/u);
 });

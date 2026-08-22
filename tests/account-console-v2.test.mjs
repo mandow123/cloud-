@@ -88,6 +88,10 @@ test("account console overview exposes only truthful buyer and manual supplier f
   assert.match(overview, /record\.status === "PUBLISHED" \? "已发布不代表已锁库存、已成交或运行中" : "不代表已发布、已成交或运行中"/u);
   assert.match(overview, /未锁库存、未付款、未扣卡时/u);
   assert.match(overview, /formatCardHourDisplayMicros/u);
+  assert.match(overview, /className=\{styles\.primaryAction\} href="\/member\/card-hours">充值卡时/u);
+  const overviewCss = await readFile(new URL("../components/account-console-overview.module.css", import.meta.url), "utf8");
+  assert.match(overviewCss, /\.primaryAction \{[^\n]*color: var\(--on-brand\)/u);
+  assert.doesNotMatch(overviewCss, /--accent-contrast/u);
   assert.doesNotMatch(overview, /已购买|运行中实例|累计收益|出租率|自动开通成功/u);
   assert.doesNotMatch(overview, /sshPublicKey|canonicalSsh|buyerAccountId|buyerOrganizationId|idempotency|payloadHash/u);
 });

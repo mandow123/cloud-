@@ -52,7 +52,7 @@
   text-decoration: none;
   cursor: pointer;
 }
-.primaryAction { border-color: var(--accent); background: var(--accent); color: var(--accent-contrast); }
+.primaryAction { border-color: var(--accent); background: var(--accent); color: var(--on-brand); }
 .secondaryAction { background: var(--surface); color: var(--ink); }
 .primaryAction:hover,
 .primaryAction:focus-visible,

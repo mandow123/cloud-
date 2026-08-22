@@ -76,6 +76,7 @@ const APPROVED_HOSTING_V2_ROUTES = new Set([
   "app/member/purchases/page.tsx",
   "app/member/card-hours/page.tsx",
   "app/member/card-hours/topups/[orderId]/return/page.tsx",
+  "app/member/card-hours/topups/[orderId]/appeal/page.tsx",
   "app/member/layout.tsx",
   "app/supply/layout.tsx",
   "app/supply/apply/page.tsx",

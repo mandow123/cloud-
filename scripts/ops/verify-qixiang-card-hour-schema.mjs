@@ -6,6 +6,8 @@ import { DatabaseSync } from "node:sqlite";
 
 const REQUIRED_COLUMNS = ["provider_merchant_ref", "provider_payment_type", "checkout_url", "checkout_created_at"];
 const REQUIRED_TABLES = ["card_hour_schema_migrations", "card_hour_topup_orders", "card_hour_topup_events"];
+const MIN_SUPPORTED_SCHEMA_MARKER = 3;
+const MAX_SUPPORTED_SCHEMA_MARKER = 6;
 
 function parseArguments(argv) {
   const options = { apply: false, allowUninitialized: false, databasePath: null, confirm: null };
@@ -47,14 +49,16 @@ export function inspectQixiangCardHourSchema(database) {
 
 export function assertQixiangCardHourSchemaReady(database) {
   const state = inspectQixiangCardHourSchema(database);
-  if (state.marker !== 3) throw new Error(`QIXIANG_CARD_HOUR_SCHEMA_MARKER_INVALID:${state.marker}`);
+  if (state.marker < MIN_SUPPORTED_SCHEMA_MARKER || state.marker > MAX_SUPPORTED_SCHEMA_MARKER) throw new Error(`QIXIANG_CARD_HOUR_SCHEMA_MARKER_INVALID:${state.marker}`);
   if (state.missingColumns.length || !state.providerReady || !state.reconciliationReady || !state.checkoutInvariantReady) throw new Error(`QIXIANG_CARD_HOUR_SCHEMA_NOT_READY:${JSON.stringify(state)}`);
   if (database.prepare("PRAGMA foreign_key_check").all().length) throw new Error("QIXIANG_CARD_HOUR_SCHEMA_FOREIGN_KEY_INVALID");
-  return Object.freeze({ ready: true, schemaMarker: 3, migration: "0033_qixiang_pay_card_hour_topups" });
+  return Object.freeze({ ready: true, schemaMarker: state.marker, migration: "0033_qixiang_pay_card_hour_topups" });
 }
 
 export function applyQixiangCardHourMigration(database, migrationSql) {
   const before = inspectQixiangCardHourSchema(database);
+  if (before.marker >= MIN_SUPPORTED_SCHEMA_MARKER && before.marker <= MAX_SUPPORTED_SCHEMA_MARKER
+    && before.missingColumns.length === 0 && before.providerReady && before.reconciliationReady && before.checkoutInvariantReady) return assertQixiangCardHourSchemaReady(database);
   if (before.marker !== 3) throw new Error(`QIXIANG_CARD_HOUR_SCHEMA_MARKER_INVALID:${before.marker}`);
   if (before.missingColumns.length === 0 && before.providerReady && before.reconciliationReady && before.checkoutInvariantReady) return assertQixiangCardHourSchemaReady(database);
   if (before.missingColumns.length !== REQUIRED_COLUMNS.length || before.providerReady || before.reconciliationReady || before.checkoutInvariantReady) throw new Error(`QIXIANG_CARD_HOUR_SCHEMA_PARTIAL_MIGRATION:${JSON.stringify(before)}`);

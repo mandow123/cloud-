@@ -175,13 +175,16 @@ export async function exchangeGet<T>(path: string, role: "buyer" | "supplier" | 
   }, timeoutMs);
 }
 
-export async function marketplacePost<TRecord>(
+export async function marketplacePost<
+  TRecord,
+  TResponse extends { record: TRecord; replayed: boolean } = { record: TRecord; replayed: boolean },
+>(
   path: string,
   payload: unknown,
   idempotencyKey: string,
   timeoutMs = 15_000,
 ) {
-  const send = async (session: MarketplaceSession) => fetchJson<{ record: TRecord; replayed: boolean }>(
+  const send = async (session: MarketplaceSession) => fetchJson<TResponse>(
     path,
     {
       method: "POST",

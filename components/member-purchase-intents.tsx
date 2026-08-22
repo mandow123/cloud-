@@ -7,6 +7,7 @@ import { formatCardHourDisplayMicros } from "@/lib/card-hours";
 import { createIdempotencyKey, marketplaceErrorMessage, marketplacePost } from "@/lib/client/marketplace-client";
 import type { ManualDeliveryStatus, MemberCatalogPurchaseIntent } from "@/lib/server/admin-store";
 import styles from "@/components/member-purchase-intents.module.css";
+import { MemberManualAppeals } from "@/components/member-manual-appeals";
 
 type ListPayload = { records?: MemberCatalogPurchaseIntent[] };
 type DetailPayload = { record?: MemberCatalogPurchaseIntent };
@@ -65,7 +66,7 @@ export function MemberPurchaseIntentList({ compact = false }: { compact?: boolea
   </section>;
 }
 
-export function MemberPurchaseIntentDetail({ demandId }: { demandId: string }) {
+export function MemberPurchaseIntentDetail({ demandId, appealsEnabled = false, orderFlowEnabled = false }: { demandId: string; appealsEnabled?: boolean; orderFlowEnabled?: boolean }) {
   const [record, setRecord] = useState<MemberCatalogPurchaseIntent | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -100,7 +101,7 @@ export function MemberPurchaseIntentDetail({ demandId }: { demandId: string }) {
       <div><p className={styles.eyebrow}>Compute request detail · {record.demandId}</p><h1>{record.resource.title}</h1><div className={styles.identity}>{record.resource.supplierLogoUrl ? <Image className={styles.logo} alt={record.resource.supplierName} height={40} src={record.resource.supplierLogoUrl} width={40} /> : null}<strong>{record.resource.supplierName}</strong></div></div>
       <span className={styles.status}>{statusLabel(record.status)}</span>
     </header>
-    <p className={styles.warning}>这是提交时冻结的询价快照：尚未锁定库存、尚未付款、尚未扣卡时，也不会自动操作供应商机器。人工交付后由你核对连接入口并确认；本页不代表已付款或已成交。</p>
+    <p className={styles.warning}>{orderFlowEnabled ? "这是提交时冻结的询价快照。正式报价、卡时锁定、服务验收和实际扣减以页面下方的人工算力订单为准；平台不会自动操作供应商机器。" : "这是提交时冻结的询价快照：尚未锁定库存、尚未付款、尚未扣卡时，也不会自动操作供应商机器。人工交付后由你核对连接入口并确认；本页不代表已付款或已成交。"}</p>
     <div className={styles.detailGrid}>
       <section className={styles.panel}><h2>申请范围</h2><dl className={styles.facts}>
         <div><dt>套餐数量</dt><dd>{record.request.quantity} 套</dd></div><div><dt>GPU 总数</dt><dd>{record.request.totalGpuCount} 张</dd></div><div><dt>GPU 规格</dt><dd>{record.resource.gpuDescription}</dd></div><div><dt>租用时长</dt><dd>{record.request.durationHours ? `${record.request.durationHours} 小时` : "按正式方案确认"}</dd></div><div><dt>期望交付日</dt><dd>{record.request.deliveryDate ?? "待确认"}</dd></div><div><dt>提交时间</dt><dd>{dateTime(record.createdAt)}</dd></div>
@@ -114,9 +115,10 @@ export function MemberPurchaseIntentDetail({ demandId }: { demandId: string }) {
       <section className={styles.panel}><h2>人工交付进度</h2><dl className={styles.facts}>
         <div><dt>当前状态</dt><dd>{statusLabel(record.status)}</dd></div><div><dt>下一步</dt><dd>{nextStep(record.status)}</dd></div><div><dt>平台完成分配</dt><dd>{record.deliveryTimeline.assignedAt ? dateTime(record.deliveryTimeline.assignedAt) : "待分配"}</dd></div><div><dt>开始配置</dt><dd>{record.deliveryTimeline.startedAt ? dateTime(record.deliveryTimeline.startedAt) : "尚未开始"}</dd></div><div><dt>连接入口交付</dt><dd>{record.deliveryTimeline.deliveredAt ? dateTime(record.deliveryTimeline.deliveredAt) : "尚未交付"}</dd></div><div><dt>买家确认</dt><dd>{record.deliveryTimeline.completedAt ? dateTime(record.deliveryTimeline.completedAt) : "尚未确认"}</dd></div>
       </dl>{record.buyerVisibleNote ? <p className={styles.deliveryNote}><strong>平台交付说明</strong>{record.buyerVisibleNote}</p> : null}</section>
-      {record.connection && ["AWAITING_BUYER_ACCEPTANCE", "COMPLETED"].includes(record.status) ? <section className={`${styles.panel} ${styles.connectionPanel}`}><h2>SSH 连接入口</h2><p className={styles.meta}>平台仅展示结构化主机入口，不保存或展示你的私钥。请使用提交公钥时对应的本地私钥。</p><dl className={styles.facts}><div><dt>主机</dt><dd className={styles.fingerprint}>{record.connection.host}</dd></div><div><dt>端口</dt><dd>{record.connection.port}</dd></div><div><dt>用户名</dt><dd>{record.connection.username}</dd></div><div><dt>Host Key 指纹</dt><dd className={styles.fingerprint}>{record.connection.hostKeyFingerprint}</dd></div></dl><code className={styles.command}>ssh -p {record.connection.port} {record.connection.username}@{record.connection.host}</code><button className="button button-secondary" onClick={() => void copyConnection()} type="button">复制 SSH 命令</button>{record.status === "AWAITING_BUYER_ACCEPTANCE" ? <div className={styles.acceptance}><label htmlFor="delivery-acceptance-note">确认备注（可选）</label><textarea id="delivery-acceptance-note" maxLength={1000} value={acceptanceNote} onChange={(event) => setAcceptanceNote(event.target.value)} placeholder="例如：已成功连接并核对 GPU 规格" /><button className="button button-primary" disabled={confirming} onClick={() => void confirmDelivery()} type="button">{confirming ? "确认中…" : "连接可用，确认交付"}</button></div> : <p className={styles.success} role="status">你已确认本次交付。</p>}</section> : null}
+      {record.connection && ["AWAITING_BUYER_ACCEPTANCE", "COMPLETED"].includes(record.status) ? <section className={`${styles.panel} ${styles.connectionPanel}`}><h2>SSH 连接入口</h2><p className={styles.meta}>平台仅展示结构化主机入口，不保存或展示你的私钥。请使用提交公钥时对应的本地私钥。</p><dl className={styles.facts}><div><dt>主机</dt><dd className={styles.fingerprint}>{record.connection.host}</dd></div><div><dt>端口</dt><dd>{record.connection.port}</dd></div><div><dt>用户名</dt><dd>{record.connection.username}</dd></div><div><dt>Host Key 指纹</dt><dd className={styles.fingerprint}>{record.connection.hostKeyFingerprint}</dd></div></dl><code className={styles.command}>ssh -p {record.connection.port} {record.connection.username}@{record.connection.host}</code><button className="button button-secondary" onClick={() => void copyConnection()} type="button">复制 SSH 命令</button>{record.status === "AWAITING_BUYER_ACCEPTANCE" && !orderFlowEnabled ? <div className={styles.acceptance}><label htmlFor="delivery-acceptance-note">确认备注（可选）</label><textarea id="delivery-acceptance-note" maxLength={1000} value={acceptanceNote} onChange={(event) => setAcceptanceNote(event.target.value)} placeholder="例如：已成功连接并核对 GPU 规格" /><button className="button button-primary" disabled={confirming} onClick={() => void confirmDelivery()} type="button">{confirming ? "确认中…" : "连接可用，确认交付"}</button></div> : record.status === "COMPLETED" ? <p className={styles.success} role="status">你已完成最终验收。</p> : <p className={styles.meta}>请在下方人工算力订单中确认连接可用；卡时在最终验收前保持锁定。</p>}</section> : null}
       {record.status === "ACCESS_REVOKED" ? <section className={`${styles.panel} ${styles.revoked}`}><h2>访问已撤销</h2><p>原连接入口不再可用，页面不会继续展示 SSH 主机信息。</p></section> : null}
       <section className={`${styles.panel} ${styles.wide}`}><h2>提交时资源规格</h2><dl className={styles.specs}>{Object.entries(record.resource.specs).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{record.resource.sourceNotice ? <p className={styles.meta}>{record.resource.sourceNotice}</p> : null}</section>
+      {appealsEnabled ? <MemberManualAppeals demandId={record.demandId} /> : null}
     </div>
     {notice ? <p className={styles.success} role="status">{notice}</p> : null}
   </div>;

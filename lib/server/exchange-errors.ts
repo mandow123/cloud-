@@ -38,7 +38,10 @@ export type ExchangeErrorCode =
   | "ADMIN_ROOT_IMMUTABLE"
   | "ADMIN_ORGANIZATION_UNAVAILABLE"
   | "ADMIN_ACCOUNT_SUSPENDED"
-  | "ADMIN_PRINCIPAL_EXISTS";
+  | "ADMIN_PRINCIPAL_EXISTS"
+  | "APPEAL_ALREADY_OPEN"
+  | "VERIFIED_FINANCIAL_SOURCE_REQUIRED"
+  | "OFFLINE_REFUND_TWO_PERSON_REQUIRED";
 
 export class ExchangeInputError extends Error {
   readonly field?: string;

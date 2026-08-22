@@ -28,7 +28,10 @@
     "ops:hosting:local-agent": "node scripts/ops/run-local-host-agent-acceptance.mjs",
     "ops:hosting:verify": "node scripts/ops/verify-hosting-production-readiness.mjs",
     "ops:db:agent-capabilities": "node scripts/ops/verify-hosting-agent-capability-schema.mjs",
-    "ops:db:qixiang-card-hours": "node scripts/ops/verify-qixiang-card-hour-schema.mjs"
+    "ops:db:qixiang-card-hours": "node scripts/ops/verify-qixiang-card-hour-schema.mjs",
+    "ops:db:card-hour-topup-appeals": "node scripts/ops/verify-card-hour-topup-appeals-schema.mjs",
+    "ops:db:card-hour-topup-appeal-reads": "node scripts/ops/verify-card-hour-topup-appeal-reads-schema.mjs",
+    "ops:db:card-hour-topup-reconciliation": "node scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs"
   },
   "dependencies": {
     "alipay-sdk": "^4.14.0",

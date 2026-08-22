@@ -70,7 +70,7 @@ function BuyerOverview({ summary }: { summary: AccountConsoleSummary }) {
   return <>
     <header className={styles.heading}>
       <div><p>BUYER ACCOUNT</p><h1>采购总览</h1><span>{summary.account.organizationName} · 所有数字只属于当前组织</span></div>
-      <div className={styles.actions}><Link className={styles.primaryAction} href="/gpu">浏览 GPU 目录</Link><Link className={styles.secondaryAction} href="/request">提交算力需求</Link></div>
+      <div className={styles.actions}><Link className={styles.primaryAction} href="/member/card-hours">充值卡时</Link><Link className={styles.secondaryAction} href="/gpu">浏览 GPU 目录</Link><Link className={styles.secondaryAction} href="/request">提交算力需求</Link></div>
     </header>
 
     <section className={styles.metrics} aria-label="采购账户摘要">

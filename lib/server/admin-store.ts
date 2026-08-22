@@ -174,6 +174,21 @@ export type SupplierManualDeliveryTask = Readonly<{
   updatedAt: string;
 }>;
 
+export type ManualAppealStatus = "OPEN"|"TRIAGED"|"AWAITING_BUYER"|"AWAITING_SUPPLIER"|"UNDER_REVIEW"|"RESOLUTION_PROPOSED"|"RESOLVED"|"CLOSED";
+export type ManualAppealCategory = "DELIVERY_DELAY"|"CONNECTION_FAILURE"|"SPEC_MISMATCH"|"DELIVERY_QUALITY"|"CANCELLATION_REQUEST"|"EXTERNAL_PAYMENT_CLAIM"|"OTHER";
+export type ManualAppealResolution = "NO_ACTION"|"REDELIVERY_RECOMMENDED"|"CANCEL_REQUEST_RECOMMENDED"|"OFFLINE_REFUND_RECOMMENDED"|"OTHER";
+export type ManualAppealOfflineRefundStatus = "APPROVED_FOR_OFFLINE_HANDLING"|"OFFLINE_PROCESSING"|"PROOF_SUBMITTED"|"INDEPENDENTLY_VERIFIED"|"FAILED"|"CANCELLED";
+export type ManualAppealMessage = Readonly<{id:string;authorType:"BUYER"|"SUPPLIER"|"ADMIN";visibility:"PARTIES"|"ADMIN_ONLY";body:string;createdAt:string}>;
+export type ManualAppealTimelineItem = Readonly<{id:string;type:string;fromStatus:ManualAppealStatus|null;toStatus:ManualAppealStatus|null;occurredAt:string}>;
+export type ManualAppealOfflineRefundParty = Readonly<{id:string;status:ManualAppealOfflineRefundStatus;amountMinor:number;currency:string;methodLabel:string;maskedReference:string|null;proofSubmittedAt:string|null;proofVerifiedAt:string|null}>;
+export type ManualAppealPartyCase = Readonly<{id:string;caseNumber:string;sourceType:"MANUAL_DELIVERY_DEMAND";sourceId:string;category:ManualAppealCategory;subject:string;status:ManualAppealStatus;version:number;createdAt:string;updatedAt:string;partySafeResolutionOutcome:ManualAppealResolution|null;partySafeResolutionSummary:string|null;timeline:readonly ManualAppealTimelineItem[];messages:readonly ManualAppealMessage[];offlineRefunds:readonly ManualAppealOfflineRefundParty[];manualDeliveryStatus:ManualDeliveryStatus;supplierDisplayName?:string|null;buyerDisplayName?:string;resource?:SupplierManualDeliveryTask["resource"]}>;
+export type AdminManualAppealCase = Omit<ManualAppealPartyCase,"messages"|"offlineRefunds"> & Readonly<{description:string;buyerOrganizationId:string;buyerAccountId:string;supplierOrganizationId:string|null;assignedAdminPrincipalId:string|null;parentCaseId:string|null;messages:readonly ManualAppealMessage[];offlineRefunds:readonly (ManualAppealOfflineRefundParty & {recordedByPrincipalId:string;verifiedByPrincipalId:string|null;verifiedFinancialReferenceId:string;method:string;externalReferenceHash:string|null;proofEvidenceId:string|null;version:number})[]}>;
+export type ManualCommercialOrderStatus="OFFERED"|"CARD_HOURS_HELD"|"PREPARING"|"READY"|"CONNECTION_CONFIRMED"|"AWAITING_ACCEPTANCE"|"COMPLETED"|"CANCELLED";
+export type ManualCommercialOrderView=Readonly<{id:string;demandId:string;status:ManualCommercialOrderStatus;version:number;resource:{title:string;supplierName:string;gpuDescription:string};quote:{offerVersion:number;quotedCardHourMicros:number;actualCardHourMicros:number|null;serviceSummary:string;expectedDeliveryAt:string|null};hold:{status:"NOT_HELD"|"HELD"|"CAPTURED"|"RELEASED";heldMicros:number;capturedMicros:number|null;releasedMicros:number|null};delivery:{manualDeliveryStatus:ManualDeliveryStatus;connection:ManualDeliveryConnection|null};settlement:{status:"NOT_ELIGIBLE"|"ELIGIBLE";grossCnyCents:number|null;platformFeeBps:number|null;platformFeeCnyCents:number|null;supplierReceivableCnyCents:number|null;payoutStatus:"CLOSED"};createdAt:string;updatedAt:string}>;
+export type ManualCommercialOrderBuyerView=Readonly<Omit<ManualCommercialOrderView,"settlement">&{settlement:{status:"NOT_ELIGIBLE"|"ELIGIBLE"}}>;
+export type ManualCommercialOrderSupplierView=ManualCommercialOrderView;
+export type ManualCommercialOrderAdminView=ManualCommercialOrderView;
+
 export type MemberAccountConsoleRecords = Readonly<{
   purchaseIntents: Readonly<{
     total: number;
@@ -241,6 +256,31 @@ export interface AdminOperationsStore {
   listSupplierManualDeliveries(organizationId: string, limit?: number): Promise<SupplierManualDeliveryTask[]>;
   getSupplierManualDelivery(organizationId: string, demandId: string): Promise<SupplierManualDeliveryTask | null>;
   getMemberAccountConsoleRecords(organizationId: string, recentLimit?: number): Promise<MemberAccountConsoleRecords>;
+  createMemberManualAppeal(context:AdminMutationContext,demandId:string,input:Record<string,unknown>):Promise<{record:ManualAppealPartyCase;replayed:boolean}>;
+  listMemberManualAppeals(organizationId:string,limit?:number):Promise<ManualAppealPartyCase[]>;
+  getMemberManualAppeal(organizationId:string,caseId:string):Promise<ManualAppealPartyCase|null>;
+  addMemberManualAppealMessage(context:AdminMutationContext,caseId:string,input:Record<string,unknown>):Promise<{record:ManualAppealPartyCase;replayed:boolean}>;
+  listSupplierManualAppeals(organizationId:string,limit?:number):Promise<ManualAppealPartyCase[]>;
+  getSupplierManualAppeal(organizationId:string,caseId:string):Promise<ManualAppealPartyCase|null>;
+  addSupplierManualAppealMessage(context:AdminMutationContext,caseId:string,input:Record<string,unknown>):Promise<{record:ManualAppealPartyCase;replayed:boolean}>;
+  listAdminManualAppeals(limit?:number):Promise<AdminManualAppealCase[]>;
+  getAdminManualAppeal(caseId:string):Promise<AdminManualAppealCase|null>;
+  assignAdminManualAppeal(context:AdminMutationContext,caseId:string,input:Record<string,unknown>):Promise<{record:AdminManualAppealCase;replayed:boolean}>;
+  transitionAdminManualAppeal(context:AdminMutationContext,caseId:string,input:Record<string,unknown>):Promise<{record:AdminManualAppealCase;replayed:boolean}>;
+  addAdminManualAppealMessage(context:AdminMutationContext,caseId:string,input:Record<string,unknown>):Promise<{record:AdminManualAppealCase;replayed:boolean}>;
+  createAdminManualAppealOfflineRefund(context:AdminMutationContext,caseId:string,input:Record<string,unknown>):Promise<{record:AdminManualAppealCase;replayed:boolean}>;
+  transitionAdminManualAppealOfflineRefund(context:AdminMutationContext,caseId:string,recordId:string,input:Record<string,unknown>):Promise<{record:AdminManualAppealCase;replayed:boolean}>;
+  verifyAdminManualAppealOfflineRefund(context:AdminMutationContext,caseId:string,recordId:string,input:Record<string,unknown>):Promise<{record:AdminManualAppealCase;replayed:boolean}>;
+  createSupplierManualOrderOffer(context:AdminMutationContext,input:Record<string,unknown>):Promise<{record:ManualCommercialOrderView;replayed:boolean}>;
+  listMemberManualOrders(organizationId:string,limit?:number):Promise<ManualCommercialOrderBuyerView[]>;
+  getMemberManualOrder(organizationId:string,orderId:string):Promise<ManualCommercialOrderBuyerView|null>;
+  listSupplierManualOrders(organizationId:string,limit?:number):Promise<ManualCommercialOrderSupplierView[]>;
+  getSupplierManualOrder(organizationId:string,orderId:string):Promise<ManualCommercialOrderSupplierView|null>;
+  listAdminManualOrders(limit?:number):Promise<ManualCommercialOrderAdminView[]>;
+  getAdminManualOrder(orderId:string):Promise<ManualCommercialOrderAdminView|null>;
+  acceptMemberManualOrderOffer(context:AdminMutationContext,orderId:string,input:Record<string,unknown>):Promise<{record:ManualCommercialOrderBuyerView;replayed:boolean}>;
+  transitionSupplierManualOrder(context:AdminMutationContext,orderId:string,action:"PREPARE"|"READY"|"SERVICE_COMPLETE",input:Record<string,unknown>):Promise<{record:ManualCommercialOrderView;replayed:boolean}>;
+  transitionMemberManualOrder(context:AdminMutationContext,orderId:string,action:"CONFIRM_CONNECTION"|"ACCEPT_COMPLETION",input:Record<string,unknown>):Promise<{record:ManualCommercialOrderBuyerView;replayed:boolean}>;
 }
 
 declare global { var __kaiAdminOperationsStorePromise: Promise<AdminOperationsStore> | undefined; }

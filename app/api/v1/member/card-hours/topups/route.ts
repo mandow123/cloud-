@@ -4,7 +4,7 @@ import { apiErrorResponse, beginApiRequest, jsonResponse, mutationHash, prepareW
 import { getCardHourStore } from "@/lib/server/card-hour-store";
 import { requireTradingAccountSession } from "@/lib/server/entity-ownership";
 import { authorizeMarketplaceRequest, persistMarketplaceSession } from "@/lib/server/marketplace-auth";
-import { createQixiangPayCheckout, qixiangPayReadiness, QixiangPayError, type QixiangCheckoutOrder, type QixiangPaymentChannel, trustedQixiangClientIp, validateQixiangPayCheckout } from "@/lib/server/qixiang-pay";
+import { createQixiangPayCheckout, qixiangPayPilotAccess, qixiangPayReadiness, QixiangPayError, type QixiangCheckoutOrder, type QixiangPaymentChannel, trustedQixiangClientIp, validateQixiangPayCheckout } from "@/lib/server/qixiang-pay";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +24,8 @@ export async function POST(request: Request) {
     if (body.channel !== "ALIPAY" && body.channel !== "WXPAY") throw new AccountAuthError("CARD_HOUR_TOPUP_CHANNEL_INVALID", 400, "请选择已开放的充值渠道。 ");
     const channel = body.channel;
     const readiness = qixiangPayReadiness();
+    const pilot = qixiangPayPilotAccess(account.activeOrganization.id);
+    if (!pilot.ready || channel !== pilot.channel || cardHourMicros !== pilot.cardHours * 1_000_000) throw new AccountAuthError("CARD_HOUR_TOPUP_PILOT_RESTRICTED", 403, "当前账户仅可在获准渠道充值 5.00 卡时。 ");
     if (!readiness.canCreatePayment || !readiness.channels.includes(channel)) throw new QixiangPayError("QIXIANG_PAY_NOT_CONFIGURED", readiness.enabled ? "所选充值渠道尚未就绪。" : "人民币充值通道当前保持关闭。");
     if (!readiness.merchantAccountRef) throw new QixiangPayError("QIXIANG_PAY_NOT_CONFIGURED", "充值商户配置未完成。");
     const clientIp = trustedQixiangClientIp(request);

@@ -383,6 +383,11 @@ body:has(.admin-app) #main-content {
   font-variant-numeric: tabular-nums;
 }
 
+.admin-filter-actions,
+.admin-pagination,
+.admin-pagination > div { display: flex; align-items: center; gap: 8px; }
+.admin-pagination { justify-content: space-between; margin-top: 12px; color: var(--muted); font-size: .75rem; }
+
 .admin-table-wrap {
   margin-top: 18px;
   overflow-x: auto;
@@ -1514,3 +1519,13 @@ body:has(.admin-app) #main-content {
     animation: none;
   }
 }
+.admin-appeals { display: grid; gap: 24px; }
+.admin-appeal-detail { align-items: start; }
+.admin-appeal-messages, .admin-appeal-refunds { display: grid; gap: 1px; background: var(--admin-line); }
+.admin-appeal-messages p, .admin-appeal-refunds p { display: grid; gap: 5px; margin: 0; background: var(--admin-panel); padding: 12px; }
+.admin-appeal-messages time { color: var(--muted); font-size: 12px; }
+.admin-appeal-timeline { display: grid; gap: 8px; margin: 20px 0 0; padding: 0; list-style: none; }
+.admin-appeal-timeline li { display: flex; justify-content: space-between; gap: 16px; border-left: 3px solid var(--accent); background: var(--surface-muted); padding: 10px 12px; }
+.admin-appeal-timeline time { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.admin-inline-warning { border-left: 3px solid var(--warning); background: var(--warning-bg); padding: 12px; }
+@media (max-width: 640px) { .admin-appeal-timeline li { flex-direction: column; } }

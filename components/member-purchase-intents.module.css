@@ -39,6 +39,23 @@
 .acceptance textarea { min-height: 6rem; resize: vertical; border: 1px solid var(--border-strong); background: var(--surface); padding: .75rem; color: var(--ink); }
 .success { border-left: 3px solid var(--success); background: var(--success-bg); padding: 1rem; color: var(--ink); }
 .revoked { border-left: 3px solid var(--error); background: var(--error-bg); }
+.appealForm, .appealReply { display: grid; gap: .85rem; margin-top: 1rem; }
+.appealForm label, .appealReply label { display: grid; gap: .4rem; color: var(--ink); font-weight: 700; }
+.appealForm input, .appealForm select, .appealForm textarea, .appealReply textarea { min-height: 44px; border: 1px solid var(--border-strong); background: var(--surface); padding: .75rem; color: var(--ink); font: inherit; }
+.appealForm textarea, .appealReply textarea { min-height: 7rem; resize: vertical; }
+.appealCase { display: grid; gap: 1rem; margin-top: 1rem; border: 1px solid var(--border); padding: 1rem; }
+.appealCase header { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
+.appealCase h3 { margin: .3rem 0 0; }
+.appealMessages { display: grid; gap: 1px; background: var(--border); }
+.appealMessages p { display: grid; gap: .35rem; margin: 0; background: var(--info-bg); padding: .85rem; }
+.appealMessages time { color: var(--muted); font-size: .7rem; }
+.appealTimeline { display: grid; gap: .65rem; margin: 0; padding: 0; list-style: none; }
+.appealTimeline li { display: flex; justify-content: space-between; gap: 1rem; border-left: 3px solid var(--accent); padding: .65rem .75rem; background: var(--surface-muted); }
+.appealTimeline time { color: var(--muted); font-size: .75rem; white-space: nowrap; }
+.appealRefunds { display: grid; gap: .5rem; }
+.appealRefunds p { display: grid; gap: .3rem; margin: 0; }
+.appealRefunds .warning { border-left: 3px solid var(--warning); background: var(--warning-bg); padding: 1rem; color: var(--ink); }
+@media (max-width: 520px) { .appealTimeline li { flex-direction: column; } }
 @media (min-width: 760px) {
   .card { grid-template-columns: minmax(0, 1.6fr) minmax(9rem, .6fr) minmax(10rem, .7fr) auto; }
   .hero { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }

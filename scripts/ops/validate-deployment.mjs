@@ -42,6 +42,7 @@ function productionEnvironment(overrides = {}) {
     KAI_ENABLE_HSTS: "0",
     KAI_ALIPAY_ENABLED: "0",
     KAI_QIXIANG_PAY_ENABLED: "0",
+    KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "0",
     KAI_BUY_CATALOG_V2: "0",
     KAI_ACCOUNT_CONSOLE_V2: "0",
     KAI_HOSTING_V2: "0",
@@ -91,7 +92,9 @@ function validateNegativeEnvironmentCases() {
   assertEnvironmentRejected({ KAI_ENABLE_HSTS: "2" }, "KAI_ENABLE_HSTS");
   assertEnvironmentRejected({ KAI_ALIPAY_ENABLED: "1" }, "KAI_ALIPAY_ENABLED");
   assertEnvironmentRejected({ KAI_QIXIANG_PAY_ENABLED: "2" }, "KAI_QIXIANG_PAY_ENABLED");
-  assertEnvironmentRejected({ KAI_QIXIANG_PAY_ENABLED: "1", KAI_QIXIANG_PAY_PID: "10086", KAI_QIXIANG_PAY_KEY: "approved-looking-secret-1234", KAI_QIXIANG_PAY_CHANNELS: "ALIPAY,WXPAY" }, "KAI_QIXIANG_PAY_ENABLED");
+  assertEnvironmentRejected({ KAI_QIXIANG_PAY_ENABLED: "1", KAI_QIXIANG_PAY_PID: "10086", KAI_QIXIANG_PAY_KEY: "approved-looking-secret-1234", KAI_QIXIANG_PAY_CHANNELS: "ALIPAY" }, "KAI_QIXIANG_PAY_APPROVAL_REFERENCE");
+  assertEnvironmentRejected({ KAI_QIXIANG_PAY_ENABLED: "1", KAI_QIXIANG_PAY_PID: "10086", KAI_QIXIANG_PAY_KEY: "approved-looking-secret-1234", KAI_QIXIANG_PAY_CHANNELS: "ALIPAY", KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS: "org-pilot", KAI_QIXIANG_PAY_PILOT_CHANNEL: "ALIPAY", KAI_QIXIANG_PAY_APPROVAL_REFERENCE: "KAI-PAY-APPROVAL-20260822", KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED: "1", KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE: "RISK-KAI-PAY-20260822", KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID: "QRY-KAI-PAY-20260822", KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION: "query-v1" }, "KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT");
+  validateProductionEnvironment(productionEnvironment({ KAI_QIXIANG_PAY_ENABLED: "1", KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "1", KAI_QIXIANG_PAY_PID: "10086", KAI_QIXIANG_PAY_KEY: "rotated-production-secret-1234", KAI_QIXIANG_PAY_CHANNELS: "ALIPAY", KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS: "org-pilot", KAI_QIXIANG_PAY_PILOT_CHANNEL: "ALIPAY", KAI_QIXIANG_PAY_APPROVAL_REFERENCE: "KAI-PAY-APPROVAL-20260822", KAI_QIXIANG_PAY_CREDENTIAL_VERSION: "merchant-v1", KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED: "1", KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE: "RISK-KAI-PAY-20260822", KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID: "QRY-KAI-PAY-20260822", KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION: "query-v1" }));
   assertEnvironmentRejected({ KAI_BUY_CATALOG_V2: "2" }, "KAI_BUY_CATALOG_V2");
   assertEnvironmentRejected({ KAI_ACCOUNT_CONSOLE_V2: "2" }, "KAI_ACCOUNT_CONSOLE_V2");
   assertEnvironmentRejected({ KAI_HOSTING_V2: "2" }, "KAI_HOSTING_V2");
@@ -128,10 +131,22 @@ async function main() {
       KAI_ENABLE_HSTS: process.env.KAI_ENABLE_HSTS ?? "0",
       KAI_ALIPAY_ENABLED: process.env.KAI_ALIPAY_ENABLED ?? "0",
       KAI_QIXIANG_PAY_ENABLED: process.env.KAI_QIXIANG_PAY_ENABLED ?? "0",
+      KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: process.env.KAI_QIXIANG_PAY_RECONCILIATION_ENABLED ?? "0",
       KAI_QIXIANG_PAY_PID: process.env.KAI_QIXIANG_PAY_PID,
       KAI_QIXIANG_PAY_KEY: process.env.KAI_QIXIANG_PAY_KEY,
+      KAI_QIXIANG_PAY_APPROVAL_REFERENCE: process.env.KAI_QIXIANG_PAY_APPROVAL_REFERENCE,
+      KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT: process.env.KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT,
+      KAI_QIXIANG_PAY_CREDENTIAL_VERSION: process.env.KAI_QIXIANG_PAY_CREDENTIAL_VERSION,
+      KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED: process.env.KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED,
+      KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE: process.env.KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE,
+      KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID: process.env.KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID,
+      KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT: process.env.KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT,
+      KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION: process.env.KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION,
+      KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS: process.env.KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS,
+      KAI_QIXIANG_PAY_PILOT_CHANNEL: process.env.KAI_QIXIANG_PAY_PILOT_CHANNEL,
       KAI_QIXIANG_PAY_CHANNELS: process.env.KAI_QIXIANG_PAY_CHANNELS,
       KAI_QIXIANG_PAY_GATEWAY: process.env.KAI_QIXIANG_PAY_GATEWAY,
+      KAI_QIXIANG_PAY_QUERY_ENDPOINT: process.env.KAI_QIXIANG_PAY_QUERY_ENDPOINT,
       KAI_BUY_CATALOG_V2: process.env.KAI_BUY_CATALOG_V2 ?? "0",
       KAI_ACCOUNT_CONSOLE_V2: process.env.KAI_ACCOUNT_CONSOLE_V2 ?? "0",
       KAI_HOSTING_V2: process.env.KAI_HOSTING_V2 ?? "0",
@@ -188,10 +203,22 @@ async function main() {
       KAI_ENABLE_HSTS: candidateEnvironment.KAI_ENABLE_HSTS,
       KAI_ALIPAY_ENABLED: candidateEnvironment.KAI_ALIPAY_ENABLED,
       KAI_QIXIANG_PAY_ENABLED: candidateEnvironment.KAI_QIXIANG_PAY_ENABLED,
+      KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: candidateEnvironment.KAI_QIXIANG_PAY_RECONCILIATION_ENABLED,
       KAI_QIXIANG_PAY_PID: candidateEnvironment.KAI_QIXIANG_PAY_PID,
       KAI_QIXIANG_PAY_KEY: candidateEnvironment.KAI_QIXIANG_PAY_KEY,
+      KAI_QIXIANG_PAY_APPROVAL_REFERENCE: candidateEnvironment.KAI_QIXIANG_PAY_APPROVAL_REFERENCE,
+      KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT: candidateEnvironment.KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT,
+      KAI_QIXIANG_PAY_CREDENTIAL_VERSION: candidateEnvironment.KAI_QIXIANG_PAY_CREDENTIAL_VERSION,
+      KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED: candidateEnvironment.KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED,
+      KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE: candidateEnvironment.KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE,
+      KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID: candidateEnvironment.KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID,
+      KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT: candidateEnvironment.KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT,
+      KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION: candidateEnvironment.KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION,
+      KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS: candidateEnvironment.KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS,
+      KAI_QIXIANG_PAY_PILOT_CHANNEL: candidateEnvironment.KAI_QIXIANG_PAY_PILOT_CHANNEL,
       KAI_QIXIANG_PAY_CHANNELS: candidateEnvironment.KAI_QIXIANG_PAY_CHANNELS,
       KAI_QIXIANG_PAY_GATEWAY: candidateEnvironment.KAI_QIXIANG_PAY_GATEWAY,
+      KAI_QIXIANG_PAY_QUERY_ENDPOINT: candidateEnvironment.KAI_QIXIANG_PAY_QUERY_ENDPOINT,
       KAI_BUY_CATALOG_V2: candidateEnvironment.KAI_BUY_CATALOG_V2,
       KAI_ACCOUNT_CONSOLE_V2: candidateEnvironment.KAI_ACCOUNT_CONSOLE_V2,
       KAI_HOSTING_V2: candidateEnvironment.KAI_HOSTING_V2,
@@ -260,7 +287,7 @@ async function main() {
     "KAI_ACCOUNT_OIDC_CLIENT_ID", "KAI_ACCOUNT_OIDC_CLIENT_SECRET", "KAI_ACCOUNT_OIDC_ISSUER", "KAI_ACCOUNT_OIDC_SCOPES", "KAI_ACCOUNT_OIDC_TRANSACTION_SECRET",
     "KAI_BUY_CATALOG_V2", "KAI_ACCOUNT_CONSOLE_V2", "KAI_HOSTING_V2", "KAI_HOSTING_V2_SETUP", "KAI_AGENT_TELEMETRY_V1", "KAI_HOSTING_DEVICE_RETIREMENT", "KAI_HOSTING_APPROVED_IMAGES", "KAI_HOSTING_TERMS_VERSION", "KAI_ALIPAY_ENABLED",
     "KAI_ALIPAY_APP_ID", "KAI_ALIPAY_PRIVATE_KEY", "KAI_ALIPAY_PUBLIC_KEY", "KAI_ALIPAY_SELLER_ID",
-    "KAI_QIXIANG_PAY_ENABLED", "KAI_QIXIANG_PAY_PID", "KAI_QIXIANG_PAY_KEY", "KAI_QIXIANG_PAY_CHANNELS", "KAI_QIXIANG_PAY_GATEWAY",
+    "KAI_QIXIANG_PAY_ENABLED", "KAI_QIXIANG_PAY_RECONCILIATION_ENABLED", "KAI_QIXIANG_PAY_PID", "KAI_QIXIANG_PAY_KEY", "KAI_QIXIANG_PAY_APPROVAL_REFERENCE", "KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT", "KAI_QIXIANG_PAY_CREDENTIAL_VERSION", "KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED", "KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE", "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID", "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT", "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION", "KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS", "KAI_QIXIANG_PAY_PILOT_CHANNEL", "KAI_QIXIANG_PAY_CHANNELS", "KAI_QIXIANG_PAY_GATEWAY", "KAI_QIXIANG_PAY_QUERY_ENDPOINT",
     "KAI_SSH_PROVISIONER_URL", "KAI_SSH_PROVISIONER_TOKEN",
   ]) {
     assert(Object.hasOwn(app.environment, name), `app must declare the ${name} production integration boundary`);
@@ -283,7 +310,7 @@ async function main() {
   assert(volumeByTarget(backup, "/app/market")?.read_only === true, "backup market mount must be read-only");
   assert(volumeByTarget(backup, "/app/backups") && !volumeByTarget(backup, "/app/backups").read_only, "backup output mount must be writable");
 
-  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, capabilitySchemaGate, qixiangSchemaGate, runbook, appEnvironmentExample, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator] = await Promise.all([
+  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, capabilitySchemaGate, qixiangSchemaGate, appealSchemaGate, appealReadSchemaGate, reconciliationSchemaGate, runbook, appEnvironmentExample, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator] = await Promise.all([
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.timer"), "utf8"),
@@ -294,6 +321,9 @@ async function main() {
     readFile(resolve(projectRoot, "scripts/ops/production-entrypoint.sh"), "utf8"),
     readFile(resolve(projectRoot, "scripts/ops/verify-hosting-agent-capability-schema.mjs"), "utf8"),
     readFile(resolve(projectRoot, "scripts/ops/verify-qixiang-card-hour-schema.mjs"), "utf8"),
+    readFile(resolve(projectRoot, "scripts/ops/verify-card-hour-topup-appeals-schema.mjs"), "utf8"),
+    readFile(resolve(projectRoot, "scripts/ops/verify-card-hour-topup-appeal-reads-schema.mjs"), "utf8"),
+    readFile(resolve(projectRoot, "scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs"), "utf8"),
     readFile(resolve(projectRoot, "deploy/PRODUCTION_RUNBOOK.md"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-app.env.example"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-release.env.example"), "utf8"),
@@ -331,6 +361,7 @@ async function main() {
   assert(localImageValidator.includes("validateImageInspection") && localImageValidator.includes("{{.Server.Os}}/{{.Server.Arch}}"), "target-host gate must validate local digest, revision, and platform");
   assert(Dockerfile.includes("/app/scripts/ops ./scripts/ops"), "runtime image must contain operations scripts");
   assert(Dockerfile.includes("/app/drizzle ./drizzle"), "runtime image must contain SQLite exchange migrations");
+  assert(Dockerfile.includes("/app/.openai/drizzle ./.openai/drizzle"), "runtime image must contain the D1 migration mirror used by payment gates");
   assert(Dockerfile.includes("/api/live"), "runtime image healthcheck must use /api/live");
   assert(Dockerfile.includes("HOST=0.0.0.0"), "runtime image must bind the standalone server through HOST");
   assert(Dockerfile.includes("ARG KAI_RELEASE_SHA") && Dockerfile.includes("org.opencontainers.image.revision=\"${KAI_RELEASE_SHA}\""), "runtime image must embed the exact release SHA as an OCI revision label");
@@ -342,6 +373,12 @@ async function main() {
   assert(capabilitySchemaGate.includes("hosting_v2_challenge_application_idx") && capabilitySchemaGate.includes("hosting_v2_devices_application_idx") && capabilitySchemaGate.includes("APPLY_0032_HOSTING_AGENT_CAPABILITY_MODES"), "the 0032 gate must verify both indexes and require explicit migration confirmation");
   assert(productionEntrypoint.includes("verify-qixiang-card-hour-schema.mjs --allow-uninitialized") && productionEntrypoint.indexOf("verify-qixiang-card-hour-schema.mjs --allow-uninitialized") < productionEntrypoint.lastIndexOf('exec "$@"'), "production entrypoint must enforce the 0033 schema gate before the default server command");
   assert(qixiangSchemaGate.includes("provider_merchant_ref") && qixiangSchemaGate.includes("checkout_url") && qixiangSchemaGate.includes("APPLY_0033_QIXIANG_CARD_HOUR_TOPUPS"), "the 0033 gate must verify provider and private checkout snapshots with explicit confirmation");
+  assert(productionEntrypoint.includes("verify-card-hour-topup-appeals-schema.mjs --allow-uninitialized") && productionEntrypoint.indexOf("verify-card-hour-topup-appeals-schema.mjs --allow-uninitialized") < productionEntrypoint.lastIndexOf('exec "$@"'), "production entrypoint must enforce the 0036 appeal sidecar gate before the default server command");
+  assert(appealSchemaGate.includes("MIGRATION_MIRROR_MISMATCH") && appealSchemaGate.includes("APPLY_0036_CARD_HOUR_TOPUP_APPEALS") && appealSchemaGate.includes("immutable_update"), "the 0036 gate must verify SQLite/D1 mirrors, immutable events, and explicit application confirmation");
+  assert(productionEntrypoint.includes("verify-card-hour-topup-appeal-reads-schema.mjs --allow-uninitialized") && productionEntrypoint.indexOf("verify-card-hour-topup-appeal-reads-schema.mjs --allow-uninitialized") < productionEntrypoint.lastIndexOf('exec "$@"'), "production entrypoint must enforce the 0037 appeal read-receipt gate before the default server command");
+  assert(appealReadSchemaGate.includes("MIGRATION_MIRROR_MISMATCH") && appealReadSchemaGate.includes("APPLY_0037_CARD_HOUR_TOPUP_APPEAL_READS") && appealReadSchemaGate.includes("card_hour_topup_appeal_member_reads_org_idx"), "the 0037 gate must verify SQLite/D1 mirrors, organization read receipts, and explicit application confirmation");
+  assert(productionEntrypoint.includes("verify-card-hour-topup-reconciliation-schema.mjs --allow-uninitialized") && productionEntrypoint.indexOf("verify-card-hour-topup-reconciliation-schema.mjs --allow-uninitialized") < productionEntrypoint.lastIndexOf('exec "$@"'), "production entrypoint must enforce the 0038 durable reconciliation gate before the default server command");
+  assert(reconciliationSchemaGate.includes("MIGRATION_MIRROR_MISMATCH") && reconciliationSchemaGate.includes("APPLY_0038_CARD_HOUR_TOPUP_RECONCILIATION") && reconciliationSchemaGate.includes("card_hour_topup_reconciliation_due_idx"), "the 0038 gate must verify SQLite/D1 mirrors, the due index, and explicit application confirmation");
   assert(runbook.includes("/api/session") && runbook.includes("每分钟 30 次、突发 10 次"), "runbook must require a concrete reverse-proxy rate limit for /api/session");
   assert(runbook.includes("POST /api/*") && runbook.includes("每分钟 20 次、突发 5 次"), "runbook must require a concrete reverse-proxy rate limit for API writes");
   assert(runbook.includes("API 守卫会为 API 请求输出结构化日志") && runbook.includes("不记录表单正文、Cookie、会话令牌、CSRF 值或供应商原始报价"), "runbook must accurately describe structured API logs and their redaction boundary");
@@ -356,7 +393,10 @@ async function main() {
       && runbook.includes("APPLY_0032_HOSTING_AGENT_CAPABILITY_MODES"),
     "runbook must classify Hosting initialization and apply 0032 only to a complete old v14 schema",
   );
-  assert(runbook.includes("0033 七相卡时充值预部署门禁") && runbook.includes("cardHourInitialized=false") && runbook.includes("APPLY_0033_QIXIANG_CARD_HOUR_TOPUPS") && runbook.includes("不得回退到不含七相签名回调"), "runbook must gate 0033 and preserve callback responsibility for pending Qixiang top-ups");
+  assert(runbook.includes("0033 七相卡时充值预部署门禁") && runbook.includes("cardHourInitialized=false") && runbook.includes("APPLY_0033_QIXIANG_CARD_HOUR_TOPUPS") && runbook.includes("存量 `PENDING`"), "runbook must gate 0033 and preserve manual responsibility for pending Qixiang top-ups");
+  assert(runbook.includes("0036 充值申诉侧车预部署门禁") && runbook.includes("APPLY_0036_CARD_HOUR_TOPUP_APPEALS") && runbook.includes("D1") && runbook.includes("禁止手工删表或改 marker"), "runbook must gate 0036, enforce migration mirrors, and document non-destructive rollback");
+  assert(runbook.includes("0037 申诉站内通知预部署门禁") && runbook.includes("APPLY_0037_CARD_HOUR_TOPUP_APPEAL_READS") && runbook.includes("marker v5"), "runbook must provide an executable 0037 migration path before 0038");
+  assert(runbook.includes("0038 支付核单租约预部署门禁") && runbook.includes("APPLY_0038_CARD_HOUR_TOPUP_RECONCILIATION") && runbook.includes("KAI_QIXIANG_PAY_RECONCILIATION_ENABLED"), "runbook must gate durable payment reconciliation separately from new checkout creation");
   assert(runbook.includes(".kai-cloud-backup.lock") && runbook.includes("只有一个 timer 指向该 `KAI_STATE_ROOT`"), "runbook must prevent differently named timers from racing on one backup root");
   assert(runbook.includes("127.0.0.1:3051") && runbook.includes("KAI_ENABLE_HSTS=1"), "runbook must document the new loopback port and the gated HSTS enablement step");
   assert(runbook.includes("任何恢复包都不得超过 30 天") && runbook.includes("异地存储也必须配置不超过 30 天的生命周期"), "runbook must align local and off-host backups with the 30-day data boundary");

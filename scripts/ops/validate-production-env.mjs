@@ -15,6 +15,10 @@ const IMAGE_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 const RELEASE_SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const REPOSITORY_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$/;
 const HOSTING_IMAGE_PATTERN = /^ghcr\.io\/(?:kai-cloud\/cuda-pytorch|mandow123\/kai-cloud-gpu-workload)@sha256:[a-f0-9]{64}$/;
+const QIXIANG_PAY_APPROVAL_REFERENCE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{7,127}$/;
+const QIXIANG_PAY_CREDENTIAL_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,63}$/;
+const QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE_PATTERN = /^RISK-[A-Za-z0-9][A-Za-z0-9._:/-]{7,119}$/;
+const QIXIANG_PAY_QUERY_CREDENTIAL_ID_PATTERN = /^QRY-[A-Za-z0-9][A-Za-z0-9._:-]{7,95}$/;
 
 export class ProductionEnvironmentError extends Error {
   constructor(errors) {
@@ -156,12 +160,40 @@ export function validateProductionEnvironment(environment = process.env, { check
   }
   if (environment.KAI_ALIPAY_ENABLED !== "0") errors.push("KAI_ALIPAY_ENABLED must remain exactly 0 during the trial rollout");
   const qixiangPayEnabled = environment.KAI_QIXIANG_PAY_ENABLED ?? "0";
-  if (qixiangPayEnabled !== "0") errors.push("KAI_QIXIANG_PAY_ENABLED must remain exactly 0 until the payment scenario is formally approved");
+  const qixiangReconciliationEnabled = environment.KAI_QIXIANG_PAY_RECONCILIATION_ENABLED ?? "0";
+  if (qixiangPayEnabled !== "0" && qixiangPayEnabled !== "1") errors.push("KAI_QIXIANG_PAY_ENABLED must be exactly 0 or 1");
+  if (qixiangReconciliationEnabled !== "0" && qixiangReconciliationEnabled !== "1") errors.push("KAI_QIXIANG_PAY_RECONCILIATION_ENABLED must be exactly 0 or 1");
+  if (qixiangPayEnabled === "1" && qixiangReconciliationEnabled !== "1") errors.push("KAI_QIXIANG_PAY_RECONCILIATION_ENABLED must be exactly 1 before new Qixiang Pay orders are enabled");
+  const validQixiangCredentialLifecycle = (rotatedAtName, versionName) => {
+    const rotatedAtText = environment[rotatedAtName]?.trim() ?? "";
+    const rotatedAt = Date.parse(rotatedAtText);
+    const validRotation = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(rotatedAtText)
+      && Number.isFinite(rotatedAt)
+      && rotatedAt >= Date.parse("2020-01-01T00:00:00.000Z")
+      && rotatedAt <= Date.now() + 5 * 60 * 1000;
+    return validRotation || QIXIANG_PAY_CREDENTIAL_VERSION_PATTERN.test(environment[versionName]?.trim() ?? "");
+  };
+  if (qixiangPayEnabled === "1" || qixiangReconciliationEnabled === "1") {
+    if (!/^\d{1,18}$/.test(environment.KAI_QIXIANG_PAY_PID ?? "")) errors.push("KAI_QIXIANG_PAY_PID must be a valid merchant identifier when Qixiang Pay or reconciliation is enabled");
+    const qixiangPayKey = environment.KAI_QIXIANG_PAY_KEY?.trim() ?? "";
+    if (environment.KAI_QIXIANG_PAY_KEY !== qixiangPayKey
+      || Buffer.byteLength(qixiangPayKey, "utf8") < 16
+      || PLACEHOLDER_SECRET_PATTERN.test(qixiangPayKey)) errors.push("KAI_QIXIANG_PAY_KEY must be a non-placeholder secret of at least 16 bytes when Qixiang Pay or reconciliation is enabled");
+    if ((environment.KAI_QIXIANG_PAY_QUERY_ENDPOINT || "https://api.payqixiang.cn/api.php") !== "https://api.payqixiang.cn/api.php") errors.push("KAI_QIXIANG_PAY_QUERY_ENDPOINT must use the approved HTTPS api.php endpoint");
+    if (!QIXIANG_PAY_APPROVAL_REFERENCE_PATTERN.test(environment.KAI_QIXIANG_PAY_APPROVAL_REFERENCE?.trim() ?? "")) errors.push("KAI_QIXIANG_PAY_APPROVAL_REFERENCE must identify the approved production change when Qixiang Pay or reconciliation is enabled");
+    if (!validQixiangCredentialLifecycle("KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT", "KAI_QIXIANG_PAY_CREDENTIAL_VERSION")) errors.push("KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT or KAI_QIXIANG_PAY_CREDENTIAL_VERSION must identify the approved merchant credential lifecycle");
+    if (environment.KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED !== "1") errors.push("KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED must be exactly 1 when Qixiang Pay or reconciliation is enabled");
+    if (!QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE_PATTERN.test(environment.KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE?.trim() ?? "")) errors.push("KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE must identify the written key-in-GET risk acceptance");
+    if (!QIXIANG_PAY_QUERY_CREDENTIAL_ID_PATTERN.test(environment.KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID?.trim() ?? "")) errors.push("KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID must be a non-secret QRY-prefixed credential identifier");
+    if (!validQixiangCredentialLifecycle("KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT", "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION")) errors.push("KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT or KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION must identify the active query credential lifecycle");
+  }
   if (qixiangPayEnabled === "1") {
-    if (!/^\d{1,18}$/.test(environment.KAI_QIXIANG_PAY_PID ?? "")) errors.push("KAI_QIXIANG_PAY_PID must be a valid merchant identifier when Qixiang Pay is enabled");
-    if (Buffer.byteLength(environment.KAI_QIXIANG_PAY_KEY?.trim() ?? "", "utf8") < 16 || PLACEHOLDER_SECRET_PATTERN.test(environment.KAI_QIXIANG_PAY_KEY ?? "")) errors.push("KAI_QIXIANG_PAY_KEY must be a non-placeholder secret of at least 16 bytes when Qixiang Pay is enabled");
     const channels = (environment.KAI_QIXIANG_PAY_CHANNELS ?? "").split(",").map((value) => value.trim()).filter(Boolean);
     if (channels.length < 1 || channels.some((value) => value !== "ALIPAY" && value !== "WXPAY") || new Set(channels).size !== channels.length) errors.push("KAI_QIXIANG_PAY_CHANNELS must contain unique ALIPAY/WXPAY values when Qixiang Pay is enabled");
+    const pilotOrganizations = (environment.KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS ?? "").split(",").map((value) => value.trim()).filter(Boolean);
+    if (pilotOrganizations.length < 1 || pilotOrganizations.length > 20 || pilotOrganizations.some((value) => !/^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/.test(value)) || new Set(pilotOrganizations).size !== pilotOrganizations.length) errors.push("KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS must contain 1-20 unique approved organization identifiers when Qixiang Pay is enabled");
+    const pilotChannel = environment.KAI_QIXIANG_PAY_PILOT_CHANNEL?.trim() ?? "";
+    if ((pilotChannel !== "ALIPAY" && pilotChannel !== "WXPAY") || channels.length !== 1 || channels[0] !== pilotChannel) errors.push("KAI_QIXIANG_PAY_PILOT_CHANNEL must be the single configured Qixiang Pay channel during production acceptance");
     if ((environment.KAI_QIXIANG_PAY_GATEWAY || "https://api.payqixiang.cn/mapi.php") !== "https://api.payqixiang.cn/mapi.php") errors.push("KAI_QIXIANG_PAY_GATEWAY must use the approved HTTPS mapi.php endpoint");
   }
   const buyCatalogV2 = environment.KAI_BUY_CATALOG_V2 ?? "0";
@@ -186,6 +218,10 @@ export function validateProductionEnvironment(environment = process.env, { check
   if (environment.KAI_HOSTING_V2_SETUP !== "0" && environment.KAI_HOSTING_V2_SETUP !== "1") errors.push("KAI_HOSTING_V2_SETUP must be exactly 0 or 1");
   const agentTelemetryV1 = environment.KAI_AGENT_TELEMETRY_V1 ?? "0";
   if (agentTelemetryV1 !== "0" && agentTelemetryV1 !== "1") errors.push("KAI_AGENT_TELEMETRY_V1 must be exactly 0 or 1");
+  const manualAppealsV1 = environment.KAI_MANUAL_APPEALS_V1 ?? "0";
+  if (manualAppealsV1 !== "0" && manualAppealsV1 !== "1") errors.push("KAI_MANUAL_APPEALS_V1 must be exactly 0 or 1");
+  const manualOrderFlowV1 = environment.KAI_MANUAL_ORDER_FLOW_V1 ?? "0";
+  if (manualOrderFlowV1 !== "0" && manualOrderFlowV1 !== "1") errors.push("KAI_MANUAL_ORDER_FLOW_V1 must be exactly 0 or 1");
   if (environment.KAI_HOSTING_DEVICE_RETIREMENT !== "0" && environment.KAI_HOSTING_DEVICE_RETIREMENT !== "1") errors.push("KAI_HOSTING_DEVICE_RETIREMENT must be exactly 0 or 1");
   if (environment.KAI_HOSTING_DEVICE_RETIREMENT === "1" && environment.KAI_HOSTING_V2_SETUP !== "1" && environment.KAI_HOSTING_V2 !== "1") {
     errors.push("KAI_HOSTING_DEVICE_RETIREMENT requires Hosting V2 setup or trading to be enabled");
@@ -253,6 +289,7 @@ export function validateProductionEnvironment(environment = process.env, { check
     hostingDeviceRetirementEnabled: environment.KAI_HOSTING_DEVICE_RETIREMENT === "1",
     alipayEnabled: false,
     qixiangPayEnabled: qixiangPayEnabled === "1",
+    qixiangPayReconciliationEnabled: qixiangReconciliationEnabled === "1",
     dbDirectory: environment.KAI_DB_DIR,
     marketDirectory: environment.KAI_MARKET_DATA_DIR,
   });

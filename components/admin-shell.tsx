@@ -16,7 +16,7 @@ function currentLabel(pathname: string) {
   return "管理后台";
 }
 
-export function AdminShell({ children, environment }: { children: ReactNode; environment: string }) {
+export function AdminShell({ children, environment, appealsEnabled = false }: { children: ReactNode; environment: string; appealsEnabled?: boolean }) {
   const pathname = usePathname();
   const isLogin = pathname === "/admin/login";
   const env = environment.toUpperCase();
@@ -51,9 +51,10 @@ export function AdminShell({ children, environment }: { children: ReactNode; env
   const roleList = Array.isArray(rolesValue) ? rolesValue.filter((role): role is string => typeof role === "string") : typeof rolesValue === "string" ? [rolesValue] : [];
   const roles = roleList.length ? roleList.join(" / ") : "服务端鉴权";
   const financeApproverOnly = roleList.includes("FINANCE_APPROVER") && !roleList.includes("ROOT");
+  const featureNavigation = adminNavigation.map((group) => ({ ...group, items: group.items.filter((item) => !("requiresManualAppeals" in item && item.requiresManualAppeals) || appealsEnabled) })).filter((group) => group.items.length);
   const visibleNavigation = financeApproverOnly
-    ? adminNavigation.map((group) => ({ ...group, items: group.items.filter((item) => ["/admin/hosting", "/admin/audit"].includes(item.href)) })).filter((group) => group.items.length)
-    : adminNavigation;
+    ? featureNavigation.map((group) => ({ ...group, items: group.items.filter((item) => ["/admin/hosting", "/admin/audit"].includes(item.href)) })).filter((group) => group.items.length)
+    : featureNavigation;
   const adminHome = financeApproverOnly ? "/admin/hosting" : "/admin";
   const authenticated = session?.authenticated === true;
 

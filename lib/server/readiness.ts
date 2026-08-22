@@ -15,6 +15,7 @@ import { getHostingV2Store } from "./hosting-v2-store.ts";
 import { isKaiIdentityConfigured, probeKaiIdentityDiscovery } from "./kai-identity-oidc.ts";
 import { readMarketSnapshot } from "./market-snapshot.ts";
 import { assertMarketplaceSecurityConfiguration, createMarketplaceReadinessStore } from "./marketplace-store.ts";
+import { qixiangPayReadiness } from "./qixiang-pay.ts";
 import { sshProvisionerReadiness } from "./ssh-provisioner.ts";
 import { getSupplyStore } from "./supply-store.ts";
 import { getStandardizationStore } from "./standardization-store.ts";
@@ -52,7 +53,7 @@ function capabilityReadiness(environment:Environment){
   if(environment.KAI_ACCOUNT_OIDC_CLIENT_ID?.trim()&&!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/u.test(environment.KAI_ACCOUNT_OIDC_CLIENT_ID.trim()))identityExtra.push("KAI_ACCOUNT_OIDC_CLIENT_ID(valid Client ID)");
   if(environment.KAI_ACCOUNT_OIDC_CLIENT_SECRET?.trim()&&(environment.KAI_ACCOUNT_OIDC_CLIENT_SECRET?.trim().length??0)<16)identityExtra.push("KAI_ACCOUNT_OIDC_CLIENT_SECRET(>=16 chars)");
   if(environment.KAI_ACCOUNT_OIDC_CLIENT_ID?.trim()&&environment.KAI_ACCOUNT_OIDC_TRANSACTION_SECRET?.trim()&&!isKaiIdentityConfigured(environment))identityExtra.push("KAI_ACCOUNT_OIDC_PROVIDER(valid issuer, scopes and client authentication)");
-  const alipay=alipayReadiness(environment),ssh=sshProvisionerReadiness(environment);
+  const alipay=alipayReadiness(environment),qixiangPay=qixiangPayReadiness(environment),ssh=sshProvisionerReadiness(environment);
   return{
     adminPasswordLogin:requiredCapability(["KAI_ADMIN_USERNAME","KAI_ADMIN_PASSWORD_HASH"],environment,
       environment.KAI_ADMIN_PASSWORD_HASH?.startsWith("pbkdf2-sha256:")?[]:["KAI_ADMIN_PASSWORD_HASH(valid PBKDF2 hash)"]),
@@ -60,6 +61,14 @@ function capabilityReadiness(environment:Environment){
       environment.KAI_ADMIN_APPROVER_PASSWORD_HASH?.startsWith("pbkdf2-sha256:")?[]:["KAI_ADMIN_APPROVER_PASSWORD_HASH(valid PBKDF2 hash)"]),
     kaiIdentityLogin:requiredCapability(["KAI_ACCOUNT_OIDC_CLIENT_ID","KAI_ACCOUNT_OIDC_TRANSACTION_SECRET"],environment,identityExtra),
     alipayLive:{available:alipay.canCreatePayment,enabled:alipay.enabled,configured:alipay.configured,failClosed:true,missing:alipay.missing},
+    qixiangPayCardHourTopup:{
+      available:qixiangPay.canCreatePayment,
+      enabled:qixiangPay.enabled,
+      configured:qixiangPay.configured,
+      reconciliationAvailable:qixiangPay.canReconcilePayment,
+      reconciliationEnabled:qixiangPay.reconciliationEnabled,
+      failClosed:true,
+    },
     sshProvisioning:{available:ssh.configured,failClosed:true,missing:ssh.missing},
   };
 }
@@ -147,7 +156,10 @@ export async function evaluateReadiness(){
     financeApprovalAvailable:capabilities.financeApprovalLogin.available,
     alipay:alipayReadiness(environment),
   });
-  const ready=market.ready&&Object.values(storage).every((item)=>item.ready)&&hostingV2.ready;
+  const qixiangPay=qixiangPayReadiness(environment);
+  const paymentGateReady=(!qixiangPay.enabled||qixiangPay.canCreatePayment)
+    &&(!qixiangPay.reconciliationEnabled||qixiangPay.canReconcilePayment);
+  const ready=market.ready&&Object.values(storage).every((item)=>item.ready)&&hostingV2.ready&&paymentGateReady;
   return{
     ready,
     database:{backend:marketplace.backend,schemaVersion:marketplace.schemaVersion,integrity:marketplace.integrity},

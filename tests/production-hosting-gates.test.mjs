@@ -15,6 +15,7 @@ const base = {
   KAI_DB_DIR: "/app/db",
   KAI_MARKET_DATA_DIR: "/app/market",
   KAI_ALIPAY_ENABLED: "0",
+  KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "0",
   KAI_ACCOUNT_CONSOLE_V2: "0",
   KAI_HOSTING_V2: "0",
   KAI_HOSTING_V2_SETUP: "0",
@@ -34,6 +35,41 @@ function rejection(environment, expected) {
 test("production trial gate keeps Alipay disabled even if credentials are present", () => {
   validateProductionEnvironment({ ...base, KAI_ALIPAY_APP_ID: "configured-but-closed" });
   rejection({ ...base, KAI_ALIPAY_ENABLED: "1" }, "KAI_ALIPAY_ENABLED");
+});
+
+test("Qixiang Pay defaults closed and opens only with approved rotated credentials", () => {
+  validateProductionEnvironment(base);
+  const enabled = {
+    ...base,
+    KAI_QIXIANG_PAY_ENABLED: "1",
+    KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "1",
+    KAI_QIXIANG_PAY_PID: "10086",
+    KAI_QIXIANG_PAY_KEY: "rotated-live-key-material-20260822",
+    KAI_QIXIANG_PAY_APPROVAL_REFERENCE: "KAI-PAY-APPROVAL-20260822",
+    KAI_QIXIANG_PAY_CREDENTIAL_VERSION: "merchant-v1",
+    KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED: "1",
+    KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE: "RISK-KAI-QIXIANG-GET-20260822",
+    KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID: "QRY-qixiang-production-v1",
+    KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION: "query-v1",
+    KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS: "org-production-pilot",
+    KAI_QIXIANG_PAY_PILOT_CHANNEL: "ALIPAY",
+    KAI_QIXIANG_PAY_CHANNELS: "ALIPAY",
+    KAI_QIXIANG_PAY_GATEWAY: "https://api.payqixiang.cn/mapi.php",
+  };
+  validateProductionEnvironment(enabled);
+  rejection({ ...enabled, KAI_QIXIANG_PAY_ENABLED: "2" }, "KAI_QIXIANG_PAY_ENABLED");
+  rejection({ ...enabled, KAI_QIXIANG_PAY_APPROVAL_REFERENCE: "" }, "KAI_QIXIANG_PAY_APPROVAL_REFERENCE");
+  rejection({ ...enabled, KAI_QIXIANG_PAY_CREDENTIAL_VERSION: "" }, "KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT");
+  rejection({ ...enabled, KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED: "0" }, "KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED");
+  rejection({ ...enabled, KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE: "" }, "KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE");
+  rejection({ ...enabled, KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID: "" }, "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID");
+  rejection({ ...enabled, KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION: "" }, "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT");
+  rejection({ ...enabled, KAI_QIXIANG_PAY_KEY: "replace-with-secret-123456" }, "KAI_QIXIANG_PAY_KEY");
+  rejection({ ...enabled, KAI_QIXIANG_PAY_CHANNELS: "ALIPAY,ALIPAY" }, "KAI_QIXIANG_PAY_CHANNELS");
+  rejection({ ...enabled, KAI_QIXIANG_PAY_CHANNELS: "ALIPAY,WXPAY" }, "KAI_QIXIANG_PAY_PILOT_CHANNEL");
+  rejection({ ...enabled, KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS: "" }, "KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS");
+  rejection({ ...enabled, KAI_QIXIANG_PAY_PILOT_CHANNEL: "WXPAY" }, "KAI_QIXIANG_PAY_PILOT_CHANNEL");
+  rejection({ ...enabled, KAI_QIXIANG_PAY_GATEWAY: "https://example.com/mapi.php" }, "KAI_QIXIANG_PAY_GATEWAY");
 });
 
 test("optional fulfillment administrator is least-privilege and must use independent credentials", () => {
@@ -97,6 +133,14 @@ test("production templates carry the rollback and payment gates into the contain
   assert.match(compose, /KAI_HOSTING_V2_SETUP: "\$\{KAI_HOSTING_V2_SETUP:-0\}"/u);
   assert.match(compose, /KAI_HOSTING_DEVICE_RETIREMENT: "\$\{KAI_HOSTING_DEVICE_RETIREMENT:-0\}"/u);
   assert.match(compose, /KAI_ALIPAY_ENABLED: "\$\{KAI_ALIPAY_ENABLED:-0\}"/u);
+  assert.match(compose, /KAI_QIXIANG_PAY_ENABLED: "\$\{KAI_QIXIANG_PAY_ENABLED:-0\}"/u);
+  assert.match(compose, /KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "\$\{KAI_QIXIANG_PAY_RECONCILIATION_ENABLED:-0\}"/u);
+  assert.match(compose, /KAI_QIXIANG_PAY_APPROVAL_REFERENCE/u);
+  assert.match(compose, /KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT/u);
+  assert.match(compose, /KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED/u);
+  assert.match(compose, /KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID/u);
+  assert.match(compose, /KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS/u);
+  assert.match(compose, /KAI_QIXIANG_PAY_PILOT_CHANNEL/u);
   assert.match(compose, /KAI_ADMIN_APPROVER_USERNAME/u);
   assert.match(compose, /KAI_ADMIN_APPROVER_PASSWORD_HASH/u);
   assert.match(compose, /KAI_ADMIN_FULFILLMENT_USERNAME/u);
@@ -106,6 +150,17 @@ test("production templates carry the rollback and payment gates into the contain
   assert.match(environment, /^KAI_HOSTING_V2_SETUP=0$/mu);
   assert.match(environment, /^KAI_HOSTING_DEVICE_RETIREMENT=0$/mu);
   assert.match(environment, /^KAI_ALIPAY_ENABLED=0$/mu);
+  assert.match(environment, /^KAI_QIXIANG_PAY_ENABLED=0$/mu);
+  assert.match(environment, /^KAI_QIXIANG_PAY_RECONCILIATION_ENABLED=0$/mu);
+  assert.match(environment, /^KAI_QIXIANG_PAY_APPROVAL_REFERENCE=$/mu);
+  assert.match(environment, /^KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT=$/mu);
+  assert.match(environment, /^KAI_QIXIANG_PAY_CREDENTIAL_VERSION=$/mu);
+  assert.match(environment, /^KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED=0$/mu);
+  assert.match(environment, /^KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE=$/mu);
+  assert.match(environment, /^KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID=$/mu);
+  assert.match(environment, /^KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION=$/mu);
+  assert.match(environment, /^KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS=$/mu);
+  assert.match(environment, /^KAI_QIXIANG_PAY_PILOT_CHANNEL=$/mu);
   assert.match(environment, /^KAI_ADMIN_APPROVER_USERNAME=/mu);
   assert.match(environment, /^KAI_ADMIN_APPROVER_PASSWORD_HASH=/mu);
   assert.match(environment, /^KAI_ADMIN_FULFILLMENT_USERNAME=/mu);

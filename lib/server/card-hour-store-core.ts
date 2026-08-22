@@ -2,7 +2,7 @@ import { CARD_HOUR_ASSET_CODE } from "../card-hours.ts";
 import { hostingCnyReferenceCents, hostingFeeBreakdown } from "../hosting-v2.ts";
 import { CARD_HOUR_SCHEMA_VERSION, cardHourSchemaStatements } from "../../db/card-hour-schema.ts";
 import { AccountAuthError, accountAuthDigest } from "./account-auth.ts";
-import type { CardHourDashboard, CardHourStore } from "./card-hour-store.ts";
+import type { CardHourDashboard, CardHourStore, CardHourTopupAppealReason, CardHourTopupAppealRecord, CardHourTopupAppealStatus } from "./card-hour-store.ts";
 
 export type CardHourSql = Readonly<{ sql: string; values?: readonly unknown[] }>;
 export interface CardHourDatabaseAdapter {
@@ -20,7 +20,15 @@ async function referralCode(organizationId: string) {
   return `KAI${(await accountAuthDigest(organizationId)).slice(0, 10).toUpperCase()}`;
 }
 
-function topupRecord(row: Row) {
+function topupAppealEligibility(row: Row, now: string) {
+  const status = text(row, "status");
+  if (status === "CLOSED" || status === "RECONCILIATION_REQUIRED") return { canAppeal: true, retryAt: null } as const;
+  if (status !== "PENDING" && status !== "PROCESSING") return { canAppeal: false, retryAt: null } as const;
+  const retryAt = text(row, "expires_at");
+  return { canAppeal: Date.parse(now) >= Date.parse(retryAt), retryAt } as const;
+}
+
+function topupRecord(row: Row, now = new Date().toISOString()) {
   const provider = text(row, "provider");
   const paymentType = row.provider_payment_type == null ? null : text(row, "provider_payment_type");
   return {
@@ -28,11 +36,33 @@ function topupRecord(row: Row) {
     currency: "CNY", provider, channel: paymentType === "alipay" ? "ALIPAY" : paymentType === "wxpay" ? "WXPAY" : null,
     status: text(row, "status"), credited: text(row, "status") === "CAPTURED",
     expiresAt: text(row, "expires_at"), createdAt: text(row, "created_at"), updatedAt: text(row, "updated_at"),
+    appealEligibility: topupAppealEligibility(row, now),
   };
 }
 
 function privateTopupRecord(row: Row) {
   return { ...topupRecord(row), checkoutUrl: row.checkout_url == null ? null : text(row, "checkout_url") };
+}
+
+const TOPUP_APPEAL_SELECT = `SELECT a.*,t.card_hour_micros,t.amount_cents,t.status AS topup_status,t.provider_payment_type,
+  COALESCE(r.seen_version,1) AS member_seen_version,CASE WHEN a.version>COALESCE(r.seen_version,1) THEN 1 ELSE 0 END AS unread
+  FROM card_hour_topup_appeals a JOIN card_hour_topup_orders t ON t.id=a.topup_order_id
+  LEFT JOIN card_hour_topup_appeal_member_reads r ON r.appeal_id=a.id AND r.organization_id=a.organization_id`;
+
+function topupAppealRecord(row: Row): CardHourTopupAppealRecord {
+  const paymentType = row.provider_payment_type == null ? null : text(row, "provider_payment_type");
+  return {
+    id: text(row, "id"), caseNumber: text(row, "case_number"), topupOrderId: text(row, "topup_order_id"),
+    organizationId: text(row, "organization_id"), accountId: text(row, "account_id"),
+    reason: text(row, "reason") as CardHourTopupAppealReason, description: text(row, "description"),
+    status: text(row, "status") as CardHourTopupAppealStatus,
+    resolutionNote: row.resolution_note == null ? null : text(row, "resolution_note"),
+    assignedAdminPrincipalId: row.assigned_admin_principal_id == null ? null : text(row, "assigned_admin_principal_id"),
+    version: number(row, "version"), memberSeenVersion: number(row, "member_seen_version"), unread: number(row, "unread") === 1,
+    cardHourMicros: number(row, "card_hour_micros"), amountCents: number(row, "amount_cents"),
+    topupStatus: text(row, "topup_status"), channel: paymentType === "alipay" ? "ALIPAY" : paymentType === "wxpay" ? "WXPAY" : null,
+    createdAt: text(row, "created_at"), updatedAt: text(row, "updated_at"),
+  };
 }
 
 function paymentRecord(row: Row) {
@@ -86,6 +116,11 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       await db.first("SELECT id FROM card_hour_ledger_entries LIMIT 1");
       await db.first("SELECT id FROM card_hour_order_holds LIMIT 1");
       await db.first("SELECT id FROM hosting_v2_supplier_fee_volume_events LIMIT 1");
+      await db.first("SELECT id FROM card_hour_topup_appeals LIMIT 1");
+      await db.first("SELECT id FROM card_hour_topup_appeal_events LIMIT 1");
+      await db.first("SELECT appeal_id FROM card_hour_topup_appeal_member_reads LIMIT 1");
+      await db.first("SELECT topup_order_id FROM card_hour_topup_reconciliation_claims LIMIT 1");
+      await db.first("SELECT topup_order_id FROM card_hour_topup_reconciliation_requests LIMIT 1");
       const schema = await db.first<{ sql: string }>("SELECT sql FROM sqlite_master WHERE type='table' AND name='card_hour_topup_orders'");
       if (!schema?.sql.includes("QIXIANG_PAY") || !schema.sql.includes("provider_merchant_ref") || !schema.sql.includes("provider_payment_type") || !schema.sql.includes("checkout_url") || !schema.sql.includes("RECONCILIATION_REQUIRED")) throw new Error("CARD_HOUR_QIXIANG_SCHEMA_MISSING");
       return { schemaVersion: CARD_HOUR_SCHEMA_VERSION, integrity: "ok" as const };
@@ -98,6 +133,10 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       ]);
       const wallet = await db.first<Row>("SELECT * FROM card_hour_wallets WHERE organization_id=?", [organizationId]);
       const topups = await db.all<Row>("SELECT * FROM card_hour_topup_orders WHERE organization_id=? ORDER BY created_at DESC LIMIT 20", [organizationId]);
+      const appealNotifications = await db.all<Row>(`${TOPUP_APPEAL_SELECT} WHERE a.organization_id=? ORDER BY a.updated_at DESC,a.id DESC LIMIT 20`, [organizationId]);
+      const unreadAppeals = await db.first<Row>(`SELECT COUNT(*) AS count FROM card_hour_topup_appeals a
+        LEFT JOIN card_hour_topup_appeal_member_reads r ON r.appeal_id=a.id AND r.organization_id=a.organization_id
+        WHERE a.organization_id=? AND a.version>COALESCE(r.seen_version,1)`, [organizationId]);
       const payments = await db.all<Row>("SELECT * FROM card_hour_order_payments WHERE organization_id=? ORDER BY created_at DESC LIMIT 20", [organizationId]);
       const hostingHolds = await db.all<Row>("SELECT * FROM card_hour_order_holds WHERE organization_id=? ORDER BY created_at DESC LIMIT 20", [organizationId]);
       const buybacks = await db.all<Row>("SELECT * FROM card_hour_buyback_orders WHERE organization_id=? ORDER BY created_at DESC LIMIT 20", [organizationId]);
@@ -119,7 +158,9 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
         assetCode: CARD_HOUR_ASSET_CODE,
         rate: { cardHours: "1", cny: "1.002", topupBlockCardHours: "5", topupBlockCny: "5.01" },
         balance: { availableMicros: number(wallet, "available_micros"), heldMicros: number(wallet, "held_micros"), lifetimeTopupMicros: number(wallet, "lifetime_topup_micros"), lifetimeSpentMicros: number(wallet, "lifetime_spent_micros") },
-        topups: topups.map(topupRecord),
+        topups: topups.map((row) => topupRecord(row, now)),
+        appealNotifications: appealNotifications.map(topupAppealRecord),
+        unreadAppealCount: number(unreadAppeals, "count"),
         purchases: [...payments.map(paymentRecord), ...hostingHolds.map(hostingPurchaseRecord)]
           .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
           .slice(0, 20),
@@ -128,22 +169,18 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       } satisfies CardHourDashboard;
     },
     async createTopup(input) {
-      const existing = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE organization_id=? AND idempotency_key=?", [input.account.activeOrganization.id, input.idempotencyKey]);
-      if (existing) {
-        if (text(existing, "payload_hash") !== input.payloadHash) throw new AccountAuthError("IDEMPOTENCY_CONFLICT", 409, "同一提交标识对应了不同的充值内容。 ");
-        return { record: topupRecord(existing), replayed: true };
-      }
       const provider = input.provider ?? "ALIPAY";
       const providerMerchantRef = input.providerMerchantRef?.trim() || null;
       const providerPaymentType = input.providerPaymentType ?? null;
       if (provider === "QIXIANG_PAY" && (!/^\d{1,18}$/u.test(providerMerchantRef ?? "") || (providerPaymentType !== "alipay" && providerPaymentType !== "wxpay"))) throw new AccountAuthError("CARD_HOUR_TOPUP_PROVIDER_INVALID", 400, "充值通道快照无效。 ");
       if (provider === "ALIPAY" && (providerMerchantRef !== null || providerPaymentType !== null)) throw new AccountAuthError("CARD_HOUR_TOPUP_PROVIDER_INVALID", 400, "充值通道快照无效。 ");
       const id = `KAI_CH_${crypto.randomUUID().replaceAll("-", "")}`;
-      await db.batch([{ sql: `INSERT INTO card_hour_topup_orders(id,organization_id,account_id,card_hour_micros,amount_cents,currency,provider,provider_merchant_ref,provider_payment_type,status,idempotency_key,payload_hash,provider_transaction_id,checkout_url,checkout_created_at,expires_at,created_at,updated_at)
+      const results = await db.batch([{ sql: `INSERT OR IGNORE INTO card_hour_topup_orders(id,organization_id,account_id,card_hour_micros,amount_cents,currency,provider,provider_merchant_ref,provider_payment_type,status,idempotency_key,payload_hash,provider_transaction_id,checkout_url,checkout_created_at,expires_at,created_at,updated_at)
         VALUES(?,?,?,?,?,'CNY',?,?,?,'PENDING',?,?,NULL,NULL,NULL,?,?,?)`, values: [id, input.account.activeOrganization.id, input.account.account.id, input.cardHourMicros, input.amountCents, provider, providerMerchantRef, providerPaymentType, input.idempotencyKey, input.payloadHash, input.expiresAt, input.now, input.now] }]);
-      const created = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=?", [id]);
+      const created = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE organization_id=? AND idempotency_key=?", [input.account.activeOrganization.id, input.idempotencyKey]);
       if (!created) throw new Error("CARD_HOUR_TOPUP_CREATE_FAILED");
-      return { record: topupRecord(created), replayed: false };
+      if (text(created, "payload_hash") !== input.payloadHash) throw new AccountAuthError("IDEMPOTENCY_CONFLICT", 409, "同一提交标识对应了不同的充值内容。 ");
+      return { record: topupRecord(created), replayed: results[0]?.changes !== 1 };
     },
     async claimTopupCheckout(input) {
       const results = await db.batch([{ sql: "UPDATE card_hour_topup_orders SET status='PROCESSING',updated_at=? WHERE id=? AND organization_id=? AND provider='QIXIANG_PAY' AND status='PENDING' AND checkout_url IS NULL", values: [input.now, input.orderId, input.organizationId] }]);
@@ -155,6 +192,32 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
         if (!row) throw new AccountAuthError("CARD_HOUR_TOPUP_NOT_FOUND", 404, "充值记录不存在。 ");
       }
       return { claimed: results[0]?.changes === 1, record: privateTopupRecord(row) };
+    },
+    async registerTopupReconciliationRequest(input) {
+      const results = await db.batch([{ sql: `INSERT OR IGNORE INTO card_hour_topup_reconciliation_requests(organization_id,idempotency_key,topup_order_id,payload_hash,created_at)
+        SELECT organization_id,?,?,?,? FROM card_hour_topup_orders WHERE id=? AND organization_id=? AND provider='QIXIANG_PAY'`, values: [input.idempotencyKey, input.orderId, input.payloadHash, input.now, input.orderId, input.organizationId] }]);
+      const row = await db.first<Row>("SELECT * FROM card_hour_topup_reconciliation_requests WHERE organization_id=? AND idempotency_key=?", [input.organizationId, input.idempotencyKey]);
+      if (!row) throw new AccountAuthError("CARD_HOUR_TOPUP_NOT_FOUND", 404, "充值记录不存在。 ");
+      if (text(row, "topup_order_id") !== input.orderId || text(row, "payload_hash") !== input.payloadHash) throw new AccountAuthError("IDEMPOTENCY_CONFLICT", 409, "同一提交标识对应了不同的支付核对请求。 ");
+      return { replayed: results[0]?.changes !== 1 };
+    },
+    async claimTopupReconciliation(input) {
+      const claimToken = `chrq_${crypto.randomUUID()}`;
+      const results = await db.batch([
+        { sql: `INSERT OR IGNORE INTO card_hour_topup_reconciliation_claims(topup_order_id,organization_id,claim_token,claimed_at,next_query_at,attempt_count,updated_at)
+          SELECT id,organization_id,NULL,NULL,?,0,? FROM card_hour_topup_orders WHERE id=? AND organization_id=? AND provider='QIXIANG_PAY'`, values: [input.now, input.now, input.orderId, input.organizationId] },
+        { sql: `UPDATE card_hour_topup_reconciliation_claims SET claim_token=?,claimed_at=?,next_query_at=?,attempt_count=attempt_count+1,updated_at=?
+          WHERE topup_order_id=? AND organization_id=? AND next_query_at<=? AND (claim_token IS NULL OR claimed_at<=?)
+          AND EXISTS(SELECT 1 FROM card_hour_topup_orders WHERE id=? AND organization_id=? AND provider='QIXIANG_PAY' AND status IN ('PENDING','PROCESSING','RECONCILIATION_REQUIRED'))`, values: [claimToken, input.now, input.nextEligibleAt, input.now, input.orderId, input.organizationId, input.now, input.staleBefore, input.orderId, input.organizationId] },
+      ]);
+      const row = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=? AND organization_id=?", [input.orderId, input.organizationId]);
+      if (!row) throw new AccountAuthError("CARD_HOUR_TOPUP_NOT_FOUND", 404, "充值记录不存在。 ");
+      const claimed = results[1]?.changes === 1;
+      return { claimed, claimToken: claimed ? claimToken : null, record: privateTopupRecord(row) };
+    },
+    async releaseTopupReconciliation(input) {
+      await db.batch([{ sql: `UPDATE card_hour_topup_reconciliation_claims SET claim_token=NULL,claimed_at=NULL,next_query_at=?,updated_at=?
+        WHERE topup_order_id=? AND organization_id=? AND claim_token=?`, values: [input.nextEligibleAt, input.now, input.orderId, input.organizationId, input.claimToken] }]);
     },
     async attachTopupCheckout(input) {
       if (!/^https:\/\//u.test(input.checkoutUrl) || input.checkoutUrl.length > 2_048) throw new AccountAuthError("CARD_HOUR_TOPUP_CHECKOUT_INVALID", 400, "充值收银台地址无效。 ");
@@ -180,6 +243,92 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
     async getTopupForOrganization(organizationId, orderId) {
       const row = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=? AND organization_id=?", [orderId, organizationId]);
       return row ? topupRecord(row) : null;
+    },
+    async createTopupAppeal(input) {
+      const description = input.description.trim();
+      if (description.length < 10 || description.length > 2_000 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(description)) throw new AccountAuthError("CARD_HOUR_TOPUP_APPEAL_INVALID", 400, "请填写 10 至 2000 字的充值问题说明。 ");
+      const organizationId = input.account.activeOrganization.id;
+      const byKey = await db.first<Row>(`${TOPUP_APPEAL_SELECT} WHERE a.organization_id=? AND a.idempotency_key=?`, [organizationId, input.idempotencyKey]);
+      if (byKey) {
+        if (text(byKey, "payload_hash") !== input.payloadHash) throw new AccountAuthError("IDEMPOTENCY_CONFLICT", 409, "同一提交标识对应了不同的充值申诉。 ");
+        return { record: topupAppealRecord(byKey), replayed: true };
+      }
+      const existing = await db.first<Row>(`${TOPUP_APPEAL_SELECT} WHERE a.organization_id=? AND a.topup_order_id=?`, [organizationId, input.orderId]);
+      if (existing) return { record: topupAppealRecord(existing), replayed: true };
+      const topup = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=? AND organization_id=?", [input.orderId, organizationId]);
+      if (!topup) throw new AccountAuthError("CARD_HOUR_TOPUP_NOT_FOUND", 404, "充值记录不存在。 ");
+      const topupStatus = text(topup, "status");
+      const expectedReason: CardHourTopupAppealReason | null = topupStatus === "PENDING" || topupStatus === "PROCESSING" ? "PENDING_TIMEOUT" : topupStatus === "CLOSED" ? "CLOSED_BUT_CHARGED" : topupStatus === "RECONCILIATION_REQUIRED" ? "RECONCILIATION_REQUIRED" : null;
+      if (!expectedReason || input.reason !== expectedReason) throw new AccountAuthError("CARD_HOUR_TOPUP_APPEAL_STATE_INVALID", 409, "当前付款单状态不需要提交充值申诉。 ");
+      if ((topupStatus === "PENDING" || topupStatus === "PROCESSING") && !topupAppealEligibility(topup, input.now).canAppeal) {
+        throw new AccountAuthError("CARD_HOUR_TOPUP_APPEAL_TOO_EARLY", 409, `支付结果仍在正常确认时间内，请在 ${text(topup, "expires_at")} 后重试。 `);
+      }
+      const id = `chta_${crypto.randomUUID()}`;
+      const caseNumber = `KAI-PA-${input.now.slice(0, 10).replaceAll("-", "")}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+      const eventId = `chtae_${crypto.randomUUID()}`;
+      await db.batch([
+        { sql: `INSERT INTO card_hour_topup_appeals(id,case_number,topup_order_id,organization_id,account_id,reason,description,status,resolution_note,assigned_admin_principal_id,idempotency_key,payload_hash,version,created_at,updated_at,resolved_at,closed_at)
+          VALUES(?,?,?,?,?,?,?,'OPEN',NULL,NULL,?,?,1,?,?,NULL,NULL)`, values: [id, caseNumber, input.orderId, organizationId, input.account.account.id, input.reason, description, input.idempotencyKey, input.payloadHash, input.now, input.now] },
+        { sql: "INSERT INTO card_hour_topup_appeal_events(id,appeal_id,event_type,actor_principal_id,payload_hash,occurred_at) VALUES(?,?,'CREATE',?,?,?)", values: [eventId, id, input.account.account.id, input.payloadHash, input.now] },
+      ]);
+      const created = await db.first<Row>(`${TOPUP_APPEAL_SELECT} WHERE a.id=?`, [id]);
+      if (!created) throw new Error("CARD_HOUR_TOPUP_APPEAL_CREATE_FAILED");
+      return { record: topupAppealRecord(created), replayed: false };
+    },
+    async getTopupAppealForOrganization(organizationId, orderId) {
+      const row = await db.first<Row>(`${TOPUP_APPEAL_SELECT} WHERE a.organization_id=? AND a.topup_order_id=?`, [organizationId, orderId]);
+      return row ? topupAppealRecord(row) : null;
+    },
+    async acknowledgeTopupAppeal(input) {
+      const current = await db.first<Row>(`${TOPUP_APPEAL_SELECT} WHERE a.organization_id=? AND a.topup_order_id=?`, [input.organizationId, input.orderId]);
+      if (!current) throw new AccountAuthError("CARD_HOUR_TOPUP_APPEAL_NOT_FOUND", 404, "充值申诉不存在。 ");
+      await db.batch([
+        { sql: `INSERT OR IGNORE INTO card_hour_topup_appeal_member_reads(appeal_id,organization_id,seen_version,seen_at)
+          SELECT id,organization_id,version,? FROM card_hour_topup_appeals WHERE id=? AND organization_id=?`, values: [input.now, text(current, "id"), input.organizationId] },
+        { sql: `UPDATE card_hour_topup_appeal_member_reads SET seen_version=(SELECT version FROM card_hour_topup_appeals WHERE id=? AND organization_id=?),seen_at=?
+          WHERE appeal_id=? AND organization_id=?`, values: [text(current, "id"), input.organizationId, input.now, text(current, "id"), input.organizationId] },
+      ]);
+      const updated = await db.first<Row>(`${TOPUP_APPEAL_SELECT} WHERE a.organization_id=? AND a.topup_order_id=?`, [input.organizationId, input.orderId]);
+      if (!updated) throw new AccountAuthError("CARD_HOUR_TOPUP_APPEAL_NOT_FOUND", 404, "充值申诉不存在。 ");
+      return topupAppealRecord(updated);
+    },
+    async listTopupAppeals(input = {}) {
+      const page = Math.max(1, Math.trunc(input.page ?? 1));
+      const pageSize = Math.min(50, Math.max(1, Math.trunc(input.pageSize ?? 20)));
+      const conditions: string[] = [];
+      const values: unknown[] = [];
+      if (input.status) { conditions.push("a.status=?"); values.push(input.status); }
+      if (input.orderId) { conditions.push("instr(a.topup_order_id,?)>0"); values.push(input.orderId); }
+      if (input.organizationId) { conditions.push("instr(a.organization_id,?)>0"); values.push(input.organizationId); }
+      const where = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
+      const totalRow = await db.first<Row>(`SELECT COUNT(*) AS count FROM card_hour_topup_appeals a${where}`, values);
+      const total = number(totalRow, "count");
+      const rows = await db.all<Row>(`${TOPUP_APPEAL_SELECT}${where} ORDER BY a.updated_at DESC,a.id DESC LIMIT ? OFFSET ?`, [...values, pageSize, (page - 1) * pageSize]);
+      return { records: rows.map(topupAppealRecord), page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
+    },
+    async transitionTopupAppeal(input) {
+      const currentRow = await db.first<Row>(`${TOPUP_APPEAL_SELECT} WHERE a.id=?`, [input.appealId]);
+      if (!currentRow) throw new AccountAuthError("CARD_HOUR_TOPUP_APPEAL_NOT_FOUND", 404, "充值申诉不存在。 ");
+      const current = topupAppealRecord(currentRow);
+      if (!Number.isSafeInteger(input.expectedVersion) || current.version !== input.expectedVersion) throw new AccountAuthError("CARD_HOUR_TOPUP_APPEAL_VERSION_CONFLICT", 409, "申诉已被其他管理员更新，请刷新后重试。 ");
+      const transitions: Record<CardHourTopupAppealStatus, readonly (typeof input.action)[]> = { OPEN: ["START_REVIEW"], UNDER_REVIEW: ["RESOLVE"], RESOLVED: ["CLOSE"], CLOSED: [] };
+      if (!transitions[current.status].includes(input.action)) throw new AccountAuthError("CARD_HOUR_TOPUP_APPEAL_STATE_INVALID", 409, "当前申诉状态不能执行此操作。 ");
+      const nextStatus: CardHourTopupAppealStatus = input.action === "START_REVIEW" ? "UNDER_REVIEW" : input.action === "RESOLVE" ? "RESOLVED" : "CLOSED";
+      let resolutionNote = current.resolutionNote;
+      if (input.action === "RESOLVE") {
+        const candidate = (input.resolutionNote ?? "").trim();
+        if (candidate.length < 10 || candidate.length > 2_000 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(candidate)) throw new AccountAuthError("CARD_HOUR_TOPUP_APPEAL_RESOLUTION_INVALID", 400, "请填写 10 至 2000 字的人工核对结论。 ");
+        resolutionNote = candidate;
+      }
+      const eventId = `chtae_${crypto.randomUUID()}`;
+      await db.batch([
+        { sql: `UPDATE card_hour_topup_appeals SET status=?,resolution_note=?,assigned_admin_principal_id=COALESCE(assigned_admin_principal_id,?),version=version+1,updated_at=?,resolved_at=CASE WHEN ?='RESOLVED' THEN ? ELSE resolved_at END,closed_at=CASE WHEN ?='CLOSED' THEN ? ELSE closed_at END WHERE id=? AND version=?`, values: [nextStatus, resolutionNote, input.adminPrincipalId, input.now, nextStatus, input.now, nextStatus, input.now, input.appealId, input.expectedVersion] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        { sql: "INSERT INTO card_hour_topup_appeal_events(id,appeal_id,event_type,actor_principal_id,payload_hash,occurred_at) VALUES(?,?,?,?,?,?)", values: [eventId, input.appealId, input.action, input.adminPrincipalId, input.payloadHash, input.now] },
+      ]);
+      const updated = await db.first<Row>(`${TOPUP_APPEAL_SELECT} WHERE a.id=?`, [input.appealId]);
+      if (!updated) throw new Error("CARD_HOUR_TOPUP_APPEAL_UPDATE_FAILED");
+      return { record: topupAppealRecord(updated), replayed: false };
     },
     async applyTopupEvent(input) {
       const provider = input.provider ?? "ALIPAY";

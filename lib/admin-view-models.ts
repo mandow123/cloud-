@@ -579,10 +579,12 @@ export const adminNavigation = [
   { label: "交易履约", items: [
     { href: "/admin/orders", label: "订单" },
     { href: "/admin/delivery", label: "交付与服务" },
+    { href: "/admin/appeals", label: "人工申诉", requiresManualAppeals: true },
     { href: "/admin/metering", label: "计量与验收" },
   ] },
   { label: "财务运营", items: [
     { href: "/admin/payments/refunds", label: "支付与退款" },
+    { href: "/admin/card-hour-topup-appeals", label: "充值异常申诉" },
     { href: "/admin/settlements", label: "结算与账本" },
     { href: "/admin/commissions", label: "代理归因与佣金" },
   ] },

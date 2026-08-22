@@ -21,4 +21,21 @@
 .error { border-color: var(--error); background: var(--error-bg); color: var(--error); }
 .footer { display: flex; justify-content: space-between; gap: 1rem; border-top: 1px solid var(--border); padding-top: 1rem; color: var(--muted); font-size: .85rem; }
 .footer a { color: var(--accent); font-weight: 700; }
-@media (max-width: 760px) { .head, .footer { flex-direction: column; } .task { grid-template-columns: 1fr; } .facts { grid-template-columns: 1fr; } }
+.appeals { display: grid; gap: 1.25rem; margin-top: 2rem; border-top: 3px solid var(--accent); background: var(--surface); padding: clamp(1.25rem, 3vw, 2rem); }
+.appeal { display: grid; gap: 1rem; border: 1px solid var(--border); padding: 1.25rem; }
+.appeal > header { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
+.appeal > header span { color: var(--muted); font-family: var(--font-mono); font-size: .72rem; }
+.appeal > header h3 { margin: .35rem 0; }
+.appeal > header p { margin: 0; color: var(--text); }
+.appeal > header > strong { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: .45rem .65rem; }
+.appealMessages { display: grid; gap: 1px; background: var(--border); }
+.appealMessages p { display: grid; gap: .35rem; margin: 0; background: var(--info-bg); padding: .8rem; }
+.appealMessages time { color: var(--muted); font-size: .72rem; }
+.appealTimeline { display: grid; gap: .65rem; margin: 0; padding: 0; list-style: none; }
+.appealTimeline li { display: flex; justify-content: space-between; gap: 1rem; border-left: 3px solid var(--accent); background: var(--surface-muted); padding: .65rem .75rem; }
+.appealTimeline time { color: var(--muted); font-size: .72rem; white-space: nowrap; }
+.appealReply { display: grid; gap: .6rem; }
+.appealReply label { color: var(--ink); font-weight: 700; }
+.appealReply textarea { min-height: 7rem; resize: vertical; border: 1px solid var(--border-strong); background: var(--surface); padding: .75rem; color: var(--ink); font: inherit; }
+.notice { margin: 0; border-left: 3px solid var(--success); background: var(--success-bg); padding: 1rem; color: var(--ink); }
+@media (max-width: 760px) { .head, .footer, .appealTimeline li { flex-direction: column; } .task { grid-template-columns: 1fr; } .facts { grid-template-columns: 1fr; } }

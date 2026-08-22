@@ -12,12 +12,14 @@ import { isAllowedLocalQaOrigin } from "../lib/server/local-qa-origin.ts";
 test("Root owns full administration while the independent finance approver receives only dual-control permissions", () => {
   assert.deepEqual(ADMIN_ROLES, ["ROOT","ROLE_ADMIN","INTAKE_OPERATOR","INVENTORY_OPERATOR","VERIFICATION_REVIEWER","MARKET_OPERATOR","FULFILLMENT_OPERATOR","FINANCE_OPERATOR","FINANCE_APPROVER","SUPPORT_READONLY","AUDITOR"]);
   assert.deepEqual(adminPermissionsForRoles(["ROOT"]), ADMIN_PERMISSIONS);
-  assert.deepEqual(adminPermissionsForRoles(["FINANCE_APPROVER"]), ["ADMIN_PANEL_READ", "PAYMENT_READ", "SETTLEMENT_OPERATE", "AUDIT_READ"]);
-  assert.deepEqual(adminPermissionsForRoles(["FULFILLMENT_OPERATOR"]), ["ADMIN_PANEL_READ", "FULFILLMENT_READ", "FULFILLMENT_OPERATE", "AUDIT_READ"]);
-  for (const role of ADMIN_ROLES.filter((candidate) => !["ROOT", "FINANCE_APPROVER", "FULFILLMENT_OPERATOR"].includes(candidate))) {
+  assert.deepEqual(adminPermissionsForRoles(["FINANCE_APPROVER"]), ["ADMIN_PANEL_READ", "PAYMENT_READ", "SETTLEMENT_OPERATE", "APPEAL_READ", "OFFLINE_REFUND_VERIFY", "AUDIT_READ"]);
+  assert.deepEqual(adminPermissionsForRoles(["FULFILLMENT_OPERATOR"]), ["ADMIN_PANEL_READ", "FULFILLMENT_READ", "FULFILLMENT_OPERATE", "APPEAL_READ", "APPEAL_HANDLE", "AUDIT_READ"]);
+  assert.deepEqual(adminPermissionsForRoles(["FINANCE_OPERATOR"]), ["ADMIN_PANEL_READ", "PAYMENT_READ", "APPEAL_READ", "OFFLINE_REFUND_RECORD", "AUDIT_READ"]);
+  assert.deepEqual(adminPermissionsForRoles(["SUPPORT_READONLY"]), ["ADMIN_PANEL_READ", "SUPPORT_READ", "APPEAL_READ"]);
+  for (const role of ADMIN_ROLES.filter((candidate) => !["ROOT", "FINANCE_APPROVER", "FINANCE_OPERATOR", "FULFILLMENT_OPERATOR", "SUPPORT_READONLY"].includes(candidate))) {
     assert.deepEqual(adminPermissionsForRoles([role]), [], `${role} must not receive admin permissions`);
   }
-  assert.deepEqual(adminPermissionsForRoles(ADMIN_ROLES.filter((role) => role !== "ROOT")), ["ADMIN_PANEL_READ", "FULFILLMENT_READ", "FULFILLMENT_OPERATE", "PAYMENT_READ", "SETTLEMENT_OPERATE", "AUDIT_READ"]);
+  assert.deepEqual(adminPermissionsForRoles(ADMIN_ROLES.filter((role) => role !== "ROOT")), ["ADMIN_PANEL_READ", "FULFILLMENT_READ", "FULFILLMENT_OPERATE", "PAYMENT_READ", "SETTLEMENT_OPERATE", "SUPPORT_READ", "APPEAL_READ", "APPEAL_HANDLE", "OFFLINE_REFUND_RECORD", "OFFLINE_REFUND_VERIFY", "AUDIT_READ"]);
 });
 
 test("account sessions enforce a thirty-minute idle and eight-hour absolute limit", async () => {

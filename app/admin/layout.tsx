@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { AdminShell } from "@/components/admin-shell";
+import { manualAppealsEnabled } from "@/lib/server/manual-appeals";
 import "./admin.css";
 
 export const dynamic = "force-dynamic";
@@ -17,5 +18,5 @@ function environmentLabel() {
 }
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
-  return <AdminShell environment={environmentLabel()}>{children}</AdminShell>;
+  return <AdminShell appealsEnabled={manualAppealsEnabled()} environment={environmentLabel()}>{children}</AdminShell>;
 }
