@@ -6,7 +6,8 @@ const projectRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const clientDir = join(projectRoot, "dist", "client");
 const standaloneClientDir = join(projectRoot, "dist", "standalone", "dist", "client");
 const standaloneLauncher = join(projectRoot, "dist", "standalone", "server.js");
-const standaloneVinextDir = join(projectRoot, "dist", "standalone", "node_modules", "vinext");
+const standaloneNodeModulesDir = join(projectRoot, "dist", "standalone", "node_modules");
+const standaloneVinextDir = join(standaloneNodeModulesDir, "vinext");
 const standaloneVinextPackagePath = join(standaloneVinextDir, "package.json");
 const vulnerableVendoredImageSizePath = join(
   standaloneVinextDir,
@@ -28,9 +29,25 @@ const buildOnlyWorkerImageModule = join(
   "plugins",
   "worker-image-imports.js",
 );
+const auditedRuntimePackages = new Map([
+  ["react", "19.2.8"],
+  ["react-dom", "19.2.8"],
+  ["scheduler", "0.27.0"],
+]);
 
 await access(clientDir);
 await mkdir(standaloneClientDir, { recursive: true });
+
+for (const [packageName, expectedVersion] of auditedRuntimePackages) {
+  const sourceDir = join(projectRoot, "node_modules", packageName);
+  const targetDir = join(standaloneNodeModulesDir, packageName);
+  const sourcePackage = JSON.parse(await readFile(join(sourceDir, "package.json"), "utf8"));
+  if (sourcePackage.version !== expectedVersion) {
+    throw new Error(`${packageName} is not the audited ${expectedVersion} release.`);
+  }
+  await rm(targetDir, { recursive: true, force: true });
+  await cp(sourceDir, targetDir, { recursive: true, force: true });
+}
 
 const entries = await readdir(clientDir);
 await Promise.all(
