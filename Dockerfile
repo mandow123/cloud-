@@ -31,6 +31,7 @@ RUN rm -r /usr/local/lib/node_modules/npm \
 COPY --from=build --chown=node:node /app/dist/standalone ./
 COPY --from=build --chown=node:node /app/scripts/model-market ./scripts/model-market
 COPY --from=build --chown=node:node /app/scripts/ops ./scripts/ops
+COPY --from=build --chown=node:node /app/lib/server/qixiang-pay-revoked-policy.mjs ./lib/server/qixiang-pay-revoked-policy.mjs
 COPY --from=build --chown=node:node /app/drizzle ./drizzle
 COPY --from=build --chown=node:node /app/.openai/drizzle ./.openai/drizzle
 COPY --from=build --chown=node:node /app/data/model-market-registry.mjs ./data/model-market-registry.mjs

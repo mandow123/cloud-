@@ -74,6 +74,8 @@ test("Qixiang Pay defaults closed and opens only with approved rotated credentia
   const reused = {
     ...enabled,
     KAI_QIXIANG_PAY_KEY: "revoked-fixture-key-1234567890",
+    KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT: "",
+    KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT: "",
     KAI_QIXIANG_PAY_KEY_REUSE_APPROVED: "1",
     KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE: "RISK-KAI-QIXIANG-KEY-REUSE-20260822",
     KAI_QIXIANG_PAY_KEY_REUSE_APPROVED_AT: "2026-08-22T09:20:00.000Z",
@@ -82,6 +84,11 @@ test("Qixiang Pay defaults closed and opens only with approved rotated credentia
   validateProductionEnvironment(reused);
   rejection({ ...reused, KAI_QIXIANG_PAY_KEY_REUSE_APPROVED: "0" }, "digest-bound production approval");
   rejection({ ...reused, KAI_QIXIANG_PAY_KEY_REUSE_DIGEST: "0".repeat(64) }, "digest-bound production approval");
+  rejection({ ...reused, KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT: "2026-08-22T09:20:00.000Z" }, "without claiming credential rotation");
+  rejection({ ...reused, KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT: "2026-08-22T09:20:00.000Z" }, "without claiming credential rotation");
+  rejection({ ...enabled, KAI_QIXIANG_PAY_KEY_REUSE_APPROVED: "2" }, "forbidden for a non-revoked key");
+  rejection({ ...enabled, KAI_QIXIANG_PAY_KEY_REUSE_APPROVED: "" }, "forbidden for a non-revoked key");
+  rejection({ ...enabled, KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE: " " }, "forbidden for a non-revoked key");
 });
 
 test("optional fulfillment administrator is least-privilege and must use independent credentials", () => {
@@ -140,6 +147,8 @@ test("Hosting V2 setup validates every production dependency without opening tra
 test("production templates carry the rollback and payment gates into the container", () => {
   const compose = readFileSync(new URL("../deploy/compose.production.yml", import.meta.url), "utf8");
   const environment = readFileSync(new URL("../deploy/kai-cloud-app.env.example", import.meta.url), "utf8");
+  const dockerfile = readFileSync(new URL("../Dockerfile", import.meta.url), "utf8");
+  assert.match(dockerfile, /COPY --from=build --chown=node:node \/app\/lib\/server\/qixiang-pay-revoked-policy\.mjs \.\/lib\/server\/qixiang-pay-revoked-policy\.mjs/u);
   assert.match(compose, /KAI_HOSTING_V2: "\$\{KAI_HOSTING_V2:-0\}"/u);
   assert.match(compose, /KAI_ACCOUNT_CONSOLE_V2: "\$\{KAI_ACCOUNT_CONSOLE_V2:-0\}"/u);
   assert.match(compose, /KAI_HOSTING_V2_SETUP: "\$\{KAI_HOSTING_V2_SETUP:-0\}"/u);

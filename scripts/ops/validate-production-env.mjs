@@ -180,17 +180,21 @@ export function validateProductionEnvironment(environment = process.env, { check
     if (environment.KAI_QIXIANG_PAY_KEY !== qixiangPayKey
       || Buffer.byteLength(qixiangPayKey, "utf8") < 16
       || PLACEHOLDER_SECRET_PATTERN.test(qixiangPayKey)) errors.push("KAI_QIXIANG_PAY_KEY must be a non-placeholder secret of at least 16 bytes when Qixiang Pay or reconciliation is enabled");
-    const keyReuseFieldsPresent = environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVED === "1"
-      || ["KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE", "KAI_QIXIANG_PAY_KEY_REUSE_APPROVED_AT", "KAI_QIXIANG_PAY_KEY_REUSE_DIGEST"].some((name) => Boolean(environment[name]?.trim()));
+    const keyReuseApproved = environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVED;
+    const keyReuseFieldsCleanForNewKey = (keyReuseApproved === undefined || keyReuseApproved === "0")
+      && ["KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE", "KAI_QIXIANG_PAY_KEY_REUSE_APPROVED_AT", "KAI_QIXIANG_PAY_KEY_REUSE_DIGEST"]
+        .every((name) => environment[name] === undefined || environment[name] === "");
     if (isRevokedQixiangMerchantKey(qixiangPayKey)) {
-      const approvedAt = environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVED_AT?.trim() ?? "";
+      const approvedAt = environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVED_AT ?? "";
       const approvedTimestamp = Date.parse(approvedAt);
       if (environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVED !== "1"
-        || !QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE_PATTERN.test(environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE?.trim() ?? "")
+        || !QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE_PATTERN.test(environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE ?? "")
         || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(approvedAt)
         || !Number.isFinite(approvedTimestamp) || approvedTimestamp < Date.parse("2020-01-01T00:00:00.000Z") || approvedTimestamp > Date.now() + 5 * 60 * 1000
-        || environment.KAI_QIXIANG_PAY_KEY_REUSE_DIGEST !== qixiangMerchantKeyDigest(qixiangPayKey)) errors.push("revoked Qixiang merchant key reuse requires an exact digest-bound production approval");
-    } else if (keyReuseFieldsPresent) errors.push("Qixiang merchant key reuse approval fields are forbidden for a non-revoked key");
+        || environment.KAI_QIXIANG_PAY_KEY_REUSE_DIGEST !== qixiangMerchantKeyDigest(qixiangPayKey)
+        || environment.KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT !== ""
+        || environment.KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT !== "") errors.push("revoked Qixiang merchant key reuse requires an exact digest-bound production approval without claiming credential rotation");
+    } else if (!keyReuseFieldsCleanForNewKey) errors.push("Qixiang merchant key reuse approval fields are forbidden for a non-revoked key");
     if ((environment.KAI_QIXIANG_PAY_QUERY_ENDPOINT || "https://api.payqixiang.cn/api.php") !== "https://api.payqixiang.cn/api.php") errors.push("KAI_QIXIANG_PAY_QUERY_ENDPOINT must use the approved HTTPS api.php endpoint");
     if (!QIXIANG_PAY_APPROVAL_REFERENCE_PATTERN.test(environment.KAI_QIXIANG_PAY_APPROVAL_REFERENCE?.trim() ?? "")) errors.push("KAI_QIXIANG_PAY_APPROVAL_REFERENCE must identify the approved production change when Qixiang Pay or reconciliation is enabled");
     if (!validQixiangCredentialLifecycle("KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT", "KAI_QIXIANG_PAY_CREDENTIAL_VERSION")) errors.push("KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT or KAI_QIXIANG_PAY_CREDENTIAL_VERSION must identify the approved merchant credential lifecycle");

@@ -8,7 +8,7 @@ import test from "node:test";
 
 import { createD1CardHourStore } from "../lib/server/card-hour-store-d1.ts";
 import { createSqliteCardHourStore } from "../lib/server/card-hour-store-sqlite.ts";
-import { confirmQixiangPayNotification, createQixiangPayCheckout, qixiangPayPilotAccess, qixiangPayReadiness, queryQixiangPayOrder, trustedQixiangClientIp, validateQixiangPayCheckout, verifyQixiangPayNotification } from "../lib/server/qixiang-pay.ts";
+import { confirmQixiangPayNotification, createQixiangPayCheckout, qixiangPayCredentialReadiness, qixiangPayPilotAccess, qixiangPayReadiness, qixiangPayReconciliationReadiness, queryQixiangPayOrder, trustedQixiangClientIp, validateQixiangPayCheckout, verifyQixiangPayNotification } from "../lib/server/qixiang-pay.ts";
 import { isRevokedQixiangMerchantKeyDigest } from "../lib/server/qixiang-pay-revoked-policy.mjs";
 import { assertQixiangCardHourSchemaReady, verifyQixiangCardHourDatabase } from "../scripts/ops/verify-qixiang-card-hour-schema.mjs";
 
@@ -83,6 +83,8 @@ test("an explicitly revoked merchant key opens only with a digest-bound user reu
   const reused = {
     ...environment,
     KAI_QIXIANG_PAY_KEY: key,
+    KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT: "",
+    KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT: "",
     KAI_QIXIANG_PAY_KEY_REUSE_APPROVED: "1",
     KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE: "RISK-KAI-QIXIANG-KEY-REUSE-20260822",
     KAI_QIXIANG_PAY_KEY_REUSE_APPROVED_AT: "2026-08-22T09:20:00.000Z",
@@ -91,6 +93,22 @@ test("an explicitly revoked merchant key opens only with a digest-bound user reu
   assert.equal(qixiangPayReadiness({ ...reused, KAI_QIXIANG_PAY_KEY_REUSE_APPROVED: "0" }).canCreatePayment, false);
   assert.equal(qixiangPayReadiness({ ...reused, KAI_QIXIANG_PAY_KEY_REUSE_DIGEST: "0".repeat(64) }).canCreatePayment, false);
   assert.equal(qixiangPayReadiness(reused).canCreatePayment, true);
+  for (const invalid of [
+    { ...reused, KAI_QIXIANG_PAY_KEY_REUSE_APPROVED_AT: "" },
+    { ...reused, KAI_QIXIANG_PAY_KEY_REUSE_APPROVED_AT: "2099-08-22T09:20:00.000Z" },
+    { ...reused, KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE: "KAI-PAY-APPROVAL-20260822" },
+    { ...reused, KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT: "2026-08-22T09:20:00.000Z" },
+    { ...reused, KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT: "2026-08-22T09:20:00.000Z" },
+  ]) {
+    assert.equal(qixiangPayCredentialReadiness(invalid).configured, false);
+    assert.equal(qixiangPayReconciliationReadiness(invalid).configured, false);
+    assert.equal(qixiangPayReadiness(invalid).configured, false);
+  }
+  for (const invalid of [
+    { ...environment, KAI_QIXIANG_PAY_KEY_REUSE_APPROVED: "2" },
+    { ...environment, KAI_QIXIANG_PAY_KEY_REUSE_APPROVED: "" },
+    { ...environment, KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE: "RISK-KAI-QIXIANG-KEY-REUSE-20260822" },
+  ]) assert.equal(qixiangPayReadiness(invalid).configured, false);
 });
 
 test("disabled reconciliation never sends an active order query", async () => {

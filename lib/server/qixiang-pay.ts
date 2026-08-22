@@ -136,11 +136,19 @@ function validCredentialLifecycle(environment: QixiangPayEnvironment, rotatedAtN
 }
 
 function validMerchantKeyReuse(environment: QixiangPayEnvironment, key: string) {
-  if (!isRevokedQixiangMerchantKey(key)) return true;
-  return environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVED?.trim() === "1"
-    && QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE_PATTERN.test(environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE?.trim() || "")
+  const revoked = isRevokedQixiangMerchantKey(key);
+  if (!revoked) {
+    return (environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVED === undefined || environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVED === "0")
+      && (environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE === undefined || environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE === "")
+      && (environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVED_AT === undefined || environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVED_AT === "")
+      && (environment.KAI_QIXIANG_PAY_KEY_REUSE_DIGEST === undefined || environment.KAI_QIXIANG_PAY_KEY_REUSE_DIGEST === "");
+  }
+  return environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVED === "1"
+    && QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE_PATTERN.test(environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE || "")
     && validCredentialRotation(environment.KAI_QIXIANG_PAY_KEY_REUSE_APPROVED_AT)
-    && environment.KAI_QIXIANG_PAY_KEY_REUSE_DIGEST?.trim() === qixiangMerchantKeyDigest(key);
+    && environment.KAI_QIXIANG_PAY_KEY_REUSE_DIGEST === qixiangMerchantKeyDigest(key)
+    && environment.KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT === ""
+    && environment.KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT === "";
 }
 
 function validMerchantKey(value: string | undefined, environment: QixiangPayEnvironment) {

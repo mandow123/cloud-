@@ -42,6 +42,10 @@ test("Qixiang credential input is exact and rejects unsafe rollout data", () => 
   };
   assert.deepEqual(parseQixiangProductionCredentials(JSON.stringify(revoked)), revoked);
   assert.throws(() => parseQixiangProductionCredentials(JSON.stringify({ ...revoked, keyReuseDigest: "0".repeat(64) })), /digest-bound approval/u);
+  assert.throws(() => parseQixiangProductionCredentials(JSON.stringify({ ...revoked, credentialRotatedAt: "2026-08-22T09:20:00.000Z" })), /must not claim credential rotation/u);
+  assert.throws(() => parseQixiangProductionCredentials(JSON.stringify({ ...revoked, queryCredentialRotatedAt: "2026-08-22T09:20:00.000Z" })), /must not claim credential rotation/u);
+  assert.throws(() => parseQixiangProductionCredentials(JSON.stringify({ ...revoked, keyReuseApprovedAt: "2099-08-22T09:20:00.000Z" })), /invalid key reuse approval time/u);
+  assert.throws(() => parseQixiangProductionCredentials(JSON.stringify({ ...revoked, keyReuseApprovalReference: "KAI-PAY-APPROVAL-20260822" })), /invalid key reuse approval reference/u);
   assert.throws(() => parseQixiangProductionCredentials(JSON.stringify({ ...credentials, keyReuseApprovedAt: "2026-08-22T09:20:00.000Z" })), /only valid/u);
 });
 

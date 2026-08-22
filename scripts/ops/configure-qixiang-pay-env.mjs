@@ -63,6 +63,7 @@ export function parseQixiangProductionCredentials(text) {
   const keyReuseApprovedAt = value.keyReuseApprovedAt === "" ? "" : exactTimestamp(value.keyReuseApprovedAt, "credential file contains an invalid key reuse approval time");
   const keyReuseDigest = value.keyReuseDigest === "" ? "" : exactString(value.keyReuseDigest, /^[0-9a-f]{64}$/u, "credential file contains an invalid key reuse digest");
   if (revoked && (!keyReuseApprovalReference || !keyReuseApprovedAt || keyReuseDigest !== qixiangMerchantKeyDigest(key))) fail("revoked merchant key reuse requires an exact digest-bound approval");
+  if (revoked && (credentialRotatedAt !== "" || queryCredentialRotatedAt !== "")) fail("revoked merchant key reuse must not claim credential rotation");
   if (!revoked && (keyReuseApprovalReference || keyReuseApprovedAt || keyReuseDigest)) fail("key reuse approval is only valid for an explicitly revoked merchant key");
   if (value.channel !== "ALIPAY") fail("the production rollout channel must be ALIPAY");
   if (!Array.isArray(value.organizations) || value.organizations.length < 1 || value.organizations.length > 20) fail("credential file must contain 1 to 20 organizations");
