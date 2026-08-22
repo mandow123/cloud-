@@ -66,7 +66,8 @@ test("Qixiang Pay defaults closed and opens only with approved rotated credentia
   rejection({ ...enabled, KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION: "" }, "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT");
   rejection({ ...enabled, KAI_QIXIANG_PAY_KEY: "replace-with-secret-123456" }, "KAI_QIXIANG_PAY_KEY");
   rejection({ ...enabled, KAI_QIXIANG_PAY_CHANNELS: "ALIPAY,ALIPAY" }, "KAI_QIXIANG_PAY_CHANNELS");
-  rejection({ ...enabled, KAI_QIXIANG_PAY_CHANNELS: "ALIPAY,WXPAY" }, "KAI_QIXIANG_PAY_PILOT_CHANNEL");
+  rejection({ ...enabled, KAI_QIXIANG_PAY_CHANNELS: "ALIPAY,WXPAY" }, "KAI_QIXIANG_PAY_CHANNELS");
+  rejection({ ...enabled, KAI_QIXIANG_PAY_CHANNELS: "WXPAY", KAI_QIXIANG_PAY_PILOT_CHANNEL: "WXPAY" }, "KAI_QIXIANG_PAY_CHANNELS");
   rejection({ ...enabled, KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS: "" }, "KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS");
   rejection({ ...enabled, KAI_QIXIANG_PAY_PILOT_CHANNEL: "WXPAY" }, "KAI_QIXIANG_PAY_PILOT_CHANNEL");
   rejection({ ...enabled, KAI_QIXIANG_PAY_GATEWAY: "https://example.com/mapi.php" }, "KAI_QIXIANG_PAY_GATEWAY");

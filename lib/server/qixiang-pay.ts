@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
+import { isRevokedQixiangMerchantKey } from "./qixiang-pay-revoked-policy.mjs";
 
 export const QIXIANG_PAY_REQUIRED_ENV = [
   "KAI_QIXIANG_PAY_PID",
@@ -17,7 +18,6 @@ const QIXIANG_PAY_CREDENTIAL_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,63
 const QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE_PATTERN = /^RISK-[A-Za-z0-9][A-Za-z0-9._:/-]{7,119}$/u;
 const QIXIANG_PAY_QUERY_CREDENTIAL_ID_PATTERN = /^QRY-[A-Za-z0-9][A-Za-z0-9._:-]{7,95}$/u;
 const QIXIANG_PAY_PLACEHOLDER_SECRET_PATTERN = /(?:change[-_ ]?me|dummy|example|insert|placeholder|replace|secret[-_ ]?here|test[-_ ]?secret|your[-_ ])/iu;
-const QIXIANG_PAY_REVOKED_KEY_DIGESTS = new Set(["4d81683f5583c963560a31d39b8fcadfd7fa686b97519e26d9feaa6b7d523956"]);
 const QIXIANG_PAY_QUERY_WINDOW_MS = 60_000;
 const QIXIANG_PAY_QUERY_MAX_REQUESTS_PER_WINDOW = 12;
 const QIXIANG_PAY_QUERY_CIRCUIT_FAILURE_THRESHOLD = 3;
@@ -89,7 +89,7 @@ export class QixiangPayError extends Error {
 function runtimeEnvironment(): QixiangPayEnvironment { return typeof process === "undefined" ? {} : process.env; }
 function paymentChannels(environment: QixiangPayEnvironment) {
   const values = (environment.KAI_QIXIANG_PAY_CHANNELS ?? "").split(",").map((value) => value.trim()).filter(Boolean);
-  if (values.length < 1 || values.some((value) => value !== "ALIPAY" && value !== "WXPAY") || new Set(values).size !== values.length) return [];
+  if (values.length !== 1 || values[0] !== "ALIPAY") return [];
   return values as QixiangPaymentChannel[];
 }
 function pilotOrganizations(environment: QixiangPayEnvironment) {
@@ -99,7 +99,7 @@ function pilotOrganizations(environment: QixiangPayEnvironment) {
 }
 function pilotChannel(environment: QixiangPayEnvironment) {
   const value = environment.KAI_QIXIANG_PAY_PILOT_CHANNEL?.trim();
-  return value === "ALIPAY" || value === "WXPAY" ? value : null;
+  return value === "ALIPAY" ? value : null;
 }
 const typeForChannel = (channel: QixiangPaymentChannel): QixiangPaymentType => channel === "ALIPAY" ? "alipay" : "wxpay";
 function endpoint(value: string | undefined, fallback: string, expectedOrigin: string, expectedPath: string) {
@@ -140,7 +140,7 @@ function validMerchantKey(value: string | undefined) {
   return value === key
     && Buffer.byteLength(key, "utf8") >= 16
     && !QIXIANG_PAY_PLACEHOLDER_SECRET_PATTERN.test(key)
-    && !QIXIANG_PAY_REVOKED_KEY_DIGESTS.has(createHash("sha256").update(key).digest("hex"));
+    && !isRevokedQixiangMerchantKey(key);
 }
 
 export function qixiangPayReadiness(environment: QixiangPayEnvironment = runtimeEnvironment()) {

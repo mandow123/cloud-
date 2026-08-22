@@ -371,7 +371,24 @@ curl -fsS https://cloud.kai.com/api/ready | jq -e \
   '.capabilities.qixiangPayCardHourTopup | .reconciliationAvailable == true and .reconciliationEnabled == true and .available == true and .enabled == true'
 ```
 
-每次配置都会输出不含密钥的 `backupFile`。任一验证失败，立即以 `install -o root -g root -m 0640 <backupFile> /etc/kai-cloud/kai-cloud-app.env` 原子恢复对应阶段前配置并重新创建应用容器；同时验证支付开关、`/api/ready` 和存量订单核对状态。全部上线记录完成后删除 `/root/kai-qixiang-production.json`，不得把凭据文件加入常规备份、源码或工单。
+每次配置都会输出不含密钥的 `backupFile`。任一验证失败，使用同目录临时文件、持久化同步和原子重命名恢复对应阶段前配置，再重新创建应用容器（将 `<backupFile>` 替换为工具刚输出的绝对路径）：
+
+```sh
+sudo sh -eu -c '
+backup=$1; target=$2; directory=${target%/*}
+test -f "$backup" && test ! -L "$backup"
+test "$(stat -c "%u:%g:%a" "$backup")" = "0:0:640"
+temporary=$(mktemp "$directory/.kai-cloud-env-rollback.XXXXXX")
+trap '\''rm -f "$temporary"'\'' EXIT
+install -o root -g root -m 0640 "$backup" "$temporary"
+sync -f "$temporary"
+mv -f "$temporary" "$target"
+sync -f "$directory"
+trap - EXIT
+' sh <backupFile> /etc/kai-cloud/kai-cloud-app.env
+```
+
+恢复后验证支付开关、`/api/ready` 和存量订单核对状态。全部上线记录完成后删除 `/root/kai-qixiang-production.json`，不得把凭据文件加入常规备份、源码或工单。
 
 1. 将经审批的变更单号写入 `KAI_QIXIANG_PAY_APPROVAL_REFERENCE`；用 `KAI_QIXIANG_PAY_CREDENTIAL_VERSION` 或 UTC ISO 8601 的 `KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT` 登记当前商户凭据生命周期。密钥只允许写入服务器密钥配置，不得输出到日志、就绪接口或工单正文。
 2. 七相旧查单协议会把密钥放入 GET URL，必须由责任人书面接受该残余风险：设置 `KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED=1`、`KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE=RISK-...`，以非密钥的 `KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID=QRY-...` 登记查单凭据，并用查单凭据版本或轮换时间登记生命周期。未完成这些字段时生产校验器与应用就绪门禁都保持关闭。

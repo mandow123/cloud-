@@ -9,6 +9,7 @@ import test from "node:test";
 import { createD1CardHourStore } from "../lib/server/card-hour-store-d1.ts";
 import { createSqliteCardHourStore } from "../lib/server/card-hour-store-sqlite.ts";
 import { confirmQixiangPayNotification, createQixiangPayCheckout, qixiangPayPilotAccess, qixiangPayReadiness, queryQixiangPayOrder, trustedQixiangClientIp, validateQixiangPayCheckout, verifyQixiangPayNotification } from "../lib/server/qixiang-pay.ts";
+import { isRevokedQixiangMerchantKeyDigest } from "../lib/server/qixiang-pay-revoked-policy.mjs";
 import { assertQixiangCardHourSchemaReady, verifyQixiangCardHourDatabase } from "../scripts/ops/verify-qixiang-card-hour-schema.mjs";
 
 const KEY = "fixture-secret-key-1234567890";
@@ -147,9 +148,15 @@ test("active order query rate limit and circuit breaker stop requests before fet
   assert.equal(breakerFetchCalls, 3);
 });
 
-test("payment source contains no hardcoded merchant-key fingerprint or URL logging", () => {
+test("revoked merchant-key policy has one shared fail-closed source and query URLs are never logged", () => {
   const source = readFileSync(new URL("../lib/server/qixiang-pay.ts", import.meta.url), "utf8");
-  assert.doesNotMatch(source, /COMPROMISED_(?:KEY|CREDENTIAL)|merchantKeyDigest|qixiangPayKeyDigest/u);
+  const configurator = readFileSync(new URL("../scripts/ops/configure-qixiang-pay-env.mjs", import.meta.url), "utf8");
+  assert.equal(isRevokedQixiangMerchantKeyDigest("4d81683f5583c963560a31d39b8fcadfd7fa686b97519e26d9feaa6b7d523956"), true);
+  assert.equal(isRevokedQixiangMerchantKeyDigest("0".repeat(64)), false);
+  assert.match(source, /isRevokedQixiangMerchantKey\(key\)/u);
+  assert.match(configurator, /isRevokedQixiangMerchantKey\(key\)/u);
+  assert.doesNotMatch(source, /[0-9a-f]{64}/u);
+  assert.doesNotMatch(configurator, /[0-9a-f]{64}/u);
   assert.doesNotMatch(source, /console\.(?:log|warn|error)[^\n]*(?:queryUrl|orderQuery)/u);
   assert.match(source, /redirect: "error"/u);
 });

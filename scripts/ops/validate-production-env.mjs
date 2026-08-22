@@ -189,11 +189,11 @@ export function validateProductionEnvironment(environment = process.env, { check
   }
   if (qixiangPayEnabled === "1") {
     const channels = (environment.KAI_QIXIANG_PAY_CHANNELS ?? "").split(",").map((value) => value.trim()).filter(Boolean);
-    if (channels.length < 1 || channels.some((value) => value !== "ALIPAY" && value !== "WXPAY") || new Set(channels).size !== channels.length) errors.push("KAI_QIXIANG_PAY_CHANNELS must contain unique ALIPAY/WXPAY values when Qixiang Pay is enabled");
+    if (channels.length !== 1 || channels[0] !== "ALIPAY") errors.push("KAI_QIXIANG_PAY_CHANNELS must contain only ALIPAY during production acceptance");
     const pilotOrganizations = (environment.KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS ?? "").split(",").map((value) => value.trim()).filter(Boolean);
     if (pilotOrganizations.length < 1 || pilotOrganizations.length > 20 || pilotOrganizations.some((value) => !/^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/.test(value)) || new Set(pilotOrganizations).size !== pilotOrganizations.length) errors.push("KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS must contain 1-20 unique approved organization identifiers when Qixiang Pay is enabled");
     const pilotChannel = environment.KAI_QIXIANG_PAY_PILOT_CHANNEL?.trim() ?? "";
-    if ((pilotChannel !== "ALIPAY" && pilotChannel !== "WXPAY") || channels.length !== 1 || channels[0] !== pilotChannel) errors.push("KAI_QIXIANG_PAY_PILOT_CHANNEL must be the single configured Qixiang Pay channel during production acceptance");
+    if (pilotChannel !== "ALIPAY" || channels[0] !== pilotChannel) errors.push("KAI_QIXIANG_PAY_PILOT_CHANNEL must be ALIPAY during production acceptance");
     if ((environment.KAI_QIXIANG_PAY_GATEWAY || "https://api.payqixiang.cn/mapi.php") !== "https://api.payqixiang.cn/mapi.php") errors.push("KAI_QIXIANG_PAY_GATEWAY must use the approved HTTPS mapi.php endpoint");
   }
   const buyCatalogV2 = environment.KAI_BUY_CATALOG_V2 ?? "0";

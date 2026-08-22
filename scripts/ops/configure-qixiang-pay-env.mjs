@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import { constants, lstat, open, rename, unlink } from "node:fs/promises";
-import { createHash } from "node:crypto";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isRevokedQixiangMerchantKey } from "../../lib/server/qixiang-pay-revoked-policy.mjs";
 
 const CONFIRMATION = "CONFIGURE_QIXIANG_PRODUCTION_PAYMENT";
 const MODES = new Set(["reconciliation", "payment"]);
@@ -16,7 +16,6 @@ const QUERY_ID_PATTERN = /^QRY-[A-Za-z0-9][A-Za-z0-9._:-]{7,95}$/u;
 const VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,63}$/u;
 const ORGANIZATION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/u;
 const UTC_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u;
-const REVOKED_MERCHANT_KEY_DIGESTS = new Set(["4d81683f5583c963560a31d39b8fcadfd7fa686b97519e26d9feaa6b7d523956"]);
 
 function fail(message) { throw new Error(message); }
 
@@ -52,7 +51,7 @@ export function parseQixiangProductionCredentials(text) {
   const pid = exactString(value.pid, /^\d{1,18}$/u, "credential file contains an invalid merchant identifier");
   const key = exactString(value.key, KEY_PATTERN, "credential file contains an invalid merchant key");
   if (/(?:change[-_ ]?me|dummy|example|placeholder|replace|secret[-_ ]?here|your[-_ ])/iu.test(key)) fail("credential file contains a placeholder merchant key");
-  if (REVOKED_MERCHANT_KEY_DIGESTS.has(createHash("sha256").update(key).digest("hex"))) fail("credential file contains a revoked merchant key");
+  if (isRevokedQixiangMerchantKey(key)) fail("credential file contains a revoked merchant key");
   const approvalReference = exactString(value.approvalReference, REFERENCE_PATTERN, "credential file contains an invalid approval reference");
   const credentialVersion = exactString(value.credentialVersion, VERSION_PATTERN, "credential file contains an invalid credential version");
   const credentialRotatedAt = exactTimestamp(value.credentialRotatedAt, "credential file contains an invalid credential rotation time");
