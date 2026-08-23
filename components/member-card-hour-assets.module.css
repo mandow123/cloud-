@@ -150,7 +150,7 @@
   font-size: 0.78rem;
 }
 
-.pilot { border-left-color: var(--warning); background: var(--warning-bg); }
+.pilot { border-left-color: var(--accent); background: var(--info-bg); }
 
 .amountMode {
   display: grid;
@@ -298,8 +298,8 @@
 .notice,
 .error,
 .success {
-  border-left: 4px solid var(--warning);
-  background: var(--warning-bg);
+  border-left: 4px solid var(--accent);
+  background: var(--info-bg);
   padding: 14px 16px;
   color: var(--text);
   font-size: 0.78rem;

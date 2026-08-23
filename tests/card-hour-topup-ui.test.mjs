@@ -164,6 +164,8 @@ test("topup history names processing and reconciliation states without implying 
 test("card-hour assets stay usable on a 390px viewport", () => {
   const css = readFileSync("components/member-card-hour-assets.module.css", "utf8");
 
+  assert.match(css, /\.pilot \{ border-left-color: var\(--accent\); background: var\(--info-bg\); \}/u);
+  assert.match(css, /\.notice,[\s\S]*border-left: 4px solid var\(--accent\);[\s\S]*background: var\(--info-bg\);/u);
   assert.match(css, /min-height:\s*44px/u);
   assert.match(css, /@media \(max-width: 760px\)/u);
   assert.match(css, /\.grid,\s*\.metrics \{\s*grid-template-columns: 1fr/u);
