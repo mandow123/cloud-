@@ -10,6 +10,7 @@ import {
   requireHostingAgentTransport,
 } from "@/lib/server/hosting-agent-api";
 import { hostingAgentDigest, hostingAgentKeyId, verifyHostingAgentSignature } from "@/lib/server/hosting-agent-crypto";
+import { bindKaiPublicDevice } from "@/lib/server/public-api-agent-bridge";
 import { hostingObject, requireHostingV2SetupEnabled } from "@/lib/server/hosting-v2-api";
 import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
 import { isAgentTelemetryV1Enabled } from "@/lib/server/agent-telemetry-feature";
@@ -42,12 +43,14 @@ export async function POST(request: Request) {
     const signedPayload = { operation: "REGISTER_DEVICE", challengeId, nonce: challenge.nonce, displayName, devicePublicKey, agentVersion, inventory, inventoryDigest, issuedAt: proof.issuedAt, expiresAt: proof.expiresAt };
     await verifyHostingAgentSignature(devicePublicKey, signedPayload, proof.signature);
     const deviceKeyId = await hostingAgentKeyId(devicePublicKey);
+    const now = new Date().toISOString();
     const record = await (await getHostingV2Store()).registerDevice(challengeId, { displayName, deviceKeyId, devicePublicKey, agentVersion, inventory, inventoryDigest }, {
       actorId: `agent:${deviceKeyId}`,
       idempotencyKey: requireIdempotencyKey(request),
       payloadHash: await hostingAgentDigest(signedPayload),
-      now: new Date().toISOString(),
+      now,
     });
+    await bindKaiPublicDevice(challengeId, record, now);
     return jsonResponse({ record }, 201, undefined, context);
   } catch (error) {
     return apiErrorResponse(hostingAgentHttpError(error), undefined, context);

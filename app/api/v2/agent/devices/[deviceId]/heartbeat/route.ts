@@ -4,6 +4,7 @@ import { agentDigest, agentInteger, agentString, hostingAgentHttpError, parseAge
 import { hostingAgentDigest, hostingAgentTimestamp } from "@/lib/server/hosting-agent-crypto";
 import { hostingObject, requireHostingV2SetupEnabled } from "@/lib/server/hosting-v2-api";
 import { getHostingV2Store } from "@/lib/server/hosting-v2-store";
+import { syncKaiPublicHeartbeat } from "@/lib/server/public-api-agent-bridge";
 
 export const dynamic = "force-dynamic";
 
@@ -26,12 +27,14 @@ export async function POST(request: Request, contextValue: { params: Promise<{ d
     if (Math.abs(Date.parse(observedAt) - Date.now()) > 5 * 60_000) throw new AccountAuthError("AGENT_PROOF_EXPIRED", 409, "心跳观测时间与服务端时间偏差过大。 ");
     const fields = { sequence, inventoryDigest, capacityState, observedAt };
     await verifyExistingDeviceProof(device, "HEARTBEAT", fields, proof);
+    const now = new Date().toISOString();
     const record = await store.acceptHeartbeat(deviceId, { sequence, inventoryDigest, capacityState, observedAt }, {
       actorId: `agent:${deviceId}`,
       idempotencyKey: `heartbeat:${sequence}`,
       payloadHash: await hostingAgentDigest({ operation: "HEARTBEAT", deviceId, ...fields, issuedAt: proof.issuedAt, expiresAt: proof.expiresAt }),
-      now: new Date().toISOString(),
+      now,
     });
+    await syncKaiPublicHeartbeat(store, record, now);
     return jsonResponse({ record }, 200, undefined, context);
   } catch (error) {
     return apiErrorResponse(hostingAgentHttpError(error), undefined, context);
