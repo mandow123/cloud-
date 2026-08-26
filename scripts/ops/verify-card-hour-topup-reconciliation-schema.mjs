@@ -63,7 +63,7 @@ export function inspectCardHourTopupReconciliationSchema(database) {
 
 export function assertCardHourTopupReconciliationSchemaReady(database) {
   const state = inspectCardHourTopupReconciliationSchema(database);
-  if (state.marker !== 6) throw new Error(`CARD_HOUR_TOPUP_RECONCILIATION_SCHEMA_MARKER_INVALID:${state.marker}`);
+  if (state.marker < 6 || state.marker > 7) throw new Error(`CARD_HOUR_TOPUP_RECONCILIATION_SCHEMA_MARKER_INVALID:${state.marker}`);
   if (state.missingTables.length || state.missingIndexes.length || !state.claimOrderForeignKeyReady || !state.requestOrderForeignKeyReady || state.missingClaimColumns.length || state.missingRequestColumns.length) throw new Error(`CARD_HOUR_TOPUP_RECONCILIATION_SCHEMA_NOT_READY:${JSON.stringify(state)}`);
   if (database.prepare("PRAGMA foreign_key_check").all().length) throw new Error("CARD_HOUR_TOPUP_RECONCILIATION_FOREIGN_KEY_INVALID");
   return Object.freeze({ ready: true, schemaMarker: state.marker, migration: "0038_card_hour_topup_reconciliation_claims" });
@@ -71,7 +71,7 @@ export function assertCardHourTopupReconciliationSchemaReady(database) {
 
 export function applyCardHourTopupReconciliationMigration(database, migrationSql) {
   const before = inspectCardHourTopupReconciliationSchema(database);
-  if (before.marker === 6) return assertCardHourTopupReconciliationSchemaReady(database);
+  if (before.marker >= 6 && before.marker <= 7) return assertCardHourTopupReconciliationSchemaReady(database);
   if (before.marker !== 5) throw new Error(`CARD_HOUR_TOPUP_RECONCILIATION_SCHEMA_MARKER_INVALID:${before.marker}`);
   if (before.missingTables.length !== RECONCILIATION_TABLES.length || before.missingIndexes.length !== RECONCILIATION_INDEXES.length || before.claimOrderForeignKeyReady || before.requestOrderForeignKeyReady || before.missingClaimColumns.length !== 7 || before.missingRequestColumns.length !== 5) throw new Error(`CARD_HOUR_TOPUP_RECONCILIATION_PARTIAL_MIGRATION:${JSON.stringify(before)}`);
   database.exec("BEGIN IMMEDIATE");

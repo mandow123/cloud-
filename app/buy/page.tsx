@@ -7,8 +7,8 @@ import { isBuyCatalogV2Enabled } from "@/lib/server/buy-catalog-feature";
 import { manualDeliveryIntakeEnabled } from "@/lib/server/manual-delivery-intake";
 
 export const metadata: Metadata = {
-  title: "选购 GPU 算力",
-  description: "查看供应商 GPU 套餐、规格与卡时参考价，登录后提交询价。",
+  title: "选购 GPU",
+  description: "租用 GPU 算力，或购买独立确权的实体 GPU 并选择云托管。",
 };
 
 export default function BuyPage() {

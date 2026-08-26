@@ -1,0 +1,17 @@
+[Unit]
+Description=KAI Cloud Qixiang payment reconciliation and paid entitlement expiry
+After=kai-cloud.service network-online.target
+Wants=network-online.target
+OnFailure=kai-cloud-ops-alert@%n.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/kai-cloud/kai-cloud-release.env
+EnvironmentFile=/etc/kai-cloud/kai-cloud-app.env
+ExecStart=/usr/bin/flock --nonblock /run/lock/kai-cloud-payment-reconciliation.lock /usr/bin/timeout --signal=TERM --kill-after=15s 55s /bin/sh /usr/local/lib/kai-cloud/kai-cloud-payment-reconciliation-run.sh
+TimeoutStartSec=70
+UMask=0077
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

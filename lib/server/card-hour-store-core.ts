@@ -2,6 +2,7 @@ import { CARD_HOUR_ASSET_CODE } from "../card-hours.ts";
 import { hostingCnyReferenceCents, hostingFeeBreakdown } from "../hosting-v2.ts";
 import { CARD_HOUR_SCHEMA_VERSION, cardHourSchemaStatements } from "../../db/card-hour-schema.ts";
 import { AccountAuthError, accountAuthDigest } from "./account-auth.ts";
+import { expirePaidEntitlements as expirePaidEntitlementLots, paidAvailableAllocationStatements, paidHeldResolutionStatements } from "./card-hour-paid-entitlements.ts";
 import type { CardHourDashboard, CardHourStore, CardHourTopupAppealReason, CardHourTopupAppealRecord, CardHourTopupAppealStatus } from "./card-hour-store.ts";
 
 export type CardHourSql = Readonly<{ sql: string; values?: readonly unknown[] }>;
@@ -83,6 +84,20 @@ function holdRecord(row: Row) {
   };
 }
 
+async function managedGpuAssetForHostingContract(db: CardHourDatabaseAdapter, contractId: string, supplierOrganizationId: string) {
+  const schema = await db.first<Row>("SELECT COUNT(*) count FROM sqlite_master WHERE type='table' AND name IN ('managed_gpu_physical_assets','managed_gpu_compute_sale_events')");
+  if (number(schema,"count") !== 2) return null;
+  const bindings = await db.all<Row>(`SELECT asset.id,asset.owner_organization_id,asset.status FROM managed_gpu_physical_assets asset
+    JOIN hosting_v2_contracts contract ON contract.device_id=asset.agent_binding_id
+    WHERE contract.id=?`, [contractId]);
+  if (bindings.length === 0) return null;
+  if (bindings.length !== 1) throw new AccountAuthError("MANAGED_GPU_ASSET_BINDING_AMBIGUOUS", 409, "托管设备必须唯一绑定一张物理 GPU 资产。 ");
+  const asset = bindings[0]!;
+  if (text(asset,"owner_organization_id") !== supplierOrganizationId) throw new AccountAuthError("MANAGED_GPU_ASSET_ORGANIZATION_MISMATCH", 409, "托管资产归属与 Hosting 供应主体不一致。 ");
+  if (text(asset,"status") !== "ACTIVE") throw new AccountAuthError("MANAGED_GPU_ASSET_NOT_ACTIVE", 409, "托管资产未通过上线验真，不能生成成交收益。 ");
+  return asset;
+}
+
 function hostingPurchaseRecord(row: Row) {
   const hold = holdRecord(row);
   const amountMicros = hold.settledMicros ?? hold.amountMicros;
@@ -121,11 +136,16 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       await db.first("SELECT appeal_id FROM card_hour_topup_appeal_member_reads LIMIT 1");
       await db.first("SELECT topup_order_id FROM card_hour_topup_reconciliation_claims LIMIT 1");
       await db.first("SELECT topup_order_id FROM card_hour_topup_reconciliation_requests LIMIT 1");
+      await db.first("SELECT credential_id FROM card_hour_qixiang_query_protection LIMIT 1");
+      await db.first("SELECT id FROM card_hour_paid_entitlement_lots LIMIT 1");
+      await db.first("SELECT lot_id FROM card_hour_paid_entitlement_hold_allocations LIMIT 1");
+      await db.first("SELECT id FROM card_hour_paid_entitlement_events LIMIT 1");
       const schema = await db.first<{ sql: string }>("SELECT sql FROM sqlite_master WHERE type='table' AND name='card_hour_topup_orders'");
       if (!schema?.sql.includes("QIXIANG_PAY") || !schema.sql.includes("provider_merchant_ref") || !schema.sql.includes("provider_payment_type") || !schema.sql.includes("checkout_url") || !schema.sql.includes("RECONCILIATION_REQUIRED")) throw new Error("CARD_HOUR_QIXIANG_SCHEMA_MISSING");
       return { schemaVersion: CARD_HOUR_SCHEMA_VERSION, integrity: "ok" as const };
     },
     async dashboard(organizationId, now) {
+      await expirePaidEntitlementLots(db, now);
       const code = await referralCode(organizationId);
       await db.batch([
         { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [organizationId, now, now] },
@@ -218,6 +238,61 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
     async releaseTopupReconciliation(input) {
       await db.batch([{ sql: `UPDATE card_hour_topup_reconciliation_claims SET claim_token=NULL,claimed_at=NULL,next_query_at=?,updated_at=?
         WHERE topup_order_id=? AND organization_id=? AND claim_token=?`, values: [input.nextEligibleAt, input.now, input.orderId, input.organizationId, input.claimToken] }]);
+    },
+    async listDueTopupReconciliations(input) {
+      const boundedLimit = Math.min(12, Math.max(1, Math.trunc(input.limit)));
+      const rows = await db.all<Row>(`SELECT t.id,t.organization_id,t.expires_at,COALESCE(c.attempt_count,0) AS attempt_count
+        FROM card_hour_topup_orders t LEFT JOIN card_hour_topup_reconciliation_claims c ON c.topup_order_id=t.id
+        WHERE t.provider='QIXIANG_PAY' AND t.status IN ('PENDING','PROCESSING','RECONCILIATION_REQUIRED')
+          AND (c.topup_order_id IS NULL OR (c.next_query_at<=? AND (c.claim_token IS NULL OR c.claimed_at<=?)))
+        ORDER BY COALESCE(c.next_query_at,t.created_at),t.id LIMIT ?`, [input.now, input.staleBefore, boundedLimit]);
+      return rows.map((row) => ({ orderId: text(row, "id"), organizationId: text(row, "organization_id"), attemptCount: number(row, "attempt_count"), expiresAt: text(row, "expires_at") }));
+    },
+    async escalateTopupReconciliation(input) {
+      const appealId = `chta_${crypto.randomUUID()}`;
+      const eventId = `chtae_${crypto.randomUUID()}`;
+      const caseNumber = `KAI-PA-${input.now.slice(0, 10).replaceAll("-", "")}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+      const payloadHash = `system-qixiang-reconciliation:${input.orderId}:${input.attemptCount}`;
+      await db.batch([
+        { sql: `UPDATE card_hour_topup_orders SET status='RECONCILIATION_REQUIRED',updated_at=?
+          WHERE id=? AND organization_id=? AND provider='QIXIANG_PAY' AND status IN ('PENDING','PROCESSING')`, values: [input.now, input.orderId, input.organizationId] },
+        { sql: `INSERT OR IGNORE INTO card_hour_topup_appeals(id,case_number,topup_order_id,organization_id,account_id,reason,description,status,resolution_note,assigned_admin_principal_id,idempotency_key,payload_hash,version,created_at,updated_at,resolved_at,closed_at)
+          SELECT ?,?,id,organization_id,account_id,'RECONCILIATION_REQUIRED','后台自动核单连续未取得可信付款结果，已转入财务人工核对队列。','OPEN',NULL,NULL,?,?,1,?,?,NULL,NULL
+          FROM card_hour_topup_orders WHERE id=? AND organization_id=? AND provider='QIXIANG_PAY' AND status='RECONCILIATION_REQUIRED'`, values: [appealId, caseNumber, `system:${input.orderId}`, payloadHash, input.now, input.now, input.orderId, input.organizationId] },
+        { sql: `INSERT INTO card_hour_topup_appeal_events(id,appeal_id,event_type,actor_principal_id,payload_hash,occurred_at)
+          SELECT ?,id,'CREATE','SYSTEM_QIXIANG_RECONCILIATION',?,? FROM card_hour_topup_appeals WHERE id=?`, values: [eventId, payloadHash, input.now, appealId] },
+      ]);
+    },
+    async acquireQixiangQueryPermit(input) {
+      const results = await db.batch([
+        { sql: `INSERT OR IGNORE INTO card_hour_qixiang_query_protection(credential_id,window_started_at,request_count,consecutive_failures,circuit_open_until,updated_at)
+          VALUES(?,?,0,0,NULL,?)`, values: [input.credentialId, input.now, input.now] },
+        { sql: `UPDATE card_hour_qixiang_query_protection SET
+            window_started_at=CASE WHEN window_started_at<=? THEN ? ELSE window_started_at END,
+            request_count=CASE WHEN window_started_at<=? THEN 1 ELSE request_count+1 END,
+            updated_at=?
+          WHERE credential_id=? AND (circuit_open_until IS NULL OR circuit_open_until<=?)
+            AND (window_started_at<=? OR request_count<?)`, values: [input.resetBefore, input.now, input.resetBefore, input.now, input.credentialId, input.now, input.resetBefore, input.maxRequests] },
+      ]);
+      if (results[1]?.changes === 1) return { allowed: true, reason: null, retryAt: null };
+      const row = await db.first<Row>("SELECT * FROM card_hour_qixiang_query_protection WHERE credential_id=?", [input.credentialId]);
+      const circuitOpenUntil = row?.circuit_open_until == null ? null : text(row, "circuit_open_until");
+      if (circuitOpenUntil && circuitOpenUntil > input.now) return { allowed: false, reason: "CIRCUIT_OPEN", retryAt: circuitOpenUntil };
+      const windowStartedAt = row ? text(row, "window_started_at") : input.now;
+      return { allowed: false, reason: "RATE_LIMIT", retryAt: new Date(Date.parse(windowStartedAt) + 60_000).toISOString() };
+    },
+    async recordQixiangQueryOutcome(input) {
+      if (input.outcome === "SUCCESS") {
+        await db.batch([{ sql: `UPDATE card_hour_qixiang_query_protection SET consecutive_failures=0,circuit_open_until=NULL,updated_at=? WHERE credential_id=?`, values: [input.now, input.credentialId] }]);
+        return;
+      }
+      await db.batch([{ sql: `UPDATE card_hour_qixiang_query_protection SET
+          consecutive_failures=consecutive_failures+1,
+          circuit_open_until=CASE WHEN consecutive_failures+1>=? THEN ? ELSE circuit_open_until END,
+          updated_at=? WHERE credential_id=?`, values: [input.failureThreshold, input.circuitOpenUntil, input.now, input.credentialId] }]);
+    },
+    async expirePaidEntitlements(input) {
+      return expirePaidEntitlementLots(db, input.now, input.limit);
     },
     async attachTopupCheckout(input) {
       if (!/^https:\/\//u.test(input.checkoutUrl) || input.checkoutUrl.length > 2_048) throw new AccountAuthError("CARD_HOUR_TOPUP_CHECKOUT_INVALID", 400, "充值收银台地址无效。 ");
@@ -341,6 +416,9 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       const amountMicros = number(order, "card_hour_micros");
       const eventId = `chte_${crypto.randomUUID()}`;
       const batchId = `chb_${crypto.randomUUID()}`;
+      const entitlementLotId = `chpl_${crypto.randomUUID()}`;
+      const entitlementEventId = `chpe_${crypto.randomUUID()}`;
+      const entitlementExpiresAt = new Date(Date.parse(input.receivedAt) + 364 * 24 * 60 * 60 * 1000).toISOString();
       const nextStatus = input.eventType === "CAPTURED" ? "CAPTURED" : "CLOSED";
       const statements: CardHourSql[] = [
         { sql: `INSERT INTO card_hour_topup_events(id,topup_order_id,provider_event_id,provider_transaction_id,event_type,amount_cents,payload_digest,occurred_at,received_at)
@@ -351,6 +429,11 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       if (input.eventType === "CAPTURED") statements.push(
         { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [organizationId, input.receivedAt, input.receivedAt] },
         { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,lifetime_topup_micros=lifetime_topup_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS (SELECT 1 FROM card_hour_topup_orders WHERE id=? AND status='CAPTURED' AND provider_transaction_id=?)", values: [amountMicros, amountMicros, input.receivedAt, organizationId, input.orderId, input.providerTransactionId] },
+        { sql: `INSERT INTO card_hour_paid_entitlement_lots(id,organization_id,topup_order_id,granted_micros,available_micros,held_micros,spent_micros,expired_micros,granted_at,expires_at,updated_at)
+          SELECT ?,organization_id,id,card_hour_micros,card_hour_micros,0,0,0,?,?,? FROM card_hour_topup_orders
+          WHERE id=? AND status='CAPTURED' AND provider_transaction_id=?`, values: [entitlementLotId, input.receivedAt, entitlementExpiresAt, input.receivedAt, input.orderId, input.providerTransactionId] },
+        { sql: `INSERT INTO card_hour_paid_entitlement_events(id,lot_id,organization_id,event_type,amount_micros,occurred_at)
+          VALUES(?,?,?,'GRANTED',?,?)`, values: [entitlementEventId, entitlementLotId, organizationId, amountMicros, input.receivedAt] },
         { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) SELECT ?,?,'TOPUP',?,?,'POSTED',?,? WHERE EXISTS (SELECT 1 FROM card_hour_topup_orders WHERE id=? AND provider=? AND status='CAPTURED' AND provider_transaction_id=?)", values: [batchId, organizationId, `topup:${input.orderId}`, amountMicros, JSON.stringify({ amountCents: input.amountCents, provider }), input.receivedAt, input.orderId, provider, input.providerTransactionId] },
         { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, batchId, organizationId, amountMicros, input.receivedAt, organizationId, batchId] },
         { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,NULL,'PLATFORM_ISSUANCE','DEBIT',?,NULL,? WHERE EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, batchId, amountMicros, input.receivedAt, batchId] },
@@ -369,6 +452,7 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
     },
     async captureOrder(input) {
       const organizationId = input.account.activeOrganization.id;
+      await expirePaidEntitlementLots(db, input.now);
       const existing = await db.first<Row>("SELECT * FROM card_hour_order_payments WHERE source_system=? AND order_id=?", [input.sourceSystem, input.orderId]);
       if (existing) {
         if (text(existing, "organization_id") !== organizationId || text(existing, "payload_hash") !== input.payloadHash) throw new AccountAuthError("IDEMPOTENCY_CONFLICT", 409, "订单卡时支付记录不一致。 ");
@@ -383,10 +467,15 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       const batchId = `chb_${crypto.randomUUID()}`;
       const businessKey = `order:${input.sourceSystem}:${input.orderId}`;
       const rewardMicros = Math.floor(input.amountMicros * 3 / 100);
+      const spendableWallet = await db.first<Row>("SELECT available_micros FROM card_hour_wallets WHERE organization_id=?", [organizationId]);
+      if (number(spendableWallet, "available_micros") < input.amountMicros) throw new AccountAuthError("CARD_HOUR_BALANCE_INSUFFICIENT", 409, "卡时余额不足，请先购买卡时。 ");
+      const paidAllocation = await paidAvailableAllocationStatements(db, { organizationId, amountMicros: input.amountMicros, now: input.now, destination: "SPENT" });
       await db.batch([
         { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [organizationId, input.now, input.now] },
         { sql: `INSERT INTO card_hour_order_payments(id,organization_id,account_id,source_system,order_id,amount_micros,cny_reference_cents,rate_numerator,rate_denominator,status,idempotency_key,payload_hash,created_at,updated_at)
           SELECT ?,?,?,?,?,?,?,501,500,'CAPTURED',?,?,?,? FROM card_hour_wallets WHERE organization_id=? AND available_micros>=?`, values: [id, organizationId, input.account.account.id, input.sourceSystem, input.orderId, input.amountMicros, input.cnyReferenceCents, input.idempotencyKey, input.payloadHash, input.now, input.now, organizationId, input.amountMicros] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        ...paidAllocation,
         { sql: "UPDATE card_hour_wallets SET available_micros=available_micros-?,lifetime_spent_micros=lifetime_spent_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS (SELECT 1 FROM card_hour_order_payments WHERE id=?) AND NOT EXISTS (SELECT 1 FROM card_hour_ledger_batches WHERE business_key=?)", values: [input.amountMicros, input.amountMicros, input.now, organizationId, id, businessKey] },
         { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) SELECT ?,?,'ORDER_CAPTURE',?,?,'POSTED',?,? WHERE EXISTS (SELECT 1 FROM card_hour_order_payments WHERE id=?)", values: [batchId, organizationId, businessKey, input.amountMicros, JSON.stringify({ sourceSystem: input.sourceSystem, orderId: input.orderId, cnyReferenceCents: input.cnyReferenceCents }), input.now, id] },
         { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','DEBIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=? AND EXISTS (SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, batchId, organizationId, input.amountMicros, input.now, organizationId, batchId] },
@@ -401,6 +490,7 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
     },
     async holdHostingOrder(input) {
       const organizationId = input.account.activeOrganization.id;
+      await expirePaidEntitlementLots(db, input.now);
       const existing = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE source_system='HOSTING_V2' AND order_id=?", [input.orderId]);
       if (existing) {
         if (text(existing, "organization_id") !== organizationId || text(existing, "payload_hash") !== input.payloadHash || number(existing, "amount_micros") !== input.amountMicros) throw new AccountAuthError("IDEMPOTENCY_CONFLICT", 409, "订单卡时预留记录不一致。 ");
@@ -413,10 +503,15 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       }
       if (!Number.isSafeInteger(input.amountMicros) || input.amountMicros < 1) throw new AccountAuthError("CARD_HOUR_HOLD_INVALID", 400, "预留卡时数量无效。 ");
       const holdId = `chh_${crypto.randomUUID()}`;
+      const spendableWallet = await db.first<Row>("SELECT available_micros FROM card_hour_wallets WHERE organization_id=?", [organizationId]);
+      if (number(spendableWallet, "available_micros") < input.amountMicros) throw new AccountAuthError("CARD_HOUR_BALANCE_INSUFFICIENT", 409, "卡时余额不足，无法锁定本次租用额度。 ");
+      const paidAllocation = await paidAvailableAllocationStatements(db, { organizationId, amountMicros: input.amountMicros, now: input.now, destination: "HELD", holdType: "HOSTING_V2", holdId });
       await db.batch([
         { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [organizationId, input.now, input.now] },
         { sql: `INSERT INTO card_hour_order_holds(id,organization_id,account_id,source_system,order_id,amount_micros,settled_micros,status,idempotency_key,payload_hash,created_at,updated_at)
           SELECT ?,?,?, 'HOSTING_V2',?,?,NULL,'HELD',?,?,?,? FROM card_hour_wallets WHERE organization_id=? AND available_micros>=?`, values: [holdId, organizationId, input.account.account.id, input.orderId, input.amountMicros, input.idempotencyKey, input.payloadHash, input.now, input.now, organizationId, input.amountMicros] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        ...paidAllocation,
         { sql: "UPDATE card_hour_wallets SET available_micros=available_micros-?,held_micros=held_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_order_holds WHERE id=? AND status='HELD')", values: [input.amountMicros, input.amountMicros, input.now, organizationId, holdId] },
         { sql: "INSERT INTO card_hour_hold_events(id,hold_id,event_type,amount_micros,payload_hash,occurred_at) SELECT ?,?,'HELD',?,?,? WHERE EXISTS(SELECT 1 FROM card_hour_order_holds WHERE id=?)", values: [`chhe_${crypto.randomUUID()}`, holdId, input.amountMicros, input.payloadHash, input.now, holdId] },
       ]);
@@ -452,6 +547,9 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       const rentalBatchId = `chb_${crypto.randomUUID()}`;
       const commissionBatchId = `chb_${crypto.randomUUID()}`;
       const releaseMicros = heldMicros - input.settledMicros;
+      const paidResolution = await paidHeldResolutionStatements(db, { holdType: "HOSTING_V2", holdId, spentMicros: input.settledMicros, now: input.now });
+      const returnedMicros = releaseMicros - paidResolution.expiredOnReleaseMicros;
+      const managedAsset = await managedGpuAssetForHostingContract(db,input.orderId,input.supplierOrganizationId);
       const statements: CardHourSql[] = [
         { sql: `INSERT INTO hosting_v2_acceptance_proofs(contract_id,decision_mode,acceptance_window_seconds,deadline_at,decided_at,actor_id,payload_digest)
           SELECT c.id,?,COALESCE(CAST(json_extract(c.snapshot_json,'$.acceptanceWindowSeconds') AS INTEGER),1800),?,?,?,?
@@ -466,16 +564,21 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
         { sql: `INSERT INTO hosting_v2_supplier_fee_volume_events(id,supplier_organization_id,contract_id,event_type,amount_micros,source_event_id,payload_digest,occurred_at,created_at)
           SELECT ?,?,?,'SETTLEMENT',?,?,?,?,? WHERE EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=? AND event_type='SETTLED')`, values: [`hfve_${crypto.randomUUID()}`, input.supplierOrganizationId, input.orderId, input.settledMicros, eventId, input.payloadHash, input.now, input.now, eventId] },
         { sql: "UPDATE card_hour_order_holds SET settled_micros=?,status='SETTLED',updated_at=? WHERE id=? AND status='HELD' AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?) AND EXISTS(SELECT 1 FROM hosting_v2_contracts WHERE id=? AND status='SETTLED')", values: [input.settledMicros, input.now, holdId, eventId, input.orderId] },
-        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,lifetime_spent_micros=lifetime_spent_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?) AND EXISTS(SELECT 1 FROM hosting_v2_contracts WHERE id=? AND status='SETTLED')", values: [releaseMicros, heldMicros, input.settledMicros, input.now, organizationId, eventId, input.orderId] },
-        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) SELECT ?,?,'ORDER_CAPTURE',?,?,'POSTED',?,? WHERE EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [captureBatchId, organizationId, `order:HOSTING_V2:${input.orderId}`, input.settledMicros, JSON.stringify({ sourceSystem: "HOSTING_V2", orderId: input.orderId, heldMicros, releasedMicros: releaseMicros }), input.now, eventId] },
+        ...paidResolution.statements,
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,lifetime_spent_micros=lifetime_spent_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?) AND EXISTS(SELECT 1 FROM hosting_v2_contracts WHERE id=? AND status='SETTLED')", values: [returnedMicros, heldMicros, input.settledMicros, input.now, organizationId, eventId, input.orderId] },
+        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) SELECT ?,?,'ORDER_CAPTURE',?,?,'POSTED',?,? WHERE EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [captureBatchId, organizationId, `order:HOSTING_V2:${input.orderId}`, input.settledMicros, JSON.stringify({ sourceSystem: "HOSTING_V2", orderId: input.orderId, heldMicros, releasedMicros: returnedMicros, expiredMicros: paidResolution.expiredOnReleaseMicros }), input.now, eventId] },
         { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_HELD','DEBIT',?,held_micros,? FROM card_hour_wallets WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, captureBatchId, organizationId, input.settledMicros, input.now, organizationId, captureBatchId] },
         { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,NULL,'PLATFORM_ORDER_CLEARING','CREDIT',?,NULL,? WHERE EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, captureBatchId, input.settledMicros, input.now, captureBatchId] },
-        { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [input.supplierOrganizationId, input.now, input.now] },
-        { sql: "INSERT INTO card_hour_income_accruals(id,organization_id,income_type,source_system,source_id,amount_micros,status,created_at,vested_at) SELECT ?,?,'RENTAL','HOSTING_V2',?,?,'VESTED',?,? WHERE EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [`chi_${crypto.randomUUID()}`, input.supplierOrganizationId, input.orderId, input.supplierIncomeMicros, input.now, input.now, eventId] },
-        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [input.supplierIncomeMicros, input.now, input.supplierOrganizationId, eventId] },
-        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) SELECT ?,?,'RENTAL_INCOME',?,?,'POSTED',?,? WHERE EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [rentalBatchId, input.supplierOrganizationId, `rental:HOSTING_V2:${input.orderId}`, input.supplierIncomeMicros, JSON.stringify({ buyerOrganizationId: organizationId, orderId: input.orderId }), input.now, eventId] },
-        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, rentalBatchId, input.supplierOrganizationId, input.supplierIncomeMicros, input.now, input.supplierOrganizationId, rentalBatchId] },
-        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,NULL,'PLATFORM_ORDER_CLEARING','DEBIT',?,NULL,? WHERE EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, rentalBatchId, input.supplierIncomeMicros, input.now, rentalBatchId] },
+        ...(managedAsset ? [{ sql: `INSERT INTO managed_gpu_compute_sale_events(id,asset_id,hosting_contract_id,acceptance_event_id,capture_batch_id,event_type,accepted_gpu_seconds,card_hour_micros,source_entry_kind,source_entry_status,payload_digest,occurred_at,recorded_at)
+          SELECT ?,?,?,?,?,'CAPTURED',?,?,'MANAGED_GPU_INCOME','POSTED',?,?,? WHERE EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=? AND operation='ORDER_CAPTURE' AND status='POSTED' AND json_extract(metadata_json,'$.sourceSystem')='HOSTING_V2')
+            AND EXISTS(SELECT 1 FROM hosting_v2_acceptance_proofs WHERE contract_id=?)`, values: [`mgcse_${crypto.randomUUID()}`,text(managedAsset,"id"),input.orderId,input.orderId,captureBatchId,input.measuredSeconds,input.settledMicros,input.acceptancePayloadHash,input.now,input.now,captureBatchId,input.orderId] }] : [
+          { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [input.supplierOrganizationId, input.now, input.now] },
+          { sql: "INSERT INTO card_hour_income_accruals(id,organization_id,income_type,source_system,source_id,amount_micros,status,created_at,vested_at) SELECT ?,?,'RENTAL','HOSTING_V2',?,?,'VESTED',?,? WHERE EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [`chi_${crypto.randomUUID()}`, input.supplierOrganizationId, input.orderId, input.supplierIncomeMicros, input.now, input.now, eventId] },
+          { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [input.supplierIncomeMicros, input.now, input.supplierOrganizationId, eventId] },
+          { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) SELECT ?,?,'RENTAL_INCOME',?,?,'POSTED',?,? WHERE EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [rentalBatchId, input.supplierOrganizationId, `rental:HOSTING_V2:${input.orderId}`, input.supplierIncomeMicros, JSON.stringify({ buyerOrganizationId: organizationId, orderId: input.orderId }), input.now, eventId] },
+          { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, rentalBatchId, input.supplierOrganizationId, input.supplierIncomeMicros, input.now, input.supplierOrganizationId, rentalBatchId] },
+          { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,NULL,'PLATFORM_ORDER_CLEARING','DEBIT',?,NULL,? WHERE EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, rentalBatchId, input.supplierIncomeMicros, input.now, rentalBatchId] },
+        ]),
       ];
       if (referrerOrganizationId && commissionMicros > 0) statements.push(
         { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [referrerOrganizationId, input.now, input.now] },
@@ -538,6 +641,9 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       const buyerBatchId = `chb_${crypto.randomUUID()}`;
       const rentalBatchId = `chb_${crypto.randomUUID()}`;
       const commissionBatchId = `chb_${crypto.randomUUID()}`;
+      const paidResolution = await paidHeldResolutionStatements(db, { holdType: "HOSTING_V2", holdId, spentMicros: settledMicros, now: input.now });
+      const returnedMicros = heldMicros - settledMicros - paidResolution.expiredOnReleaseMicros;
+      const managedAsset = resolution === "SETTLE" ? await managedGpuAssetForHostingContract(db,text(current,"contract_id"),supplierOrganizationId) : null;
       const statements: CardHourSql[] = [
         { sql: "UPDATE hosting_v2_dispute_resolution_proposals SET status='APPLIED',execution_payload_hash=? WHERE id=? AND status='APPROVED'", values: [input.payloadHash, input.proposalId] },
         { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
@@ -549,10 +655,12 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
           FROM hosting_v2_supplier_fee_volume_events WHERE contract_id=?
           HAVING SUM(CASE WHEN event_type='SETTLEMENT' THEN amount_micros ELSE -amount_micros END)>0`, values: [`hfve_${crypto.randomUUID()}`, supplierOrganizationId, text(current, "contract_id"), eventId, input.payloadHash, input.now, input.now, text(current, "contract_id")] },
         { sql: "UPDATE card_hour_order_holds SET status='RELEASED',updated_at=? WHERE id=? AND status='HELD'", values: [input.now, holdId] },
-        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,version=version+1,updated_at=? WHERE organization_id=?", values: [heldMicros, heldMicros, input.now, buyerOrganizationId] },
+        ...paidResolution.statements,
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,version=version+1,updated_at=? WHERE organization_id=?", values: [returnedMicros, heldMicros, input.now, buyerOrganizationId] },
         { sql: "UPDATE hosting_v2_contracts SET status='REFUNDED',settled_micros=0,supplier_income_micros=0,commission_micros=0,version=version+1,updated_at=? WHERE id=? AND status='DISPUTED'", values: [input.now, text(current, "contract_id")] },
-        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) VALUES(?,?,'ORDER_REFUND',?,?,'POSTED',?,?)", values: [buyerBatchId, buyerOrganizationId, `dispute-refund:HOSTING_V2:${text(current, "contract_id")}`, heldMicros, JSON.stringify({ proposalId: input.proposalId, orderId: text(current, "contract_id"), source: "HELD_BALANCE_RELEASE" }), input.now] },
-        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, buyerBatchId, buyerOrganizationId, heldMicros, input.now, buyerOrganizationId] },
+        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) VALUES(?,?,'ORDER_REFUND',?,?,'POSTED',?,?)", values: [buyerBatchId, buyerOrganizationId, `dispute-refund:HOSTING_V2:${text(current, "contract_id")}`, heldMicros, JSON.stringify({ proposalId: input.proposalId, orderId: text(current, "contract_id"), source: "HELD_BALANCE_RELEASE", returnedMicros, expiredMicros: paidResolution.expiredOnReleaseMicros }), input.now] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=? AND ?>0", values: [`che_${crypto.randomUUID()}`, buyerBatchId, buyerOrganizationId, returnedMicros, input.now, buyerOrganizationId, returnedMicros] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,NULL,'PLATFORM_ENTITLEMENT_EXPIRY','CREDIT',?,NULL,? WHERE ?>0", values: [`che_${crypto.randomUUID()}`, buyerBatchId, paidResolution.expiredOnReleaseMicros, input.now, paidResolution.expiredOnReleaseMicros] },
         { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_HELD','DEBIT',?,held_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, buyerBatchId, buyerOrganizationId, heldMicros, input.now, buyerOrganizationId] },
       );
       else statements.push(
@@ -560,17 +668,25 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
         { sql: `INSERT INTO hosting_v2_supplier_fee_volume_events(id,supplier_organization_id,contract_id,event_type,amount_micros,source_event_id,payload_digest,occurred_at,created_at)
           SELECT ?,?,?,'SETTLEMENT',?,?,?,?,? WHERE EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=? AND event_type='SETTLED')`, values: [`hfve_${crypto.randomUUID()}`, supplierOrganizationId, text(current, "contract_id"), settledMicros, eventId, input.payloadHash, input.now, input.now, eventId] },
         { sql: "UPDATE card_hour_order_holds SET settled_micros=?,status='SETTLED',updated_at=? WHERE id=? AND status='HELD'", values: [settledMicros, input.now, holdId] },
-        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,lifetime_spent_micros=lifetime_spent_micros+?,version=version+1,updated_at=? WHERE organization_id=?", values: [heldMicros - settledMicros, heldMicros, settledMicros, input.now, buyerOrganizationId] },
+        ...paidResolution.statements,
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,lifetime_spent_micros=lifetime_spent_micros+?,version=version+1,updated_at=? WHERE organization_id=?", values: [returnedMicros, heldMicros, settledMicros, input.now, buyerOrganizationId] },
         { sql: "UPDATE hosting_v2_contracts SET status='SETTLED',settled_micros=?,supplier_income_micros=?,commission_micros=?,accepted_at=?,version=version+1,updated_at=? WHERE id=? AND status='DISPUTED'", values: [settledMicros, supplierIncomeMicros, commissionMicros, input.now, input.now, text(current, "contract_id")] },
-        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) VALUES(?,?,'ORDER_CAPTURE',?,?,'POSTED',?,?)", values: [buyerBatchId, buyerOrganizationId, `dispute-settlement:HOSTING_V2:${text(current, "contract_id")}`, settledMicros, JSON.stringify({ proposalId: input.proposalId, heldMicros, releasedMicros: heldMicros - settledMicros }), input.now] },
+        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) VALUES(?,?,'ORDER_CAPTURE',?,?,'POSTED',?,?)", values: [buyerBatchId, buyerOrganizationId, `dispute-settlement:HOSTING_V2:${text(current, "contract_id")}`, settledMicros, JSON.stringify({ sourceSystem: "HOSTING_V2", orderId: text(current, "contract_id"), proposalId: input.proposalId, heldMicros, releasedMicros: heldMicros - settledMicros }), input.now] },
         { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_HELD','DEBIT',?,held_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, buyerBatchId, buyerOrganizationId, settledMicros, input.now, buyerOrganizationId] },
         { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) VALUES(?,?,NULL,'PLATFORM_ORDER_CLEARING','CREDIT',?,NULL,?)", values: [`che_${crypto.randomUUID()}`, buyerBatchId, settledMicros, input.now] },
-        { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [supplierOrganizationId, input.now, input.now] },
-        { sql: "INSERT INTO card_hour_income_accruals(id,organization_id,income_type,source_system,source_id,amount_micros,status,created_at,vested_at) VALUES(?,?,'RENTAL','HOSTING_V2',? ,?,'VESTED',?,?)", values: [`chi_${crypto.randomUUID()}`, supplierOrganizationId, text(current, "contract_id"), supplierIncomeMicros, input.now, input.now] },
-        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,version=version+1,updated_at=? WHERE organization_id=?", values: [supplierIncomeMicros, input.now, supplierOrganizationId] },
-        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) VALUES(?,?,'RENTAL_INCOME',?,?,'POSTED',?,?)", values: [rentalBatchId, supplierOrganizationId, `dispute-rental:HOSTING_V2:${text(current, "contract_id")}`, supplierIncomeMicros, JSON.stringify({ proposalId: input.proposalId, buyerOrganizationId }), input.now] },
-        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, rentalBatchId, supplierOrganizationId, supplierIncomeMicros, input.now, supplierOrganizationId] },
-        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) VALUES(?,?,NULL,'PLATFORM_ORDER_CLEARING','DEBIT',?,NULL,?)", values: [`che_${crypto.randomUUID()}`, rentalBatchId, supplierIncomeMicros, input.now] },
+        ...(managedAsset ? [{ sql: `INSERT INTO managed_gpu_compute_sale_events(id,asset_id,hosting_contract_id,acceptance_event_id,capture_batch_id,event_type,accepted_gpu_seconds,card_hour_micros,source_entry_kind,source_entry_status,payload_digest,occurred_at,recorded_at)
+          SELECT ?,?,?,?,?,'CAPTURED',?,?,'MANAGED_GPU_INCOME','POSTED',proposal.decision_payload_hash,?,?
+          FROM hosting_v2_dispute_resolution_proposals proposal
+          WHERE proposal.id=? AND proposal.contract_id=? AND proposal.resolution='SETTLE' AND proposal.status='APPLIED'
+            AND proposal.decision_payload_hash IS NOT NULL
+            AND EXISTS(SELECT 1 FROM card_hour_ledger_batches WHERE id=? AND operation='ORDER_CAPTURE' AND status='POSTED' AND json_extract(metadata_json,'$.sourceSystem')='HOSTING_V2')`, values: [`mgcse_${crypto.randomUUID()}`,text(managedAsset,"id"),text(current,"contract_id"),input.proposalId,buyerBatchId,number(current,"measured_seconds"),settledMicros,input.now,input.now,input.proposalId,text(current,"contract_id"),buyerBatchId] }] : [
+          { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [supplierOrganizationId, input.now, input.now] },
+          { sql: "INSERT INTO card_hour_income_accruals(id,organization_id,income_type,source_system,source_id,amount_micros,status,created_at,vested_at) VALUES(?,?,'RENTAL','HOSTING_V2',? ,?,'VESTED',?,?)", values: [`chi_${crypto.randomUUID()}`, supplierOrganizationId, text(current, "contract_id"), supplierIncomeMicros, input.now, input.now] },
+          { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,version=version+1,updated_at=? WHERE organization_id=?", values: [supplierIncomeMicros, input.now, supplierOrganizationId] },
+          { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) VALUES(?,?,'RENTAL_INCOME',?,?,'POSTED',?,?)", values: [rentalBatchId, supplierOrganizationId, `dispute-rental:HOSTING_V2:${text(current, "contract_id")}`, supplierIncomeMicros, JSON.stringify({ proposalId: input.proposalId, buyerOrganizationId }), input.now] },
+          { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, rentalBatchId, supplierOrganizationId, supplierIncomeMicros, input.now, supplierOrganizationId] },
+          { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) VALUES(?,?,NULL,'PLATFORM_ORDER_CLEARING','DEBIT',?,NULL,?)", values: [`che_${crypto.randomUUID()}`, rentalBatchId, supplierIncomeMicros, input.now] },
+        ]),
       );
       if (resolution === "SETTLE" && referrerOrganizationId && commissionMicros > 0) statements.push(
         { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [referrerOrganizationId, input.now, input.now] },
@@ -618,6 +734,8 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       const eventId = `chhe_${crypto.randomUUID()}`;
       const batchId = `chb_${crypto.randomUUID()}`;
       const buyerOrganizationId = text(current, "buyer_organization_id");
+      const paidResolution = await paidHeldResolutionStatements(db, { holdType: "HOSTING_V2", holdId, spentMicros: 0, now: input.now });
+      const returnedMicros = amountMicros - paidResolution.expiredOnReleaseMicros;
       const results = await db.batch([
         { sql: `UPDATE hosting_v2_delivery_failures SET status='REFUNDED',refund_payload_hash=?,refund_applied_at=?
           WHERE command_id=? AND status='RECORDED'`, values: [input.payloadHash, input.now, input.commandId] },
@@ -625,14 +743,16 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
         { sql: "INSERT INTO card_hour_hold_events(id,hold_id,event_type,amount_micros,payload_hash,occurred_at) VALUES(?,?,'RELEASED',?,?,?)", values: [eventId, holdId, amountMicros, input.payloadHash, input.now] },
         { sql: "UPDATE card_hour_order_holds SET status='RELEASED',updated_at=? WHERE id=? AND status='HELD'", values: [input.now, holdId] },
         { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
-        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,version=version+1,updated_at=? WHERE organization_id=?", values: [amountMicros, amountMicros, input.now, buyerOrganizationId] },
+        ...paidResolution.statements,
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,version=version+1,updated_at=? WHERE organization_id=?", values: [returnedMicros, amountMicros, input.now, buyerOrganizationId] },
         { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
-        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) VALUES(?,?,'ORDER_REFUND',?,?,'POSTED',?,?)", values: [batchId, buyerOrganizationId, `delivery-failure-refund:HOSTING_V2:${contractId}`, amountMicros, JSON.stringify({ commandId: input.commandId, orderId: contractId, source: "HELD_BALANCE_RELEASE" }), input.now] },
-        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, batchId, buyerOrganizationId, amountMicros, input.now, buyerOrganizationId] },
+        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) VALUES(?,?,'ORDER_REFUND',?,?,'POSTED',?,?)", values: [batchId, buyerOrganizationId, `delivery-failure-refund:HOSTING_V2:${contractId}`, amountMicros, JSON.stringify({ commandId: input.commandId, orderId: contractId, source: "HELD_BALANCE_RELEASE", returnedMicros, expiredMicros: paidResolution.expiredOnReleaseMicros }), input.now] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','CREDIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=? AND ?>0", values: [`che_${crypto.randomUUID()}`, batchId, buyerOrganizationId, returnedMicros, input.now, buyerOrganizationId, returnedMicros] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,NULL,'PLATFORM_ENTITLEMENT_EXPIRY','CREDIT',?,NULL,? WHERE ?>0", values: [`che_${crypto.randomUUID()}`, batchId, paidResolution.expiredOnReleaseMicros, input.now, paidResolution.expiredOnReleaseMicros] },
         { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_HELD','DEBIT',?,held_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, batchId, buyerOrganizationId, amountMicros, input.now, buyerOrganizationId] },
       ]);
       const updated = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE id=?", [holdId]);
-      if (!updated || results[3]?.changes !== 1 || results[5]?.changes !== 1) throw new Error("HOSTING_DELIVERY_FAILURE_REFUND_FAILED");
+      if (!updated || results[0]?.changes !== 1 || text(updated, "status") !== "RELEASED") throw new Error("HOSTING_DELIVERY_FAILURE_REFUND_FAILED");
       return { record: holdRecord(updated), contractId, amountMicros, applied: true };
     },
 
@@ -644,12 +764,16 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       if (text(current, "status") !== "HELD") throw new AccountAuthError("CARD_HOUR_HOLD_STATE_CONFLICT", 409, "订单卡时已经结算，不能释放。 ");
       const amountMicros = number(current, "amount_micros");
       const eventId = `chhe_${crypto.randomUUID()}`;
+      const holdId = text(current, "id");
+      const paidResolution = await paidHeldResolutionStatements(db, { holdType: "HOSTING_V2", holdId, spentMicros: 0, now: input.now });
+      const returnedMicros = amountMicros - paidResolution.expiredOnReleaseMicros;
       const results = await db.batch([
-        { sql: "INSERT OR IGNORE INTO card_hour_hold_events(id,hold_id,event_type,amount_micros,payload_hash,occurred_at) SELECT ?,?,'RELEASED',?,?,? WHERE EXISTS(SELECT 1 FROM card_hour_order_holds WHERE id=? AND status='HELD')", values: [eventId, text(current, "id"), amountMicros, input.payloadHash, input.now, text(current, "id")] },
-        { sql: "UPDATE card_hour_order_holds SET status='RELEASED',updated_at=? WHERE id=? AND status='HELD' AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [input.now, text(current, "id"), eventId] },
-        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [amountMicros, amountMicros, input.now, organizationId, eventId] },
+        { sql: "INSERT OR IGNORE INTO card_hour_hold_events(id,hold_id,event_type,amount_micros,payload_hash,occurred_at) SELECT ?,?,'RELEASED',?,?,? WHERE EXISTS(SELECT 1 FROM card_hour_order_holds WHERE id=? AND status='HELD')", values: [eventId, holdId, amountMicros, input.payloadHash, input.now, holdId] },
+        { sql: "UPDATE card_hour_order_holds SET status='RELEASED',updated_at=? WHERE id=? AND status='HELD' AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [input.now, holdId, eventId] },
+        ...paidResolution.statements,
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros+?,held_micros=held_micros-?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS(SELECT 1 FROM card_hour_hold_events WHERE id=?)", values: [returnedMicros, amountMicros, input.now, organizationId, eventId] },
       ]);
-      const updated = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE id=?", [text(current, "id")]);
+      const updated = await db.first<Row>("SELECT * FROM card_hour_order_holds WHERE id=?", [holdId]);
       if (!updated) throw new Error("CARD_HOUR_HOLD_RELEASE_FAILED");
       return { record: holdRecord(updated), applied: results[0]?.changes === 1 };
     },

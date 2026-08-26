@@ -1455,6 +1455,14 @@ function createMarketMethods(db: HostingV2DatabaseAdapter): Partial<HostingV2Sto
         JOIN hosting_v2_supplier_profiles p ON p.organization_id=o.organization_id
         WHERE o.id=? AND o.status='PUBLISHED' AND p.status='APPROVED' AND p.agreement_version IS NOT NULL AND p.evidence_digest IS NOT NULL AND o.available_from<=? AND o.available_until>? AND d.status='VERIFIED' AND d.verification_status='PASSED' AND d.verified_until>? AND d.last_seen_at>=?`, [offerId, context.now, context.now, context.now, staleCutoff]);
       if (!row) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源已不可租用，请刷新市场。");
+      const managedGpuFeeTable = await db.first<Row>("SELECT COUNT(*) count FROM sqlite_master WHERE type='table' AND name IN ('managed_gpu_physical_assets','managed_gpu_outstanding_hosting_fees','managed_gpu_outstanding_hosting_fee_events')");
+      if (number(managedGpuFeeTable ?? {count:0},"count") === 3) {
+        const overdueManagedAsset = await db.first<Row>(`SELECT fee.id FROM managed_gpu_physical_assets asset
+          JOIN managed_gpu_outstanding_hosting_fees fee ON fee.asset_id=asset.id
+          WHERE asset.agent_binding_id=? AND fee.due_at<=?
+            AND COALESCE((SELECT status FROM managed_gpu_outstanding_hosting_fee_events WHERE fee_id=fee.id ORDER BY sequence DESC LIMIT 1),'PENDING')<>'PAID' LIMIT 1`, [value(row,"device_id"),context.now]);
+        if (overdueManagedAsset) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT",409,"该托管资产存在逾期待缴费用，补缴前不能接受新的算力订单。");
+      }
       if (!gpuTradingEligibility(rowInventory(row)).passed) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源未通过真实物理 GPU 审计，请刷新市场。");
       if (!agentVersionAtLeast(value(row, "device_agent_version"), HOSTING_V2_MIN_AGENT_VERSION)) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源交付组件正在升级，请刷新市场。");
       if (!hostingV2ApprovedImages().has(value(row, "approved_image")) || !verificationAllowsImage(row, value(row, "approved_image"))) throw new ExchangeDomainError("EXCHANGE_CAPACITY_CONFLICT", 409, "资源工作负载镜像尚未通过当前验真，请刷新市场。");

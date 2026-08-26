@@ -561,6 +561,7 @@ export const adminNavigation = [
   { label: "运营总览", items: [{ href: "/admin", label: "总览", exact: true }] },
   { label: "供给运营", items: [
     { href: "/admin/hosting", label: "Hosting 试运营" },
+    { href: "/admin/managed-gpu", label: "GPU 云托管" },
     { href: "/admin/supply-offers", label: "上架资源" },
     { href: "/admin/pools", label: "算力池" },
     { href: "/admin/verifications", label: "验真任务" },

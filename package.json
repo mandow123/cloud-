@@ -31,7 +31,8 @@
     "ops:db:qixiang-card-hours": "node scripts/ops/verify-qixiang-card-hour-schema.mjs",
     "ops:db:card-hour-topup-appeals": "node scripts/ops/verify-card-hour-topup-appeals-schema.mjs",
     "ops:db:card-hour-topup-appeal-reads": "node scripts/ops/verify-card-hour-topup-appeal-reads-schema.mjs",
-    "ops:db:card-hour-topup-reconciliation": "node scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs"
+    "ops:db:card-hour-topup-reconciliation": "node scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs",
+    "ops:db:card-hour-payment-production-closure": "node scripts/ops/verify-card-hour-payment-production-closure-schema.mjs"
   },
   "dependencies": {
     "alipay-sdk": "^4.14.0",

@@ -8,6 +8,9 @@
 .routeLinks a { min-height: 3rem; display: flex; align-items: center; border: 1px solid var(--border); border-top: 0; background: var(--surface); padding: .65rem .9rem; color: var(--ink); font-size: .8rem; font-weight: 750; text-decoration: none; }
 .routeLinks a:hover, .routeLinks a:focus-visible { background: var(--accent-soft); color: var(--accent); }
 .workspace { padding-block: 2.5rem 5rem; }
+.modeTabs { display: flex; gap: .5rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-strong); }
+.modeTabs a { min-height: 3rem; display: inline-flex; align-items: center; border: 1px solid var(--border); border-bottom: 0; padding: .65rem 1rem; color: var(--ink); font-weight: 800; text-decoration: none; }
+.modeTabs .activeTab { border-color: var(--accent); background: var(--accent); color: var(--on-brand); }
 .sectionHeading { display: flex; align-items: end; justify-content: space-between; gap: 1.5rem; border-bottom: 1px solid var(--border-strong); padding-bottom: 1rem; }
 .sectionHeading h2 { margin: 0; color: var(--ink); font-size: clamp(1.65rem, 3vw, 2.35rem); }
 .sectionHeading > span { color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; font-weight: 800; }
@@ -79,6 +82,7 @@
   .heroInner { padding-block: 2.25rem 1.5rem; }
   .routeLinks { grid-template-columns: 1fr; }
   .workspace { padding-block: 1.25rem 3.5rem; }
+  .modeTabs a { flex: 1; justify-content: center; }
   .sectionHeading { align-items: start; }
   .filters { grid-template-columns: 1fr; }
   .productCard { padding: 1rem; }

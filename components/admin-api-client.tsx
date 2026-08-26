@@ -130,7 +130,7 @@ export async function adminGetDashboard() {
   return payload as Record<string, unknown>;
 }
 
-export async function adminPostAction(path: string, payload: unknown, method: "POST" | "PATCH" | "PUT" = "POST") {
+export async function adminPostAction(path: string, payload: unknown, method: "POST" | "PATCH" | "PUT" = "POST", approvalId?: string) {
   const session = await getMarketplaceSession();
   const result = await adminFetch(path, {
     method,
@@ -138,6 +138,7 @@ export async function adminPostAction(path: string, payload: unknown, method: "P
       "content-type": "application/json",
       "x-kai-csrf": session.csrfToken,
       "Idempotency-Key": createIdempotencyKey("admin-action"),
+      ...(approvalId ? { "x-kai-approval-id": approvalId } : {}),
     },
     body: JSON.stringify(payload),
   }, 30_000);

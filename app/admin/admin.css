@@ -339,6 +339,7 @@ body:has(.admin-app) #main-content {
 .admin-action-fields select,
 .admin-action-fields input[type="text"],
 .admin-action-fields input[type="number"],
+.admin-action-fields input[type="datetime-local"],
 .admin-action-fields textarea {
   width: 100%;
   border: 1px solid var(--border-strong);
@@ -351,7 +352,8 @@ body:has(.admin-app) #main-content {
 .admin-select-filter select,
 .admin-action-fields select,
 .admin-action-fields input[type="text"],
-.admin-action-fields input[type="number"] {
+.admin-action-fields input[type="number"],
+.admin-action-fields input[type="datetime-local"] {
   min-height: 42px;
 }
 
@@ -1051,6 +1053,14 @@ body:has(.admin-app) #main-content {
   background: var(--surface);
   padding: 18px;
   text-decoration: none;
+}
+
+.admin-metric-grid .admin-metric-card {
+  min-height: 135px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  padding: 18px;
 }
 
 .admin-metric-grid a:hover {

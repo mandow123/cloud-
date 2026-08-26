@@ -70,7 +70,7 @@ function BuyerOverview({ summary }: { summary: AccountConsoleSummary }) {
   return <>
     <header className={styles.heading}>
       <div><p>BUYER ACCOUNT</p><h1>采购总览</h1><span>{summary.account.organizationName} · 所有数字只属于当前组织</span></div>
-      <div className={styles.actions}><Link className={styles.primaryAction} href="/member/card-hours">充值卡时</Link><Link className={styles.secondaryAction} href="/gpu">浏览 GPU 目录</Link><Link className={styles.secondaryAction} href="/request">提交算力需求</Link></div>
+      <div className={styles.actions}><Link className={styles.primaryAction} href="/member/card-hours">充值卡时</Link><Link className={styles.secondaryAction} href="/gpu">租用 GPU</Link><Link className={styles.secondaryAction} href="/managed-gpu">购买并托管 GPU</Link><Link className={styles.secondaryAction} href="/request">提交算力需求</Link></div>
     </header>
 
     <section className={styles.metrics} aria-label="采购账户摘要">
@@ -90,6 +90,7 @@ function BuyerOverview({ summary }: { summary: AccountConsoleSummary }) {
     </section>
 
     <section className={styles.compactPanel} id="compare"><div><p>RESOURCE COMPARE</p><h2>资源对比</h2><span>对比选择保存在当前浏览器，不代表下单或锁库存。</span></div><Link className={styles.secondaryAction} href="/resources">选择资源</Link></section>
+    <section className={styles.compactPanel}><div><p>MANAGED PHYSICAL GPU</p><h2>我的 GPU 云托管</h2><span>查看当前组织独立确权的实体 GPU、供应商订单、机房状态和月度入账卡时。</span></div><Link className={styles.secondaryAction} href="/member/gpu-assets">进入我的 GPU</Link></section>
   </>;
 }
 

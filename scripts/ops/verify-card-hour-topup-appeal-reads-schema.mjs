@@ -59,7 +59,7 @@ export function inspectCardHourTopupAppealReadSchema(database) {
 
 export function assertCardHourTopupAppealReadSchemaReady(database) {
   const state = inspectCardHourTopupAppealReadSchema(database);
-  if (state.marker < 5 || state.marker > 6) throw new Error(`CARD_HOUR_TOPUP_APPEAL_READS_SCHEMA_MARKER_INVALID:${state.marker}`);
+  if (state.marker < 5 || state.marker > 7) throw new Error(`CARD_HOUR_TOPUP_APPEAL_READS_SCHEMA_MARKER_INVALID:${state.marker}`);
   if (!state.tableReady || !state.indexReady || !state.appealForeignKeyReady || state.missingColumns.length) throw new Error(`CARD_HOUR_TOPUP_APPEAL_READS_SCHEMA_NOT_READY:${JSON.stringify(state)}`);
   if (database.prepare("PRAGMA foreign_key_check").all().length) throw new Error("CARD_HOUR_TOPUP_APPEAL_READS_FOREIGN_KEY_INVALID");
   return Object.freeze({ ready: true, schemaMarker: state.marker, migration: "0037_card_hour_topup_appeal_reads" });
@@ -67,7 +67,7 @@ export function assertCardHourTopupAppealReadSchemaReady(database) {
 
 export function applyCardHourTopupAppealReadMigration(database, migrationSql) {
   const before = inspectCardHourTopupAppealReadSchema(database);
-  if (before.marker >= 5 && before.marker <= 6) return assertCardHourTopupAppealReadSchemaReady(database);
+  if (before.marker >= 5 && before.marker <= 7) return assertCardHourTopupAppealReadSchemaReady(database);
   if (before.marker !== 4) throw new Error(`CARD_HOUR_TOPUP_APPEAL_READS_SCHEMA_MARKER_INVALID:${before.marker}`);
   if (before.tableReady || before.indexReady || before.appealForeignKeyReady || before.missingColumns.length !== 4) throw new Error(`CARD_HOUR_TOPUP_APPEAL_READS_PARTIAL_MIGRATION:${JSON.stringify(before)}`);
   database.exec("BEGIN IMMEDIATE");

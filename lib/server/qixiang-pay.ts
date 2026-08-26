@@ -80,6 +80,11 @@ export type QixiangExpectedPayment = Readonly<{
   merchantParam: string;
 }>;
 
+export type QixiangQueryProtection = Readonly<{
+  acquire(credentialId: string, now: string): Promise<Readonly<{ allowed: boolean; reason: "RATE_LIMIT" | "CIRCUIT_OPEN" | null }>>;
+  record(credentialId: string, outcome: "SUCCESS" | "TRANSPORT_FAILURE", now: string): Promise<void>;
+}>;
+
 export class QixiangPayError extends Error {
   readonly code: "QIXIANG_PAY_NOT_CONFIGURED" | "QIXIANG_PAY_INVALID_ORDER" | "QIXIANG_PAY_SIGNATURE_INVALID" | "QIXIANG_PAY_NOTIFICATION_INVALID" | "QIXIANG_PAY_MERCHANT_MISMATCH" | "QIXIANG_PAY_OUTCOME_UNKNOWN";
   constructor(code: QixiangPayError["code"], message: string) { super(message); this.name = "QixiangPayError"; this.code = code; }
@@ -418,10 +423,14 @@ function validateExpectedPayment(expected: QixiangExpectedPayment) {
   return { ...expected, subject, amountText: amountText(expected.amountCents) } as const;
 }
 
-export async function queryQixiangPayOrder(expectedInput: QixiangExpectedPayment, environment: QixiangPayEnvironment = runtimeEnvironment(), fetcher: typeof fetch = fetch): Promise<QixiangVerifiedPayment> {
+export async function queryQixiangPayOrder(expectedInput: QixiangExpectedPayment, environment: QixiangPayEnvironment = runtimeEnvironment(), fetcher: typeof fetch = fetch, protection?: QixiangQueryProtection): Promise<QixiangVerifiedPayment> {
   const expected = validateExpectedPayment(expectedInput);
   const config = activeOrderQueryConfiguration(environment);
   consumeQueryBudget(config.credentialId);
+  if (protection) {
+    const permit = await protection.acquire(config.credentialId, new Date().toISOString());
+    if (!permit.allowed) throw new QixiangPayError("QIXIANG_PAY_OUTCOME_UNKNOWN", permit.reason === "CIRCUIT_OPEN" ? "支付查单保护已熔断，请稍后重试。" : "支付查单过于频繁，请稍后重试。");
+  }
   const queryUrl = new URL(config.orderQuery);
   queryUrl.search = new URLSearchParams({ act: "order", pid: config.pid, key: config.key, out_trade_no: expected.orderId }).toString();
   let response: Response;
@@ -429,14 +438,17 @@ export async function queryQixiangPayOrder(expectedInput: QixiangExpectedPayment
     response = await fetcher(queryUrl, { method: "GET", headers: { accept: "application/json" }, redirect: "error", signal: AbortSignal.timeout(8_000) });
   } catch {
     recordQueryTransportFailure(config.credentialId);
+    if (protection) await protection.record(config.credentialId, "TRANSPORT_FAILURE", new Date().toISOString());
     throw new QixiangPayError("QIXIANG_PAY_OUTCOME_UNKNOWN", "支付服务查单结果需要人工核对。");
   }
   let payload: Awaited<ReturnType<typeof readJson>>;
   try {
     payload = await readJson(response);
     recordQueryTransportSuccess(config.credentialId);
+    if (protection) await protection.record(config.credentialId, "SUCCESS", new Date().toISOString());
   } catch (error) {
     recordQueryTransportFailure(config.credentialId);
+    if (protection) await protection.record(config.credentialId, "TRANSPORT_FAILURE", new Date().toISOString());
     throw error;
   }
   const { value, raw } = payload;
@@ -470,7 +482,7 @@ export async function queryQixiangPayOrder(expectedInput: QixiangExpectedPayment
   };
 }
 
-export async function confirmQixiangPayNotification(notification: QixiangSignedPaymentNotification, expected: QixiangExpectedPayment, environment: QixiangPayEnvironment = runtimeEnvironment(), fetcher: typeof fetch = fetch): Promise<QixiangVerifiedPayment> {
+export async function confirmQixiangPayNotification(notification: QixiangSignedPaymentNotification, expected: QixiangExpectedPayment, environment: QixiangPayEnvironment = runtimeEnvironment(), fetcher: typeof fetch = fetch, protection?: QixiangQueryProtection): Promise<QixiangVerifiedPayment> {
   const config = credentialConfiguration(environment);
   if (notification.providerOrderId !== expected.orderId
     || notification.merchantAccountRef !== config.pid
@@ -480,7 +492,7 @@ export async function confirmQixiangPayNotification(notification: QixiangSignedP
     || (notification.merchantParam !== null && notification.merchantParam !== expected.merchantParam)) {
     throw new QixiangPayError("QIXIANG_PAY_NOTIFICATION_INVALID", "支付通知与付款单不一致。");
   }
-  const queried = await queryQixiangPayOrder(expected, environment, fetcher);
+  const queried = await queryQixiangPayOrder(expected, environment, fetcher, protection);
   if (queried.providerTransactionId !== notification.providerTransactionId) throw new QixiangPayError("QIXIANG_PAY_OUTCOME_UNKNOWN", "支付通知与主动查单结果不一致，需要人工核对。");
   return {
     ...queried,

@@ -75,6 +75,11 @@ export interface CardHourStore {
   registerTopupReconciliationRequest(input: { organizationId: string; orderId: string; idempotencyKey: string; payloadHash: string; now: string }): Promise<{ replayed: boolean }>;
   claimTopupReconciliation(input: { organizationId: string; orderId: string; now: string; staleBefore: string; nextEligibleAt: string }): Promise<{ claimed: boolean; claimToken: string | null; record: Record<string, unknown> }>;
   releaseTopupReconciliation(input: { organizationId: string; orderId: string; claimToken: string; now: string; nextEligibleAt: string }): Promise<void>;
+  listDueTopupReconciliations(input: { now: string; staleBefore: string; limit: number }): Promise<readonly Readonly<{ orderId: string; organizationId: string; attemptCount: number; expiresAt: string }>[]>;
+  escalateTopupReconciliation(input: { organizationId: string; orderId: string; attemptCount: number; now: string }): Promise<void>;
+  acquireQixiangQueryPermit(input: { credentialId: string; now: string; resetBefore: string; maxRequests: number }): Promise<Readonly<{ allowed: boolean; reason: "RATE_LIMIT" | "CIRCUIT_OPEN" | null; retryAt: string | null }>>;
+  recordQixiangQueryOutcome(input: { credentialId: string; outcome: "SUCCESS" | "TRANSPORT_FAILURE"; now: string; failureThreshold: number; circuitOpenUntil: string }): Promise<void>;
+  expirePaidEntitlements(input: { now: string; limit?: number }): Promise<Readonly<{ expiredLots: number; expiredMicros: number }>>;
   attachTopupCheckout(input: { organizationId: string; orderId: string; checkoutUrl: string; now: string }): Promise<{ record: Record<string, unknown>; replayed: boolean }>;
   markTopupReconciliationRequired(input: { organizationId: string; orderId: string; now: string }): Promise<void>;
   getTopup(orderId: string): Promise<Record<string, unknown> | null>;

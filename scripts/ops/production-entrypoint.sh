@@ -33,6 +33,10 @@ case "${1:-}:${2:-}" in
     node /app/scripts/ops/validate-production-env.mjs --check-filesystem
     exec "$@"
     ;;
+  node:scripts/ops/verify-card-hour-payment-production-closure-schema.mjs)
+    node /app/scripts/ops/validate-production-env.mjs --check-filesystem
+    exec "$@"
+    ;;
 esac
 
 node /app/scripts/ops/validate-production-env.mjs --check-filesystem
@@ -41,4 +45,5 @@ node /app/scripts/ops/verify-qixiang-card-hour-schema.mjs --allow-uninitialized
 node /app/scripts/ops/verify-card-hour-topup-appeals-schema.mjs --allow-uninitialized
 node /app/scripts/ops/verify-card-hour-topup-appeal-reads-schema.mjs --allow-uninitialized
 node /app/scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs --allow-uninitialized
+node /app/scripts/ops/verify-card-hour-payment-production-closure-schema.mjs --allow-uninitialized
 exec "$@"

@@ -51,6 +51,7 @@ test("Qixiang Pay defaults closed and opens only with approved rotated credentia
     KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE: "RISK-KAI-QIXIANG-GET-20260822",
     KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID: "QRY-qixiang-production-v1",
     KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION: "query-v1",
+    KAI_PAYMENT_RECONCILIATION_TOKEN: "reconciliation-token-fixture-20260822-abcdef",
     KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS: "org-production-pilot",
     KAI_QIXIANG_PAY_PILOT_CHANNEL: "ALIPAY",
     KAI_QIXIANG_PAY_CHANNELS: "ALIPAY",
@@ -64,6 +65,7 @@ test("Qixiang Pay defaults closed and opens only with approved rotated credentia
   rejection({ ...enabled, KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE: "" }, "KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE");
   rejection({ ...enabled, KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID: "" }, "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID");
   rejection({ ...enabled, KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION: "" }, "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT");
+  rejection({ ...enabled, KAI_PAYMENT_RECONCILIATION_TOKEN: "replace-with-secret" }, "KAI_PAYMENT_RECONCILIATION_TOKEN");
   rejection({ ...enabled, KAI_QIXIANG_PAY_KEY: "replace-with-secret-123456" }, "KAI_QIXIANG_PAY_KEY");
   rejection({ ...enabled, KAI_QIXIANG_PAY_CHANNELS: "ALIPAY,ALIPAY" }, "KAI_QIXIANG_PAY_CHANNELS");
   rejection({ ...enabled, KAI_QIXIANG_PAY_CHANNELS: "ALIPAY,WXPAY" }, "KAI_QIXIANG_PAY_PILOT_CHANNEL");
@@ -125,6 +127,19 @@ test("Hosting V2 setup validates every production dependency without opening tra
   rejection({ ...base, KAI_HOSTING_V2_SETUP: "1" }, "KAI_HOSTING_APPROVED_IMAGES");
 });
 
+test("Managed GPU production access fails closed without an exact non-empty invitation list", () => {
+  validateProductionEnvironment({ ...base, KAI_MANAGED_GPU_MVP: "0" });
+  rejection({ ...base, KAI_MANAGED_GPU_MVP: "2" }, "KAI_MANAGED_GPU_MVP");
+  rejection({ ...base, KAI_MANAGED_GPU_MVP: "1" }, "KAI_MANAGED_GPU_INVITED_ORGANIZATIONS");
+  rejection({ ...base, KAI_MANAGED_GPU_MVP: "1", KAI_MANAGED_GPU_INVITED_ORGANIZATIONS: "org-managed,org-managed" }, "KAI_MANAGED_GPU_INVITED_ORGANIZATIONS");
+  rejection({ ...base, KAI_MANAGED_GPU_MVP: "1", KAI_MANAGED_GPU_INVITED_ORGANIZATIONS: "*" }, "KAI_MANAGED_GPU_INVITED_ORGANIZATIONS");
+  validateProductionEnvironment({
+    ...base,
+    KAI_MANAGED_GPU_MVP: "1",
+    KAI_MANAGED_GPU_INVITED_ORGANIZATIONS: "org-managed-alpha,org-managed-beta",
+  });
+});
+
 test("production templates carry the rollback and payment gates into the container", () => {
   const compose = readFileSync(new URL("../deploy/compose.production.yml", import.meta.url), "utf8");
   const environment = readFileSync(new URL("../deploy/kai-cloud-app.env.example", import.meta.url), "utf8");
@@ -132,6 +147,8 @@ test("production templates carry the rollback and payment gates into the contain
   assert.match(compose, /KAI_ACCOUNT_CONSOLE_V2: "\$\{KAI_ACCOUNT_CONSOLE_V2:-0\}"/u);
   assert.match(compose, /KAI_HOSTING_V2_SETUP: "\$\{KAI_HOSTING_V2_SETUP:-0\}"/u);
   assert.match(compose, /KAI_HOSTING_DEVICE_RETIREMENT: "\$\{KAI_HOSTING_DEVICE_RETIREMENT:-0\}"/u);
+  assert.match(compose, /KAI_MANAGED_GPU_MVP: "\$\{KAI_MANAGED_GPU_MVP:-0\}"/u);
+  assert.match(compose, /KAI_MANAGED_GPU_INVITED_ORGANIZATIONS/u);
   assert.match(compose, /KAI_ALIPAY_ENABLED: "\$\{KAI_ALIPAY_ENABLED:-0\}"/u);
   assert.match(compose, /KAI_QIXIANG_PAY_ENABLED: "\$\{KAI_QIXIANG_PAY_ENABLED:-0\}"/u);
   assert.match(compose, /KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "\$\{KAI_QIXIANG_PAY_RECONCILIATION_ENABLED:-0\}"/u);
@@ -141,6 +158,7 @@ test("production templates carry the rollback and payment gates into the contain
   assert.match(compose, /KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID/u);
   assert.match(compose, /KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS/u);
   assert.match(compose, /KAI_QIXIANG_PAY_PILOT_CHANNEL/u);
+  assert.match(compose, /KAI_PAYMENT_RECONCILIATION_TOKEN/u);
   assert.match(compose, /KAI_ADMIN_APPROVER_USERNAME/u);
   assert.match(compose, /KAI_ADMIN_APPROVER_PASSWORD_HASH/u);
   assert.match(compose, /KAI_ADMIN_FULFILLMENT_USERNAME/u);
@@ -149,6 +167,8 @@ test("production templates carry the rollback and payment gates into the contain
   assert.match(environment, /^KAI_ACCOUNT_CONSOLE_V2=0$/mu);
   assert.match(environment, /^KAI_HOSTING_V2_SETUP=0$/mu);
   assert.match(environment, /^KAI_HOSTING_DEVICE_RETIREMENT=0$/mu);
+  assert.match(environment, /^KAI_MANAGED_GPU_MVP=0$/mu);
+  assert.match(environment, /^KAI_MANAGED_GPU_INVITED_ORGANIZATIONS=$/mu);
   assert.match(environment, /^KAI_ALIPAY_ENABLED=0$/mu);
   assert.match(environment, /^KAI_QIXIANG_PAY_ENABLED=0$/mu);
   assert.match(environment, /^KAI_QIXIANG_PAY_RECONCILIATION_ENABLED=0$/mu);
