@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLocale } from "./locale-provider";
 
 type Preference = "system" | "light" | "dark";
 
@@ -20,6 +21,7 @@ function applyPreference(preference: Preference) {
 }
 
 export function ThemeControl() {
+  const { t } = useLocale();
   const [preference, setPreference] = useState<Preference>("system");
 
   useEffect(() => {
@@ -43,9 +45,9 @@ export function ThemeControl() {
 
   return (
     <label className="theme-control">
-      <span>显示模式</span>
+      <span>{t("theme")}</span>
       <select
-        aria-label="显示模式"
+        aria-label={t("theme")}
         value={preference}
         onChange={(event) => {
           const next = event.target.value as Preference;
@@ -58,9 +60,9 @@ export function ThemeControl() {
           applyPreference(next);
         }}
       >
-        <option value="system">跟随系统</option>
-        <option value="light">浅色</option>
-        <option value="dark">深色</option>
+        <option value="system">{t("system")}</option>
+        <option value="light">{t("light")}</option>
+        <option value="dark">{t("dark")}</option>
       </select>
     </label>
   );
