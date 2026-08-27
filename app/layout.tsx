@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { LocaleProvider } from "@/components/locale-provider";
 import "./fonts.css";
 import "./globals.css";
 import "./kai-cloud.css";
@@ -58,12 +59,14 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="kai-root">
-        <a className="skip-link" href="#main-content">
-          跳到主要内容
-        </a>
-        <SiteHeader />
-        <main id="main-content">{children}</main>
-        <SiteFooter />
+        <LocaleProvider>
+          <a className="skip-link" href="#main-content">
+            跳到主要内容
+          </a>
+          <SiteHeader />
+          <main id="main-content">{children}</main>
+          <SiteFooter />
+        </LocaleProvider>
       </body>
     </html>
   );

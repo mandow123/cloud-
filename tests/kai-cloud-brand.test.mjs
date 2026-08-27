@@ -22,15 +22,17 @@ test("the supplied KAI mark and custom Cloud lettering form one vector wordmark"
 });
 
 test("public header, footer, and account console use the same KAI Cloud brand", async () => {
-  const [header, footer, console] = await Promise.all([
+  const [header, footer, footerView, console] = await Promise.all([
     read("components/site-header.tsx"),
     read("components/site-footer.tsx"),
+    read("components/site-footer-view.tsx"),
     read("components/account-console-shell.tsx"),
   ]);
   assert.match(header, /<KaiCloudBrand \/>/u);
-  assert.match(footer, /<KaiCloudBrand size="footer" \/>/u);
+  assert.match(footer, /<SiteFooterView/u);
+  assert.match(footerView, /<KaiCloudBrand size="footer" \/>/u);
   assert.match(console, /<KaiCloudBrand size="console" \/>/u);
   assert.doesNotMatch(header, /wordmark-kai|wordmark-cloud/u);
-  assert.doesNotMatch(footer, />KAI Cloud<\/p>/u);
+  assert.doesNotMatch(`${footer}\n${footerView}`, />KAI Cloud<\/p>/u);
   assert.doesNotMatch(console, /<span>KAI Cloud<\/span>/u);
 });

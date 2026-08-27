@@ -3,52 +3,54 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
+import { useLocale } from "./locale-provider";
+import type { MessageKey } from "@/lib/i18n";
 
 type NavItem = {
   href: string;
-  label: string;
-  description: string;
+  label: MessageKey;
+  description: MessageKey;
   external?: boolean;
 };
 
 type NavGroup = {
-  label: string;
+  label: MessageKey;
   paths: string[];
   items: NavItem[];
 };
 
 const commonGroups: NavGroup[] = [
   {
-    label: "算力云",
+    label: "compute",
     paths: ["/gpu", "/resources", "/market"],
     items: [
-      { href: "/gpu", label: "GPU 租赁", description: "筛选、比较并启动 GPU 实例" },
-      { href: "/resources", label: "全部资源", description: "浏览 GPU、模型与基础设施资源" },
-      { href: "/market", label: "市场行情", description: "查看 KAI 标准卡时与市场快照" },
+      { href: "/gpu", label: "gpuRental", description: "gpuRentalDesc" },
+      { href: "/resources", label: "allResources", description: "allResourcesDesc" },
+      { href: "/market", label: "market", description: "marketDesc" },
     ],
   },
   {
-    label: "教程",
+    label: "guides",
     paths: ["/guides", "/methodology"],
     items: [
-      { href: "/guides", label: "教程首页", description: "从第一次租用到第一次上架" },
-      { href: "/guides#rent-gpu", label: "租用 GPU", description: "模板、筛选、租用与连接" },
-      { href: "/guides/host-agent", label: "上架 4090", description: "个人显卡完整上架步骤" },
-      { href: "/guides#delivery", label: "交付与验收", description: "连接检查、计量和验收" },
-      { href: "/methodology", label: "计价方法", description: "KAI 标准卡时与价格口径" },
+      { href: "/guides", label: "guideHome", description: "guideHomeDesc" },
+      { href: "/guides#rent-gpu", label: "rentGpu", description: "rentGpuDesc" },
+      { href: "/guides/host-agent", label: "listGpu", description: "listGpuDesc" },
+      { href: "/guides#delivery", label: "delivery", description: "deliveryDesc" },
+      { href: "/methodology", label: "pricing", description: "pricingDesc" },
     ],
   },
 ];
 
 const hostingV2Group: NavGroup = {
-  label: "Hosting",
+  label: "hosting",
   paths: ["/hosting", "/partners"],
   items: [
-    { href: "/hosting", label: "开始上架", description: "从资源登记到清理再售的完整路径" },
-    { href: "/hosting/personal-gpu", label: "个人 GPU", description: "上架一张 RTX 4090 或 H100" },
-    { href: "/hosting/cloud", label: "云资源接入", description: "云主机、IDC 与集群连接器" },
-    { href: "/hosting/earnings", label: "收益与结算", description: "计量、租金、佣金与卡时账本" },
-    { href: "/hosting/partners", label: "供应商合作", description: "企业协议、审核与接入进度" },
+    { href: "/hosting", label: "startHosting", description: "startHostingDesc" },
+    { href: "/hosting/personal-gpu", label: "personalGpu", description: "personalGpuDesc" },
+    { href: "/hosting/cloud", label: "cloudAccess", description: "cloudAccessDesc" },
+    { href: "/hosting/earnings", label: "earnings", description: "earningsDesc" },
+    { href: "/hosting/partners", label: "suppliers", description: "suppliersDesc" },
   ],
 };
 
@@ -67,6 +69,7 @@ function isItemActive(pathname: string, href: string) {
 }
 
 export function NavLinks() {
+  const { t } = useLocale();
   const pathname = usePathname();
   const navRef = useRef<HTMLElement>(null);
   const groups = groupsFor();
@@ -103,17 +106,17 @@ export function NavLinks() {
   }
 
   return (
-    <nav aria-label="全局导航" className="primary-nav primary-nav-mega" ref={navRef}>
+    <nav aria-label={t("globalNav")} className="primary-nav primary-nav-mega" ref={navRef}>
       {groups.map((group) => {
         const active = isGroupActive(pathname, group);
         return (
           <details className="nav-group" key={group.label}>
             <summary aria-current={active ? "page" : undefined}>
-              <span>{group.label}</span>
+              <span>{t(group.label)}</span>
               <span aria-hidden="true" className="nav-chevron">⌄</span>
             </summary>
             <div className="nav-popover">
-              <p className="nav-popover-label">{group.label}</p>
+              <p className="nav-popover-label">{t(group.label)}</p>
               <div className="nav-popover-links">
                 {group.items.map((item) => (
                   <Link
@@ -124,8 +127,8 @@ export function NavLinks() {
                     target={item.external ? "_blank" : undefined}
                     rel={item.external ? "noreferrer" : undefined}
                   >
-                    <strong>{item.label}</strong>
-                    <span>{item.description}</span>
+                    <strong>{t(item.label)}</strong>
+                    <span>{t(item.description)}</span>
                   </Link>
                 ))}
               </div>
@@ -134,7 +137,7 @@ export function NavLinks() {
         );
       })}
       <a className="nav-company-link" href="https://kai.com" target="_blank" rel="noreferrer">
-        Company <span aria-hidden="true">↗</span>
+        {t("company")} <span aria-hidden="true">↗</span>
       </a>
     </nav>
   );

@@ -5,6 +5,7 @@ import test from "node:test";
 
 import { formatCardHourDisplayMicros, formatCardHourValue } from "../lib/card-hours.ts";
 import { formatKaiSchDisplay } from "../lib/kai-standard-view-models.ts";
+import { translate } from "../lib/i18n.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 
@@ -25,25 +26,27 @@ function walk(directory) {
 test("desktop header presents purchase and demand as adjacent, distinct actions", () => {
   const header = source("components/site-header.tsx");
   const buyHref = header.indexOf('href="/buy"');
-  const buyLabel = header.indexOf("购买算力", buyHref);
+  const buyLabel = header.indexOf('t("buy")', buyHref);
   const requestHref = header.indexOf('href="/request"', buyLabel);
-  const requestLabel = header.indexOf("提交算力需求", requestHref);
+  const requestLabel = header.indexOf('t("request")', requestHref);
 
   assert.ok(buyHref >= 0, "the desktop header must link to /buy");
-  assert.ok(buyLabel > buyHref, "the /buy action must be labelled 购买算力");
-  assert.ok(requestHref > buyLabel, "提交算力需求 must immediately follow the purchase action");
-  assert.ok(requestLabel > requestHref, "the /request action must be labelled 提交算力需求");
+  assert.ok(buyLabel > buyHref, "the /buy action must use the localized buy label");
+  assert.ok(requestHref > buyLabel, "the demand action must immediately follow the purchase action");
+  assert.ok(requestLabel > requestHref, "the /request action must use the localized request label");
+  assert.equal(translate("zh-CN", "buy"), "购买算力");
+  assert.equal(translate("zh-CN", "request"), "提交算力需求");
   assert.doesNotMatch(header, /发布算力需求/u);
-  assert.match(header, /button-primary[\s\S]*href="\/buy"[\s\S]*购买算力[\s\S]*button-secondary[\s\S]*href="\/request"[\s\S]*提交算力需求/u);
+  assert.match(header, /button-primary[\s\S]*href="\/buy"[\s\S]*t\("buy"\)[\s\S]*button-secondary[\s\S]*href="\/request"[\s\S]*t\("request"\)/u);
 });
 
 test("mobile navigation keeps both purchase and demand entry points usable", () => {
   const mobile = source("components/mobile-demand-cta.tsx");
   const css = source("app/kai-cloud.css");
 
-  assert.match(mobile, /<nav[^>]+className="mobile-demand-cta"[^>]+aria-label="购买与需求操作"/u);
-  assert.match(mobile, /pathname !== "\/buy"[\s\S]*href="\/buy"[\s\S]*购买算力/u);
-  assert.match(mobile, /pathname !== "\/request"[\s\S]*href="\/request"[\s\S]*提交算力需求/u);
+  assert.match(mobile, /<nav[^>]+className="mobile-demand-cta"[^>]+aria-label=\{`\$\{t\("buy"\)\} \/ \$\{t\("request"\)\}`\}/u);
+  assert.match(mobile, /pathname !== "\/buy"[\s\S]*href="\/buy"[\s\S]*t\("buy"\)/u);
+  assert.match(mobile, /pathname !== "\/request"[\s\S]*href="\/request"[\s\S]*t\("request"\)/u);
   assert.doesNotMatch(mobile, /发布算力需求/u);
   assert.match(css, /\.mobile-demand-cta\s*\{\s*display:\s*none;/u);
   assert.match(css, /@media \(max-width:\s*720px\)[\s\S]*\.mobile-demand-cta\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:/u);
