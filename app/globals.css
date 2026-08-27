@@ -395,12 +395,25 @@ textarea {
   line-height: 1.2;
 }
 
-.language-control > span {
+.language-control-label {
   position: absolute;
   z-index: 1;
   top: 6px;
   left: 11px;
   pointer-events: none;
+}
+
+.language-control-short {
+  display: none;
+}
+
+.language-control-scope {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .language-control::after {
@@ -727,16 +740,39 @@ textarea {
 
   .language-control,
   .language-control select {
-    width: 92px;
-    min-width: 92px;
+    width: 70px;
+    min-width: 70px;
   }
 
   .language-control select {
-    padding-top: 4px;
+    padding: 4px 24px 4px 8px;
+    color: transparent;
   }
 
-  .language-control > span {
+  .language-control select option {
+    color: var(--ink);
+  }
+
+  .language-control-label {
     display: none;
+  }
+
+  .language-control-short {
+    position: absolute;
+    z-index: 1;
+    top: 50%;
+    left: 8px;
+    display: block;
+    max-width: 40px;
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+    text-overflow: ellipsis;
+    translate: 0 -50%;
+    white-space: nowrap;
   }
 
   .primary-nav {
