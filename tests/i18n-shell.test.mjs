@@ -27,15 +27,16 @@ test("browser language values resolve to supported locales", () => {
 
 test("every locale has usable shell translations", () => {
   for (const locale of supportedLocales) {
-    for (const key of ["language", "theme", "buy", "request", "compute", "hosting", "guides", "disclaimer"]) {
+    for (const key of ["language", "languageScope", "theme", "buy", "request", "compute", "hosting", "guides", "disclaimer"]) {
       assert.ok(translate(locale, key).trim().length > 0, `${locale}.${key} is empty`);
     }
   }
 });
 
 test("the global shell mounts the locale provider and language control", async () => {
-  const [layout, header, nav, footer, mobile] = await Promise.all([
+  const [layout, provider, header, nav, footer, mobile] = await Promise.all([
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/locale-provider.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/site-header.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/nav-links.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/site-footer-view.tsx", import.meta.url), "utf8"),
@@ -43,6 +44,8 @@ test("the global shell mounts the locale provider and language control", async (
   ]);
 
   assert.match(layout, /<LocaleProvider>/);
+  assert.match(provider, /saved \? normalizeLocale\(saved\) : DEFAULT_LOCALE/u);
+  assert.doesNotMatch(provider, /navigator\.language/u);
   assert.match(header, /<LanguageControl \/>/);
   assert.match(header, /t\("buy"\)/);
   assert.match(nav, /t\(group\.label\)/);

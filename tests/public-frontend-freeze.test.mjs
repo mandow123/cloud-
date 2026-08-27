@@ -9,13 +9,13 @@ const BASELINE = "bb7fd3211fdff28a448af85f53e9f40839ffa843";
 const ROOT = join(import.meta.dirname, "..");
 const EXTRA_FROZEN_FILES = ["data/model-market.snapshot.json", "lib/catalog.mjs"];
 const APPROVED_PUBLIC_FILES = Object.freeze({
-  "app/globals.css": "0ce464fdee52f809c197f2b6fe2ec3987bf67a055c9889b71f7f6afeb00508b2",
+  "app/globals.css": "c2c5e75a9f6d955d8145781557e3bb798cd1dca826544ac6e6ba3d0a62c8c60d",
   "app/gpu/page.tsx": "70838ea765a886ca7313cb4b2e00914f8a616a907e0a9e9499c3f5be9d713fdd",
   "app/guides/guides.module.css": "5e12ca1ab83f648e5ea59508f851f739f6a16bc1734bdc23bf60d83cf8cca88b",
   "app/guides/page.tsx": "7953719256414cacfb75e38f12707a67e511fbcb94aa19ef8ae9c9e5e03391db",
   "app/hosting/page.tsx": "fc74f511a198159a4f4f6fa395202a6ce25a9ac33599d2695a82375133668925",
   "app/hosting/partners/terms/KAI_HOSTING_TERMS_2026_08/page.tsx": "61414d5988494518b096ec8d8e07095851481bc42fad6f62e63a401634ab3b6a",
-  "app/kai-cloud.css": "9c80032dfcc153e98e5de918e32ffb1002707a2e1742f922b7b5988e1ec528d6",
+  "app/kai-cloud.css": "0b3252e02a8ab8050cb8da87ac0ec407e0fcd51285c7d856f4c3fdc28b63eac8",
   "app/layout.tsx": "5b58d109269961a697ffa3068f7f134d6e2bc56691cd1a569b1749fe53791dd7",
   "app/page.tsx": "3f68b8c3587d187148946c3317dbe6675b70649ebbd423e864f552a5410cb382",
   "app/methodology/page.tsx": "07f6c0547cc216903715e626548e1d2801a0cb829df12411f522e43cae7e5135",
@@ -48,8 +48,8 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "components/resource-explorer.tsx": "368671c9dd31505009ea6a10b521767b12c2b497f9bf2d5d805b76d03d47c050",
   "components/resource-detail-actions.tsx": "be0f197a8c5e9580f9fa89425cb3a6f029b1aeed9f125339b62f068878a36c7c",
   "components/resource-purchase.module.css": "6569ca7f4f35c5cd6f731ee97dba34567d002d5bb370aa9b3058c33628bc6669",
-  "components/language-control.tsx": "791d6e244a4f2674814586cdd76c1dac8fe11c4d5c7441a85597cb358636af83",
-  "components/locale-provider.tsx": "32c7e4691d4b637e8c94012f5effd6ccc1c7ab4647a7e132e6e11773b4589f00",
+  "components/language-control.tsx": "60ef4529327c666522617a5c61ab1b910b8acb343ee64aeb90261a9680179b18",
+  "components/locale-provider.tsx": "09ff154d579021216b5acd170ef9bf3ab9a3345d3187b885a0aa38a6fe090709",
   "components/site-footer-view.tsx": "ead5d5d36fea877831e0d1df33f8f38bc121ffee96d83f61e81f7b9075273a87",
   "components/site-footer.tsx": "48314604150577a62fa8a334c0690be47ff72a48615f9d0ad393c441a44f5e9a",
   "components/site-header.tsx": "5bcb4e1cda1f2305dbc06673b5cb1cd641119e1fdacf4298910d7a3275821512",
@@ -58,7 +58,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "components/supply-listings-dashboard.tsx": "e5a24ab251eed94562f51f523590bba70a041b1551c11bdaa5234ae300a6f0d4",
   "components/supply-order-workspace.tsx": "771eca38029a65863d3012b5bc21babd084339307a9fad1c9a53e74c6b005375",
   "lib/catalog.mjs": "814608044dda4a2b9e25902b1c07963d43a675ab8d3d42ab8f8aff89db0ca568",
-  "lib/i18n.ts": "e51377976a879fe8bbe3aa863ff729c727f4cfd57eab127ac0c8d95e5b7bf39d",
+  "lib/i18n.ts": "c90c60e8419efc11064957154f91507608b7da6b4c3f57fa289f00fc955afcda",
   "public/og-home-v2.png": "9ab58389125a32bbe84a29a6f73f7f7f75cdb04c717c58c82233f7ec09d63d5d",
   "public/assets/suppliers/shanghai-honghuan.jpg": "db1ed9e4cddc31f4b6e641bbc9179443e5a5d251a31abe28109c3fa55f32a70f",
 });

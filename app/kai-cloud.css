@@ -44,7 +44,7 @@
   font-size: 0.6875rem;
 }
 
-.kai-root:not(:has(.mandow-hound-root)) .language-control > span {
+.kai-root:not(:has(.mandow-hound-root)) .language-control-label {
   top: 5px;
   font-size: 0.625rem;
   line-height: 1;
@@ -587,8 +587,8 @@
 
   .kai-root:not(:has(.mandow-hound-root)) .language-control,
   .kai-root:not(:has(.mandow-hound-root)) .language-control select {
-    width: 92px;
-    min-width: 92px;
+    width: 70px;
+    min-width: 70px;
   }
 
   .kai-root:not(:has(.mandow-hound-root)) .language-control select {

@@ -31,7 +31,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const saved = window.localStorage.getItem(LOCALE_STORAGE_KEY);
-    const next = saved ? normalizeLocale(saved) : normalizeLocale(window.navigator.language);
+    const next = saved ? normalizeLocale(saved) : DEFAULT_LOCALE;
     persistLocale(next);
     const frame = window.requestAnimationFrame(() => setLocaleState(next));
     return () => window.cancelAnimationFrame(frame);
