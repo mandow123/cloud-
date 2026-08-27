@@ -1,0 +1,7 @@
+import { apiErrorResponse, beginApiRequest, jsonResponse } from "@/lib/server/api-guard";
+import { managedGpuMemberMutation, managedGpuMemberRead, managedGpuReadBody, managedGpuRejectFields, managedGpuString } from "@/lib/server/managed-gpu-api";
+import { requireManagedGpuFeature } from "@/lib/server/managed-gpu-feature";
+import { getManagedGpuStore } from "@/lib/server/managed-gpu-store";
+export const dynamic = "force-dynamic";
+export async function GET(request: Request) { const context = beginApiRequest(request); try { requireManagedGpuFeature(); const account = await managedGpuMemberRead(request); const records = await (await getManagedGpuStore()).listMemberOrders(account.activeOrganization.id); return jsonResponse({ records, count: records.length }, 200, { "cache-control": "private, no-store" }, context); } catch (error) { return apiErrorResponse(error, undefined, context); } }
+export async function POST(request: Request) { const context = beginApiRequest(request); try { requireManagedGpuFeature(); const body = await managedGpuReadBody(request); managedGpuRejectFields(body, ["amount", "currency", "status", "organizationId", "accountId", "version"]); const { context: mutation } = await managedGpuMemberMutation(request, body); const result = await (await getManagedGpuStore()).acceptQuote(mutation, managedGpuString(body, "quoteId", 8, 100)); return jsonResponse(result, result.replayed ? 200 : 201, { "idempotency-replayed": String(result.replayed) }, context); } catch (error) { return apiErrorResponse(error, undefined, context); } }

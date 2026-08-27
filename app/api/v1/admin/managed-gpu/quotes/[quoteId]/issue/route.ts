@@ -1,0 +1,8 @@
+import { apiErrorResponse, beginApiRequest, jsonResponse } from "@/lib/server/api-guard";
+import { managedGpuAdminMutation } from "@/lib/server/managed-gpu-admin-api";
+import { managedGpuCurrency, managedGpuInteger, managedGpuString } from "@/lib/server/managed-gpu-api";
+import { requireManagedGpuFeature } from "@/lib/server/managed-gpu-feature";
+import { getManagedGpuStore } from "@/lib/server/managed-gpu-store";
+import { AccountAuthError } from "@/lib/server/account-auth";
+export const dynamic = "force-dynamic";
+export async function POST(request: Request, routeContext: { params: Promise<{ quoteId: string }> }) { const context = beginApiRequest(request); try { requireManagedGpuFeature(); const command = await managedGpuAdminMutation(request, ["MARKET_PUBLISH"]); const { quoteId } = await routeContext.params; const expiresAt = managedGpuString(command.input, "expiresAt", 20, 40); if (!Number.isFinite(Date.parse(expiresAt)) || expiresAt <= command.context.now) throw new AccountAuthError("MANAGED_GPU_QUOTE_EXPIRY_INVALID", 400, "报价有效期无效。"); const result = await (await getManagedGpuStore()).issueQuote(command.context, quoteId, { expectedVersion: managedGpuInteger(command.input, "expectedVersion", 1), unitAmountMinor: managedGpuInteger(command.input, "unitAmountMinor", 1), shippingMinor: managedGpuInteger(command.input, "shippingMinor", 0), taxMinor: managedGpuInteger(command.input, "taxMinor", 0), otherMinor: managedGpuInteger(command.input, "otherMinor", 0), currency: managedGpuCurrency(command.input, "currency"), expiresAt }); return jsonResponse(result, result.replayed ? 200 : 201, { "idempotency-replayed": String(result.replayed) }, context); } catch (error) { return apiErrorResponse(error, undefined, context); } }

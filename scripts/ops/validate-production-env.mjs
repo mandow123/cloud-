@@ -186,6 +186,8 @@ export function validateProductionEnvironment(environment = process.env, { check
     if (!QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE_PATTERN.test(environment.KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE?.trim() ?? "")) errors.push("KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE must identify the written key-in-GET risk acceptance");
     if (!QIXIANG_PAY_QUERY_CREDENTIAL_ID_PATTERN.test(environment.KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID?.trim() ?? "")) errors.push("KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID must be a non-secret QRY-prefixed credential identifier");
     if (!validQixiangCredentialLifecycle("KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT", "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION")) errors.push("KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT or KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION must identify the active query credential lifecycle");
+    const reconciliationToken = environment.KAI_PAYMENT_RECONCILIATION_TOKEN?.trim() ?? "";
+    if (environment.KAI_PAYMENT_RECONCILIATION_TOKEN !== reconciliationToken || reconciliationToken.length < 32 || reconciliationToken.length > 256 || /\s/.test(reconciliationToken) || PLACEHOLDER_SECRET_PATTERN.test(reconciliationToken)) errors.push("KAI_PAYMENT_RECONCILIATION_TOKEN must be a non-placeholder secret of 32-256 non-whitespace characters when Qixiang Pay or reconciliation is enabled");
   }
   if (qixiangPayEnabled === "1") {
     const channels = (environment.KAI_QIXIANG_PAY_CHANNELS ?? "").split(",").map((value) => value.trim()).filter(Boolean);
@@ -222,6 +224,12 @@ export function validateProductionEnvironment(environment = process.env, { check
   if (manualAppealsV1 !== "0" && manualAppealsV1 !== "1") errors.push("KAI_MANUAL_APPEALS_V1 must be exactly 0 or 1");
   const manualOrderFlowV1 = environment.KAI_MANUAL_ORDER_FLOW_V1 ?? "0";
   if (manualOrderFlowV1 !== "0" && manualOrderFlowV1 !== "1") errors.push("KAI_MANUAL_ORDER_FLOW_V1 must be exactly 0 or 1");
+  const managedGpuMvp = environment.KAI_MANAGED_GPU_MVP ?? "0";
+  if (managedGpuMvp !== "0" && managedGpuMvp !== "1") errors.push("KAI_MANAGED_GPU_MVP must be exactly 0 or 1");
+  if (managedGpuMvp === "1") {
+    const invitedOrganizations = (environment.KAI_MANAGED_GPU_INVITED_ORGANIZATIONS ?? "").split(",").map((value) => value.trim()).filter(Boolean);
+    if (invitedOrganizations.length < 1 || invitedOrganizations.length > 100 || invitedOrganizations.some((value) => !/^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/.test(value)) || new Set(invitedOrganizations).size !== invitedOrganizations.length) errors.push("KAI_MANAGED_GPU_INVITED_ORGANIZATIONS must contain 1-100 unique approved organization identifiers when Managed GPU MVP is enabled");
+  }
   if (environment.KAI_HOSTING_DEVICE_RETIREMENT !== "0" && environment.KAI_HOSTING_DEVICE_RETIREMENT !== "1") errors.push("KAI_HOSTING_DEVICE_RETIREMENT must be exactly 0 or 1");
   if (environment.KAI_HOSTING_DEVICE_RETIREMENT === "1" && environment.KAI_HOSTING_V2_SETUP !== "1" && environment.KAI_HOSTING_V2 !== "1") {
     errors.push("KAI_HOSTING_DEVICE_RETIREMENT requires Hosting V2 setup or trading to be enabled");

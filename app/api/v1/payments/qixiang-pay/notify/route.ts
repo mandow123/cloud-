@@ -1,6 +1,7 @@
 import { getCardHourStore } from "@/lib/server/card-hour-store";
 import { confirmQixiangPayNotification, qixiangPayReconciliationReadiness, QixiangPayError, verifyQixiangPayNotification } from "@/lib/server/qixiang-pay";
 import { formatCardHourDisplayMicros } from "@/lib/card-hours";
+import { createDurableQixiangQueryProtection } from "@/lib/server/qixiang-query-protection";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
         subject: expectedName,
         paymentType: topup.providerPaymentType,
         merchantParam: topup.id,
-      });
+      }, undefined, fetch, createDurableQixiangQueryProtection(store));
       await store.applyTopupEvent({
         orderId: event.providerOrderId, provider: "QIXIANG_PAY", providerEventId: event.providerEventId,
         providerTransactionId: event.providerTransactionId, eventType: event.eventType, amountCents: event.amountCents,

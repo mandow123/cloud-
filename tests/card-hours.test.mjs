@@ -66,7 +66,7 @@ test("hosting referral commission is allocated only within the platform fee", ()
 test("captured topup credits once and order capture cannot overdraw or replay twice", async () => {
   const store = await createSqliteCardHourStore(":memory:");
   try {
-    assert.deepEqual(await store.health(), { schemaVersion: 6, integrity: "ok" });
+    assert.deepEqual(await store.health(), { schemaVersion: 8, integrity: "ok" });
     const topup = await store.createTopup({ account, cardHourMicros: 5_000_000, amountCents: 501, idempotencyKey: "topup-000000000001", payloadHash: "hash-topup", now: "2026-08-10T00:00:00Z", expiresAt: "2026-08-10T00:15:00Z" });
     await store.applyTopupEvent({ orderId: topup.record.id, providerEventId: "event-1", providerTransactionId: "transaction-1", eventType: "CAPTURED", amountCents: 501, payloadDigest: "digest", occurredAt: "2026-08-10T00:01:00Z", receivedAt: "2026-08-10T00:01:01Z" });
     assert.equal((await store.applyTopupEvent({ orderId: topup.record.id, providerEventId: "event-2", providerTransactionId: "transaction-1", eventType: "CAPTURED", amountCents: 501, payloadDigest: "digest", occurredAt: "2026-08-10T00:02:00Z", receivedAt: "2026-08-10T00:02:01Z" })).applied, false);
@@ -92,6 +92,27 @@ test("a closed topup cannot be credited by a later conflicting capture event", a
     assert.equal(dashboard.balance.availableMicros, 0);
     assert.equal(dashboard.ledger.length, 0);
   } finally { store.close(); }
+});
+
+test("paid card hours expire after 364 days and held lots close without restoring expired value", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kai-paid-entitlement-"));
+  const path = join(directory, "entitlement.sqlite");
+  const store = await createSqliteCardHourStore(path);
+  try {
+    const topup = await store.createTopup({ account, cardHourMicros: 5_000_000, amountCents: 501, idempotencyKey: "paid-expiry-topup-1", payloadHash: "paid-expiry-topup-hash", now: "2026-01-01T00:00:00Z", expiresAt: "2026-01-01T00:15:00Z" });
+    await store.applyTopupEvent({ orderId: topup.record.id, providerEventId: "paid-expiry-event-1", providerTransactionId: "paid-expiry-transaction-1", eventType: "CAPTURED", amountCents: 501, payloadDigest: "paid-expiry-digest", occurredAt: "2026-01-01T00:01:00Z", receivedAt: "2026-01-01T00:01:00Z" });
+    const hold = await store.holdHostingOrder({ account, orderId: "paid-expiry-hold-order", amountMicros: 5_000_000, idempotencyKey: "paid-expiry-hold-key", payloadHash: "paid-expiry-hold-hash", now: "2026-01-02T00:00:00Z" });
+    assert.deepEqual((await store.dashboard(account.activeOrganization.id, "2026-12-31T00:01:00Z")).balance, { availableMicros: 0, heldMicros: 5_000_000, lifetimeTopupMicros: 5_000_000, lifetimeSpentMicros: 0 });
+    await store.releaseHostingOrder({ account, orderId: "paid-expiry-hold-order", payloadHash: "paid-expiry-release-hash", now: "2026-12-31T00:01:01Z" });
+    assert.deepEqual((await store.dashboard(account.activeOrganization.id, "2026-12-31T00:01:02Z")).balance, { availableMicros: 0, heldMicros: 0, lifetimeTopupMicros: 5_000_000, lifetimeSpentMicros: 0 });
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(path);
+    const lot = db.prepare("SELECT granted_micros,available_micros,held_micros,spent_micros,expired_micros,expires_at FROM card_hour_paid_entitlement_lots WHERE topup_order_id=?").get(topup.record.id);
+    const allocation = db.prepare("SELECT held_micros,spent_micros,released_micros,expired_micros FROM card_hour_paid_entitlement_hold_allocations WHERE hold_type='HOSTING_V2' AND hold_id=?").get(hold.record.id);
+    db.close();
+    assert.deepEqual({ ...lot }, { granted_micros: 5_000_000, available_micros: 0, held_micros: 0, spent_micros: 0, expired_micros: 5_000_000, expires_at: "2026-12-31T00:01:00.000Z" });
+    assert.deepEqual({ ...allocation }, { held_micros: 0, spent_micros: 0, released_micros: 0, expired_micros: 5_000_000 });
+  } finally { store.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
 test("topup appeals enforce expiry, paginate for admins, and expose organization-scoped unread progress", async () => {

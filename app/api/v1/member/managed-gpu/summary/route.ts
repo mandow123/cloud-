@@ -1,0 +1,8 @@
+import { apiErrorResponse, beginApiRequest, jsonResponse } from "@/lib/server/api-guard";
+import { AccountAuthError } from "@/lib/server/account-auth";
+import { requireTradingAccountSession } from "@/lib/server/entity-ownership";
+import { managedGpuOrganizationEnabled } from "@/lib/server/managed-gpu-feature";
+import { getManagedGpuStore } from "@/lib/server/managed-gpu-store";
+import { managedGpuMemberSummaryRecord } from "@/lib/managed-gpu";
+export const dynamic = "force-dynamic";
+export async function GET(request: Request) { const context = beginApiRequest(request); try { const account = await requireTradingAccountSession(request); if (!account) throw new AccountAuthError("ACCOUNT_AUTH_REQUIRED",401,"请先登录账户。"); const organizationId = account.activeOrganization.id; if (!managedGpuOrganizationEnabled(organizationId)) return jsonResponse(managedGpuMemberSummaryRecord({ enabled:false, organizationId, organizationName:account.activeOrganization.name, summary:{orderCount:0,assetCount:0,activeAssetCount:0,settlementCount:0,confirmedIncomeCardHourMicros:0,provisionalIncomeCardHourMicros:0},orders:[],assets:[],settlements:[] }),200,{"cache-control":"private, no-store"},context); const store = await getManagedGpuStore(); const [summary, orders, assets, settlements] = await Promise.all([store.memberSummary(organizationId), store.listMemberOrders(organizationId), store.listMemberAssets(organizationId), store.listMemberSettlements(organizationId)]); return jsonResponse(managedGpuMemberSummaryRecord({ organizationId, organizationName: account.activeOrganization.name, summary, orders, assets, settlements }), 200, { "cache-control": "private, no-store" }, context); } catch (error) { return apiErrorResponse(error, undefined, context); } }

@@ -72,6 +72,7 @@ npm run ops:image:promote -- \
 
    - `kai-cloud-market-update-run.sh`
    - `kai-cloud-backup-run.sh`
+   - `kai-cloud-payment-reconciliation-run.sh`
    - `kai-cloud-ops-alert.sh`
 
 4. 将三个 service unit 和两个 timer 安装到 `/etc/systemd/system/`：
@@ -80,11 +81,13 @@ npm run ops:image:promote -- \
    - `kai-cloud-market-update.timer`
    - `kai-cloud-backup.service`
    - `kai-cloud-backup.timer`
+   - `kai-cloud-payment-reconciliation.service`
+   - `kai-cloud-payment-reconciliation.timer`
    - `kai-cloud-ops-alert@.service`
 
 5. 在目标 Ubuntu 主机执行 `systemd-analyze verify`。首次安装和升级的任务顺序不同，必须按下方对应流程操作；恢复演练通过前不得启用 timer。
 
-`flock` 防止同一任务重入，`timeout` 将总运行时间限制为 300 秒。备份脚本还必须在 `${KAI_STATE_ROOT}/backups/.kai-cloud-backup.lock` 取得共享锁；因此即使升级时残留了不同名称的旧 unit，也不能同时清理同一状态目录。迁移到带端口后缀的 unit 时，应先执行 `systemctl disable --now` 停用旧 backup timer，确认只有一个 timer 指向该 `KAI_STATE_ROOT`，再启用新 timer。两个任务都使用只读根文件系统、非 root 用户、能力全移除、资源上限和日志轮转。行情更新容器完全看不到业务数据库目录。
+`flock` 防止同一任务重入，`timeout` 为维护任务设置硬边界。备份脚本还必须在 `${KAI_STATE_ROOT}/backups/.kai-cloud-backup.lock` 取得共享锁；因此即使升级时残留了不同名称的旧 unit，也不能同时清理同一状态目录。迁移到带端口后缀的 unit 时，应先执行 `systemctl disable --now` 停用旧 backup timer，确认只有一个 timer 指向该 `KAI_STATE_ROOT`，再启用新 timer。支付核单 timer 每 60 秒调用一次仅监听回环地址的内部接口，令牌通过 curl 标准输入配置传入，不能出现在命令行参数或日志中。行情更新容器完全看不到业务数据库目录。
 
 ## 声明式应用启动
 
@@ -281,16 +284,34 @@ docker run --rm --network none --read-only --user 1000:1000 \
 
 门禁必须确认 SQLite/D1 迁移逐字一致、marker 为 v6、租约表、请求幂等表、两个索引、订单外键和 `foreign_key_check` 全部正常。新单开关保持 `0`，直到此门禁和 `/api/ready` 都通过。
 
+### 0039 支付生产闭环预部署门禁
+
+0039 在 marker v6 上新增跨实例共享的七相查单限频/熔断状态、付费卡时批次、冻结分配和不可变发放/到期事件。每笔真实充值从可信查单入账时生成独立批次，`expires_at` 固定为可信入账时间后 364 天；消费与冻结优先使用最早到期批次，冻结额度在结算、释放或到期时闭合。迁移前必须保持两个七相开关为 `0` 并先完成一致性备份：
+
+```sh
+docker run --rm --network none --read-only --user 1000:1000 \
+  -v /opt/kai-cloud-3051/db:/app/db \
+  --env-file /opt/kai-cloud-3051/app.env \
+  "$KAI_IMAGE" node scripts/ops/verify-card-hour-payment-production-closure-schema.mjs \
+  --apply --confirm APPLY_0039_CARD_HOUR_PAYMENT_PRODUCTION_CLOSURE
+docker run --rm --network none --read-only --user 1000:1000 \
+  -v /opt/kai-cloud-3051/db:/app/db \
+  --env-file /opt/kai-cloud-3051/app.env \
+  "$KAI_IMAGE" node scripts/ops/verify-card-hour-payment-production-closure-schema.mjs
+```
+
+门禁必须确认 SQLite/D1 逐字一致、marker 为 v7、四张生产闭环表、三个索引、两个不可变触发器、外键和 `foreign_key_check` 全部正常。设置独立的 `KAI_PAYMENT_RECONCILIATION_TOKEN`（32–256 位随机值），安装并启用 `kai-cloud-payment-reconciliation.timer`；只有 timer 已运行、最近一次 service 成功、后台关页核单测试通过后才可开启存量核单。
+
 - 七相旧版协议的查单接口要求把商户密钥放入查询参数，因此只有 `KAI_QIXIANG_PAY_RECONCILIATION_ENABLED=1` 且全部门禁就绪时，专用服务端客户端才可调用固定的 `https://api.payqixiang.cn/api.php`：禁止重定向、代理、浏览器调用、完整 URL 日志和错误原文回显。签名通知本身不得直接入账；必须主动查单确认 `status=1`，并逐项核对 PID、商户订单号、七相订单号、通道、商品名、金额和扩展参数。浏览器回跳页只调用本平台鉴权接口，由服务端抢占持久化租约后查单；浏览器不接触密钥，也不读取回跳参数作为成功依据。退款保持人工待处理，未取得可验证退款协议前不得宣称退款成功。
 
 启用七相新订单必须按顺序执行，任何一步失败都保持 `KAI_QIXIANG_PAY_ENABLED=0`：
 
 1. 将经审批的变更单号写入 `KAI_QIXIANG_PAY_APPROVAL_REFERENCE`；用 `KAI_QIXIANG_PAY_CREDENTIAL_VERSION` 或 UTC ISO 8601 的 `KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT` 登记当前商户凭据生命周期。密钥只允许写入服务器密钥配置，不得输出到日志、就绪接口或工单正文。
 2. 七相旧查单协议会把密钥放入 GET URL，必须由责任人书面接受该残余风险：设置 `KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED=1`、`KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE=RISK-...`，以非密钥的 `KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID=QRY-...` 登记查单凭据，并用查单凭据版本或轮换时间登记生命周期。未完成这些字段时生产校验器与应用就绪门禁都保持关闭。
-3. 配置首测组织 ID 与单一支付通道。下单和查单目标固定为 `https://api.payqixiang.cn/mapi.php`、`https://api.payqixiang.cn/api.php`；客户端禁止重定向且不记录完整 URL。主动查单按凭据每进程限制为每分钟 12 次，连续 3 次传输/格式失败后熔断 60 秒；网络出口还必须只允许该固定 HTTPS 主机。上游仍可能记录 GET 查询串，因此书面风险接受不能省略，查单凭据必须可独立识别并按计划轮换。
-4. 先保持支付与核对开关均为 `0`，按顺序完成 0033、0036、0037、0038 与新镜像发布；确认回调地址可从公网访问。
+3. 配置首测组织 ID 与单一支付通道。下单和查单目标固定为 `https://api.payqixiang.cn/mapi.php`、`https://api.payqixiang.cn/api.php`；客户端禁止重定向且不记录完整 URL。主动查单按查单凭据在共享数据库中统一限制为每分钟 12 次，连续 3 次传输/格式失败后所有实例共同熔断 60 秒；网络出口还必须只允许该固定 HTTPS 主机。上游仍可能记录 GET 查询串，因此书面风险接受不能省略，查单凭据必须可独立识别并按计划轮换。
+4. 先保持支付与核对开关均为 `0`，按顺序完成 0033、0036、0037、0038、0039 与新镜像发布；确认回调地址可从公网访问，并确认分钟级核单 timer 正常运行。
 5. 先只将 `KAI_QIXIANG_PAY_RECONCILIATION_ENABLED=1` 并重启，确认 `/api/ready` 中 `qixiangPayCardHourTopup.reconciliationAvailable=true`、`enabled=false`；再由当班发布人与财务复核后将 `KAI_QIXIANG_PAY_ENABLED=1`，确认支付能力 `available=true` 后才允许发起新订单。
-6. 首测账户前后端均固定为 5.00 卡时 / ¥5.01。真实支付属于资金动作，必须由授权人员现场确认后执行；验证成功通知必须再经主动查单后只入账一次，重复通知、重复回跳或重复查单不得重复加卡时。漏回调由回跳页的服务端核单恢复；持续未知或字段不一致才进入管理员申诉核对。完成验收前不得移除组织白名单、单通道和 5.00 卡时限制。
+6. 首测账户前后端均固定为 5.00 卡时 / ¥5.01。真实支付属于资金动作，必须由授权人员现场确认后执行；验证成功通知必须再经主动查单后只入账一次，重复通知、重复回跳或重复查单不得重复加卡时。即使用户付款后关闭页面，分钟级后台任务也必须自动查单到账；连续 10 次未知、超过付款单确认期或结构异常会自动创建财务人工核对工单。验收同时核对新批次的 364 天到期时间。完成验收前不得移除组织白名单、单通道和 5.00 卡时限制。
 
 常规停止只把 `KAI_QIXIANG_PAY_ENABLED` 改回 `0`，新单立即停止、存量核单继续。安全事件才同时关闭 `KAI_QIXIANG_PAY_RECONCILIATION_ENABLED`；不得删除存量付款单、租约、账本或申诉数据，待处理订单必须转入管理员队列人工核对。
 

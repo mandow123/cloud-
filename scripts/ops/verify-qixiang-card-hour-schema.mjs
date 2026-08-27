@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 const REQUIRED_COLUMNS = ["provider_merchant_ref", "provider_payment_type", "checkout_url", "checkout_created_at"];
 const REQUIRED_TABLES = ["card_hour_schema_migrations", "card_hour_topup_orders", "card_hour_topup_events"];
 const MIN_SUPPORTED_SCHEMA_MARKER = 3;
-const MAX_SUPPORTED_SCHEMA_MARKER = 6;
+const MAX_SUPPORTED_SCHEMA_MARKER = 7;
 
 function parseArguments(argv) {
   const options = { apply: false, allowUninitialized: false, databasePath: null, confirm: null };

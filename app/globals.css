@@ -386,6 +386,74 @@ textarea {
   line-height: 1.2;
 }
 
+.language-control {
+  position: relative;
+  display: grid;
+  min-width: 116px;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  line-height: 1.2;
+}
+
+.language-control-label {
+  position: absolute;
+  z-index: 1;
+  top: 6px;
+  left: 11px;
+  pointer-events: none;
+}
+
+.language-control-short {
+  display: none;
+}
+
+.language-control-scope {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.language-control::after {
+  position: absolute;
+  top: 50%;
+  right: 11px;
+  color: var(--muted);
+  content: "⌄";
+  font-size: 0.85rem;
+  pointer-events: none;
+  translate: 0 -38%;
+}
+
+.language-control select {
+  min-height: 44px;
+  width: 100%;
+  min-width: 116px;
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 16px 30px 4px 10px;
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.1;
+  cursor: pointer;
+  transition: border-color 120ms ease-out, background-color 120ms ease-out, box-shadow 120ms ease-out;
+}
+
+.language-control:hover select {
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+}
+
+.language-control:focus-within select {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 .theme-control > span {
   position: absolute;
   z-index: 1;
@@ -665,18 +733,46 @@ textarea {
     gap: 14px;
   }
 
-  .theme-control span,
+  .theme-control,
   .header-actions .button {
     display: none;
   }
 
-  .theme-control,
-  .theme-control select {
-    min-width: 88px;
+  .language-control,
+  .language-control select {
+    width: 70px;
+    min-width: 70px;
   }
 
-  .theme-control select {
-    padding-top: 4px;
+  .language-control select {
+    padding: 4px 24px 4px 8px;
+    color: transparent;
+  }
+
+  .language-control select option {
+    color: var(--ink);
+  }
+
+  .language-control-label {
+    display: none;
+  }
+
+  .language-control-short {
+    position: absolute;
+    z-index: 1;
+    top: 50%;
+    left: 8px;
+    display: block;
+    max-width: 40px;
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+    text-overflow: ellipsis;
+    translate: 0 -50%;
+    white-space: nowrap;
   }
 
   .primary-nav {

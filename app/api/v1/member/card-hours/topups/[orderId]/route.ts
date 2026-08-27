@@ -5,6 +5,7 @@ import { requireTradingAccountSession } from "@/lib/server/entity-ownership";
 import { authorizeMarketplaceRequest, persistMarketplaceSession } from "@/lib/server/marketplace-auth";
 import { formatCardHourDisplayMicros } from "@/lib/card-hours";
 import { qixiangPayReconciliationReadiness, queryQixiangPayOrder, QixiangPayError } from "@/lib/server/qixiang-pay";
+import { createDurableQixiangQueryProtection } from "@/lib/server/qixiang-query-protection";
 
 export const dynamic = "force-dynamic";
 
@@ -73,7 +74,7 @@ export async function POST(request: Request, contextValue: { params: Promise<{ o
         subject: `KAI Cloud 充值 ${formatCardHourDisplayMicros(topup.cardHourMicros)} KAI 标准卡时`,
         paymentType: topup.providerPaymentType,
         merchantParam: topup.id,
-      });
+      }, undefined, fetch, createDurableQixiangQueryProtection(store));
       await store.applyTopupEvent({
         orderId: event.providerOrderId, provider: "QIXIANG_PAY", providerEventId: event.providerEventId,
         providerTransactionId: event.providerTransactionId, eventType: event.eventType, amountCents: event.amountCents,

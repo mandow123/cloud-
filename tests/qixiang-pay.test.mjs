@@ -9,6 +9,7 @@ import test from "node:test";
 import { createD1CardHourStore } from "../lib/server/card-hour-store-d1.ts";
 import { createSqliteCardHourStore } from "../lib/server/card-hour-store-sqlite.ts";
 import { confirmQixiangPayNotification, createQixiangPayCheckout, qixiangPayPilotAccess, qixiangPayReadiness, queryQixiangPayOrder, trustedQixiangClientIp, validateQixiangPayCheckout, verifyQixiangPayNotification } from "../lib/server/qixiang-pay.ts";
+import { runQixiangReconciliationBatch } from "../lib/server/qixiang-reconciliation-worker.ts";
 import { assertQixiangCardHourSchemaReady, verifyQixiangCardHourDatabase } from "../scripts/ops/verify-qixiang-card-hour-schema.mjs";
 
 const KEY = "fixture-secret-key-1234567890";
@@ -145,6 +146,42 @@ test("active order query rate limit and circuit breaker stop requests before fet
   }
   await assert.rejects(queryQixiangPayOrder(expected, breakerEnvironment, async () => { breakerFetchCalls += 1; return new Response("{}"); }), /熔断/u);
   assert.equal(breakerFetchCalls, 3);
+});
+
+test("query rate limit and circuit breaker are shared across store instances", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kai-qixiang-shared-protection-"));
+  const path = join(directory, "shared.sqlite");
+  const first = await createSqliteCardHourStore(path);
+  const second = await createSqliteCardHourStore(path);
+  try {
+    const base = { credentialId: "QRY-shared-production-v1", now: "2026-08-22T00:00:00Z", resetBefore: "2026-08-21T23:59:00Z", maxRequests: 12 };
+    const permits = [];
+    for (let index = 0; index < 12; index += 1) permits.push(await (index % 2 === 0 ? first : second).acquireQixiangQueryPermit(base));
+    assert.equal(permits.every((permit) => permit.allowed), true);
+    assert.deepEqual(await first.acquireQixiangQueryPermit(base), { allowed: false, reason: "RATE_LIMIT", retryAt: "2026-08-22T00:01:00.000Z" });
+    for (let index = 0; index < 3; index += 1) await (index % 2 === 0 ? first : second).recordQixiangQueryOutcome({ credentialId: base.credentialId, outcome: "TRANSPORT_FAILURE", now: `2026-08-22T00:01:0${index}Z`, failureThreshold: 3, circuitOpenUntil: "2026-08-22T00:02:02Z" });
+    const circuit = await second.acquireQixiangQueryPermit({ ...base, now: "2026-08-22T00:01:03Z", resetBefore: "2026-08-22T00:00:03Z" });
+    assert.deepEqual(circuit, { allowed: false, reason: "CIRCUIT_OPEN", retryAt: "2026-08-22T00:02:02Z" });
+    await first.recordQixiangQueryOutcome({ credentialId: base.credentialId, outcome: "SUCCESS", now: "2026-08-22T00:01:04Z", failureThreshold: 3, circuitOpenUntil: "2026-08-22T00:02:04Z" });
+    assert.equal((await second.acquireQixiangQueryPermit({ ...base, now: "2026-08-22T00:01:05Z", resetBefore: "2026-08-22T00:00:05Z" })).allowed, true);
+  } finally { first.close(); second.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("background reconciliation captures a paid order after the member closes the page", async () => {
+  const store = await createSqliteCardHourStore(":memory:");
+  try {
+    const created = await store.createTopup({ account, provider: "QIXIANG_PAY", providerMerchantRef: "10086", providerPaymentType: "alipay", cardHourMicros: 5_000_000, amountCents: 501, idempotencyKey: "background-reconcile-topup-1", payloadHash: "background-reconcile-hash", now: "2026-08-22T00:00:00Z", expiresAt: "2026-08-22T00:15:00Z" });
+    const workerEnvironment = { ...environment, KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID: "QRY-background-reconciliation-v1" };
+    let queries = 0;
+    const summary = await runQixiangReconciliationBatch(store, { now: new Date("2026-08-22T00:01:00Z"), environment: workerEnvironment, fetcher: async () => {
+      queries += 1;
+      return new Response(JSON.stringify({ code: 1, status: 1, trade_no: "trade-background-0001", out_trade_no: created.record.id, pid: "10086", type: "alipay", name: "KAI Cloud 充值 5.00 KAI 标准卡时", param: created.record.id, money: "5.01" }), { headers: { "content-type": "application/json" } });
+    } });
+    assert.equal(queries, 1);
+    assert.deepEqual({ scanned: summary.scanned, claimed: summary.claimed, captured: summary.captured, pending: summary.pending, escalated: summary.escalated, failed: summary.failed }, { scanned: 1, claimed: 1, captured: 1, pending: 0, escalated: 0, failed: 0 });
+    assert.equal((await store.getTopupForOrganization("org-qixiang", created.record.id)).status, "CAPTURED");
+    assert.equal((await store.dashboard("org-qixiang", "2026-08-22T00:01:01Z")).balance.availableMicros, 5_000_000);
+  } finally { store.close(); }
 });
 
 test("payment source contains no hardcoded merchant-key fingerprint or URL logging", () => {

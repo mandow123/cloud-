@@ -85,6 +85,7 @@ export function BuyWorkspace({ inquiryEnabled, primaryListings, referenceLeads, 
     </div></header>
 
     <main className={`shell ${styles.workspace}`}>
+      <nav className={styles.modeTabs} aria-label="GPU 服务类型"><Link className={styles.activeTab} aria-current="page" href="/buy">租用 GPU</Link><Link href="/managed-gpu">GPU 云托管</Link></nav>
       <section aria-labelledby="supplier-catalog-title">
         <div className={styles.sectionHeading}><div><p className={styles.eyebrow}>SUPPLIER GPU PACKAGES</p><h2 id="supplier-catalog-title">供应商 GPU 套餐</h2></div><span>{visibleListings.length} 个套餐</span></div>
         <p className={styles.catalogIntro}>以下为供应商提供的报价套餐。页面价格用于询价参考；提交后不会锁定库存、不会付款，也不代表成交。</p>

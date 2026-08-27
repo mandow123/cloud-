@@ -94,7 +94,7 @@ function validateNegativeEnvironmentCases() {
   assertEnvironmentRejected({ KAI_QIXIANG_PAY_ENABLED: "2" }, "KAI_QIXIANG_PAY_ENABLED");
   assertEnvironmentRejected({ KAI_QIXIANG_PAY_ENABLED: "1", KAI_QIXIANG_PAY_PID: "10086", KAI_QIXIANG_PAY_KEY: "approved-looking-secret-1234", KAI_QIXIANG_PAY_CHANNELS: "ALIPAY" }, "KAI_QIXIANG_PAY_APPROVAL_REFERENCE");
   assertEnvironmentRejected({ KAI_QIXIANG_PAY_ENABLED: "1", KAI_QIXIANG_PAY_PID: "10086", KAI_QIXIANG_PAY_KEY: "approved-looking-secret-1234", KAI_QIXIANG_PAY_CHANNELS: "ALIPAY", KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS: "org-pilot", KAI_QIXIANG_PAY_PILOT_CHANNEL: "ALIPAY", KAI_QIXIANG_PAY_APPROVAL_REFERENCE: "KAI-PAY-APPROVAL-20260822", KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED: "1", KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE: "RISK-KAI-PAY-20260822", KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID: "QRY-KAI-PAY-20260822", KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION: "query-v1" }, "KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT");
-  validateProductionEnvironment(productionEnvironment({ KAI_QIXIANG_PAY_ENABLED: "1", KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "1", KAI_QIXIANG_PAY_PID: "10086", KAI_QIXIANG_PAY_KEY: "rotated-production-secret-1234", KAI_QIXIANG_PAY_CHANNELS: "ALIPAY", KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS: "org-pilot", KAI_QIXIANG_PAY_PILOT_CHANNEL: "ALIPAY", KAI_QIXIANG_PAY_APPROVAL_REFERENCE: "KAI-PAY-APPROVAL-20260822", KAI_QIXIANG_PAY_CREDENTIAL_VERSION: "merchant-v1", KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED: "1", KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE: "RISK-KAI-PAY-20260822", KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID: "QRY-KAI-PAY-20260822", KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION: "query-v1" }));
+  validateProductionEnvironment(productionEnvironment({ KAI_QIXIANG_PAY_ENABLED: "1", KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "1", KAI_QIXIANG_PAY_PID: "10086", KAI_QIXIANG_PAY_KEY: "rotated-production-secret-1234", KAI_QIXIANG_PAY_CHANNELS: "ALIPAY", KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS: "org-pilot", KAI_QIXIANG_PAY_PILOT_CHANNEL: "ALIPAY", KAI_QIXIANG_PAY_APPROVAL_REFERENCE: "KAI-PAY-APPROVAL-20260822", KAI_QIXIANG_PAY_CREDENTIAL_VERSION: "merchant-v1", KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED: "1", KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE: "RISK-KAI-PAY-20260822", KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID: "QRY-KAI-PAY-20260822", KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION: "query-v1", KAI_PAYMENT_RECONCILIATION_TOKEN: "payment-reconciliation-fixture-20260822" }));
   assertEnvironmentRejected({ KAI_BUY_CATALOG_V2: "2" }, "KAI_BUY_CATALOG_V2");
   assertEnvironmentRejected({ KAI_ACCOUNT_CONSOLE_V2: "2" }, "KAI_ACCOUNT_CONSOLE_V2");
   assertEnvironmentRejected({ KAI_HOSTING_V2: "2" }, "KAI_HOSTING_V2");
@@ -147,6 +147,7 @@ async function main() {
       KAI_QIXIANG_PAY_CHANNELS: process.env.KAI_QIXIANG_PAY_CHANNELS,
       KAI_QIXIANG_PAY_GATEWAY: process.env.KAI_QIXIANG_PAY_GATEWAY,
       KAI_QIXIANG_PAY_QUERY_ENDPOINT: process.env.KAI_QIXIANG_PAY_QUERY_ENDPOINT,
+      KAI_PAYMENT_RECONCILIATION_TOKEN: process.env.KAI_PAYMENT_RECONCILIATION_TOKEN,
       KAI_BUY_CATALOG_V2: process.env.KAI_BUY_CATALOG_V2 ?? "0",
       KAI_ACCOUNT_CONSOLE_V2: process.env.KAI_ACCOUNT_CONSOLE_V2 ?? "0",
       KAI_HOSTING_V2: process.env.KAI_HOSTING_V2 ?? "0",
@@ -219,6 +220,7 @@ async function main() {
       KAI_QIXIANG_PAY_CHANNELS: candidateEnvironment.KAI_QIXIANG_PAY_CHANNELS,
       KAI_QIXIANG_PAY_GATEWAY: candidateEnvironment.KAI_QIXIANG_PAY_GATEWAY,
       KAI_QIXIANG_PAY_QUERY_ENDPOINT: candidateEnvironment.KAI_QIXIANG_PAY_QUERY_ENDPOINT,
+      KAI_PAYMENT_RECONCILIATION_TOKEN: candidateEnvironment.KAI_PAYMENT_RECONCILIATION_TOKEN,
       KAI_BUY_CATALOG_V2: candidateEnvironment.KAI_BUY_CATALOG_V2,
       KAI_ACCOUNT_CONSOLE_V2: candidateEnvironment.KAI_ACCOUNT_CONSOLE_V2,
       KAI_HOSTING_V2: candidateEnvironment.KAI_HOSTING_V2,
@@ -253,6 +255,7 @@ async function main() {
       candidateEnvironment.KAI_ADMIN_APPROVER_PASSWORD_HASH,
       candidateEnvironment.KAI_ADMIN_FULFILLMENT_PASSWORD_HASH,
       candidateEnvironment.KAI_QIXIANG_PAY_KEY,
+      candidateEnvironment.KAI_PAYMENT_RECONCILIATION_TOKEN,
     ])}`);
   }
   const configuration = JSON.parse(compose.stdout);
@@ -287,7 +290,7 @@ async function main() {
     "KAI_ACCOUNT_OIDC_CLIENT_ID", "KAI_ACCOUNT_OIDC_CLIENT_SECRET", "KAI_ACCOUNT_OIDC_ISSUER", "KAI_ACCOUNT_OIDC_SCOPES", "KAI_ACCOUNT_OIDC_TRANSACTION_SECRET",
     "KAI_BUY_CATALOG_V2", "KAI_ACCOUNT_CONSOLE_V2", "KAI_HOSTING_V2", "KAI_HOSTING_V2_SETUP", "KAI_AGENT_TELEMETRY_V1", "KAI_HOSTING_DEVICE_RETIREMENT", "KAI_HOSTING_APPROVED_IMAGES", "KAI_HOSTING_TERMS_VERSION", "KAI_ALIPAY_ENABLED",
     "KAI_ALIPAY_APP_ID", "KAI_ALIPAY_PRIVATE_KEY", "KAI_ALIPAY_PUBLIC_KEY", "KAI_ALIPAY_SELLER_ID",
-    "KAI_QIXIANG_PAY_ENABLED", "KAI_QIXIANG_PAY_RECONCILIATION_ENABLED", "KAI_QIXIANG_PAY_PID", "KAI_QIXIANG_PAY_KEY", "KAI_QIXIANG_PAY_APPROVAL_REFERENCE", "KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT", "KAI_QIXIANG_PAY_CREDENTIAL_VERSION", "KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED", "KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE", "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID", "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT", "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION", "KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS", "KAI_QIXIANG_PAY_PILOT_CHANNEL", "KAI_QIXIANG_PAY_CHANNELS", "KAI_QIXIANG_PAY_GATEWAY", "KAI_QIXIANG_PAY_QUERY_ENDPOINT",
+    "KAI_QIXIANG_PAY_ENABLED", "KAI_QIXIANG_PAY_RECONCILIATION_ENABLED", "KAI_QIXIANG_PAY_PID", "KAI_QIXIANG_PAY_KEY", "KAI_QIXIANG_PAY_APPROVAL_REFERENCE", "KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT", "KAI_QIXIANG_PAY_CREDENTIAL_VERSION", "KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED", "KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE", "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID", "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT", "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION", "KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS", "KAI_QIXIANG_PAY_PILOT_CHANNEL", "KAI_QIXIANG_PAY_CHANNELS", "KAI_QIXIANG_PAY_GATEWAY", "KAI_QIXIANG_PAY_QUERY_ENDPOINT", "KAI_PAYMENT_RECONCILIATION_TOKEN",
     "KAI_SSH_PROVISIONER_URL", "KAI_SSH_PROVISIONER_TOKEN",
   ]) {
     assert(Object.hasOwn(app.environment, name), `app must declare the ${name} production integration boundary`);
@@ -310,13 +313,16 @@ async function main() {
   assert(volumeByTarget(backup, "/app/market")?.read_only === true, "backup market mount must be read-only");
   assert(volumeByTarget(backup, "/app/backups") && !volumeByTarget(backup, "/app/backups").read_only, "backup output mount must be writable");
 
-  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, capabilitySchemaGate, qixiangSchemaGate, appealSchemaGate, appealReadSchemaGate, reconciliationSchemaGate, runbook, appEnvironmentExample, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator] = await Promise.all([
+  const [updateUnit, backupUnit, reconciliationUnit, updateTimer, backupTimer, reconciliationTimer, updateRunner, backupRunner, reconciliationRunner, Dockerfile, productionEntrypoint, capabilitySchemaGate, qixiangSchemaGate, appealSchemaGate, appealReadSchemaGate, reconciliationSchemaGate, paymentClosureSchemaGate, runbook, appEnvironmentExample, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator] = await Promise.all([
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup.service"), "utf8"),
+    readFile(resolve(projectRoot, "deploy/kai-cloud-payment-reconciliation.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.timer"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup.timer"), "utf8"),
+    readFile(resolve(projectRoot, "deploy/kai-cloud-payment-reconciliation.timer"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update-run.sh"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup-run.sh"), "utf8"),
+    readFile(resolve(projectRoot, "deploy/kai-cloud-payment-reconciliation-run.sh"), "utf8"),
     readFile(resolve(projectRoot, "Dockerfile"), "utf8"),
     readFile(resolve(projectRoot, "scripts/ops/production-entrypoint.sh"), "utf8"),
     readFile(resolve(projectRoot, "scripts/ops/verify-hosting-agent-capability-schema.mjs"), "utf8"),
@@ -324,6 +330,7 @@ async function main() {
     readFile(resolve(projectRoot, "scripts/ops/verify-card-hour-topup-appeals-schema.mjs"), "utf8"),
     readFile(resolve(projectRoot, "scripts/ops/verify-card-hour-topup-appeal-reads-schema.mjs"), "utf8"),
     readFile(resolve(projectRoot, "scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs"), "utf8"),
+    readFile(resolve(projectRoot, "scripts/ops/verify-card-hour-payment-production-closure-schema.mjs"), "utf8"),
     readFile(resolve(projectRoot, "deploy/PRODUCTION_RUNBOOK.md"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-app.env.example"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-release.env.example"), "utf8"),
@@ -343,6 +350,9 @@ async function main() {
   }
   assert(updateTimer.includes("06:00:00 Asia/Shanghai") && updateTimer.includes("Persistent=true"), "market update timer must persist the 06:00 China schedule");
   assert(backupTimer.includes("*:15:00 Asia/Shanghai") && backupTimer.includes("Persistent=true"), "backup timer must run hourly and persist missed runs");
+  assert(reconciliationUnit.includes("/usr/bin/flock --nonblock") && reconciliationUnit.includes("55s") && reconciliationUnit.includes("kai-cloud-app.env"), "payment reconciliation must be a bounded singleton with the protected application environment");
+  assert(reconciliationTimer.includes("OnUnitActiveSec=60s") && reconciliationTimer.includes("Persistent=true"), "payment reconciliation timer must run every minute and persist missed runs");
+  assert(reconciliationRunner.includes("Authorization: Bearer") && reconciliationRunner.includes("--config -") && reconciliationRunner.includes("/api/internal/payments/qixiang-pay/reconcile"), "payment reconciliation runner must keep its token out of argv and call only the loopback internal endpoint");
   for (const [name, runner] of Object.entries({ updateRunner, backupRunner })) {
     assert(runner.includes("^[a-z0-9]+([._-][a-z0-9]+)*(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)*@sha256:[0-9a-f]{64}$"), `${name} must use the full repository@sha256 validator`);
     assert(runner.includes("KAI_RELEASE_SHA must be a full 40- or 64-character Git object ID"), `${name} must validate the release SHA`);
@@ -379,6 +389,8 @@ async function main() {
   assert(appealReadSchemaGate.includes("MIGRATION_MIRROR_MISMATCH") && appealReadSchemaGate.includes("APPLY_0037_CARD_HOUR_TOPUP_APPEAL_READS") && appealReadSchemaGate.includes("card_hour_topup_appeal_member_reads_org_idx"), "the 0037 gate must verify SQLite/D1 mirrors, organization read receipts, and explicit application confirmation");
   assert(productionEntrypoint.includes("verify-card-hour-topup-reconciliation-schema.mjs --allow-uninitialized") && productionEntrypoint.indexOf("verify-card-hour-topup-reconciliation-schema.mjs --allow-uninitialized") < productionEntrypoint.lastIndexOf('exec "$@"'), "production entrypoint must enforce the 0038 durable reconciliation gate before the default server command");
   assert(reconciliationSchemaGate.includes("MIGRATION_MIRROR_MISMATCH") && reconciliationSchemaGate.includes("APPLY_0038_CARD_HOUR_TOPUP_RECONCILIATION") && reconciliationSchemaGate.includes("card_hour_topup_reconciliation_due_idx"), "the 0038 gate must verify SQLite/D1 mirrors, the due index, and explicit application confirmation");
+  assert(productionEntrypoint.includes("verify-card-hour-payment-production-closure-schema.mjs --allow-uninitialized") && productionEntrypoint.indexOf("verify-card-hour-payment-production-closure-schema.mjs --allow-uninitialized") < productionEntrypoint.lastIndexOf('exec "$@"'), "production entrypoint must enforce the 0039 payment closure gate before the default server command");
+  assert(paymentClosureSchemaGate.includes("MIGRATION_MIRROR_MISMATCH") && paymentClosureSchemaGate.includes("APPLY_0039_CARD_HOUR_PAYMENT_PRODUCTION_CLOSURE") && paymentClosureSchemaGate.includes("card_hour_qixiang_query_protection") && paymentClosureSchemaGate.includes("card_hour_paid_entitlement_lots"), "the 0039 gate must verify shared query protection and paid entitlement lots with explicit confirmation");
   assert(runbook.includes("/api/session") && runbook.includes("每分钟 30 次、突发 10 次"), "runbook must require a concrete reverse-proxy rate limit for /api/session");
   assert(runbook.includes("POST /api/*") && runbook.includes("每分钟 20 次、突发 5 次"), "runbook must require a concrete reverse-proxy rate limit for API writes");
   assert(runbook.includes("API 守卫会为 API 请求输出结构化日志") && runbook.includes("不记录表单正文、Cookie、会话令牌、CSRF 值或供应商原始报价"), "runbook must accurately describe structured API logs and their redaction boundary");
