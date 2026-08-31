@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { MarketplaceApiError, marketplaceErrorMessage, marketplaceGet } from "@/lib/client/marketplace-client";
+import { useLocale } from "@/components/locale-provider";
+import { MarketplaceApiError, marketplaceGet } from "@/lib/client/marketplace-client";
 import type { BuyerHostingContract } from "@/lib/hosting-v2-client";
 import { formatCardHours, formatHostingTime, hostingContractStatusLabel } from "@/lib/hosting-v2-client";
 import styles from "./hosting-marketplace.module.css";
 
 export function HostingContractList({ embedded = false }: { embedded?: boolean }) {
+  const { locale } = useLocale();
   const [contracts, setContracts] = useState<BuyerHostingContract[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loginRequired, setLoginRequired] = useState(false);
@@ -19,10 +21,10 @@ export function HostingContractList({ embedded = false }: { embedded?: boolean }
       .catch((cause) => {
         if (cancelled) return;
         setLoginRequired(cause instanceof MarketplaceApiError && cause.status === 401);
-        setError(marketplaceErrorMessage(cause, "租赁记录暂时无法读取。"));
+        setError(locale === "zh-CN" ? "租赁记录暂时无法读取。" : "Rental records are temporarily unavailable.");
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [locale]);
 
   const records = useMemo(() => [...(contracts ?? [])].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)), [contracts]);
 

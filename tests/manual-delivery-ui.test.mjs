@@ -35,10 +35,14 @@ test("buyer sees structured SSH delivery and can confirm only from awaiting acce
 
 test("supplier manual delivery task list is organization scoped and contains no buyer secrets", () => {
   const component = read("components/supplier-manual-deliveries.tsx");
+  const visible = component.slice(component.indexOf("export function SupplierManualDeliveries"));
   const page = read("app/supply/page.tsx");
   assert.match(component, /\/api\/v1\/supply\/manual-deliveries/u);
   assert.match(component, /分配给本组织的人工交付/u);
   assert.match(component, /record\.sshPublicKeyFingerprint/u);
+  assert.match(component, /safeDeliveryError\(reason, copy\)/u);
+  assert.doesNotMatch(component, /marketplaceErrorMessage/u);
+  assert.doesNotMatch(visible, /[\u3400-\u9fff]/u, "supplier delivery JSX must read visible copy from the locale dictionary");
   assert.doesNotMatch(component, /buyerEmail|buyerDisplayName|buyerAccountId|canonicalSshPublicKey|internalNote|record\.connection|record\.pricing|询价参考/u);
   assert.match(page, /<SupplierManualDeliveries appealsEnabled=\{manualAppealsEnabled\(\)\} \/>/u);
   assert.match(page, /import \{ manualAppealsEnabled \} from "@\/lib\/server\/manual-appeals"/u);

@@ -73,7 +73,7 @@ test("the 02672 label stays scoped to its independent Spark page and never enter
   const buyWorkspace = source("components/buy-workspace.tsx");
   assert.doesNotMatch(layout, /DgxSparkCampaign|白鸽在线|02672/u);
   assert.match(page, /02672 白鸽在线特供/u);
-  assert.match(buyWorkspace, /href="\/campaigns\/dgx-spark">DGX Spark 专项/u);
+  assert.match(buyWorkspace, /href="\/campaigns\/dgx-spark">\{copy\.hero\.sparkCampaign\}/u);
   assert.doesNotMatch(buyWorkspace, /白鸽在线|02672/u);
 });
 

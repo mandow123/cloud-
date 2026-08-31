@@ -90,11 +90,11 @@ test("the static resource directory synchronizes catalog eligibility and never s
   const inquiry = source("components/catalog-purchase.tsx");
   const checkoutPage = source("app/checkout/[resourceId]/page.tsx");
 
-  assert.match(explorer, /classification === "PRIMARY_INQUIRY"[\s\S]*!inquiryEnabled[\s\S]*人工询价维护中[\s\S]*href=\{`\/checkout\/\$\{encodeURIComponent\(resource\.id\)\}`\}/u);
-  assert.match(explorer, /classification === "PRIMARY_INQUIRY"[\s\S]*formatCardHourValue\(resource\.quote\.median \/ 1\.002\)[\s\S]*KAI 标准卡时 \/ 套·小时/u);
-  assert.match(explorer, /catalogDisplayQuote\(item, classifications\[item\.id\] \?\? "EXCLUDED"\)/u);
-  assert.equal((explorer.match(/catalogDisplayQuote\(resource, classifications\[resource\.id\] \?\? "EXCLUDED"\)/gu) ?? []).length, 2);
-  assert.match(explorer, /href=\{`\/request\?listing=\$\{encodeURIComponent\(resource\.id\)\}`\}[\s\S]*classification === "REFERENCE_LEAD" \? "提交相关需求" : "提交算力需求"/u);
+  assert.match(explorer, /classification === "PRIMARY_INQUIRY"[\s\S]*!inquiryEnabled[\s\S]*copy\.maintenance[\s\S]*href=\{`\/checkout\/\$\{encodeURIComponent\(resource\.id\)\}`\}/u);
+  assert.match(explorer, /classification === "PRIMARY_INQUIRY"[\s\S]*formatCardHourValue\(resource\.quote\.median \/ 1\.002\)[\s\S]*copy\.standardCardHourUnit/u);
+  assert.match(explorer, /catalogDisplayQuote\(item, classifications\[item\.id\] \?\? "EXCLUDED", copy\)/u);
+  assert.equal((explorer.match(/catalogDisplayQuote\(resource, classifications\[resource\.id\] \?\? "EXCLUDED", copy\)/gu) ?? []).length, 2);
+  assert.match(explorer, /href=\{`\/request\?listing=\$\{encodeURIComponent\(resource\.id\)\}`\}[\s\S]*classification === "REFERENCE_LEAD" \? copy\.submitRelated : copy\.submitDemand/u);
   assert.match(explorer, /classifications\[resource\.id\] \?\? "EXCLUDED"/u);
   assert.match(resourcesPage, /classifyBuyCatalogListing\(listing, suppliers\)/u);
   assert.match(resourcesPage, /inquiryEnabled=\{isBuyCatalogV2Enabled\(\) && manualDeliveryIntakeEnabled\(\)\}/u);
@@ -105,9 +105,11 @@ test("the static resource directory synchronizes catalog eligibility and never s
   assert.match(inquiry, /本页不创建成交订单/u);
   assert.match(inquiry, /不锁库存、不扣卡时/u);
   assert.match(inquiry, /登录后提交询价/u);
-  assert.match(inquiry, /正在提交…"\s*:\s*"提交询价"/u);
+  assert.match(inquiry, /submitting:\s*"正在提交…"[\s\S]*submit:\s*"提交询价"/u);
+  assert.match(inquiry, /busy\s*\?\s*copy\.submitting\s*:\s*copy\.submit/u);
   assert.doesNotMatch(inquiry, /登录后提交购买|提交购买/u);
-  assert.match(checkoutPage, /title:\s*`询价/u);
+  assert.match(checkoutPage, /"zh-CN":\s*\{\s*inquiry:\s*"询价"/u);
+  assert.match(checkoutPage, /title:\s*`\$\{copy\.inquiry\} \$\{resource\.title\}`/u);
 });
 
 test("all user-facing card-hour formatters emit exactly two decimals while the fixed exchange rate stays 1.002", () => {

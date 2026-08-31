@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import {
   DEFAULT_LOCALE,
   LOCALE_COOKIE_KEY,
@@ -20,31 +21,77 @@ type LocaleContextValue = {
 const LocaleContext = createContext<LocaleContextValue | null>(null);
 
 function persistLocale(locale: Locale) {
-  window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
-  document.cookie = `${LOCALE_COOKIE_KEY}=${encodeURIComponent(locale)}; Path=/; Max-Age=31536000; SameSite=Lax`;
+  try {
+    window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+  } catch {
+    // Storage may be unavailable in privacy mode. The cookie remains the server source of truth.
+  }
+  try {
+    document.cookie = `${LOCALE_COOKIE_KEY}=${encodeURIComponent(locale)}; Path=/; Max-Age=31536000; SameSite=Lax`;
+  } catch {
+    // The in-memory locale still keeps the current document usable.
+  }
   document.documentElement.lang = locale;
   document.documentElement.dataset.locale = locale;
 }
 
-export function LocaleProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(DEFAULT_LOCALE);
+export function LocaleProvider({ children, initialLocale = DEFAULT_LOCALE }: { children: ReactNode; initialLocale?: Locale }) {
+  const router = useRouter();
+  const latestLocaleRef = useRef<Locale>(initialLocale);
+  const refreshInFlightRef = useRef(false);
+  const refreshQueuedRef = useRef(false);
+  const [refreshPending, startRefreshTransition] = useTransition();
+  const [locale, setLocaleState] = useState<Locale>(initialLocale);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(LOCALE_STORAGE_KEY);
-    const next = saved ? normalizeLocale(saved) : DEFAULT_LOCALE;
-    persistLocale(next);
-    const frame = window.requestAnimationFrame(() => setLocaleState(next));
-    return () => window.cancelAnimationFrame(frame);
-  }, []);
+    if (latestLocaleRef.current !== initialLocale) return;
+    setLocaleState(initialLocale);
+    persistLocale(initialLocale);
+  }, [initialLocale]);
+
+  const refreshServerContent = useCallback(() => {
+    if (refreshInFlightRef.current) {
+      refreshQueuedRef.current = true;
+      return;
+    }
+    refreshInFlightRef.current = true;
+    startRefreshTransition(() => router.refresh());
+  }, [router]);
+
+  useEffect(() => {
+    if (refreshPending || !refreshInFlightRef.current) return;
+    refreshInFlightRef.current = false;
+    if (!refreshQueuedRef.current) return;
+    refreshQueuedRef.current = false;
+    refreshServerContent();
+  }, [refreshPending, refreshServerContent]);
+
+  useEffect(() => {
+    function syncAcrossTabs(event: StorageEvent) {
+      if (event.key !== LOCALE_STORAGE_KEY) return;
+      const next = normalizeLocale(event.newValue ?? DEFAULT_LOCALE);
+      latestLocaleRef.current = next;
+      setLocaleState(next);
+      persistLocale(next);
+      refreshServerContent();
+    }
+    window.addEventListener("storage", syncAcrossTabs);
+    return () => window.removeEventListener("storage", syncAcrossTabs);
+  }, [refreshServerContent]);
+
+  const setLocale = useCallback((next: Locale) => {
+    const normalized = normalizeLocale(next);
+    latestLocaleRef.current = normalized;
+    setLocaleState(normalized);
+    persistLocale(normalized);
+    refreshServerContent();
+  }, [refreshServerContent]);
 
   const value = useMemo<LocaleContextValue>(() => ({
     locale,
-    setLocale(next) {
-      setLocaleState(next);
-      persistLocale(next);
-    },
+    setLocale,
     t: (key) => translate(locale, key),
-  }), [locale]);
+  }), [locale, setLocale]);
 
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
 }

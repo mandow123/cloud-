@@ -10,55 +10,61 @@ const ROOT = join(import.meta.dirname, "..");
 const EXTRA_FROZEN_FILES = ["data/model-market.snapshot.json", "lib/catalog.mjs"];
 const APPROVED_PUBLIC_FILES = Object.freeze({
   "app/globals.css": "c2c5e75a9f6d955d8145781557e3bb798cd1dca826544ac6e6ba3d0a62c8c60d",
-  "app/gpu/page.tsx": "70838ea765a886ca7313cb4b2e00914f8a616a907e0a9e9499c3f5be9d713fdd",
+  "app/gpu/page.tsx": "c24f5e788d1680e67c91a05ff50d017b871365871948385015ffeb02d16dbf9f",
   "app/guides/guides.module.css": "5e12ca1ab83f648e5ea59508f851f739f6a16bc1734bdc23bf60d83cf8cca88b",
-  "app/guides/page.tsx": "7953719256414cacfb75e38f12707a67e511fbcb94aa19ef8ae9c9e5e03391db",
-  "app/hosting/page.tsx": "fc74f511a198159a4f4f6fa395202a6ce25a9ac33599d2695a82375133668925",
+  "app/guides/page.tsx": "777cd2f199fd91e0b722377a782e3a05b4b4141e855951a6373472d3e7cd2c4b",
+  "app/hosting/page.tsx": "44102018b40ec1de2c2a983c76c53e80c31d8eac78c5835bf4a72b2ae62e4596",
   "app/hosting/partners/terms/KAI_HOSTING_TERMS_2026_08/page.tsx": "61414d5988494518b096ec8d8e07095851481bc42fad6f62e63a401634ab3b6a",
   "app/kai-cloud.css": "0b3252e02a8ab8050cb8da87ac0ec407e0fcd51285c7d856f4c3fdc28b63eac8",
-  "app/layout.tsx": "5b58d109269961a697ffa3068f7f134d6e2bc56691cd1a569b1749fe53791dd7",
-  "app/page.tsx": "3f68b8c3587d187148946c3317dbe6675b70649ebbd423e864f552a5410cb382",
-  "app/methodology/page.tsx": "07f6c0547cc216903715e626548e1d2801a0cb829df12411f522e43cae7e5135",
-  "app/request/page.tsx": "29b26ddcd028966bcd41b40650a27a02ade4b7942a421569adf58e47b26d5ab3",
-  "app/resources/page.tsx": "1640b7ca93e113f2411c6f232094f4a08429584254e74de3537412cc7b1b2a86",
-  "app/resources/[id]/page.tsx": "311e9a64a75cc8c35b8c9ea8ac572dd75f376a1c394439d26eb8d6da698f2846",
-  "app/checkout/[resourceId]/page.tsx": "42eca4156fbd4f2625f7f18b7163233c3ca1fbda02b60d746ecb4902a50e8799",
-  "app/login/page.tsx": "026689be202766d6cbcfae7b18b9ea7c7b86bf6a514d848184c84025899437e3",
-  "app/member/page.tsx": "86f020c26af8956409caa9216c8bf29e61871109a7c237bf28d8c79c464441ff",
+  "app/layout.tsx": "a91926edead71be3ae680ee4070e0e096aebeadc746482f7666b1c4b7a6e3cee",
+  "app/page.tsx": "20f8ad3d1743cadcc163d50982439dbd65d5f6e96c79c87c32307266bbaddb24",
+  "app/methodology/page.tsx": "1e941fd3ce4769b65ad208f8e8b6191927cde72fd505c002e6d49b2b50e2af4b",
+  "app/request/page.tsx": "d75d4f13bdbf2f2fb5d11cb01e39d1b961e5eed8244236c35da2bb57c739496e",
+  "app/resources/page.tsx": "172b120f772981346b5d59dea2f530c130f053feb8adbbdbc52f79a2371d848f",
+  "app/resources/[id]/page.tsx": "65d8aa387712f77025fc4429d787b72105caf88588b612da433a9652ee06ac9c",
+  "app/checkout/[resourceId]/page.tsx": "318b7b7d4d90b33e32e83a524fc698f6a79ca2fa13da5cf69d82c6717bf60353",
+  "app/login/page.tsx": "34ad84461470ef60c3acaea63de73bf4ab360feee1797b2be6833b18915d276c",
+  "app/member/page.tsx": "8238fb8e999e57c67f590c21d1c50121713487b3ff5bd56d01820f2f368096d1",
+  "app/market/page.tsx": "b6d6e24eb585660d5ea3b2b48dd871898507734b1b676c01c2d4e54385718e0f",
+  "app/not-found.tsx": "b75a5fe7c8a2477c21ed2f74198fe91e19cf4dd60c3b654f7e812e142d56a7d9",
   "app/partners/page.tsx": "93cd20f90ebf8f6271b1b69fd79521b00497b02975beab97019b7bce121f2b52",
-  "components/account-login.tsx": "2bbf68579e3c122d007861546462a072a1b84e98df47ecd315b0cdfa9c7b6cfc",
-  "components/account-required.tsx": "eba4b05ead04f06c54a4863f0da123c8ded8d21e3071a5a3b609074f7d4cef04",
-  "components/buyer-order-list.tsx": "fa15cbb70d18d19074633efc5d9fe60acd276ae4a45ab9df1e99dc3f6092d31a",
+  "components/account-login.tsx": "652f8efed773bb8d01d867a5054618e771b63be5e6e5d8f920c881588502fd45",
+  "components/account-required.tsx": "8412ccfc996d22995642fd4510e6c702a40e75e5efeb700addbf8ba08968953a",
+  "components/buyer-order-list.tsx": "a1d71716bc7e8def3c13be2b70abdef2aa807e6d8d4720bf7d67860d1e6ea3a7",
   "components/catalog-purchase.module.css": "d9e451203cbbfcb4b13a1c8f91267309cfe4be895e7ee225afb52cdfbc99d0a7",
-  "components/catalog-purchase.tsx": "06a5136e7e7cce354d02dfcc88f971c0e30aab7750e7fefd2c28b53b337f83bf",
-  "components/admin-login.tsx": "0ec4b26ed6e04d40422f14d6c6b471265ff65f49d78df61c99c6c20bcb7f0567",
+  "components/catalog-purchase.tsx": "8ba38b6dc0e2a6b0065b8a9e79834a4292d8fcf99afb59a9d3495544dc31a43f",
+  "components/admin-login.tsx": "0ad6638587a4a975ec118dbe6174d20cfa8b51b183a9a50261014060f52ad86e",
   "components/admin-resource-page.tsx": "b11613794dbb9c8bafff882a9686bbe70b030b07b87d17011d40fd8ec719809a",
-  "components/card-hour-account-panel.tsx": "266bbcd889a3253fd33296ea22b7255efcde7700071da23451ec4abbce5651b6",
+  "components/card-hour-account-panel.tsx": "0551952b5a3aa803ed0b8735145bdba66955365b4ba2c5e53a5e0774cdc14ed5",
   "components/email-login.tsx": "43f6a8f1edc18b23ec099ba476c51d45b79e165bcd0f4a7778b5b78151874cb6",
   "components/gpu-cloud-lab.module.css": "379628eb1340717c0cefcc515cc281f7564b37870c5e8c89776fe9e3df9013c9",
   "components/gpu-cloud-lab.tsx": "64f60d95f596b7f0aa076575c2fed87ac19985aaaf021e21e0acaf0fe2334725",
-  "components/live-home-market-hero.tsx": "03c532364110a7d47231cdf2622fae762ccfe69255b8b0b84e0ac8fb19739cbc",
-  "components/member-workspace.tsx": "162d82572481ffa772fcbace13713cf984ec8e22e5eb132e703a91720c7e7d13",
+  "components/live-home-market-hero.tsx": "25b32e4d682fdc715e44ff0f72d51123186f8f88d5ec1205c16fcdfd79990945",
+  "components/live-model-price-board.tsx": "687d017a332597ac67fe1b28fcd621e469f588a4f4c9f9fcaab757340289dc8e",
+  "components/market-dashboard.tsx": "c55e7b4d981d581195288561399af2243af88bd250a7c694439300aec79b8aca",
+  "components/member-workspace.tsx": "8996b8ad40627bcdb97ac956db5ef2b2fd8bba18edb7f37b540ba7b04af551c7",
+  "components/model-price-board.tsx": "dfbe3fdfc3e1865704a9c1dae2d67f14aa0a32762b83da6623f0f3a3067298f5",
   "components/mobile-demand-cta.tsx": "0fddd0e6043db5cfc7bb926c88a74481c18d3e9588a6c20b457c1ab5cca78ba3",
   "components/nav-links.tsx": "daca87be4b1269ffc15585c52d8ba98760c66f8e5d5424261f4bb5c7c40d5b21",
   "components/kai-standard-state.tsx": "9bdca04d4da3c14e68ced4915c0bc7af44cc8abf4c4a95c02eb2d4ed57bcabef",
-  "components/personal-center-overview.tsx": "89f031d46092ad91738b88b32cb4fafb40792ef74c453b8e1caa0824357025e2",
+  "components/personal-center-overview.tsx": "16f9ab0f99c141c0f4b43ddc5e18b928d973050ae8f0726d3020f12d0cb5ca8e",
   "components/personal-menu.module.css": "0813b8a2fa3d164922add93de17daf66adc0dd9c1859427097c36975708f90f2",
-  "components/personal-menu.tsx": "31a492a0fdfa2e9f972f4ca5fd9d52ea094d96fdb5c8b7e1b53f29352b128fbe",
-  "components/resource-explorer.tsx": "368671c9dd31505009ea6a10b521767b12c2b497f9bf2d5d805b76d03d47c050",
-  "components/resource-detail-actions.tsx": "be0f197a8c5e9580f9fa89425cb3a6f029b1aeed9f125339b62f068878a36c7c",
+  "components/personal-menu.tsx": "d9cb93b164779cdaa5c300b8a3a0c1df500933ae22e46e8b68770cf266d375d2",
+  "components/request-workbench.tsx": "ebcf76e8a9403dfa83b457e8b9eee2ad10fb0c3e31c6dcc6ffd3ae13ebcfc66a",
+  "components/resource-explorer.tsx": "fcb894bafb20363694d8ad5dbcd3aeef98d428f5d5e789a63989595f9725eb1e",
+  "components/resource-detail-actions.tsx": "1f7898b9a00ed5d09dc44030d69dc325665ea1503406d1f6241ee960be643364",
   "components/resource-purchase.module.css": "6569ca7f4f35c5cd6f731ee97dba34567d002d5bb370aa9b3058c33628bc6669",
   "components/language-control.tsx": "60ef4529327c666522617a5c61ab1b910b8acb343ee64aeb90261a9680179b18",
-  "components/locale-provider.tsx": "09ff154d579021216b5acd170ef9bf3ab9a3345d3187b885a0aa38a6fe090709",
+  "components/locale-provider.tsx": "93a5f7ac21cbac8bae2ac9e04a4f9e49124fafe967d4ceed5f3aa171678891a1",
   "components/site-footer-view.tsx": "ead5d5d36fea877831e0d1df33f8f38bc121ffee96d83f61e81f7b9075273a87",
   "components/site-footer.tsx": "48314604150577a62fa8a334c0690be47ff72a48615f9d0ad393c441a44f5e9a",
-  "components/site-header.tsx": "5bcb4e1cda1f2305dbc06673b5cb1cd641119e1fdacf4298910d7a3275821512",
+  "components/site-header.tsx": "142cf6419ff57eecb45077d1d17d1ef43f06349a0d84cde37fb89fd45c97fe89",
   "components/theme-control.tsx": "cd99267af248143ef8a6e3a488b53878de2e3d144e49ca3bd0deb263ab9d9c59",
   "components/supply-api-client.tsx": "60292f9e3e4a141f3a69be788b3d627f3969f67aeecb6153dc5fbc1f02a97825",
   "components/supply-listings-dashboard.tsx": "e5a24ab251eed94562f51f523590bba70a041b1551c11bdaa5234ae300a6f0d4",
   "components/supply-order-workspace.tsx": "771eca38029a65863d3012b5bc21babd084339307a9fad1c9a53e74c6b005375",
   "lib/catalog.mjs": "814608044dda4a2b9e25902b1c07963d43a675ab8d3d42ab8f8aff89db0ca568",
-  "lib/i18n.ts": "c90c60e8419efc11064957154f91507608b7da6b4c3f57fa289f00fc955afcda",
+  "lib/i18n.ts": "545ac2ad237da6939625a4c78510c063d0c52a25b0bd225b341639b44304a76a",
   "public/og-home-v2.png": "9ab58389125a32bbe84a29a6f73f7f7f75cdb04c717c58c82233f7ec09d63d5d",
   "public/assets/suppliers/shanghai-honghuan.jpg": "db1ed9e4cddc31f4b6e641bbc9179443e5a5d251a31abe28109c3fa55f32a70f",
 });
@@ -160,8 +166,8 @@ test("approved shared public files are pinned", () => {
     assert.equal(actual, expected, `${path} changed outside the approved public design`);
   }
   const explorer = readFileSync(join(ROOT, "components/resource-explorer.tsx"), "utf8");
-  assert.match(explorer, /classification === "PRIMARY_INQUIRY"[\s\S]*!inquiryEnabled[\s\S]*人工询价维护中/u);
-  assert.match(explorer, /classification === "REFERENCE_LEAD" \? "提交相关需求" : "提交算力需求"/u);
+  assert.match(explorer, /classification === "PRIMARY_INQUIRY"[\s\S]*!inquiryEnabled[\s\S]*copy\.maintenance/u);
+  assert.match(explorer, /classification === "REFERENCE_LEAD" \? copy\.submitRelated : copy\.submitDemand/u);
   assert.match(explorer, /classifications\[resource\.id\] \?\? "EXCLUDED"/u);
   const buttonCss = readFileSync(join(ROOT, "components/resource-purchase.module.css"), "utf8");
   assert.match(buttonCss, /background:\s*#117f7b/u);
@@ -229,12 +235,12 @@ test("the admin panel stays isolated, supplier pages stay gated and transaction 
   ]) assert.ok(existsSync(join(ROOT, path)), `${path} is missing`);
 
   const purchase = readFileSync(join(ROOT, "components/catalog-purchase.tsx"), "utf8");
-  assert.match(purchase, /确认算力套餐与询价信息/u);
+  assert.match(purchase, /title: "确认算力套餐与询价信息"/u);
   assert.doesNotMatch(purchase, /人民币参考价|¥/u);
-  assert.match(purchase, /卡时参考范围/u);
-  assert.match(purchase, /询价参考总计/u);
-  assert.match(purchase, /平台人工确认库存与正式卡时报价/u);
-  assert.match(purchase, /登录后提交询价/u);
-  assert.match(purchase, /完善交易主体后提交/u);
-  assert.match(purchase, /accountState === "loading" \? "正在核对账户…" : busy \? "正在提交…" : "提交询价"/u);
+  assert.match(purchase, /referenceRange: "卡时参考范围"/u);
+  assert.match(purchase, /estimatedTotal: "询价参考总计"/u);
+  assert.match(purchase, /"平台人工确认库存与正式卡时报价"/u);
+  assert.match(purchase, /loginSubmit: "登录后提交询价"/u);
+  assert.match(purchase, /inactiveSubmit: "完善交易主体后提交"/u);
+  assert.match(purchase, /accountState === "loading" \? copy\.checking : busy \? copy\.submitting : copy\.submit/u);
 });

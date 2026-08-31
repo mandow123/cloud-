@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useLocale } from "@/components/locale-provider";
 import type { ExchangeOrder } from "@/lib/exchange";
 import { formatCapacityHours, formatRateUnits } from "@/lib/capacity-display";
-import { exchangeGet, marketplaceErrorMessage } from "@/lib/client/marketplace-client";
+import { exchangeGet } from "@/lib/client/marketplace-client";
 
 type ListResponse<T> = { items: T[]; count: number };
 
-function money(cents: number) {
-  return new Intl.NumberFormat("zh-CN", {
+function money(cents: number, locale: string) {
+  return new Intl.NumberFormat(locale, {
     style: "currency",
     currency: "CNY",
     minimumFractionDigits: 2,
@@ -29,6 +30,7 @@ function nextAction(order: ExchangeOrder) {
 }
 
 export function BuyerOrderList() {
+  const { locale } = useLocale();
   const [orders, setOrders] = useState<ExchangeOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -38,12 +40,12 @@ export function BuyerOrderList() {
     try {
       const page = await exchangeGet<ListResponse<ExchangeOrder>>("/api/v1/orders", "buyer");
       setOrders(page.items);
-    } catch (loadError) {
-      setError(marketplaceErrorMessage(loadError, "采购订单暂时无法加载。"));
+    } catch {
+      setError(locale === "zh-CN" ? "采购订单暂时无法加载。" : "Purchase orders are temporarily unavailable.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [locale]);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,8 +53,8 @@ export function BuyerOrderList() {
       .then((page) => {
         if (!cancelled) setOrders(page.items);
       })
-      .catch((loadError) => {
-        if (!cancelled) setError(marketplaceErrorMessage(loadError, "采购订单暂时无法加载。"));
+      .catch(() => {
+        if (!cancelled) setError(locale === "zh-CN" ? "采购订单暂时无法加载。" : "Purchase orders are temporarily unavailable.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -60,7 +62,7 @@ export function BuyerOrderList() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [locale]);
 
   if (loading) return <p role="status" className="border-l-2 border-[var(--accent)] pl-4">正在读取采购订单…</p>;
 
@@ -92,11 +94,11 @@ export function BuyerOrderList() {
                 <p className="m-0 font-mono text-sm text-[var(--accent)]">{order.id}</p>
                 <h2 className="mb-0 mt-2 text-2xl">{order.userPhase}</h2>
                 <p className="mb-0 mt-2">{formatRateUnits(order.productCode, order.rateUnits)} · {formatCapacityHours(order.productCode, order.capacityBaseUnits)}</p>
-                <p className="mb-0 mt-1 text-sm">{new Date(order.startAt).toLocaleString("zh-CN")} 至 {new Date(order.endAt).toLocaleString("zh-CN")}</p>
+                <p className="mb-0 mt-1 text-sm">{new Date(order.startAt).toLocaleString(locale)} — {new Date(order.endAt).toLocaleString(locale)}</p>
               </div>
               <div className="lg:text-right">
                 <span className="block text-sm">订单金额</span>
-                <strong className="font-mono text-3xl text-[var(--ink)]">{money(order.totalAmountCents)}</strong>
+                <strong className="font-mono text-3xl text-[var(--ink)]">{money(order.totalAmountCents, locale)}</strong>
               </div>
               <Link className="button button-primary min-h-12 w-full justify-center lg:w-auto" href={`/buyer/orders/${encodeURIComponent(order.id)}`}>{nextAction(order)}</Link>
             </article>

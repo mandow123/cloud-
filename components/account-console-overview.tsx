@@ -2,159 +2,95 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useLocale } from "@/components/locale-provider";
 import { formatCardHourDisplayMicros } from "@/lib/card-hours";
+import type { Locale } from "@/lib/i18n";
 import styles from "./account-console-overview.module.css";
 
-type AccountConsoleSummary = {
+type Summary = {
   account: { displayName: string; organizationName: string; subjectStatus: "ACTIVE" };
-  buyer: {
-    cardHours: { availableMicros: number; heldMicros: number };
-    purchaseIntents: {
-      total: number;
-      pendingManualDelivery: number;
-      recent: Array<{ demandId: string; status: "PENDING_MANUAL_DELIVERY"; resourceTitle: string; supplierName: string; estimatedCardHourMicros: number; createdAt: string }>;
-    };
-  };
-  supplier: {
-    available: boolean;
-    approved: boolean;
-    status: "NOT_SUBMITTED" | "PENDING_REVIEW" | "NEEDS_ATTENTION" | "VERIFIED_NOT_PUBLISHED" | "PUBLISHED";
-    subjectStatus: "ACTIVE";
-    applications: {
-      total: number;
-      pendingReview: number;
-      approved: number;
-      verified: number;
-      published: number;
-      needsAttention: number;
-      recent: Array<{ id: string; productName: string; resourceType: string; status: "DRAFT" | "SUBMITTED" | "UNDER_VERIFICATION" | "VERIFIED" | "REJECTED" | "PUBLISHED"; createdAt: string }>;
-    };
-  };
+  buyer: { cardHours: { availableMicros: number; heldMicros: number }; purchaseIntents: { total: number; pendingManualDelivery: number; recent: Array<{ demandId: string; status: "PENDING_MANUAL_DELIVERY"; resourceTitle: string; supplierName: string; estimatedCardHourMicros: number; createdAt: string }> } };
+  supplier: { available: boolean; approved: boolean; status: "NOT_SUBMITTED" | "PENDING_REVIEW" | "NEEDS_ATTENTION" | "VERIFIED_NOT_PUBLISHED" | "PUBLISHED"; subjectStatus: "ACTIVE"; applications: { total: number; pendingReview: number; approved: number; verified: number; published: number; needsAttention: number; recent: Array<{ id: string; productName: string; resourceType: string; status: "DRAFT" | "SUBMITTED" | "UNDER_VERIFICATION" | "VERIFIED" | "REJECTED" | "PUBLISHED"; createdAt: string }> } };
 };
 
-const supplyStatusLabels: Record<AccountConsoleSummary["supplier"]["applications"]["recent"][number]["status"], string> = {
-  DRAFT: "未提交",
-  SUBMITTED: "待平台审核",
-  UNDER_VERIFICATION: "待平台审核",
-  VERIFIED: "申请已通过（尚未发布）",
-  REJECTED: "需补充资料",
-  PUBLISHED: "已由平台人工发布",
+type Copy = {
+  buyer: string; supplier: string; scope: string; topup: string; rent: string; host: string; demand: string; available: string; requests: string; pending: string; held: string;
+  balanceNote: string; snapshot: string; pendingNote: string; ledger: string; recentRequests: string; all: string; waiting: string; cardHours: string; quote: string; details: string; noRequests: string; browse: string;
+  compare: string; compareNote: string; choose: string; managed: string; managedNote: string; openGpu: string; submit: string; requirements: string; supplierStatus: string; applications: string; approved: string; published: string; recentApplications: string; record: string; noSupply: string; start: string;
+  loadFailed: string; loadSafe: string; retry: string; loading: string; requestId: string;
+  needsAttention: string; underReview: string; verified: string; notSubmitted: string;
 };
 
-const resourceTypeLabels: Record<string, string> = {
-  GPU_CARD: "GPU 显卡",
-  GPU_SERVER: "GPU 服务器",
-  CPU_SERVER: "CPU 服务器",
-  MAC_COMPUTE: "Mac 算力",
-  TOKEN_CAPACITY: "Token 容量",
-  MODEL_INSTANCE: "模型实例",
-  NAS_STORAGE: "NAS 存储",
-  RACK_CAPACITY: "机柜容量",
-  CLOUD_RESOURCE: "云资源",
+const EN: Copy = { buyer: "Buyer overview", supplier: "Supplier overview", scope: "All figures belong only to this organization", topup: "Top up card-hours", rent: "Rent GPU", host: "Buy and host GPU", demand: "Submit compute demand", available: "Available KAI standard card-hours", requests: "Compute requests", pending: "Awaiting manual delivery", held: "Held card-hours", balanceNote: "Verified ledger balance · two decimals", snapshot: "Immutable snapshots for this organization", pendingNote: "No stock lock, payment, or card-hour deduction", ledger: "Read from the real ledger; never estimated", recentRequests: "Recent compute requests", all: "View all", waiting: "Awaiting platform confirmation and delivery", cardHours: "card-hours", quote: "Quote reference · not deducted", details: "View details", noRequests: "No compute requests yet", browse: "Browse GPU directory →", compare: "Resource comparison", compareNote: "Selections are stored in this browser and do not place an order or reserve stock.", choose: "Choose resources", managed: "My managed GPUs", managedNote: "View physical GPU ownership, supplier orders, facility status, and monthly card-hour postings.", openGpu: "Open my GPUs", submit: "Submit a resource", requirements: "Read listing requirements", supplierStatus: "Supplier status", applications: "Listing applications", approved: "Applications approved", published: "Manually published", recentApplications: "Recent listing applications", record: "View record", noSupply: "No supply resource submitted", start: "Start listing →", loadFailed: "Unable to load account data", loadSafe: "Account data is temporarily unavailable. Service failures are never shown as zero or replaced with local data.", retry: "Try again", loading: "Loading verified account data for this organization…", requestId: "Request ID", needsAttention: "More information required", underReview: "Pending platform review", verified: "Approved, not published", notSubmitted: "Not submitted" };
+
+const COPY_BASE: Record<Locale, Copy> = {
+  en: EN,
+  "zh-CN": { ...EN, buyer: "采购总览", supplier: "供应总览", scope: "所有数字只属于当前组织", topup: "充值卡时", rent: "租用 GPU", host: "购买并托管 GPU", demand: "提交算力需求", available: "可用 KAI 标准卡时", requests: "算力申请", pending: "待人工确认与交付", held: "已锁定卡时", balanceNote: "真实账本余额 · 两位小数", snapshot: "当前组织的不可变申请快照", pendingNote: "未锁库存、未付款、未扣卡时", ledger: "只读取真实账本，不由页面估算", recentRequests: "最近算力申请", all: "查看全部", waiting: "等待平台人工确认与交付", cardHours: "卡时", quote: "询价参考 · 尚未扣减", details: "查看详情", noRequests: "还没有算力申请", browse: "浏览 GPU 目录 →", compare: "资源对比", compareNote: "对比选择保存在当前浏览器，不代表下单或锁库存。", choose: "选择资源", managed: "我的 GPU 云托管", managedNote: "查看实体 GPU 确权、供应商订单、机房状态和月度入账卡时。", openGpu: "进入我的 GPU", submit: "提交新资源", requirements: "阅读上架要求", supplierStatus: "供应商状态", applications: "上架申请", approved: "申请已通过", published: "平台人工发布", recentApplications: "最近上架申请", record: "查看记录", noSupply: "还未提交供应资源", start: "开始上架 →", loadFailed: "账户数据读取失败", loadSafe: "账户数据暂时无法读取。页面不会把服务异常显示成 0，也不会用本地数据补齐。", retry: "重新读取", loading: "正在读取当前组织的真实账户数据…", requestId: "请求编号", needsAttention: "需补充资料", underReview: "待平台审核", verified: "申请已通过（尚未发布）", notSubmitted: "未提交" },
+  "zh-TW": { ...EN, buyer: "採購總覽", supplier: "供應總覽", scope: "所有數字只屬於目前組織", topup: "儲值卡時", rent: "租用 GPU", host: "購買並託管 GPU", demand: "提交算力需求", available: "可用 KAI 標準卡時", requests: "算力申請", pending: "待人工確認與交付", held: "已鎖定卡時", balanceNote: "真實帳本餘額 · 兩位小數", recentRequests: "最近算力申請", all: "查看全部", waiting: "等待平台人工確認與交付", cardHours: "卡時", details: "查看詳情", noRequests: "尚無算力申請", browse: "瀏覽 GPU 目錄 →", compare: "資源比較", choose: "選擇資源", managed: "我的 GPU 雲端託管", openGpu: "進入我的 GPU", submit: "提交新資源", requirements: "閱讀上架要求", supplierStatus: "供應商狀態", applications: "上架申請", approved: "申請已通過", published: "平台人工發布", recentApplications: "最近上架申請", record: "查看記錄", noSupply: "尚未提交供應資源", start: "開始上架 →", loadFailed: "帳戶資料讀取失敗", retry: "重新讀取", loading: "正在讀取目前組織的真實帳戶資料…", requestId: "請求編號", needsAttention: "需補充資料", underReview: "待平台審核", verified: "申請已通過（尚未發布）", notSubmitted: "未提交" },
+  ja: { ...EN, buyer: "購入概要", supplier: "供給概要", scope: "すべての数値は現在の組織のみに属します", topup: "カード時をチャージ", rent: "GPU を借りる", host: "GPU を購入・運用", demand: "算力需要を送信", available: "利用可能な KAI 標準カード時", requests: "算力申請", pending: "手動納品待ち", held: "確保済みカード時", recentRequests: "最近の算力申請", all: "すべて表示", waiting: "確認・納品待ち", cardHours: "カード時", details: "詳細を見る", noRequests: "算力申請はありません", browse: "GPU カタログを見る →", compare: "リソース比較", choose: "リソースを選択", managed: "運用中の GPU", openGpu: "GPU を開く", submit: "リソースを送信", requirements: "掲載要件を読む", applications: "掲載申請", recentApplications: "最近の掲載申請", loadFailed: "アカウントデータを読み込めません", retry: "再試行", loading: "組織の実データを読み込み中…", requestId: "リクエスト ID" },
+  ko: { ...EN, buyer: "구매 개요", supplier: "공급 개요", scope: "모든 수치는 현재 조직에만 속합니다", topup: "카드시간 충전", rent: "GPU 대여", host: "GPU 구매 및 호스팅", demand: "컴퓨팅 수요 제출", available: "사용 가능한 KAI 표준 카드시간", requests: "컴퓨팅 요청", pending: "수동 인도 대기", held: "잠긴 카드시간", recentRequests: "최근 요청", all: "전체 보기", details: "상세 보기", noRequests: "요청이 없습니다", browse: "GPU 디렉터리 보기 →", compare: "리소스 비교", choose: "리소스 선택", managed: "내 호스팅 GPU", openGpu: "내 GPU 열기", submit: "새 리소스 제출", requirements: "등록 요건 보기", applications: "등록 신청", recentApplications: "최근 등록 신청", loadFailed: "계정 데이터를 불러올 수 없습니다", retry: "다시 시도", loading: "실제 계정 데이터 불러오는 중…", requestId: "요청 ID" },
+  fr: { ...EN, buyer: "Vue d’ensemble des achats", supplier: "Vue d’ensemble fournisseur", scope: "Tous les chiffres appartiennent à cette organisation", topup: "Recharger les heures-carte", rent: "Louer un GPU", host: "Acheter et héberger un GPU", demand: "Soumettre un besoin", available: "Heures-carte KAI disponibles", requests: "Demandes de calcul", pending: "Livraison manuelle en attente", held: "Heures-carte bloquées", recentRequests: "Demandes récentes", all: "Tout afficher", details: "Voir le détail", noRequests: "Aucune demande", browse: "Parcourir les GPU →", compare: "Comparaison", choose: "Choisir", managed: "Mes GPU hébergés", openGpu: "Ouvrir mes GPU", submit: "Soumettre une ressource", requirements: "Lire les conditions", applications: "Demandes de publication", recentApplications: "Demandes récentes", loadFailed: "Impossible de charger les données", retry: "Réessayer", loading: "Chargement des données réelles…", requestId: "ID de requête" },
+  th: { ...EN, buyer: "ภาพรวมผู้ซื้อ", supplier: "ภาพรวมผู้ให้บริการ", scope: "ตัวเลขทั้งหมดเป็นขององค์กรนี้เท่านั้น", topup: "เติมชั่วโมงการ์ด", rent: "เช่า GPU", host: "ซื้อและฝาก GPU", demand: "ส่งความต้องการ", available: "ชั่วโมงการ์ด KAI ที่ใช้ได้", requests: "คำขอพลังประมวลผล", pending: "รอส่งมอบ", held: "ชั่วโมงการ์ดที่ล็อก", recentRequests: "คำขอล่าสุด", all: "ดูทั้งหมด", details: "ดูรายละเอียด", noRequests: "ยังไม่มีคำขอ", browse: "ดู GPU →", compare: "เปรียบเทียบ", choose: "เลือกทรัพยากร", managed: "GPU ที่ฝากไว้", openGpu: "เปิด GPU ของฉัน", submit: "ส่งทรัพยากร", requirements: "อ่านข้อกำหนด", applications: "คำขอลงรายการ", recentApplications: "คำขอล่าสุด", loadFailed: "โหลดข้อมูลไม่ได้", retry: "ลองอีกครั้ง", loading: "กำลังโหลดข้อมูลจริง…", requestId: "รหัสคำขอ" },
+  vi: { ...EN, buyer: "Tổng quan mua", supplier: "Tổng quan cung ứng", scope: "Mọi số liệu chỉ thuộc tổ chức này", topup: "Nạp giờ-thẻ", rent: "Thuê GPU", host: "Mua và lưu ký GPU", demand: "Gửi nhu cầu", available: "Giờ-thẻ KAI khả dụng", requests: "Yêu cầu năng lực", pending: "Chờ bàn giao", held: "Giờ-thẻ bị khóa", recentRequests: "Yêu cầu gần đây", all: "Xem tất cả", details: "Xem chi tiết", noRequests: "Chưa có yêu cầu", browse: "Xem GPU →", compare: "So sánh", choose: "Chọn tài nguyên", managed: "GPU lưu ký của tôi", openGpu: "Mở GPU", submit: "Gửi tài nguyên", requirements: "Đọc yêu cầu", applications: "Yêu cầu đăng bán", recentApplications: "Yêu cầu gần đây", loadFailed: "Không thể tải dữ liệu", retry: "Thử lại", loading: "Đang tải dữ liệu thực…", requestId: "Mã yêu cầu" },
+  id: { ...EN, buyer: "Ringkasan pembeli", supplier: "Ringkasan pemasok", scope: "Semua angka hanya milik organisasi ini", topup: "Isi ulang jam-kartu", rent: "Sewa GPU", host: "Beli dan hosting GPU", demand: "Ajukan kebutuhan", available: "Jam-kartu KAI tersedia", requests: "Permintaan komputasi", pending: "Menunggu pengiriman", held: "Jam-kartu ditahan", recentRequests: "Permintaan terbaru", all: "Lihat semua", details: "Lihat detail", noRequests: "Belum ada permintaan", browse: "Lihat GPU →", compare: "Perbandingan", choose: "Pilih sumber daya", managed: "GPU hosting saya", openGpu: "Buka GPU", submit: "Ajukan sumber daya", requirements: "Baca persyaratan", applications: "Pengajuan listing", recentApplications: "Pengajuan terbaru", loadFailed: "Data tidak dapat dimuat", retry: "Coba lagi", loading: "Memuat data nyata…", requestId: "ID permintaan" },
+  ms: { ...EN, buyer: "Ringkasan pembeli", supplier: "Ringkasan pembekal", scope: "Semua angka hanya milik organisasi ini", topup: "Tambah nilai jam-kad", rent: "Sewa GPU", host: "Beli dan hos GPU", demand: "Hantar keperluan", available: "Jam-kad KAI tersedia", requests: "Permintaan pengkomputeran", pending: "Menunggu penghantaran", held: "Jam-kad dikunci", recentRequests: "Permintaan terkini", all: "Lihat semua", details: "Lihat butiran", noRequests: "Belum ada permintaan", browse: "Lihat GPU →", compare: "Perbandingan", choose: "Pilih sumber", managed: "GPU hos saya", openGpu: "Buka GPU", submit: "Hantar sumber", requirements: "Baca syarat", applications: "Permohonan senarai", recentApplications: "Permohonan terkini", loadFailed: "Data tidak dapat dimuatkan", retry: "Cuba lagi", loading: "Memuatkan data sebenar…", requestId: "ID permintaan" },
 };
 
-function dateTime(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(date);
-}
+type AccountCoreCopy = Pick<Copy, "balanceNote" | "snapshot" | "pendingNote" | "ledger" | "quote" | "compareNote" | "managedNote" | "supplierStatus" | "approved" | "published" | "record" | "noSupply" | "start" | "loadSafe" | "needsAttention" | "underReview" | "verified" | "notSubmitted">;
+const ACCOUNT_CORE_COPY: Record<Exclude<Locale, "en">, AccountCoreCopy> = {
+  "zh-CN": { balanceNote: "真实账本余额 · 两位小数", snapshot: "当前组织的不可变申请快照", pendingNote: "未锁库存、未付款、未扣卡时", ledger: "只读取真实账本，不由页面估算", quote: "询价参考 · 尚未扣减", compareNote: "对比选择保存在当前浏览器，不代表下单或锁库存。", managedNote: "查看实体 GPU 确权、供应商订单、机房状态和月度入账卡时。", supplierStatus: "供应商状态", approved: "申请已通过", published: "平台人工发布", record: "查看记录", noSupply: "还未提交供应资源", start: "开始上架 →", loadSafe: "账户数据暂时无法读取，页面不会把服务异常显示成 0 或用本地数据补齐。", needsAttention: "需补充资料", underReview: "待平台审核", verified: "申请已通过（尚未发布）", notSubmitted: "未提交" },
+  "zh-TW": { balanceNote: "真實帳本餘額 · 兩位小數", snapshot: "目前組織的不可變申請快照", pendingNote: "未鎖庫存、未付款、未扣卡時", ledger: "只讀取真實帳本，不由頁面估算", quote: "詢價參考 · 尚未扣減", compareNote: "比較選擇儲存在目前瀏覽器，不代表下單或鎖定庫存。", managedNote: "查看實體 GPU 確權、供應商訂單、機房狀態與月度入帳卡時。", supplierStatus: "供應商狀態", approved: "申請已通過", published: "平台人工發布", record: "查看記錄", noSupply: "尚未提交供應資源", start: "開始上架 →", loadSafe: "目前無法讀取帳戶資料，頁面不會把服務異常顯示為 0 或以本機資料補齊。", needsAttention: "需補充資料", underReview: "待平台審核", verified: "申請已通過（尚未發布）", notSubmitted: "未提交" },
+  ja: { balanceNote: "検証済み台帳残高 · 小数2桁", snapshot: "この組織の変更不能な申請スナップショット", pendingNote: "在庫未確保・未払い・カード時未控除", ledger: "実台帳のみを参照し、画面では推計しません", quote: "見積参考 · 未控除", compareNote: "比較候補はこのブラウザにのみ保存され、注文や在庫確保にはなりません。", managedNote: "物理 GPU の所有権、供給注文、施設状態、月次カード時入帳を確認します。", supplierStatus: "供給者状態", approved: "承認済み申請", published: "手動公開済み", record: "記録を見る", noSupply: "供給リソースは未提出です", start: "掲載を開始 →", loadSafe: "アカウントデータは一時的に利用できません。障害を 0 やローカルデータで置き換えません。", needsAttention: "追加情報が必要", underReview: "審査中", verified: "承認済み（未公開）", notSubmitted: "未提出" },
+  ko: { balanceNote: "검증된 원장 잔액 · 소수 둘째 자리", snapshot: "현재 조직의 변경 불가 신청 스냅샷", pendingNote: "재고 미확보 · 미결제 · 카드시간 미차감", ledger: "실제 원장만 조회하며 화면에서 추정하지 않음", quote: "견적 참고 · 미차감", compareNote: "비교 선택은 이 브라우저에만 저장되며 주문이나 재고 예약이 아닙니다.", managedNote: "물리 GPU 소유권, 공급 주문, 시설 상태 및 월별 카드시간 입금을 확인합니다.", supplierStatus: "공급자 상태", approved: "승인된 신청", published: "수동 게시", record: "기록 보기", noSupply: "제출된 공급 리소스가 없습니다", start: "등록 시작 →", loadSafe: "계정 데이터를 일시적으로 사용할 수 없습니다. 장애를 0 또는 로컬 데이터로 대체하지 않습니다.", needsAttention: "추가 정보 필요", underReview: "플랫폼 검토 중", verified: "승인됨(미게시)", notSubmitted: "미제출" },
+  fr: { balanceNote: "Solde du registre vérifié · deux décimales", snapshot: "Instantanés immuables de cette organisation", pendingNote: "Aucun stock bloqué, paiement ou débit", ledger: "Lecture du registre réel, sans estimation de l’interface", quote: "Devis indicatif · non débité", compareNote: "La sélection reste dans ce navigateur et ne commande ni ne réserve de stock.", managedNote: "Consultez la propriété des GPU physiques, les commandes, l’état du site et les crédits mensuels.", supplierStatus: "État fournisseur", approved: "Demandes approuvées", published: "Publication manuelle", record: "Voir le dossier", noSupply: "Aucune ressource proposée", start: "Commencer la publication →", loadSafe: "Les données du compte sont indisponibles. Une panne n’est jamais affichée comme zéro ni remplacée par des données locales.", needsAttention: "Informations requises", underReview: "Examen en cours", verified: "Approuvé, non publié", notSubmitted: "Non soumis" },
+  th: { balanceNote: "ยอดจากบัญชีจริง · ทศนิยมสองตำแหน่ง", snapshot: "สแนปช็อตคำขอที่แก้ไขไม่ได้ขององค์กรนี้", pendingNote: "ยังไม่ล็อกสต็อก ไม่ชำระ และไม่หักชั่วโมงการ์ด", ledger: "อ่านจากบัญชีจริงเท่านั้น ไม่ประมาณจากหน้าเว็บ", quote: "ราคาอ้างอิง · ยังไม่หัก", compareNote: "รายการเปรียบเทียบเก็บในเบราว์เซอร์นี้ ไม่ใช่การสั่งซื้อหรือจองสต็อก", managedNote: "ดูกรรมสิทธิ์ GPU คำสั่งซื้อ สถานะศูนย์ข้อมูล และชั่วโมงการ์ดรายเดือน", supplierStatus: "สถานะผู้ให้บริการ", approved: "คำขออนุมัติแล้ว", published: "เผยแพร่โดยเจ้าหน้าที่", record: "ดูบันทึก", noSupply: "ยังไม่ได้ส่งทรัพยากร", start: "เริ่มลงรายการ →", loadSafe: "ข้อมูลบัญชีไม่พร้อมใช้งาน ระบบจะไม่แสดงข้อผิดพลาดเป็นศูนย์หรือใช้ข้อมูลในเครื่องแทน", needsAttention: "ต้องเพิ่มข้อมูล", underReview: "กำลังตรวจสอบ", verified: "อนุมัติแล้ว ยังไม่เผยแพร่", notSubmitted: "ยังไม่ส่ง" },
+  vi: { balanceNote: "Số dư sổ cái đã xác minh · hai chữ số", snapshot: "Bản chụp bất biến của tổ chức này", pendingNote: "Chưa giữ kho, chưa thanh toán, chưa trừ giờ-thẻ", ledger: "Chỉ đọc sổ cái thật, không ước tính trên giao diện", quote: "Giá tham khảo · chưa khấu trừ", compareNote: "Lựa chọn so sánh chỉ lưu trong trình duyệt, không tạo đơn hay giữ kho.", managedNote: "Xem quyền sở hữu GPU vật lý, đơn cung ứng, trạng thái cơ sở và giờ-thẻ ghi hàng tháng.", supplierStatus: "Trạng thái nhà cung cấp", approved: "Đơn đã duyệt", published: "Đã đăng thủ công", record: "Xem hồ sơ", noSupply: "Chưa gửi tài nguyên cung ứng", start: "Bắt đầu đăng →", loadSafe: "Dữ liệu tài khoản tạm thời không khả dụng; lỗi dịch vụ không được hiển thị thành 0 hay thay bằng dữ liệu cục bộ.", needsAttention: "Cần bổ sung", underReview: "Đang xét duyệt", verified: "Đã duyệt, chưa đăng", notSubmitted: "Chưa gửi" },
+  id: { balanceNote: "Saldo buku besar terverifikasi · dua desimal", snapshot: "Snapshot permintaan organisasi yang tidak dapat diubah", pendingNote: "Belum menahan stok, membayar, atau memotong jam-kartu", ledger: "Hanya membaca buku besar nyata, tanpa perkiraan UI", quote: "Referensi penawaran · belum dipotong", compareNote: "Pilihan perbandingan tersimpan di browser ini dan bukan pesanan atau reservasi stok.", managedNote: "Lihat kepemilikan GPU fisik, pesanan pemasok, status fasilitas, dan kredit bulanan.", supplierStatus: "Status pemasok", approved: "Pengajuan disetujui", published: "Diterbitkan manual", record: "Lihat catatan", noSupply: "Belum ada sumber daya diajukan", start: "Mulai listing →", loadSafe: "Data akun sementara tidak tersedia; kegagalan tidak ditampilkan sebagai nol atau diganti data lokal.", needsAttention: "Informasi tambahan diperlukan", underReview: "Ditinjau platform", verified: "Disetujui, belum terbit", notSubmitted: "Belum diajukan" },
+  ms: { balanceNote: "Baki lejar disahkan · dua perpuluhan", snapshot: "Syot kilat permohonan organisasi yang tidak boleh diubah", pendingNote: "Belum mengunci stok, membayar atau memotong jam-kad", ledger: "Hanya membaca lejar sebenar, tanpa anggaran UI", quote: "Rujukan sebut harga · belum dipotong", compareNote: "Pilihan perbandingan disimpan dalam pelayar ini dan bukan pesanan atau tempahan stok.", managedNote: "Lihat pemilikan GPU fizikal, pesanan pembekal, status kemudahan dan kredit bulanan.", supplierStatus: "Status pembekal", approved: "Permohonan diluluskan", published: "Diterbitkan manual", record: "Lihat rekod", noSupply: "Belum ada sumber dibekalkan", start: "Mula senarai →", loadSafe: "Data akaun tidak tersedia sementara; kegagalan tidak dipaparkan sebagai sifar atau diganti data tempatan.", needsAttention: "Maklumat tambahan diperlukan", underReview: "Dalam semakan", verified: "Diluluskan, belum diterbitkan", notSubmitted: "Belum dihantar" },
+};
+const COPY = Object.fromEntries(Object.entries(COPY_BASE).map(([locale, value]) => [locale, locale === "en" ? value : { ...value, ...ACCOUNT_CORE_COPY[locale as Exclude<Locale, "en">] }])) as Record<Locale, Copy>;
+
+const resourceLabels: Record<string, string> = { GPU_CARD: "GPU", GPU_SERVER: "GPU server", CPU_SERVER: "CPU server", MAC_COMPUTE: "Mac compute", TOKEN_CAPACITY: "Token capacity", MODEL_INSTANCE: "Model instance", NAS_STORAGE: "NAS storage", RACK_CAPACITY: "Rack capacity", CLOUD_RESOURCE: "Cloud resource" };
+class SafeLoadError extends Error { constructor(readonly requestId?: string) { super("ACCOUNT_CONSOLE_UNAVAILABLE"); } }
+const formatDate = (value: string, locale: Locale) => { const date = new Date(value); return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(date); };
 
 async function loadSummary(signal: AbortSignal) {
   const response = await fetch("/api/v1/member/account-console-summary", { credentials: "same-origin", cache: "no-store", signal });
-  const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
-  if (!response.ok) throw new Error(payload?.error?.message ?? "账户数据暂时无法读取。");
-  return payload as AccountConsoleSummary;
+  const payload = await response.json().catch(() => null) as (Summary & { error?: { requestId?: string } }) | null;
+  if (!response.ok || !payload) throw new SafeLoadError(payload?.error?.requestId);
+  return payload;
 }
 
-function BuyerOverview({ summary }: { summary: AccountConsoleSummary }) {
+function statusLabel(status: Summary["supplier"]["applications"]["recent"][number]["status"], text: Copy) {
+  if (status === "REJECTED") return text.needsAttention;
+  if (status === "VERIFIED") return text.verified;
+  if (status === "PUBLISHED") return text.published;
+  if (status === "DRAFT") return text.notSubmitted;
+  return text.underReview;
+}
+
+function Buyer({ summary, locale, text }: { summary: Summary; locale: Locale; text: Copy }) {
   const intents = summary.buyer.purchaseIntents;
-  return <>
-    <header className={styles.heading}>
-      <div><p>BUYER ACCOUNT</p><h1>采购总览</h1><span>{summary.account.organizationName} · 所有数字只属于当前组织</span></div>
-      <div className={styles.actions}><Link className={styles.primaryAction} href="/member/card-hours">充值卡时</Link><Link className={styles.secondaryAction} href="/gpu">租用 GPU</Link><Link className={styles.secondaryAction} href="/managed-gpu">购买并托管 GPU</Link><Link className={styles.secondaryAction} href="/request">提交算力需求</Link></div>
-    </header>
-
-    <section className={styles.metrics} aria-label="采购账户摘要">
-      <article id="card-hours"><span>可用 KAI 标准卡时</span><strong>{formatCardHourDisplayMicros(summary.buyer.cardHours.availableMicros)}</strong><small>真实账本余额 · 两位小数</small><Link className={styles.metricLink} href="/member/card-hours">进入我的资产 / 充值卡时</Link></article>
-      <article><span>算力申请</span><strong>{intents.total}</strong><small>当前组织的不可变申请快照</small></article>
-      <article><span>待人工确认与交付</span><strong>{intents.pendingManualDelivery}</strong><small>未锁库存、未付款、未扣卡时</small></article>
-      <article><span>已锁定卡时</span><strong>{formatCardHourDisplayMicros(summary.buyer.cardHours.heldMicros)}</strong><small>只读取真实账本，不由页面估算</small></article>
-    </section>
-
-    <section className={styles.panel} aria-labelledby="buyer-recent-title">
-      <div className={styles.panelHeading}><div><p>RECENT REQUESTS</p><h2 id="buyer-recent-title">最近算力申请</h2></div><Link href="/member/purchases">查看全部</Link></div>
-      {intents.recent.length ? <div className={styles.records}>{intents.recent.map((record) => <article className={styles.record} key={record.demandId}>
-        <div><span className={styles.recordType}>等待平台人工确认与交付</span><h3>{record.resourceTitle}</h3><p>{record.supplierName} · {record.demandId}</p></div>
-        <div className={styles.recordFacts}><strong>{formatCardHourDisplayMicros(record.estimatedCardHourMicros)} 卡时</strong><span>询价参考 · 尚未扣减</span><time dateTime={record.createdAt}>{dateTime(record.createdAt)}</time></div>
-        <Link aria-label={`查看 ${record.resourceTitle} 申请详情`} href={`/member/purchases/${encodeURIComponent(record.demandId)}`}>查看详情</Link>
-      </article>)}</div> : <div className={styles.empty}><strong>还没有算力申请</strong><p>从 GPU 目录选择资源并提交询价后，冻结的资源与卡时参考会显示在这里。</p><Link href="/gpu">浏览 GPU 目录 →</Link></div>}
-    </section>
-
-    <section className={styles.compactPanel} id="compare"><div><p>RESOURCE COMPARE</p><h2>资源对比</h2><span>对比选择保存在当前浏览器，不代表下单或锁库存。</span></div><Link className={styles.secondaryAction} href="/resources">选择资源</Link></section>
-    <section className={styles.compactPanel}><div><p>MANAGED PHYSICAL GPU</p><h2>我的 GPU 云托管</h2><span>查看当前组织独立确权的实体 GPU、供应商订单、机房状态和月度入账卡时。</span></div><Link className={styles.secondaryAction} href="/member/gpu-assets">进入我的 GPU</Link></section>
-  </>;
+  return <><header className={styles.heading}><div><p>BUYER ACCOUNT</p><h1>{text.buyer}</h1><span>{summary.account.organizationName} · {text.scope}</span></div><div className={styles.actions}><Link className={styles.primaryAction} href="/member/card-hours">{text.topup}</Link><Link className={styles.secondaryAction} href="/gpu">{text.rent}</Link><Link className={styles.secondaryAction} href="/managed-gpu">{text.host}</Link><Link className={styles.secondaryAction} href="/request">{text.demand}</Link></div></header>
+    <section className={styles.metrics} aria-label={text.buyer}><article id="card-hours"><span>{text.available}</span><strong>{formatCardHourDisplayMicros(summary.buyer.cardHours.availableMicros)}</strong><small>{text.balanceNote}</small><Link className={styles.metricLink} href="/member/card-hours">{text.topup}</Link></article><article><span>{text.requests}</span><strong>{intents.total}</strong><small>{text.snapshot}</small></article><article><span>{text.pending}</span><strong>{intents.pendingManualDelivery}</strong><small>{text.pendingNote}</small></article><article><span>{text.held}</span><strong>{formatCardHourDisplayMicros(summary.buyer.cardHours.heldMicros)}</strong><small>{text.ledger}</small></article></section>
+    <section className={styles.panel} aria-labelledby="buyer-recent-title"><div className={styles.panelHeading}><div><p>RECENT REQUESTS</p><h2 id="buyer-recent-title">{text.recentRequests}</h2></div><Link href="/member/purchases">{text.all}</Link></div>{intents.recent.length ? <div className={styles.records}>{intents.recent.map((record) => <article className={styles.record} key={record.demandId}><div><span className={styles.recordType}>{text.waiting}</span><h3>{record.resourceTitle}</h3><p>{record.supplierName} · {record.demandId}</p></div><div className={styles.recordFacts}><strong>{formatCardHourDisplayMicros(record.estimatedCardHourMicros)} {text.cardHours}</strong><span>{text.quote}</span><time dateTime={record.createdAt}>{formatDate(record.createdAt, locale)}</time></div><Link aria-label={`${text.details}: ${record.resourceTitle}`} href={`/member/purchases/${encodeURIComponent(record.demandId)}`}>{text.details}</Link></article>)}</div> : <div className={styles.empty}><strong>{text.noRequests}</strong><Link href="/gpu">{text.browse}</Link></div>}</section>
+    <section className={styles.compactPanel} id="compare"><div><p>RESOURCE COMPARE</p><h2>{text.compare}</h2><span>{text.compareNote}</span></div><Link className={styles.secondaryAction} href="/resources">{text.choose}</Link></section><section className={styles.compactPanel}><div><p>MANAGED PHYSICAL GPU</p><h2>{text.managed}</h2><span>{text.managedNote}</span></div><Link className={styles.secondaryAction} href="/member/gpu-assets">{text.openGpu}</Link></section></>;
 }
 
-function supplierHeadline(summary: AccountConsoleSummary) {
+function Supplier({ summary, locale, text }: { summary: Summary; locale: Locale; text: Copy }) {
   const applications = summary.supplier.applications;
-  if (summary.supplier.status === "NEEDS_ATTENTION") return { label: "需补充资料", detail: "请查看最近申请并按平台反馈完善资料。" };
-  if (summary.supplier.status === "PUBLISHED") return { label: "已有资源由平台人工发布", detail: `${applications.published} 条申请记录为已发布；库存、价格和成交仍以人工确认结果为准。` };
-  if (summary.supplier.status === "VERIFIED_NOT_PUBLISHED") return { label: "申请已通过（尚未发布）", detail: "审核通过不等于已发布、可售或已成交。" };
-  if (summary.supplier.status === "PENDING_REVIEW") return { label: "待平台审核", detail: "平台正在人工核对申请资料，不承诺自动验真或发布时间。" };
-  return { label: "尚未提交供应资源", detail: "先提交最少必要的资源资料，平台人工审核后再决定是否发布。" };
-}
-
-function SupplierOverview({ summary }: { summary: AccountConsoleSummary }) {
-  const applications = summary.supplier.applications;
-  const headline = supplierHeadline(summary);
-  return <>
-    <header className={styles.heading}>
-      <div><p>SUPPLIER ACCOUNT</p><h1>供应总览</h1><span>{summary.account.organizationName} · 供应数据与采购数据分别统计</span></div>
-      <div className={styles.actions}><Link className={styles.primaryAction} href="/supply/apply">提交新资源</Link><Link className={styles.secondaryAction} href="/hosting/partners">阅读上架要求</Link></div>
-    </header>
-
-    <section className={styles.statusPanel} aria-labelledby="supplier-status-title">
-      <div><p>SUPPLIER STATUS</p><h2 id="supplier-status-title">{headline.label}</h2><span>{headline.detail}</span></div>
-      <Link href="/supply/applications">查看申请记录 →</Link>
-    </section>
-
-    <section className={styles.metrics} aria-label="供应账户摘要">
-      <article><span>上架申请</span><strong>{applications.total}</strong><small>当前组织真实提交记录</small></article>
-      <article><span>待平台审核</span><strong>{applications.pendingReview}</strong><small>已提交或审核中</small></article>
-      <article><span>申请已通过</span><strong>{applications.verified}</strong><small>尚未发布或成交</small></article>
-      <article><span>平台人工发布</span><strong>{applications.published}</strong><small>不代表已锁库存或已成交</small></article>
-    </section>
-
-    <section className={styles.panel} aria-labelledby="supplier-recent-title">
-      <div className={styles.panelHeading}><div><p>RECENT SUBMISSIONS</p><h2 id="supplier-recent-title">最近上架申请</h2></div><Link href="/supply/applications">查看全部</Link></div>
-      {applications.recent.length ? <div className={styles.records}>{applications.recent.map((record) => <article className={styles.record} key={record.id}>
-        <div><span className={styles.recordType}>{resourceTypeLabels[record.resourceType] ?? "供应资源"}</span><h3>{record.productName}</h3><p>{record.id}</p></div>
-        <div className={styles.recordFacts}>
-          <strong>{supplyStatusLabels[record.status]}</strong>
-          <span>{record.status === "PUBLISHED" ? "已发布不代表已锁库存、已成交或运行中" : "不代表已发布、已成交或运行中"}</span>
-          <time dateTime={record.createdAt}>{dateTime(record.createdAt)}</time>
-        </div>
-        <Link href="/supply/applications">查看记录</Link>
-      </article>)}</div> : <div className={styles.empty}><strong>还未提交供应资源</strong><p>提交后记录会写入数据库，并进入管理员人工审核队列。</p><Link href="/supply/apply">开始上架 →</Link></div>}
-    </section>
-  </>;
+  const headline = summary.supplier.status === "NEEDS_ATTENTION" ? text.needsAttention : summary.supplier.status === "PUBLISHED" ? text.published : summary.supplier.status === "VERIFIED_NOT_PUBLISHED" ? text.verified : summary.supplier.status === "PENDING_REVIEW" ? text.underReview : text.notSubmitted;
+  return <><header className={styles.heading}><div><p>SUPPLIER ACCOUNT</p><h1>{text.supplier}</h1><span>{summary.account.organizationName} · {text.scope}</span></div><div className={styles.actions}><Link className={styles.primaryAction} href="/supply/apply">{text.submit}</Link><Link className={styles.secondaryAction} href="/hosting/partners">{text.requirements}</Link></div></header><section className={styles.statusPanel}><div><p>SUPPLIER STATUS</p><h2>{headline}</h2></div><Link href="/supply/applications">{text.all}</Link></section>
+    <section className={styles.metrics} aria-label={text.supplier}><article><span>{text.applications}</span><strong>{applications.total}</strong></article><article><span>{text.underReview}</span><strong>{applications.pendingReview}</strong></article><article><span>{text.approved}</span><strong>{applications.verified}</strong></article><article><span>{text.published}</span><strong>{applications.published}</strong></article></section>
+    <section className={styles.panel}><div className={styles.panelHeading}><div><p>RECENT SUBMISSIONS</p><h2>{text.recentApplications}</h2></div><Link href="/supply/applications">{text.all}</Link></div>{applications.recent.length ? <div className={styles.records}>{applications.recent.map((record) => <article className={styles.record} key={record.id}><div><span className={styles.recordType}>{resourceLabels[record.resourceType] ?? record.resourceType}</span><h3>{record.productName}</h3><p>{record.id}</p></div><div className={styles.recordFacts}><strong>{statusLabel(record.status, text)}</strong><time dateTime={record.createdAt}>{formatDate(record.createdAt, locale)}</time></div><Link href="/supply/applications">{text.record}</Link></article>)}</div> : <div className={styles.empty}><strong>{text.noSupply}</strong><Link href="/supply/apply">{text.start}</Link></div>}</section></>;
 }
 
 export function AccountConsoleOverview({ mode }: { mode: "buyer" | "supplier" }) {
-  const [summary, setSummary] = useState<AccountConsoleSummary | null>(null);
-  const [error, setError] = useState("");
-  const [attempt, setAttempt] = useState(0);
-  const retry = useCallback(() => { setSummary(null); setError(""); setAttempt((value) => value + 1); }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    loadSummary(controller.signal).then(setSummary).catch((reason: unknown) => {
-      if (reason instanceof DOMException && reason.name === "AbortError") return;
-      setError(reason instanceof Error ? reason.message : "账户数据暂时无法读取。");
-    });
-    return () => controller.abort();
-  }, [attempt]);
-
-  if (error) return <section className={styles.error} role="alert"><h1>账户数据读取失败</h1><p>{error}</p><p>页面不会把服务异常显示成 0，也不会用本地数据补齐。</p><button className={styles.primaryAction} onClick={retry} type="button">重新读取</button></section>;
-  if (!summary) return <div className={styles.loading} role="status">正在读取当前组织的真实账户数据…</div>;
-  return <div className={styles.overview}>{mode === "buyer" ? <BuyerOverview summary={summary} /> : <SupplierOverview summary={summary} />}</div>;
+  const { locale } = useLocale(); const text = COPY[locale];
+  const [summary, setSummary] = useState<Summary | null>(null); const [error, setError] = useState<{ requestId?: string } | null>(null); const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => { setSummary(null); setError(null); setAttempt((value) => value + 1); }, []);
+  useEffect(() => { const controller = new AbortController(); loadSummary(controller.signal).then(setSummary).catch((reason: unknown) => { if (reason instanceof DOMException && reason.name === "AbortError") return; setError({ requestId: reason instanceof SafeLoadError ? reason.requestId : undefined }); }); return () => controller.abort(); }, [attempt]);
+  if (error) return <section className={styles.error} role="alert"><h1>{text.loadFailed}</h1><p>{text.loadSafe}</p>{error.requestId ? <p>{text.requestId}: {error.requestId}</p> : null}<button className={styles.primaryAction} onClick={retry} type="button">{text.retry}</button></section>;
+  if (!summary) return <div className={styles.loading} role="status">{text.loading}</div>;
+  return <div className={styles.overview}>{mode === "buyer" ? <Buyer locale={locale} summary={summary} text={text} /> : <Supplier locale={locale} summary={summary} text={text} />}</div>;
 }

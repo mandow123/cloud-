@@ -7,9 +7,10 @@ test("card-hour assets are reachable from Account Console V2 and remain organiza
   const overview = readFileSync("components/account-console-overview.tsx", "utf8");
   const page = readFileSync("app/member/card-hours/page.tsx", "utf8");
 
-  assert.match(shell, /href: "\/member\/card-hours", label: "卡时账户"/u);
-  assert.match(overview, /href="\/member\/card-hours">进入我的资产 \/ 充值卡时/u);
-  assert.match(page, /<AccountRequired purpose="管理卡时资产" redirectOnSignedOut>/u);
+  assert.match(shell, /href: "\/member\/card-hours", labelKey: "cardHours"/u);
+  assert.match(shell, /cardHours: "卡时账户"/u);
+  assert.match(overview, /href="\/member\/card-hours">\{text\.topup\}/u);
+  assert.match(page, /<AccountRequired purpose=\{copy\[locale\]\[2\]\} redirectOnSignedOut>/u);
   assert.match(page, /<MemberCardHourAssets \/>/u);
 });
 
@@ -75,7 +76,7 @@ test("payment return trusts only the service-side order state", () => {
   assert.match(source, /status === "CAPTURED" && record\.credited === true/u);
   assert.match(source, /status === "CLOSED"/u);
   assert.match(source, /status === "RECONCILIATION_REQUIRED"/u);
-  assert.match(source, /reconciliationRequired \? "待人工核对" : "处理中"/u);
+  assert.match(source, /reconciliationRequired \? copy\.review : copy\.processing/u);
   assert.match(source, /支付结果待人工核对/u);
   assert.match(source, /请勿重复付款，也不要重新发起充值/u);
   assert.match(source, /!checking && !credited && !closed \? <button/u);

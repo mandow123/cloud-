@@ -2,172 +2,71 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useLocale } from "@/components/locale-provider";
+import { formatCardHourDisplayMicros } from "@/lib/card-hours";
+import { MarketplaceApiError, marketplaceGet } from "@/lib/client/marketplace-client";
 import { isHostingSupplierProfileReady, type HostingSupplierProfile } from "@/lib/hosting-v2";
 import type { SupplierHostingDashboard } from "@/lib/hosting-v2-client";
-import { marketplaceErrorMessage, marketplaceGet } from "@/lib/client/marketplace-client";
-import { formatCardHourDisplayMicros } from "@/lib/card-hours";
+import type { Locale } from "@/lib/i18n";
 import styles from "./supply-console.module.css";
 
-const profileLabels: Record<HostingSupplierProfile["status"], string> = {
-  DRAFT: "资料草稿",
-  SUBMITTED: "等待审核",
-  APPROVED: "已通过审核",
-  REJECTED: "需要修改",
-  SUSPENDED: "已暂停",
+type Step = readonly [title: string, description: string, action: string];
+type DashboardCopy = {
+  profile: Record<HostingSupplierProfile["status"], string>;
+  error: readonly [title: string, message: string, requestId: string, retry: string];
+  loading: string; heading: readonly [title: string, lead: string, incomplete: string, absent: string];
+  steps: readonly [Step, Step, Step, Step, Step, Step, Step, Step, Step];
+  rejected: string; readiness: readonly [string, string, string, string, string, string];
+  metrics: readonly [string, string, string, string, string, string, string, string];
+  panels: readonly [string, string, string, string];
+  devices: readonly [string, string, string, string, string, string, string, string];
+  orders: readonly [string, string, string, string, string, string, string, string];
 };
 
-const profileBadgeClass: Partial<Record<HostingSupplierProfile["status"], string>> = {
-  DRAFT: styles.statusWarning,
-  SUBMITTED: styles.statusWarning,
-  REJECTED: styles.statusError,
-  SUSPENDED: styles.statusError,
+const DASHBOARD_COPY: Record<Locale, DashboardCopy> = {
+  "zh-CN": { profile: { DRAFT: "资料草稿", SUBMITTED: "等待审核", APPROVED: "已通过审核", REJECTED: "需要修改", SUSPENDED: "已暂停" }, error: ["控制台读取失败", "供应商控制台暂时无法读取。", "请求编号", "重新读取"], loading: "正在读取供应主体、设备和订单状态…", heading: ["供应概览", "这里只显示当前登录账户与当前组织的数据。资源发布、履约和财务权限均由服务端分别判定。", "审核记录不完整", "尚未建立供应主体"], steps: [["先建立供应主体", "填写必要资料并保存草稿，再提交人工审核。", "开始供应商审核"], ["完成并提交审核资料", "资料仍是草稿，尚未进入人工审核。", "继续填写资料"], ["资料正在审核", "审核期间不能修改资料，状态变化会显示在本控制台。", "查看审核状态"], ["补全审核证据", "缺少有效协议版本或审核证据摘要，服务端已保持关闭。", "查看审核记录"], ["连接第一台设备", "设备页会生成 5 分钟有效的一次性 Agent 配对凭证。", "连接第一台设备"], ["让设备在线并验真", "Host Agent 心跳和硬件验真有效后才具备挂牌资格。", "查看设备状态"], ["创建第一条真实报价", "选择已验真的设备、可用窗口和 KAI 标准卡时价格。", "创建挂牌"], ["管理挂牌与订单", "查看公开状态、资源预留和履约进度。", "进入挂牌管理"], ["供应资格已暂停", "请联系平台运营确认恢复条件。", "查看审核说明"]], rejected: "审核人员要求修改资料。", readiness: ["供应主体已审核", "在线且验真有效的设备", "有效费率版本", "卡时结算账本", "公开支付宝充值", "自动回购 / 变现"], metrics: ["设备", "台在线且验真有效", "挂牌", "条正在发布", "供应订单", "笔服务中", "已归属租金", "KAI 待结算"], panels: ["成交就绪状态", "关键项未就绪时保持关闭", "下一步", "按状态推进"], devices: ["最近设备", "台", "设备", "GPU", "Agent", "验真", "最后心跳", "还没有登记设备。供应主体审核通过后才能生成 Agent 安装凭证。"], orders: ["最近供应订单", "笔", "合同", "资源快照", "预留时长", "卡时锁定", "状态", "还没有相关订单。发布通过验真的报价后，订单会在这里推进。"] },
+  "zh-TW": { profile: { DRAFT: "資料草稿", SUBMITTED: "等待審核", APPROVED: "已通過審核", REJECTED: "需要修改", SUSPENDED: "已暫停" }, error: ["控制台讀取失敗", "供應商控制台暫時無法讀取。", "請求編號", "重新讀取"], loading: "正在讀取供應主體、裝置與訂單…", heading: ["供應概覽", "僅顯示目前帳戶與組織的資料。發布、履約與財務權限由伺服器分別判定。", "審核記錄不完整", "尚未建立供應主體"], steps: [["建立供應主體", "填寫必要資料並儲存草稿，再提交人工審核。", "開始供應商審核"], ["完成並提交審核資料", "資料仍是草稿，尚未進入人工審核。", "繼續填寫資料"], ["資料正在審核", "審核期間不能修改，狀態變更會顯示於此。", "查看審核狀態"], ["補全審核證據", "缺少有效協議版本或證據摘要，伺服器已保持關閉。", "查看審核記錄"], ["連接第一台裝置", "裝置頁會產生有效 5 分鐘的一次性 Agent 配對憑證。", "連接第一台裝置"], ["讓裝置上線並驗真", "Host Agent 心跳與硬體驗真有效後才可掛牌。", "查看裝置狀態"], ["建立第一筆真實報價", "選擇已驗真裝置、可用時段與 KAI 標準卡時價格。", "建立掛牌"], ["管理掛牌與訂單", "查看公開狀態、資源預留與履約進度。", "進入掛牌管理"], ["供應資格已暫停", "請聯絡平台營運確認恢復條件。", "查看審核說明"]], rejected: "審核人員要求修改資料。", readiness: ["供應主體已審核", "線上且驗真有效的裝置", "有效費率版本", "卡時結算帳本", "公開支付寶儲值", "自動回購 / 變現"], metrics: ["裝置", "台線上且驗真有效", "掛牌", "筆正在發布", "供應訂單", "筆服務中", "已歸屬租金", "KAI 待結算"], panels: ["成交就緒狀態", "關鍵項未就緒時保持關閉", "下一步", "依狀態推進"], devices: ["最近裝置", "台", "裝置", "GPU", "Agent", "驗真", "最後心跳", "尚未登記裝置。審核通過後才能產生 Agent 安裝憑證。"], orders: ["最近供應訂單", "筆", "合約", "資源快照", "預留時長", "卡時鎖定", "狀態", "尚無相關訂單。已驗真報價發布後會顯示於此。"] },
+  en: { profile: { DRAFT: "Draft", SUBMITTED: "Under review", APPROVED: "Approved", REJECTED: "Changes required", SUSPENDED: "Suspended" }, error: ["Could not load console", "The supplier console is temporarily unavailable.", "Request ID", "Try again"], loading: "Loading supplier profile, devices, and orders…", heading: ["Supply overview", "Only the signed-in account and current organization are shown. Publishing, fulfillment, and finance permissions are enforced separately by the server.", "Incomplete review record", "Supplier profile not created"], steps: [["Create a supplier profile", "Enter the required details, save a draft, then submit it for manual review.", "Start supplier review"], ["Complete and submit details", "The profile is still a draft and has not entered review.", "Continue editing"], ["Profile under review", "Details cannot be changed during review. Status changes appear here.", "View review status"], ["Complete review evidence", "A valid agreement version or evidence digest is missing, so access remains closed.", "View review record"], ["Connect the first device", "The device page issues a one-time Agent pairing credential valid for five minutes.", "Connect a device"], ["Bring the device online and verify it", "Listing requires a valid Host Agent heartbeat and hardware verification.", "View device status"], ["Create the first verified offer", "Choose a verified device, availability window, and KAI card-hour price.", "Create listing"], ["Manage listings and orders", "Review public status, reservations, and fulfillment progress.", "Manage listings"], ["Supply access suspended", "Contact platform operations to confirm reinstatement requirements.", "View review notes"]], rejected: "The reviewer requested changes.", readiness: ["Supplier approved", "Online verified device", "Active fee schedule", "Card-hour settlement ledger", "Public Alipay top-up", "Automatic buyback / conversion"], metrics: ["Devices", "online and verified", "Listings", "published", "Supply orders", "in service", "Vested rent", "KAI pending"], panels: ["Transaction readiness", "Closed while a critical item is unavailable", "Next step", "Progress by status"], devices: ["Recent devices", "devices", "Device", "GPU", "Agent", "Verification", "Last heartbeat", "No devices registered. Agent credentials become available after supplier approval."], orders: ["Recent supply orders", "orders", "Contract", "Resource snapshot", "Reserved duration", "Card-hours held", "Status", "No related orders. Orders appear after a verified offer is published."] },
+  ja: { profile: { DRAFT: "下書き", SUBMITTED: "審査中", APPROVED: "承認済み", REJECTED: "修正が必要", SUSPENDED: "停止中" }, error: ["コンソールを読み込めません", "供給者コンソールは一時的に利用できません。", "リクエストID", "再読み込み"], loading: "供給者、デバイス、注文を読み込み中…", heading: ["供給概要", "ログイン中のアカウントと組織のみ表示します。権限はサーバーが個別に判定します。", "審査記録が不完全", "供給者情報が未登録"], steps: [["供給者情報を作成", "必要事項を入力して下書きを保存し、手動審査へ提出します。", "審査を開始"], ["審査情報を提出", "まだ下書きで、審査に入っていません。", "入力を続ける"], ["審査中", "審査中は変更できません。状態変更はここに表示されます。", "審査状況を見る"], ["審査証拠を補完", "有効な契約版または証拠要約が不足しているため閉鎖中です。", "審査記録を見る"], ["最初のデバイスを接続", "5分間有効なワンタイム Agent 資格を発行します。", "デバイスを接続"], ["オンライン化して検証", "Host Agent の心拍とハードウェア検証が必要です。", "デバイス状態を見る"], ["最初の実在見積を作成", "検証済みデバイス、利用時間、KAIカード時間価格を選びます。", "掲載を作成"], ["掲載と注文を管理", "公開状態、予約、履行進捗を確認します。", "掲載管理へ"], ["供給資格が停止中", "再開条件を運営へ確認してください。", "審査説明を見る"]], rejected: "審査担当者が修正を求めています。", readiness: ["供給者承認", "オンライン検証済みデバイス", "有効な手数料版", "カード時間決済台帳", "公開Alipay入金", "自動買戻し / 換金"], metrics: ["デバイス", "台オンライン・検証済み", "掲載", "件公開中", "供給注文", "件提供中", "確定賃料", "KAI 決済待ち"], panels: ["取引準備状況", "重要項目が未準備なら閉鎖", "次の手順", "状態に沿って進行"], devices: ["最近のデバイス", "台", "デバイス", "GPU", "Agent", "検証", "最終心拍", "デバイスは未登録です。承認後に Agent 資格を発行できます。"], orders: ["最近の供給注文", "件", "契約", "リソーススナップショット", "予約時間", "カード時間ロック", "状態", "関連注文はありません。検証済み見積の公開後に表示されます。"] },
+  ko: { profile: { DRAFT: "초안", SUBMITTED: "검토 중", APPROVED: "승인됨", REJECTED: "수정 필요", SUSPENDED: "일시 중지" }, error: ["콘솔을 불러올 수 없음", "공급자 콘솔을 일시적으로 사용할 수 없습니다.", "요청 ID", "다시 불러오기"], loading: "공급자, 장치 및 주문을 불러오는 중…", heading: ["공급 개요", "현재 로그인 계정과 조직만 표시합니다. 권한은 서버에서 별도로 판단합니다.", "검토 기록 불완전", "공급자 프로필 미등록"], steps: [["공급자 프로필 만들기", "필수 정보를 입력하고 초안을 저장한 뒤 수동 검토를 요청하세요.", "검토 시작"], ["검토 정보 제출", "아직 초안이며 검토가 시작되지 않았습니다.", "계속 입력"], ["프로필 검토 중", "검토 중에는 변경할 수 없으며 상태 변경은 여기에 표시됩니다.", "검토 상태 보기"], ["검토 증거 보완", "유효한 계약 버전 또는 증거 요약이 없어 접근이 닫혀 있습니다.", "검토 기록 보기"], ["첫 장치 연결", "5분간 유효한 일회용 Agent 페어링 자격을 발급합니다.", "장치 연결"], ["장치 온라인 및 검증", "Host Agent 하트비트와 하드웨어 검증이 필요합니다.", "장치 상태 보기"], ["첫 실제 견적 만들기", "검증 장치, 가용 시간 및 KAI 카드시간 가격을 선택하세요.", "목록 만들기"], ["목록 및 주문 관리", "공개 상태, 예약 및 이행 진행을 확인하세요.", "목록 관리"], ["공급 자격 중지", "재개 조건을 운영팀에 확인하세요.", "검토 안내 보기"]], rejected: "검토자가 수정을 요청했습니다.", readiness: ["공급자 승인", "온라인 검증 장치", "유효 수수료 버전", "카드시간 정산 원장", "공개 Alipay 충전", "자동 환매 / 환전"], metrics: ["장치", "대 온라인·검증됨", "목록", "개 게시 중", "공급 주문", "건 서비스 중", "확정 임대료", "KAI 정산 대기"], panels: ["거래 준비 상태", "핵심 항목 미준비 시 닫힘", "다음 단계", "상태에 따라 진행"], devices: ["최근 장치", "대", "장치", "GPU", "Agent", "검증", "마지막 하트비트", "등록된 장치가 없습니다. 승인 후 Agent 자격을 받을 수 있습니다."], orders: ["최근 공급 주문", "건", "계약", "리소스 스냅샷", "예약 시간", "카드시간 잠금", "상태", "관련 주문이 없습니다. 검증된 견적 게시 후 표시됩니다."] },
+  fr: { profile: { DRAFT: "Brouillon", SUBMITTED: "En examen", APPROVED: "Approuvé", REJECTED: "Modifications requises", SUSPENDED: "Suspendu" }, error: ["Impossible de charger la console", "La console fournisseur est temporairement indisponible.", "ID de requête", "Réessayer"], loading: "Chargement du fournisseur, des appareils et des commandes…", heading: ["Vue d’ensemble de l’offre", "Seules les données du compte et de l’organisation actifs sont affichées. Les droits sont contrôlés séparément par le serveur.", "Dossier incomplet", "Profil fournisseur non créé"], steps: [["Créer le profil fournisseur", "Saisissez les informations requises, enregistrez puis soumettez-les à l’examen manuel.", "Commencer l’examen"], ["Finaliser et soumettre", "Le profil est encore au brouillon et n’est pas en examen.", "Continuer"], ["Dossier en examen", "Les données ne peuvent pas être modifiées pendant l’examen.", "Voir le statut"], ["Compléter les preuves", "Une version d’accord ou une empreinte valide manque ; l’accès reste fermé.", "Voir le dossier"], ["Connecter le premier appareil", "Un justificatif Agent unique valable cinq minutes sera émis.", "Connecter un appareil"], ["Mettre en ligne et vérifier", "Un heartbeat Host Agent et une vérification valides sont requis.", "Voir les appareils"], ["Créer la première offre réelle", "Choisissez un appareil vérifié, une période et le prix KAI en heures-carte.", "Créer l’offre"], ["Gérer offres et commandes", "Suivez la publication, les réservations et l’exécution.", "Gérer les offres"], ["Accès fournisseur suspendu", "Contactez les opérations pour les conditions de rétablissement.", "Voir les notes"]], rejected: "Le réviseur demande des modifications.", readiness: ["Fournisseur approuvé", "Appareil en ligne vérifié", "Barème actif", "Registre des heures-carte", "Recharge Alipay publique", "Rachat / conversion automatique"], metrics: ["Appareils", "en ligne et vérifiés", "Offres", "publiées", "Commandes fournisseur", "en service", "Loyer acquis", "KAI en attente"], panels: ["Préparation aux transactions", "Fermé si un élément critique manque", "Étape suivante", "Progression selon le statut"], devices: ["Appareils récents", "appareils", "Appareil", "GPU", "Agent", "Vérification", "Dernier heartbeat", "Aucun appareil enregistré. Les identifiants Agent sont disponibles après approbation."], orders: ["Commandes récentes", "commandes", "Contrat", "Instantané", "Durée réservée", "Heures-carte bloquées", "Statut", "Aucune commande associée. Elles apparaîtront après publication d’une offre vérifiée."] },
+  th: { profile: { DRAFT: "แบบร่าง", SUBMITTED: "กำลังตรวจสอบ", APPROVED: "อนุมัติแล้ว", REJECTED: "ต้องแก้ไข", SUSPENDED: "ระงับแล้ว" }, error: ["โหลดคอนโซลไม่ได้", "คอนโซลผู้ให้บริการไม่พร้อมใช้งานชั่วคราว", "รหัสคำขอ", "ลองอีกครั้ง"], loading: "กำลังโหลดผู้ให้บริการ อุปกรณ์ และคำสั่งซื้อ…", heading: ["ภาพรวมการจัดหา", "แสดงเฉพาะข้อมูลบัญชีและองค์กรปัจจุบัน สิทธิ์ถูกตรวจแยกกันที่เซิร์ฟเวอร์", "ข้อมูลตรวจสอบไม่ครบ", "ยังไม่มีโปรไฟล์ผู้ให้บริการ"], steps: [["สร้างโปรไฟล์ผู้ให้บริการ", "กรอกข้อมูล บันทึกแบบร่าง แล้วส่งให้เจ้าหน้าที่ตรวจสอบ", "เริ่มตรวจสอบ"], ["กรอกและส่งข้อมูล", "ข้อมูลยังเป็นแบบร่างและยังไม่เข้าสู่การตรวจสอบ", "กรอกต่อ"], ["กำลังตรวจสอบ", "แก้ไขไม่ได้ระหว่างตรวจสอบ สถานะจะแสดงที่นี่", "ดูสถานะ"], ["เพิ่มหลักฐาน", "ขาดเวอร์ชันข้อตกลงหรือข้อมูลหลักฐานที่ถูกต้อง ระบบจึงยังปิด", "ดูบันทึก"], ["เชื่อมต่ออุปกรณ์แรก", "ระบบจะออกข้อมูลจับคู่ Agent ครั้งเดียวที่ใช้ได้ 5 นาที", "เชื่อมต่ออุปกรณ์"], ["นำอุปกรณ์ออนไลน์และตรวจสอบ", "ต้องมี heartbeat และการตรวจฮาร์ดแวร์ที่ใช้ได้", "ดูอุปกรณ์"], ["สร้างข้อเสนอจริงรายการแรก", "เลือกอุปกรณ์ที่ตรวจแล้ว ช่วงเวลา และราคาชั่วโมงการ์ด KAI", "สร้างรายการ"], ["จัดการรายการและคำสั่งซื้อ", "ดูสถานะ การจอง และความคืบหน้าส่งมอบ", "จัดการรายการ"], ["สิทธิ์ถูกระงับ", "ติดต่อฝ่ายปฏิบัติการเพื่อยืนยันเงื่อนไขคืนสถานะ", "ดูหมายเหตุ"]], rejected: "ผู้ตรวจสอบขอให้แก้ไข", readiness: ["ผู้ให้บริการผ่านอนุมัติ", "อุปกรณ์ออนไลน์และตรวจแล้ว", "ตารางค่าธรรมเนียม", "บัญชีชั่วโมงการ์ด", "เติมเงิน Alipay สาธารณะ", "รับซื้อคืน / แปลงอัตโนมัติ"], metrics: ["อุปกรณ์", "ออนไลน์และตรวจแล้ว", "รายการ", "กำลังเผยแพร่", "คำสั่งซื้อ", "กำลังให้บริการ", "ค่าเช่าที่รับรู้", "KAI รอชำระ"], panels: ["ความพร้อมทำรายการ", "ปิดเมื่อรายการสำคัญไม่พร้อม", "ขั้นตอนต่อไป", "ดำเนินตามสถานะ"], devices: ["อุปกรณ์ล่าสุด", "เครื่อง", "อุปกรณ์", "GPU", "Agent", "การตรวจสอบ", "heartbeat ล่าสุด", "ยังไม่มีอุปกรณ์ ต้องอนุมัติก่อนจึงออกข้อมูล Agent ได้"], orders: ["คำสั่งซื้อล่าสุด", "รายการ", "สัญญา", "สแนปช็อต", "เวลาที่จอง", "ชั่วโมงการ์ดที่ล็อก", "สถานะ", "ยังไม่มีคำสั่งซื้อ จะแสดงหลังเผยแพร่ข้อเสนอที่ตรวจแล้ว"] },
+  vi: { profile: { DRAFT: "Bản nháp", SUBMITTED: "Đang xét duyệt", APPROVED: "Đã duyệt", REJECTED: "Cần chỉnh sửa", SUSPENDED: "Đã tạm dừng" }, error: ["Không thể tải bảng điều khiển", "Bảng điều khiển nhà cung cấp tạm thời không khả dụng.", "Mã yêu cầu", "Tải lại"], loading: "Đang tải hồ sơ, thiết bị và đơn hàng…", heading: ["Tổng quan nguồn cung", "Chỉ hiển thị dữ liệu tài khoản và tổ chức hiện tại. Quyền được máy chủ kiểm tra riêng.", "Hồ sơ chưa đầy đủ", "Chưa tạo hồ sơ nhà cung cấp"], steps: [["Tạo hồ sơ nhà cung cấp", "Nhập thông tin, lưu nháp rồi gửi xét duyệt thủ công.", "Bắt đầu xét duyệt"], ["Hoàn tất và gửi hồ sơ", "Hồ sơ vẫn là bản nháp và chưa được xét duyệt.", "Tiếp tục điền"], ["Hồ sơ đang xét duyệt", "Không thể sửa trong lúc xét duyệt. Trạng thái sẽ hiển thị tại đây.", "Xem trạng thái"], ["Bổ sung bằng chứng", "Thiếu phiên bản thỏa thuận hoặc tóm tắt bằng chứng hợp lệ nên hệ thống vẫn khóa.", "Xem hồ sơ"], ["Kết nối thiết bị đầu tiên", "Thông tin ghép nối Agent một lần có hiệu lực 5 phút sẽ được cấp.", "Kết nối thiết bị"], ["Đưa thiết bị online và xác minh", "Cần heartbeat Host Agent và xác minh phần cứng còn hiệu lực.", "Xem thiết bị"], ["Tạo báo giá thật đầu tiên", "Chọn thiết bị đã xác minh, thời gian và giá giờ-thẻ KAI.", "Tạo đăng bán"], ["Quản lý đăng bán và đơn hàng", "Theo dõi trạng thái, giữ chỗ và tiến độ thực hiện.", "Quản lý đăng bán"], ["Quyền cung cấp đã tạm dừng", "Liên hệ vận hành để xác nhận điều kiện khôi phục.", "Xem ghi chú"]], rejected: "Người xét duyệt yêu cầu chỉnh sửa.", readiness: ["Nhà cung cấp đã duyệt", "Thiết bị online đã xác minh", "Biểu phí hiệu lực", "Sổ cái giờ-thẻ", "Nạp Alipay công khai", "Mua lại / quy đổi tự động"], metrics: ["Thiết bị", "online và đã xác minh", "Đăng bán", "đang công khai", "Đơn cung cấp", "đang phục vụ", "Tiền thuê đã ghi nhận", "KAI chờ quyết toán"], panels: ["Mức sẵn sàng giao dịch", "Đóng khi mục quan trọng chưa sẵn sàng", "Bước tiếp theo", "Tiến theo trạng thái"], devices: ["Thiết bị gần đây", "thiết bị", "Thiết bị", "GPU", "Agent", "Xác minh", "Heartbeat cuối", "Chưa đăng ký thiết bị. Chỉ cấp thông tin Agent sau khi được duyệt."], orders: ["Đơn cung cấp gần đây", "đơn", "Hợp đồng", "Bản chụp tài nguyên", "Thời lượng giữ", "Giờ-thẻ khóa", "Trạng thái", "Chưa có đơn liên quan. Đơn sẽ xuất hiện sau khi đăng báo giá đã xác minh."] },
+  id: { profile: { DRAFT: "Draf", SUBMITTED: "Ditinjau", APPROVED: "Disetujui", REJECTED: "Perlu perubahan", SUSPENDED: "Ditangguhkan" }, error: ["Konsol gagal dimuat", "Konsol pemasok sementara tidak tersedia.", "ID permintaan", "Muat ulang"], loading: "Memuat profil, perangkat, dan pesanan…", heading: ["Ringkasan pasokan", "Hanya data akun dan organisasi saat ini yang ditampilkan. Izin diperiksa terpisah oleh server.", "Catatan belum lengkap", "Profil pemasok belum dibuat"], steps: [["Buat profil pemasok", "Isi informasi, simpan draf, lalu ajukan tinjauan manual.", "Mulai tinjauan"], ["Lengkapi dan kirim data", "Profil masih berupa draf dan belum ditinjau.", "Lanjutkan"], ["Profil sedang ditinjau", "Data tidak dapat diubah selama tinjauan. Status tampil di sini.", "Lihat status"], ["Lengkapi bukti", "Versi perjanjian atau ringkasan bukti valid belum ada, sehingga akses tetap ditutup.", "Lihat catatan"], ["Hubungkan perangkat pertama", "Kredensial pairing Agent sekali pakai berlaku lima menit.", "Hubungkan perangkat"], ["Online-kan dan verifikasi", "Heartbeat Host Agent dan verifikasi perangkat keras harus valid.", "Lihat perangkat"], ["Buat penawaran nyata pertama", "Pilih perangkat terverifikasi, waktu, dan harga jam-kartu KAI.", "Buat listing"], ["Kelola listing dan pesanan", "Pantau status, reservasi, dan kemajuan pemenuhan.", "Kelola listing"], ["Akses pasokan ditangguhkan", "Hubungi operasi untuk syarat pemulihan.", "Lihat catatan"]], rejected: "Peninjau meminta perubahan.", readiness: ["Pemasok disetujui", "Perangkat online terverifikasi", "Jadwal biaya aktif", "Buku besar jam-kartu", "Top-up Alipay publik", "Pembelian kembali / konversi"], metrics: ["Perangkat", "online dan terverifikasi", "Listing", "diterbitkan", "Pesanan pasokan", "aktif", "Sewa diperoleh", "KAI tertunda"], panels: ["Kesiapan transaksi", "Ditutup saat unsur penting belum siap", "Langkah berikutnya", "Ikuti status"], devices: ["Perangkat terbaru", "perangkat", "Perangkat", "GPU", "Agent", "Verifikasi", "Heartbeat terakhir", "Belum ada perangkat. Kredensial Agent tersedia setelah persetujuan."], orders: ["Pesanan terbaru", "pesanan", "Kontrak", "Snapshot sumber daya", "Durasi reservasi", "Jam-kartu ditahan", "Status", "Belum ada pesanan. Pesanan muncul setelah penawaran terverifikasi diterbitkan."] },
+  ms: { profile: { DRAFT: "Draf", SUBMITTED: "Dalam semakan", APPROVED: "Diluluskan", REJECTED: "Perlu perubahan", SUSPENDED: "Digantung" }, error: ["Konsol gagal dimuat", "Konsol pembekal tidak tersedia buat sementara waktu.", "ID permintaan", "Muat semula"], loading: "Memuat profil, peranti dan pesanan…", heading: ["Ringkasan bekalan", "Hanya data akaun dan organisasi semasa dipaparkan. Kebenaran diperiksa berasingan oleh pelayan.", "Rekod tidak lengkap", "Profil pembekal belum dibuat"], steps: [["Buat profil pembekal", "Isi maklumat, simpan draf, kemudian hantar untuk semakan manual.", "Mulakan semakan"], ["Lengkap dan hantar maklumat", "Profil masih draf dan belum disemak.", "Teruskan"], ["Profil sedang disemak", "Maklumat tidak boleh diubah semasa semakan. Status dipaparkan di sini.", "Lihat status"], ["Lengkapkan bukti", "Versi perjanjian atau ringkasan bukti sah tiada, jadi akses kekal ditutup.", "Lihat rekod"], ["Sambung peranti pertama", "Kelayakan pasangan Agent sekali guna sah selama lima minit.", "Sambung peranti"], ["Bawa peranti dalam talian", "Heartbeat Host Agent dan pengesahan perkakasan mesti sah.", "Lihat peranti"], ["Cipta tawaran nyata pertama", "Pilih peranti disahkan, masa dan harga jam-kad KAI.", "Cipta senarai"], ["Urus senarai dan pesanan", "Pantau status, tempahan dan kemajuan pemenuhan.", "Urus senarai"], ["Akses bekalan digantung", "Hubungi operasi untuk syarat pemulihan.", "Lihat nota"]], rejected: "Penyemak meminta perubahan.", readiness: ["Pembekal diluluskan", "Peranti dalam talian disahkan", "Jadual fi aktif", "Lejar jam-kad", "Tambah nilai Alipay awam", "Beli balik / penukaran"], metrics: ["Peranti", "dalam talian dan disahkan", "Senarai", "diterbitkan", "Pesanan bekalan", "dalam perkhidmatan", "Sewa terletak hak", "KAI belum selesai"], panels: ["Kesediaan transaksi", "Ditutup apabila perkara penting belum sedia", "Langkah seterusnya", "Maju mengikut status"], devices: ["Peranti terkini", "peranti", "Peranti", "GPU", "Agent", "Pengesahan", "Heartbeat terakhir", "Belum ada peranti. Kelayakan Agent tersedia selepas kelulusan."], orders: ["Pesanan terkini", "pesanan", "Kontrak", "Syot kilat sumber", "Tempoh tempahan", "Jam-kad ditahan", "Status", "Belum ada pesanan. Pesanan muncul selepas tawaran disahkan diterbitkan."] },
 };
 
-function cardHours(micros: number) {
-  try { return formatCardHourDisplayMicros(micros); } catch { return "—"; }
-}
-
-function dateTime(value: string | null) {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? "—"
-    : new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "short" }).format(date);
-}
-
-function shortId(value: string) {
-  return value.length > 18 ? `${value.slice(0, 9)}…${value.slice(-6)}` : value;
-}
+const badgeClass: Partial<Record<HostingSupplierProfile["status"], string>> = { DRAFT: styles.statusWarning, SUBMITTED: styles.statusWarning, REJECTED: styles.statusError, SUSPENDED: styles.statusError };
+function cardHours(micros: number) { try { return formatCardHourDisplayMicros(micros); } catch { return "—"; } }
+function dateTime(value: string | null, locale: Locale) { if (!value) return "—"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "short" }).format(date); }
+function shortId(value: string) { return value.length > 18 ? `${value.slice(0, 9)}…${value.slice(-6)}` : value; }
 
 export function SupplyDashboard() {
+  const { locale } = useLocale();
+  const copy = DASHBOARD_COPY[locale];
   const [dashboard, setDashboard] = useState<SupplierHostingDashboard | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const result = await marketplaceGet<{ dashboard: SupplierHostingDashboard }>("/api/v2/supply/dashboard");
-      setDashboard(result.dashboard);
-    } catch (cause) {
-      setError(marketplaceErrorMessage(cause, "供应商控制台暂时无法读取。"));
-    }
-  }, []);
-
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => { void load(); });
-    return () => window.cancelAnimationFrame(frame);
-  }, [load]);
-
-  if (error) {
-    return (
-      <section className={styles.error} role="alert">
-        <h2>控制台读取失败</h2>
-        <p>{error}</p>
-        <button className={`${styles.secondaryAction} mt-4`} onClick={() => void load()} type="button">重新读取</button>
-      </section>
-    );
-  }
-
-  if (!dashboard) return <div className={styles.loading} role="status">正在读取供应主体、设备和订单状态…</div>;
+  const [failure, setFailure] = useState<{ requestId?: string } | null>(null);
+  const load = useCallback(async () => { setFailure(null); try { const result = await marketplaceGet<{ dashboard: SupplierHostingDashboard }>("/api/v2/supply/dashboard"); setDashboard(result.dashboard); } catch (cause) { setFailure(cause instanceof MarketplaceApiError ? { requestId: cause.requestId } : {}); } }, []);
+  useEffect(() => { const frame = window.requestAnimationFrame(() => { void load(); }); return () => window.cancelAnimationFrame(frame); }, [load]);
+  if (failure) return <section className={styles.error} role="alert"><h2>{copy.error[0]}</h2><p>{copy.error[1]}</p>{failure.requestId ? <p>{copy.error[2]}: <code>{failure.requestId}</code></p> : null}<button className={`${styles.secondaryAction} mt-4`} onClick={() => void load()} type="button">{copy.error[3]}</button></section>;
+  if (!dashboard) return <div className={styles.loading} role="status">{copy.loading}</div>;
 
   const profile = dashboard.profile;
-  const supplierApproved = dashboard.readiness.supplierApproved && isHostingSupplierProfileReady(profile);
-  const supplierContracts = dashboard.contracts;
-  const nextStep = !profile
-    ? { title: "先建立供应主体", description: "填写最少必要资料并保存草稿，确认后再提交人工审核。", href: "/supply/onboarding", label: "开始供应商审核" }
-    : profile.status === "DRAFT" || profile.status === "REJECTED"
-      ? { title: "完成并提交审核资料", description: profile.status === "REJECTED" ? profile.reviewNote ?? "审核人员要求修改资料。" : "资料仍是草稿，尚未进入人工审核。", href: "/supply/onboarding", label: "继续填写资料" }
-      : profile.status === "SUBMITTED"
-        ? { title: "资料正在审核", description: "审核期间不能修改资料。状态变化会直接显示在本控制台。", href: "/supply/onboarding", label: "查看审核状态" }
-        : profile.status === "APPROVED" && !supplierApproved
-          ? { title: "补全供应商审核证据", description: "当前记录标记为通过，但缺少有效协议版本或审核证据摘要，后端已保持关闭。请由管理员补录审核证据。", href: "/supply/onboarding", label: "查看审核记录" }
-        : supplierApproved && dashboard.devices.length === 0
-          ? { title: "可以连接第一台设备", description: "托管设备页会生成 5 分钟有效、受限的一次性 Agent 配对凭证。", href: "/supply/devices/new", label: "连接第一台设备" }
-          : supplierApproved && dashboard.readiness.onlineVerifiedDevices === 0
-            ? { title: "让设备在线并完成验真", description: "Host Agent 心跳和硬件验真都有效后，设备才具备挂牌资格。", href: "/supply/devices", label: "查看设备状态" }
-            : supplierApproved && dashboard.offers.length === 0
-              ? { title: "创建第一条真实报价", description: "选择已验真的设备、可用窗口和 KAI 标准卡时价格。", href: "/supply/listings/new", label: "创建挂牌" }
-              : supplierApproved
-                ? { title: "管理挂牌与订单", description: "查看公开状态、资源预留和 Host Agent 履约进度。", href: "/supply/listings", label: "进入挂牌管理" }
-          : { title: "供应资格已暂停", description: profile.reviewNote ?? "请联系平台运营确认恢复条件。", href: "/supply/onboarding", label: "查看审核说明" };
+  const approved = dashboard.readiness.supplierApproved && isHostingSupplierProfileReady(profile);
+  const contracts = dashboard.contracts;
+  const step = !profile ? 0 : profile.status === "DRAFT" || profile.status === "REJECTED" ? 1 : profile.status === "SUBMITTED" ? 2 : profile.status === "APPROVED" && !approved ? 3 : approved && dashboard.devices.length === 0 ? 4 : approved && dashboard.readiness.onlineVerifiedDevices === 0 ? 5 : approved && dashboard.offers.length === 0 ? 6 : approved ? 7 : 8;
+  const [stepTitle, fallbackDescription, stepLabel] = copy.steps[step];
+  const stepDescription = profile?.status === "REJECTED" ? profile.reviewNote ?? copy.rejected : step === 8 ? profile?.reviewNote ?? fallbackDescription : fallbackDescription;
+  const hrefs = ["/supply/onboarding", "/supply/onboarding", "/supply/onboarding", "/supply/onboarding", "/supply/devices/new", "/supply/devices", "/supply/listings/new", "/supply/listings", "/supply/onboarding"] as const;
+  const checks = [dashboard.readiness.supplierApproved, dashboard.readiness.onlineVerifiedDevices > 0, dashboard.readiness.activeFeeSchedule, dashboard.readiness.cardHourSettlement, dashboard.readiness.alipayPublicTopup, dashboard.readiness.buyback];
+  const published = dashboard.offers.filter((item) => item.status === "PUBLISHED").length;
+  const active = contracts.filter((item) => ["READY", "IN_SERVICE", "AWAITING_ACCEPTANCE"].includes(item.status)).length;
 
-  const readiness = [
-    ["供应主体已审核", dashboard.readiness.supplierApproved],
-    ["在线且验真有效的设备", dashboard.readiness.onlineVerifiedDevices > 0],
-    ["有效费率版本", dashboard.readiness.activeFeeSchedule],
-    ["卡时结算账本", dashboard.readiness.cardHourSettlement],
-    ["公开支付宝充值", dashboard.readiness.alipayPublicTopup],
-    ["自动回购 / 变现", dashboard.readiness.buyback],
-  ] as const;
-
-  return (
-    <>
-      <div className={styles.pageHeading}>
-        <div>
-          <h1>供应概览</h1>
-          <p>这里只显示当前登录账户与当前组织的数据。资源发布、履约和财务权限均由服务端分别判定。</p>
-        </div>
-        <span className={`${styles.statusBadge} ${profile ? profileBadgeClass[profile.status] ?? "" : styles.statusWarning}`}>
-          {profile?.status === "APPROVED" && !supplierApproved ? "审核记录不完整" : profile ? profileLabels[profile.status] : "尚未建立供应主体"}
-        </span>
-      </div>
-
-      <div className={styles.metrics}>
-        {[
-          ["设备", String(dashboard.devices.length), `${dashboard.readiness.onlineVerifiedDevices} 台在线且验真有效`],
-          ["挂牌", String(dashboard.offers.length), `${dashboard.offers.filter((item) => item.status === "PUBLISHED").length} 条正在发布`],
-          ["供应订单", String(supplierContracts.length), `${supplierContracts.filter((item) => ["READY", "IN_SERVICE", "AWAITING_ACCEPTANCE"].includes(item.status)).length} 笔服务中`],
-          ["已归属租金", cardHours(dashboard.earnings.vestedMicros), `${cardHours(dashboard.earnings.pendingMicros)} KAI 待结算`],
-        ].map(([label, value, note]) => (
-          <div className={styles.metric} key={label}><span>{label}</span><strong>{value}</strong><small>{note}</small></div>
-        ))}
-      </div>
-
-      <div className={styles.dashboardGrid}>
-        <section className={styles.panel} aria-labelledby="readiness-title">
-          <header className={styles.panelHeader}><h2 id="readiness-title">成交就绪状态</h2><span>关键项未就绪时保持关闭</span></header>
-          <ul className={styles.readinessList}>
-            {readiness.map(([label, ready]) => <li key={label}><span>{label}</span><strong className={ready ? styles.ready : styles.blocked}>{ready ? "READY" : "CLOSED"}</strong></li>)}
-          </ul>
-        </section>
-        <section className={styles.panel} aria-labelledby="next-step-title">
-          <header className={styles.panelHeader}><h2 id="next-step-title">下一步</h2><span>按状态推进</span></header>
-          <div className={styles.nextStep}>
-            <h3>{nextStep.title}</h3><p>{nextStep.description}</p>
-            {nextStep.href
-              ? <Link className={styles.primaryAction} href={nextStep.href}>{nextStep.label}</Link>
-              : <span className={styles.statusBadge}>{nextStep.label}</span>}
-          </div>
-        </section>
-      </div>
-
-      <section className={styles.dataSection} aria-labelledby="devices-title">
-        <header className={styles.panelHeader}><h2 id="devices-title">最近设备</h2><span>{dashboard.devices.length} 台</span></header>
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead><tr><th>设备</th><th>GPU</th><th>Agent</th><th>验真</th><th>最后心跳</th></tr></thead>
-            <tbody>
-              {dashboard.devices.length ? dashboard.devices.slice(0, 5).map((device) => (
-                <tr key={device.id}><td>{device.displayName}<br /><small>{shortId(device.id)}</small></td><td>{device.inventory.gpuModel}</td><td>{device.status}</td><td>{device.verificationStatus}</td><td>{dateTime(device.lastSeenAt)}</td></tr>
-              )) : <tr><td className={styles.emptyRow} colSpan={5}>还没有登记设备。供应主体审核通过后才能生成 Agent 安装凭证。</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className={styles.dataSection} aria-labelledby="orders-title">
-        <header className={styles.panelHeader}><h2 id="orders-title">最近供应订单</h2><span>{supplierContracts.length} 笔</span></header>
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead><tr><th>合同</th><th>资源快照</th><th>预留时长</th><th>卡时锁定</th><th>状态</th></tr></thead>
-            <tbody>
-              {supplierContracts.length ? supplierContracts.slice(0, 5).map((contract) => (
-                <tr key={contract.id}><td><Link href={`/supply/orders/${encodeURIComponent(contract.id)}`}>{shortId(contract.id)}</Link></td><td>{contract.snapshot.title}</td><td>{contract.reservedSeconds} 秒</td><td>{cardHours(contract.heldMicros)}</td><td>{contract.status}</td></tr>
-              )) : <tr><td className={styles.emptyRow} colSpan={5}>还没有相关订单。发布通过验真的报价后，订单会在这里按状态推进。</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </>
-  );
+  return <>
+    <div className={styles.pageHeading}><div><h1>{copy.heading[0]}</h1><p>{copy.heading[1]}</p></div><span className={`${styles.statusBadge} ${profile ? badgeClass[profile.status] ?? "" : styles.statusWarning}`}>{profile?.status === "APPROVED" && !approved ? copy.heading[2] : profile ? copy.profile[profile.status] : copy.heading[3]}</span></div>
+    <div className={styles.metrics}>{[[copy.metrics[0], String(dashboard.devices.length), `${dashboard.readiness.onlineVerifiedDevices} ${copy.metrics[1]}`], [copy.metrics[2], String(dashboard.offers.length), `${published} ${copy.metrics[3]}`], [copy.metrics[4], String(contracts.length), `${active} ${copy.metrics[5]}`], [copy.metrics[6], cardHours(dashboard.earnings.vestedMicros), `${cardHours(dashboard.earnings.pendingMicros)} ${copy.metrics[7]}`]].map(([label, value, note]) => <div className={styles.metric} key={label}><span>{label}</span><strong>{value}</strong><small>{note}</small></div>)}</div>
+    <div className={styles.dashboardGrid}><section className={styles.panel} aria-labelledby="readiness-title"><header className={styles.panelHeader}><h2 id="readiness-title">{copy.panels[0]}</h2><span>{copy.panels[1]}</span></header><ul className={styles.readinessList}>{copy.readiness.map((label, index) => <li key={label}><span>{label}</span><strong className={checks[index] ? styles.ready : styles.blocked}>{checks[index] ? "READY" : "CLOSED"}</strong></li>)}</ul></section><section className={styles.panel} aria-labelledby="next-step-title"><header className={styles.panelHeader}><h2 id="next-step-title">{copy.panels[2]}</h2><span>{copy.panels[3]}</span></header><div className={styles.nextStep}><h3>{stepTitle}</h3><p>{stepDescription}</p><Link className={styles.primaryAction} href={hrefs[step]}>{stepLabel}</Link></div></section></div>
+    <section className={styles.dataSection} aria-labelledby="devices-title"><header className={styles.panelHeader}><h2 id="devices-title">{copy.devices[0]}</h2><span>{dashboard.devices.length} {copy.devices[1]}</span></header><div className={styles.tableWrap}><table className={styles.table}><thead><tr>{copy.devices.slice(2, 7).map((label) => <th key={label}>{label}</th>)}</tr></thead><tbody>{dashboard.devices.length ? dashboard.devices.slice(0, 5).map((device) => <tr key={device.id}><td>{device.displayName}<br /><small>{shortId(device.id)}</small></td><td>{device.inventory.gpuModel}</td><td>{device.status}</td><td>{device.verificationStatus}</td><td>{dateTime(device.lastSeenAt, locale)}</td></tr>) : <tr><td className={styles.emptyRow} colSpan={5}>{copy.devices[7]}</td></tr>}</tbody></table></div></section>
+    <section className={styles.dataSection} aria-labelledby="orders-title"><header className={styles.panelHeader}><h2 id="orders-title">{copy.orders[0]}</h2><span>{contracts.length} {copy.orders[1]}</span></header><div className={styles.tableWrap}><table className={styles.table}><thead><tr>{copy.orders.slice(2, 7).map((label) => <th key={label}>{label}</th>)}</tr></thead><tbody>{contracts.length ? contracts.slice(0, 5).map((contract) => <tr key={contract.id}><td><Link href={`/supply/orders/${encodeURIComponent(contract.id)}`}>{shortId(contract.id)}</Link></td><td>{contract.snapshot.title}</td><td>{new Intl.NumberFormat(locale, { style: "unit", unit: "second", unitDisplay: "long" }).format(contract.reservedSeconds)}</td><td>{cardHours(contract.heldMicros)}</td><td>{contract.status}</td></tr>) : <tr><td className={styles.emptyRow} colSpan={5}>{copy.orders[7]}</td></tr>}</tbody></table></div></section>
+  </>;
 }

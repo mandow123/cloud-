@@ -62,7 +62,8 @@ test("admin UI separates case resolution from read-only independently verified p
   assert.match(source, /action === "PROPOSE_RESOLUTION"/u);
   assert.match(source, /visibility, expectedVersion: selected\.version/u);
   assert.match(source, /reason instanceof AdminApiError && reason\.status === 409/u);
-  assert.match(source, /aria-label="申诉处理时间线"/u);
+  assert.match(source, /timeline:"申诉处理时间线"/u);
+  assert.match(source, /aria-label=\{copy\.timeline\}/u);
   assert.match(source, /status === "INDEPENDENTLY_VERIFIED" && Boolean\(item\.proofVerifiedAt\)/u);
   assert.match(source, /线下退款凭证已核验/u);
   assert.match(source, /线下处理凭证（只读）/u);

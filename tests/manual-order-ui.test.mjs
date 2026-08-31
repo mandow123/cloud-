@@ -43,9 +43,13 @@ test("supplier follows quote then fulfillment and shows receivable only after el
   for (const action of ["prepare", "ready", "service-complete"]) assert.match(supplier, new RegExp(action, "u"));
   assert.match(supplier, /actualCardHourMicros/u);
   assert.match(supplier, /record\.settlement\.status === "ELIGIBLE"/u);
-  assert.match(supplier, /供应商人民币结算应收/u);
-  assert.match(supplier, /真实出款 CLOSED/u);
+  assert.match(supplier, /copy\.receivable/u);
+  assert.match(supplier, /copy\.payoutClosed/u);
+  assert.match(supplier, /safeSupplierOrderError\(reason, copy\)/u);
+  assert.doesNotMatch(supplier, /marketplaceErrorMessage/u);
   assert.doesNotMatch(supplier, /record\.delivery\.connection|accept-offer|accept-completion|退款/u);
+  assert.doesNotMatch(supplier, /[\u3400-\u9fff]/u, "supplier order JSX must read visible copy from the locale dictionary");
+  for (const locale of ['"zh-CN"', '"zh-TW"', "en:", "ja:", "ko:", "fr:", "th:", "vi:", "id:", "ms:"]) assert.match(source, new RegExp(locale, "u"));
 });
 
 test("administrator order oversight is read-only and cannot forge financial states", () => {

@@ -83,12 +83,12 @@ test("account console overview exposes only truthful buyer and manual supplier f
   assert.match(memberPage, /isAccountConsoleV2Enabled\(\)/u);
   assert.match(memberPage, /AccountConsoleOverview mode="buyer"/u);
   assert.match(supplyPage, /AccountConsoleOverview mode="supplier"/u);
-  assert.match(overview, /等待平台人工确认与交付/u);
-  assert.match(overview, /申请已通过（尚未发布）/u);
-  assert.match(overview, /record\.status === "PUBLISHED" \? "已发布不代表已锁库存、已成交或运行中" : "不代表已发布、已成交或运行中"/u);
-  assert.match(overview, /未锁库存、未付款、未扣卡时/u);
+  assert.match(overview, /waiting: "等待平台人工确认与交付"/u);
+  assert.match(overview, /verified: "申请已通过（尚未发布）"/u);
+  assert.match(overview, /if \(status === "PUBLISHED"\) return text\.published/u);
+  assert.match(overview, /pendingNote: "未锁库存、未付款、未扣卡时"/u);
   assert.match(overview, /formatCardHourDisplayMicros/u);
-  assert.match(overview, /className=\{styles\.primaryAction\} href="\/member\/card-hours">充值卡时/u);
+  assert.match(overview, /className=\{styles\.primaryAction\} href="\/member\/card-hours">\{text\.topup\}/u);
   const overviewCss = await readFile(new URL("../components/account-console-overview.module.css", import.meta.url), "utf8");
   assert.match(overviewCss, /\.primaryAction \{[^\n]*color: var\(--on-brand\)/u);
   assert.doesNotMatch(overviewCss, /--accent-contrast/u);

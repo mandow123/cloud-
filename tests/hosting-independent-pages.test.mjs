@@ -119,6 +119,27 @@ test("hosting landing is a live front-to-back control plane instead of a static 
   assert.match(launchpad, /<details className=\{styles\.readinessDisclosure\}>/u);
 });
 
+test("hosting public entry localizes fixed UI without changing gates, APIs, or business records", () => {
+  const page = readFileSync("app/hosting/page.tsx", "utf8");
+  const launchpad = readFileSync("components/hosting-launchpad.tsx", "utf8");
+  const shell = readFileSync("components/hosting-public-shell.tsx", "utf8");
+  const combined = `${page}\n${launchpad}\n${shell}`;
+
+  for (const locale of ["zh-CN", "zh-TW", "en", "ja", "ko", "fr", "th", "vi", "id", "ms"]) {
+    assert.match(combined, new RegExp(`(?:"${locale}"|${locale}:)`), `${locale} copy must exist`);
+  }
+  assert.match(page, /getRequestLocale\(\)/u);
+  assert.match(shell, /useLocale\(\)/u);
+  assert.match(launchpad, /useLocale\(\)/u);
+  for (const code of ["DISABLED", "SETUP", "INTERNAL_AGENT_TRIAL", "READY", "CLOSED"]) assert.match(launchpad, new RegExp(code, "u"));
+  for (const endpoint of ["/api/ready", "/api/v2/offers", "/api/auth/session"]) assert.match(launchpad, new RegExp(endpoint.replaceAll("/", "\\/"), "u"));
+  assert.match(launchpad, /offer\.title/u);
+  assert.match(launchpad, /offer\.region/u);
+  assert.match(launchpad, /account\.organization\?\.name/u);
+  assert.match(launchpad, /catch \{/u);
+  assert.doesNotMatch(launchpad, /error\.message|cause\.message|responseBody\.error/u);
+});
+
 test("the configured supplier agreement has an immutable public document", () => {
   const terms = readFileSync("app/hosting/partners/terms/KAI_HOSTING_TERMS_2026_08/page.tsx", "utf8");
   assert.match(terms, /const version = "KAI_HOSTING_TERMS_2026_08"/u);

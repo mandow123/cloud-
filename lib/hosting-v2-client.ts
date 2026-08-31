@@ -219,10 +219,10 @@ export function formatCardHours(micros: number) {
   try { return formatCardHourDisplayMicros(micros); } catch { return "—"; }
 }
 
-export function formatHostingTime(value: string | null) {
+export function formatHostingTime(value: string | null, locale = "zh-CN") {
   if (!value) return "—";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "short" }).format(date);
+  return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
 export function formatEvidenceDigest(value: string | null | undefined) {

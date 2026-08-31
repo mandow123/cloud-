@@ -69,6 +69,32 @@ test("manual supply applications persist through the authenticated API and remai
   assert.match(admin, /"ownership\.accountId"/u);
 });
 
+test("supplier core loop localizes fixed UI while preserving submitted business values", () => {
+  const overviewPage = readFileSync("app/supply/page.tsx", "utf8");
+  const applyPage = readFileSync("app/supply/apply/page.tsx", "utf8");
+  const dashboard = readFileSync("components/supply-dashboard.tsx", "utf8");
+  const form = readFileSync("components/supply-offer-form.tsx", "utf8");
+  const combined = `${overviewPage}\n${applyPage}\n${dashboard}\n${form}`;
+
+  for (const locale of ["zh-CN", "zh-TW", "en", "ja", "ko", "fr", "th", "vi", "id", "ms"]) {
+    assert.match(combined, new RegExp(`(?:"${locale}"|${locale}:)`), `${locale} copy must exist`);
+  }
+  assert.match(overviewPage, /getRequestLocale\(\)/u);
+  assert.match(applyPage, /getRequestLocale\(\)/u);
+  assert.match(dashboard, /useLocale\(\)/u);
+  assert.match(form, /useLocale\(\)/u);
+  assert.doesNotMatch(`${dashboard}\n${form}`, /marketplaceErrorMessage/u);
+  assert.match(dashboard, /cause instanceof MarketplaceApiError/u);
+  assert.match(form, /cause instanceof MarketplaceApiError/u);
+  assert.match(form, /value=\{value\}/u);
+  for (const businessValue of ["全国", "平台账号交付", "COMPANY", "GPU_SERVER", "NODE_HOUR"]) assert.match(form, new RegExp(businessValue, "u"));
+  assert.match(form, /productName: productName\.trim\(\)/u);
+  assert.match(form, /specification: specification\.trim\(\)/u);
+  assert.match(dashboard, /device\.status/u);
+  assert.match(dashboard, /device\.verificationStatus/u);
+  assert.match(dashboard, /contract\.status/u);
+});
+
 test("resource registration issues a short-lived server challenge without client identity fields", () => {
   const source = readFileSync("components/supply-resource-registration.tsx", "utf8");
   const agentPackage = JSON.parse(readFileSync("host-agent/package.json", "utf8"));
