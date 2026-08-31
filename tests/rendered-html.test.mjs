@@ -17,16 +17,29 @@ async function getWorker() {
   return workerPromise;
 }
 
-async function render(pathname = "/") {
+async function render(pathname = "/", localeCookie = "") {
   const worker = await getWorker();
   return worker.fetch(
     new Request(`https://cloud.kai.com${pathname}`, {
-      headers: { accept: "text/html", host: "cloud.kai.com" },
+      headers: { accept: "text/html", host: "cloud.kai.com", ...(localeCookie ? { cookie: `kai_cloud_locale=${localeCookie}` } : {}) },
     }),
     { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
     { waitUntil() {}, passThroughOnException() {} },
   );
 }
+
+test("server locale cookie controls the initial document and invalid values fail safely", async () => {
+  const english = await render("/", "en");
+  const englishHtml = await english.text();
+  assert.match(englishHtml, /<html lang="en">/u);
+  assert.match(englishHtml, /KAI CLOUD · COMPUTE MARKETPLACE/u);
+  assert.match(englishHtml, /<title>Compute, ready for every moment that matters/u);
+
+  const fallback = await render("/", "unsupported-locale");
+  const fallbackHtml = await fallback.text();
+  assert.match(fallbackHtml, /<html lang="zh-CN">/u);
+  assert.match(fallbackHtml, /KAI CLOUD · 算力市场/u);
+});
 
 test("server-renders the finished KAI Cloud home page", async () => {
   const response = await render();
@@ -35,7 +48,7 @@ test("server-renders the finished KAI Cloud home page", async () => {
 
   const html = await response.text();
   assert.match(html, /KAI Cloud/);
-  assert.match(html, /KAI CLOUD · COMPUTE MARKETPLACE/);
+  assert.match(html, /KAI CLOUD · 算力市场/);
   assert.match(html, /让算力，抵达每一个需要它的时刻/);
   assert.match(html, /Compute, ready for every moment that matters/);
   assert.match(html, /探索算力市场/);
@@ -166,7 +179,13 @@ test("all ten business aliases are reachable from the home page", async () => {
   const html = await response.text();
   assert.equal(serviceAliases.length, 10);
   for (const alias of serviceAliases) {
-    assert.match(html, new RegExp(alias.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    const params = new URLSearchParams({
+      category: alias.category,
+      deal: alias.dealMode,
+      unit: alias.pricingUnit,
+    });
+    const href = `/resources?${params.toString()}`.replaceAll("&", "&amp;");
+    assert.match(html, new RegExp(href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
 });
 

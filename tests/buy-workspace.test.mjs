@@ -46,16 +46,16 @@ test("primary buy cards answer supplier, specification, delivery and card-hour q
   assert.match(workspace, /sourceDate\(listing\)/u);
   assert.match(workspace, /href=\{`\/checkout\/\$\{encodeURIComponent\(listing\.id\)\}`\}/u);
   assert.match(workspace, /href=\{`\/resources\/\$\{encodeURIComponent\(listing\.id\)\}`\}/u);
-  assert.match(workspace, /inquiryEnabled \? <Link[\s\S]*人工询价维护中/u);
+  assert.match(workspace, /inquiryEnabled \? <Link[\s\S]*copy\.card\.maintenance/u);
   assert.doesNotMatch(workspace, /SETUP|可成交|已验真/u);
 });
 
 test("reference leads stay folded and only enter demand collection", () => {
   const workspace = read("components/buy-workspace.tsx");
   assert.match(workspace, /<details className=\{styles\.leadDirectory\}>/u);
-  assert.match(workspace, /\{referenceLeads\.length\} 家报价线索/u);
+  assert.match(workspace, /\{referenceLeads\.length\}[\s\S]*copy\.leads\.countSuffix/u);
   assert.match(workspace, /\/request\?listing=/u);
-  assert.match(workspace, /不代表当前库存或可购买套餐/u);
+  assert.match(workspace, /copy\.leads\.notice/u);
 });
 
 test("live Hosting inventory is an additive section only", () => {

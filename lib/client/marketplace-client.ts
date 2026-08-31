@@ -295,9 +295,23 @@ export function createIdempotencyKey(scope: string) {
   return `kai-${safeScope}-${randomPart}`.slice(0, 128);
 }
 
-export function marketplaceErrorMessage(error: unknown, fallback: string) {
+type SafeMarketplaceErrorOptions = Readonly<{
+  requestIdLabel?: string;
+  retryAfter?: (seconds: number) => string;
+  allowlistedMessages?: Readonly<Record<string, string>>;
+}>;
+
+export function safeMarketplaceErrorMessage(error: unknown, fallback: string, options: SafeMarketplaceErrorOptions = {}) {
   if (!(error instanceof MarketplaceApiError)) return fallback;
-  const retry = error.retryAfterSeconds !== undefined ? ` 可在 ${error.retryAfterSeconds} 秒后重试。` : "";
-  const requestId = error.requestId ? `（请求编号：${error.requestId}）` : "";
-  return `${error.message}${retry}${requestId}`;
+  const message = options.allowlistedMessages?.[error.code] ?? fallback;
+  const retry = error.retryAfterSeconds !== undefined
+    ? ` ${options.retryAfter?.(error.retryAfterSeconds) ?? `可在 ${error.retryAfterSeconds} 秒后重试。`}`
+    : "";
+  const requestId = error.requestId ? ` (${options.requestIdLabel ?? "请求编号"}: ${error.requestId})` : "";
+  return `${message}${retry}${requestId}`;
+}
+
+/** @deprecated Prefer safeMarketplaceErrorMessage with locale-specific copy. */
+export function marketplaceErrorMessage(error: unknown, fallback: string) {
+  return safeMarketplaceErrorMessage(error, fallback);
 }

@@ -3,14 +3,30 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useLocale } from "@/components/locale-provider";
 import { formatCardHourDisplayMicros } from "@/lib/card-hours";
-import { createIdempotencyKey, marketplaceErrorMessage, marketplacePost } from "@/lib/client/marketplace-client";
+import { createIdempotencyKey, MarketplaceApiError, marketplacePost, safeMarketplaceErrorMessage } from "@/lib/client/marketplace-client";
+import type { Locale } from "@/lib/i18n";
 import type { ManualDeliveryStatus, MemberCatalogPurchaseIntent } from "@/lib/server/admin-store";
 import styles from "@/components/member-purchase-intents.module.css";
 import { MemberManualAppeals } from "@/components/member-manual-appeals";
 
 type ListPayload = { records?: MemberCatalogPurchaseIntent[] };
 type DetailPayload = { record?: MemberCatalogPurchaseIntent };
+
+type PurchaseErrorCopy = { load: string; confirm: string; requestId: string; retry: (seconds: number) => string };
+const PURCHASE_ERROR_COPY = {
+  "zh-CN": { load: "算力申请暂时无法读取。", confirm: "确认交付失败，请刷新状态后重试。", requestId: "请求编号", retry: (seconds) => `可在 ${seconds} 秒后重试。` },
+  "zh-TW": { load: "目前無法讀取算力申請。", confirm: "確認交付失敗，請重新整理狀態後再試。", requestId: "請求編號", retry: (seconds) => `可於 ${seconds} 秒後重試。` },
+  en: { load: "Compute requests cannot be loaded right now.", confirm: "Delivery could not be confirmed. Refresh the status and try again.", requestId: "Request ID", retry: (seconds) => `Try again in ${seconds} seconds.` },
+  ja: { load: "現在、コンピュート申請を読み込めません。", confirm: "納品を確認できませんでした。状態を更新して再試行してください。", requestId: "リクエスト ID", retry: (seconds) => `${seconds} 秒後に再試行できます。` },
+  ko: { load: "현재 컴퓨팅 신청을 불러올 수 없습니다.", confirm: "제공을 확인하지 못했습니다. 상태를 새로고침한 후 다시 시도하세요.", requestId: "요청 ID", retry: (seconds) => `${seconds}초 후 다시 시도하세요.` },
+  fr: { load: "Les demandes de calcul sont momentanément indisponibles.", confirm: "La livraison n’a pas pu être confirmée. Actualisez l’état et réessayez.", requestId: "ID de requête", retry: (seconds) => `Réessayez dans ${seconds} secondes.` },
+  th: { load: "ยังไม่สามารถโหลดคำขอประมวลผลได้", confirm: "ยืนยันการส่งมอบไม่สำเร็จ โปรดรีเฟรชสถานะแล้วลองใหม่", requestId: "รหัสคำขอ", retry: (seconds) => `ลองอีกครั้งใน ${seconds} วินาที` },
+  vi: { load: "Hiện không thể tải yêu cầu điện toán.", confirm: "Không thể xác nhận bàn giao. Hãy làm mới trạng thái và thử lại.", requestId: "ID yêu cầu", retry: (seconds) => `Thử lại sau ${seconds} giây.` },
+  id: { load: "Permintaan komputasi belum dapat dimuat.", confirm: "Penyerahan gagal dikonfirmasi. Muat ulang status dan coba lagi.", requestId: "ID permintaan", retry: (seconds) => `Coba lagi dalam ${seconds} detik.` },
+  ms: { load: "Permintaan pengkomputeran belum dapat dimuatkan.", confirm: "Penyerahan gagal disahkan. Muat semula status dan cuba lagi.", requestId: "ID permintaan", retry: (seconds) => `Cuba lagi dalam ${seconds} saat.` },
+} satisfies Record<Locale, PurchaseErrorCopy>;
 
 function dateTime(value: string) {
   return new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -33,21 +49,24 @@ function nextStep(status: ManualDeliveryStatus) {
 
 async function loadJson<T>(path: string): Promise<T> {
   const response = await fetch(path, { credentials: "same-origin", cache: "no-store" });
-  const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
-  if (!response.ok) throw new Error(payload?.error?.message ?? "算力申请暂时无法读取。");
+  const payload = await response.json().catch(() => null) as { error?: { code?: string; requestId?: string } } | null;
+  if (!response.ok) throw new MarketplaceApiError({ code: payload?.error?.code ?? `HTTP_${response.status}`, message: "REQUEST_FAILED", requestId: payload?.error?.requestId, status: response.status });
+  if (!payload) throw new MarketplaceApiError({ code: "INVALID_RESPONSE", message: "INVALID_RESPONSE", status: response.status });
   return payload as T;
 }
 
 export function MemberPurchaseIntentList({ compact = false }: { compact?: boolean }) {
+  const { locale } = useLocale();
+  const errorCopy = PURCHASE_ERROR_COPY[locale];
   const [records, setRecords] = useState<MemberCatalogPurchaseIntent[] | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
     let cancelled = false;
     loadJson<ListPayload>("/api/v1/member/purchase-intents")
       .then((payload) => { if (!cancelled) setRecords(Array.isArray(payload.records) ? payload.records : []); })
-      .catch((reason: unknown) => { if (!cancelled) setError(reason instanceof Error ? reason.message : "算力申请暂时无法读取。"); });
+      .catch((reason: unknown) => { if (!cancelled) setError(safeMarketplaceErrorMessage(reason, errorCopy.load, { requestIdLabel: errorCopy.requestId, retryAfter: errorCopy.retry })); });
     return () => { cancelled = true; };
-  }, []);
+  }, [errorCopy]);
   const visible = compact ? records?.slice(0, 3) : records;
   return <section className={styles.section} aria-labelledby={compact ? "member-compute-title" : "member-purchases-title"}>
     <div className={styles.head}>
@@ -67,6 +86,8 @@ export function MemberPurchaseIntentList({ compact = false }: { compact?: boolea
 }
 
 export function MemberPurchaseIntentDetail({ demandId, appealsEnabled = false, orderFlowEnabled = false }: { demandId: string; appealsEnabled?: boolean; orderFlowEnabled?: boolean }) {
+  const { locale } = useLocale();
+  const errorCopy = PURCHASE_ERROR_COPY[locale];
   const [record, setRecord] = useState<MemberCatalogPurchaseIntent | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -76,16 +97,16 @@ export function MemberPurchaseIntentDetail({ demandId, appealsEnabled = false, o
     let cancelled = false;
     loadJson<DetailPayload>(`/api/v1/member/purchase-intents/${encodeURIComponent(demandId)}`)
       .then((payload) => { if (!cancelled && payload.record) setRecord(payload.record); })
-      .catch((reason: unknown) => { if (!cancelled) setError(reason instanceof Error ? reason.message : "算力申请暂时无法读取。"); });
+      .catch((reason: unknown) => { if (!cancelled) setError(safeMarketplaceErrorMessage(reason, errorCopy.load, { requestIdLabel: errorCopy.requestId, retryAfter: errorCopy.retry })); });
     return () => { cancelled = true; };
-  }, [demandId]);
+  }, [demandId, errorCopy]);
   async function confirmDelivery() {
     if (!record || record.status !== "AWAITING_BUYER_ACCEPTANCE") return;
     setConfirming(true); setError(""); setNotice("");
     try {
       const result = await marketplacePost<MemberCatalogPurchaseIntent>(`/api/v1/member/purchase-intents/${encodeURIComponent(record.demandId)}/confirm-delivery`, { expectedVersion: record.statusVersion, note: acceptanceNote.trim() || undefined }, createIdempotencyKey("confirm-manual-delivery"));
       setRecord(result.record); setNotice("交付已确认。平台已记录你的确认时间和当前状态版本。 ");
-    } catch (reason) { setError(marketplaceErrorMessage(reason, "确认交付失败，请刷新状态后重试。")); }
+    } catch (reason) { setError(safeMarketplaceErrorMessage(reason, errorCopy.confirm, { requestIdLabel: errorCopy.requestId, retryAfter: errorCopy.retry })); }
     finally { setConfirming(false); }
   }
   async function copyConnection() {

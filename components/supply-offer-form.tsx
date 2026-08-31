@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
-import type { FormEvent } from "react";
-import { createIdempotencyKey, marketplaceErrorMessage } from "@/lib/client/marketplace-client";
+import { useRef, useState, type FormEvent } from "react";
+import { useLocale } from "@/components/locale-provider";
+import { createIdempotencyKey, MarketplaceApiError } from "@/lib/client/marketplace-client";
+import type { Locale } from "@/lib/i18n";
 import {
   createSupplyOffer,
   supplyApiUnavailable,
@@ -14,228 +15,87 @@ import {
   type SupplySupplierType,
 } from "@/components/supply-api-client";
 
-const supplierTypes: Array<{ value: SupplySupplierType; label: string }> = [
-  { value: "INDIVIDUAL", label: "个人供应方" },
-  { value: "COMPANY", label: "企业供应方" },
-  { value: "IDC", label: "IDC / 数据中心" },
-  { value: "CLOUD_VENDOR", label: "云厂商" },
-];
-
-const resourceTypes: Array<{ value: SupplyResourceType; label: string }> = [
-  { value: "GPU_CARD", label: "GPU 显卡" },
-  { value: "GPU_SERVER", label: "GPU 服务器 / 整机" },
-  { value: "CPU_SERVER", label: "CPU 服务器" },
-  { value: "MAC_COMPUTE", label: "Mac 算力" },
-  { value: "TOKEN_CAPACITY", label: "Token 容量" },
-  { value: "MODEL_INSTANCE", label: "模型实例" },
-  { value: "NAS_STORAGE", label: "NAS 存储" },
-  { value: "RACK_CAPACITY", label: "机柜容量" },
-  { value: "CLOUD_RESOURCE", label: "云厂商资源" },
-];
-
-const defaults: Record<SupplyResourceType, { product: string; specification: string }> = {
-  GPU_CARD: { product: "例如 NVIDIA L40S", specification: "例如 显存 48GB；PCIe；单卡交付；驱动与 CUDA 版本" },
-  GPU_SERVER: { product: "例如 4×RTX 4090 GPU 服务器", specification: "例如 GPU 型号及数量、显存、互联拓扑、CPU、内存、存储与网络" },
-  CPU_SERVER: { product: "例如 双路 EPYC 9654 服务器", specification: "例如 CPU 型号与核心数、内存、存储、网络和虚拟化方式" },
-  MAC_COMPUTE: { product: "例如 Mac mini M4 Pro", specification: "例如 芯片、统一内存、存储、macOS 版本和网络" },
-  TOKEN_CAPACITY: { product: "例如 推理 Token 容量", specification: "例如 模型范围、输入输出口径、并发、限速和有效期" },
-  MODEL_INSTANCE: { product: "例如 Qwen 推理实例", specification: "例如 模型版本、上下文长度、并发、吞吐和接口协议" },
-  NAS_STORAGE: { product: "例如 高性能 NAS 容量", specification: "例如 可用容量、协议、吞吐、IOPS、冗余与备份策略" },
-  RACK_CAPACITY: { product: "例如 20kW 高功率机柜", specification: "例如 U 位、功率、制冷、网络、PUE 和机房等级" },
-  CLOUD_RESOURCE: { product: "例如 云厂商资源包", specification: "例如 云厂商、资源 SKU、地域、配额、期限和交付方式" },
-};
-
-type UnitPair = { quantityUnit: SupplyQuantityUnit; pricingUnit: SupplyPricingUnit; label: string };
+const supplierTypes: SupplySupplierType[] = ["INDIVIDUAL", "COMPANY", "IDC", "CLOUD_VENDOR"];
+const resourceTypes: SupplyResourceType[] = ["GPU_CARD", "GPU_SERVER", "CPU_SERVER", "MAC_COMPUTE", "TOKEN_CAPACITY", "MODEL_INSTANCE", "NAS_STORAGE", "RACK_CAPACITY", "CLOUD_RESOURCE"];
+type UnitPair = { quantityUnit: SupplyQuantityUnit; pricingUnit: SupplyPricingUnit };
 const units: Record<SupplyResourceType, UnitPair[]> = {
-  GPU_CARD: [{ quantityUnit: "CARD", pricingUnit: "CARD_HOUR", label: "卡 / 卡时" }],
-  GPU_SERVER: [{ quantityUnit: "NODE", pricingUnit: "NODE_HOUR", label: "节点 / 节点时" }],
-  CPU_SERVER: [{ quantityUnit: "SERVER", pricingUnit: "SERVER_HOUR", label: "服务器 / 服务器时" }],
-  MAC_COMPUTE: [{ quantityUnit: "NODE", pricingUnit: "NODE_HOUR", label: "节点 / 节点时" }],
-  TOKEN_CAPACITY: [{ quantityUnit: "M_TOKENS_PER_HOUR", pricingUnit: "TOKEN_CAPACITY_HOUR", label: "百万 Token/小时 / 容量时" }],
-  MODEL_INSTANCE: [{ quantityUnit: "MODEL_INSTANCE", pricingUnit: "MODEL_INSTANCE_HOUR", label: "模型实例 / 实例时" }],
-  NAS_STORAGE: [{ quantityUnit: "TIB", pricingUnit: "TIB_HOUR", label: "TiB / TiB时" }],
-  RACK_CAPACITY: [
-    { quantityUnit: "RACK", pricingUnit: "RACK_MONTH", label: "整柜 / 柜月" },
-    { quantityUnit: "KW", pricingUnit: "KW_MONTH", label: "功率 kW / kW月" },
-  ],
-  CLOUD_RESOURCE: [{ quantityUnit: "QUOTA_UNIT", pricingUnit: "QUOTA_HOUR", label: "配额单位 / 配额时" }],
+  GPU_CARD: [{ quantityUnit: "CARD", pricingUnit: "CARD_HOUR" }], GPU_SERVER: [{ quantityUnit: "NODE", pricingUnit: "NODE_HOUR" }], CPU_SERVER: [{ quantityUnit: "SERVER", pricingUnit: "SERVER_HOUR" }], MAC_COMPUTE: [{ quantityUnit: "NODE", pricingUnit: "NODE_HOUR" }], TOKEN_CAPACITY: [{ quantityUnit: "M_TOKENS_PER_HOUR", pricingUnit: "TOKEN_CAPACITY_HOUR" }], MODEL_INSTANCE: [{ quantityUnit: "MODEL_INSTANCE", pricingUnit: "MODEL_INSTANCE_HOUR" }], NAS_STORAGE: [{ quantityUnit: "TIB", pricingUnit: "TIB_HOUR" }], RACK_CAPACITY: [{ quantityUnit: "RACK", pricingUnit: "RACK_MONTH" }, { quantityUnit: "KW", pricingUnit: "KW_MONTH" }], CLOUD_RESOURCE: [{ quantityUnit: "QUOTA_UNIT", pricingUnit: "QUOTA_HOUR" }],
+};
+const unitKeys = ["CARD:CARD_HOUR", "NODE:NODE_HOUR", "SERVER:SERVER_HOUR", "M_TOKENS_PER_HOUR:TOKEN_CAPACITY_HOUR", "MODEL_INSTANCE:MODEL_INSTANCE_HOUR", "TIB:TIB_HOUR", "RACK:RACK_MONTH", "KW:KW_MONTH", "QUOTA_UNIT:QUOTA_HOUR"] as const;
+const regions = ["全国", "华北", "华东", "华南", "西南", "西北", "海外"] as const;
+const deliveryForms = ["平台账号交付", "独占 SSH", "API 调用", "专线 / VPN", "控制台授权", "线下机房交付", "其他（见备注）"] as const;
+
+type FormCopy = {
+  kicker: string; title: string; lead: string;
+  success: readonly [string, string];
+  labels: readonly [string, string, string, string, string, string, string, string, string, string, string];
+  apiValue: string; notesPlaceholder: string; buttons: readonly [string, string, string, string];
+  boundary: readonly [string, string, string, string, string, string, string];
+  validation: readonly [string, string, string, string]; apiUnavailable: string; submitFailed: string; requestId: string;
+  supplierLabels: readonly string[]; resourceLabels: readonly string[]; unitLabels: readonly string[]; regionLabels: readonly string[]; deliveryLabels: readonly string[];
+  example: string; specPlaceholder: string;
 };
 
-const regions = ["全国", "华北", "华东", "华南", "西南", "西北", "海外"];
-const deliveryForms = ["平台账号交付", "独占 SSH", "API 调用", "专线 / VPN", "控制台授权", "线下机房交付", "其他（见备注）"];
+const FORM_COPY: Record<Locale, FormCopy> = {
+  "zh-CN": { kicker: "通用供给申报", title: "提交上架申请", lead: "个人、企业、IDC 与云厂商均可申报；本阶段只收集资源信息并进入管理员人工审核，不要求安装 Agent 或完成设备验真。", success: ["管理员已收到上架申请", "记录已经写入服务端数据库；这不代表已公开挂牌或已成交。"], labels: ["供应方身份", "资源类型", "产品 / 资源名称", "规格说明", "可供数量", "数量 / 计价口径", "资源地区", "交付方式", "可用开始时间（可选）", "可用结束时间（可选）", "补充说明"], apiValue: "接口值", notesPlaceholder: "例如最低起售量、网络边界、维护窗口或资质说明；不要填写密码、私钥。", buttons: ["正在提交…", "已提交服务端", "提交上架申请", "查看申请记录"], boundary: ["申报边界", "本次只登记供给", "交易方式暂不选择，提交后不会自动成交。", "计价单位用于表达报价口径，不代替后续价格审核。", "本次提交不要求安装 Agent，也不会自动发起硬件验真。", "管理员可在后台查看组织、账号、规格、数量和备注。", "接口缺失或请求失败时不在浏览器生成假记录。"], validation: ["请完整填写产品名称和规格说明。", "数量必须是 1–100000 之间的整数。", "可用开始时间与结束时间需要同时填写，或同时留空。", "可用结束时间必须晚于开始时间。"], apiUnavailable: "通用上架 API 尚未就绪，本页没有保存或生成任何假记录。", submitFailed: "资源上架未完成，请核对填写内容后重试。", requestId: "请求编号", supplierLabels: ["个人供应方", "企业供应方", "IDC / 数据中心", "云厂商"], resourceLabels: ["GPU 显卡", "GPU 服务器 / 整机", "CPU 服务器", "Mac 算力", "Token 容量", "模型实例", "NAS 存储", "机柜容量", "云厂商资源"], unitLabels: ["卡 / 卡时", "节点 / 节点时", "服务器 / 服务器时", "百万 Token/小时 / 容量时", "模型实例 / 实例时", "TiB / TiB时", "整柜 / 柜月", "功率 kW / kW月", "配额单位 / 配额时"], regionLabels: ["全国", "华北", "华东", "华南", "西南", "西北", "海外"], deliveryLabels: ["平台账号交付", "独占 SSH", "API 调用", "专线 / VPN", "控制台授权", "线下机房交付", "其他（见备注）"], example: "例如", specPlaceholder: "请填写型号、容量、性能、软件、网络和交付边界" },
+  "zh-TW": { kicker: "通用供給申報", title: "提交上架申請", lead: "個人、企業、IDC 與雲端供應商均可申報；本階段只收集資源資料並進入人工審核，不要求安裝 Agent 或完成驗真。", success: ["管理員已收到上架申請", "記錄已寫入伺服器資料庫；這不代表已公開掛牌或成交。"], labels: ["供應方身分", "資源類型", "產品 / 資源名稱", "規格說明", "可供數量", "數量 / 計價口徑", "資源地區", "交付方式", "可用開始時間（選填）", "可用結束時間（選填）", "補充說明"], apiValue: "介面值", notesPlaceholder: "例如最低數量、網路邊界、維護時段或資質；請勿填寫密碼、私鑰。", buttons: ["正在提交…", "已提交伺服器", "提交上架申請", "查看申請記錄"], boundary: ["申報邊界", "本次只登記供給", "暫不選擇交易方式，提交後不會自動成交。", "計價單位僅表達報價口徑，不取代後續審核。", "本次不要求安裝 Agent，也不會自動驗真。", "管理員可查看組織、帳號、規格、數量與備註。", "介面缺失或失敗時不會在瀏覽器產生假記錄。"], validation: ["請完整填寫產品名稱與規格。", "數量必須是 1–100000 的整數。", "開始與結束時間需同時填寫或同時留空。", "結束時間必須晚於開始時間。"], apiUnavailable: "通用上架介面尚未就緒，本頁未儲存或產生任何假記錄。", submitFailed: "資源上架未完成，請檢查後重試。", requestId: "請求編號", supplierLabels: ["個人供應方", "企業供應方", "IDC / 資料中心", "雲端供應商"], resourceLabels: ["GPU 顯示卡", "GPU 伺服器 / 整機", "CPU 伺服器", "Mac 算力", "Token 容量", "模型執行個體", "NAS 儲存", "機櫃容量", "雲端資源"], unitLabels: ["卡 / 卡時", "節點 / 節點時", "伺服器 / 伺服器時", "百萬 Token/小時 / 容量時", "模型執行個體 / 執行個體時", "TiB / TiB時", "整櫃 / 櫃月", "功率 kW / kW月", "配額單位 / 配額時"], regionLabels: ["全國", "華北", "華東", "華南", "西南", "西北", "海外"], deliveryLabels: ["平台帳號交付", "獨占 SSH", "API 呼叫", "專線 / VPN", "控制台授權", "線下機房交付", "其他（見備註）"], example: "例如", specPlaceholder: "請填寫型號、容量、效能、軟體、網路與交付邊界" },
+  en: { kicker: "General supply declaration", title: "Submit a listing application", lead: "Individuals, companies, IDCs, and cloud vendors may apply. This stage records resource details for manual review; Agent installation and device verification are not required.", success: ["The administrator received your application", "The record is stored in the server database; it is not yet publicly listed or sold."], labels: ["Supplier type", "Resource type", "Product / resource name", "Specifications", "Available quantity", "Quantity / pricing basis", "Resource region", "Delivery method", "Available from (optional)", "Available until (optional)", "Additional notes"], apiValue: "API value", notesPlaceholder: "Add minimum quantity, network boundaries, maintenance windows, or qualifications. Never enter passwords or private keys.", buttons: ["Submitting…", "Submitted to server", "Submit application", "View applications"], boundary: ["Declaration boundary", "This submission only registers supply", "No transaction method is selected and submission does not create a sale.", "Pricing units express a quote basis and do not replace price review.", "This submission neither requires Agent installation nor starts hardware verification.", "Administrators can review the organization, account, specifications, quantity, and notes.", "A missing or failed API never creates a fake browser record."], validation: ["Enter a complete product name and specification.", "Quantity must be an integer from 1 to 100000.", "Enter both availability times or leave both blank.", "The end time must be later than the start time."], apiUnavailable: "The general listing API is not ready. No record was saved or fabricated.", submitFailed: "The listing was not submitted. Check the form and try again.", requestId: "Request ID", supplierLabels: ["Individual", "Company", "IDC / data center", "Cloud vendor"], resourceLabels: ["GPU card", "GPU server / appliance", "CPU server", "Mac compute", "Token capacity", "Model instance", "NAS storage", "Rack capacity", "Cloud resource"], unitLabels: ["card / card-hour", "node / node-hour", "server / server-hour", "million tokens/hour / capacity-hour", "model instance / instance-hour", "TiB / TiB-hour", "rack / rack-month", "power kW / kW-month", "quota unit / quota-hour"], regionLabels: ["Nationwide", "North China", "East China", "South China", "Southwest China", "Northwest China", "Overseas"], deliveryLabels: ["Platform account", "Exclusive SSH", "API access", "Private line / VPN", "Console authorization", "On-site data center", "Other (see notes)"], example: "e.g.", specPlaceholder: "Include model, capacity, performance, software, network, and delivery boundaries" },
+  ja: { kicker: "一般供給申告", title: "掲載申請を提出", lead: "個人、企業、IDC、クラウド事業者が申請できます。この段階では手動審査用の情報のみ収集し、Agent導入や検証は不要です。", success: ["管理者が申請を受領しました", "記録はサーバーに保存されましたが、公開掲載や成約ではありません。"], labels: ["供給者種別", "リソース種別", "製品 / リソース名", "仕様", "供給可能数", "数量 / 価格単位", "地域", "納品方法", "利用開始（任意）", "利用終了（任意）", "補足"], apiValue: "API値", notesPlaceholder: "最低数量、ネットワーク境界、保守時間、資格など。パスワードや秘密鍵は入力しないでください。", buttons: ["送信中…", "サーバーへ送信済み", "掲載申請を提出", "申請記録を見る"], boundary: ["申告範囲", "今回は供給情報のみ登録", "取引方法は未選択で、自動成約しません。", "価格単位は見積基準であり、価格審査に代わりません。", "Agent導入やハードウェア検証は開始しません。", "管理者は組織、アカウント、仕様、数量、備考を確認できます。", "API失敗時に偽の記録を生成しません。"], validation: ["製品名と仕様を完全に入力してください。", "数量は1～100000の整数にしてください。", "開始と終了を両方入力するか、両方空欄にしてください。", "終了は開始より後にしてください。"], apiUnavailable: "一般掲載APIは未準備です。記録は保存・生成されていません。", submitFailed: "掲載申請を完了できません。入力を確認して再試行してください。", requestId: "リクエストID", supplierLabels: ["個人", "企業", "IDC / データセンター", "クラウド事業者"], resourceLabels: ["GPUカード", "GPUサーバー / 一式", "CPUサーバー", "Mac計算資源", "Token容量", "モデルインスタンス", "NASストレージ", "ラック容量", "クラウド資源"], unitLabels: ["カード / カード時間", "ノード / ノード時間", "サーバー / サーバー時間", "百万Token/時 / 容量時間", "モデル / インスタンス時間", "TiB / TiB時間", "ラック / ラック月", "電力kW / kW月", "割当単位 / 割当時間"], regionLabels: ["全国", "華北", "華東", "華南", "西南", "西北", "海外"], deliveryLabels: ["プラットフォームアカウント", "専用SSH", "APIアクセス", "専用線 / VPN", "コンソール権限", "現地データセンター", "その他（備考参照）"], example: "例", specPlaceholder: "型番、容量、性能、ソフトウェア、ネットワーク、納品境界を記載" },
+  ko: { kicker: "일반 공급 신고", title: "등록 신청 제출", lead: "개인, 기업, IDC 및 클라우드 사업자가 신청할 수 있습니다. 이 단계에서는 수동 검토용 정보만 수집하며 Agent 설치나 검증은 필요하지 않습니다.", success: ["관리자가 신청을 받았습니다", "기록이 서버에 저장되었지만 공개 게시 또는 거래를 의미하지 않습니다."], labels: ["공급자 유형", "리소스 유형", "제품 / 리소스 이름", "사양", "공급 수량", "수량 / 가격 기준", "리소스 지역", "인도 방식", "사용 시작(선택)", "사용 종료(선택)", "추가 설명"], apiValue: "API 값", notesPlaceholder: "최소 수량, 네트워크 경계, 유지보수 시간 또는 자격을 입력하세요. 암호나 개인 키는 입력하지 마세요.", buttons: ["제출 중…", "서버에 제출됨", "등록 신청 제출", "신청 기록 보기"], boundary: ["신고 범위", "이번 제출은 공급 정보만 등록", "거래 방식은 선택하지 않으며 자동 거래되지 않습니다.", "가격 단위는 견적 기준이며 가격 검토를 대체하지 않습니다.", "Agent 설치나 하드웨어 검증을 시작하지 않습니다.", "관리자는 조직, 계정, 사양, 수량 및 메모를 볼 수 있습니다.", "API 실패 시 가짜 기록을 만들지 않습니다."], validation: ["제품 이름과 사양을 완전하게 입력하세요.", "수량은 1~100000 사이의 정수여야 합니다.", "시작과 종료 시간을 모두 입력하거나 모두 비워 두세요.", "종료 시간은 시작 시간보다 늦어야 합니다."], apiUnavailable: "일반 등록 API가 준비되지 않았습니다. 어떤 기록도 저장하거나 생성하지 않았습니다.", submitFailed: "등록을 완료하지 못했습니다. 입력을 확인하고 다시 시도하세요.", requestId: "요청 ID", supplierLabels: ["개인", "기업", "IDC / 데이터 센터", "클라우드 사업자"], resourceLabels: ["GPU 카드", "GPU 서버 / 장비", "CPU 서버", "Mac 컴퓨팅", "Token 용량", "모델 인스턴스", "NAS 스토리지", "랙 용량", "클라우드 리소스"], unitLabels: ["카드 / 카드시간", "노드 / 노드시간", "서버 / 서버시간", "백만 Token/시간 / 용량시간", "모델 인스턴스 / 인스턴스시간", "TiB / TiB시간", "랙 / 랙월", "전력 kW / kW월", "할당 단위 / 할당시간"], regionLabels: ["전국", "화북", "화동", "화남", "서남", "서북", "해외"], deliveryLabels: ["플랫폼 계정", "전용 SSH", "API 접근", "전용선 / VPN", "콘솔 권한", "현장 데이터 센터", "기타(메모 참조)"], example: "예", specPlaceholder: "모델, 용량, 성능, 소프트웨어, 네트워크 및 인도 경계를 입력" },
+  fr: { kicker: "Déclaration générale d’offre", title: "Soumettre une demande de publication", lead: "Particuliers, entreprises, IDC et fournisseurs cloud peuvent déclarer une ressource. Cette étape recueille les informations pour examen manuel, sans Agent ni vérification.", success: ["L’administrateur a reçu la demande", "L’enregistrement est stocké sur le serveur ; il n’est ni publié ni vendu."], labels: ["Type de fournisseur", "Type de ressource", "Nom du produit / ressource", "Caractéristiques", "Quantité disponible", "Quantité / base de prix", "Région", "Mode de livraison", "Disponible à partir de (facultatif)", "Disponible jusqu’au (facultatif)", "Informations complémentaires"], apiValue: "Valeur API", notesPlaceholder: "Ajoutez quantité minimale, limites réseau, maintenance ou qualifications. Ne saisissez jamais de mot de passe ni de clé privée.", buttons: ["Envoi…", "Envoyé au serveur", "Soumettre la demande", "Voir les demandes"], boundary: ["Périmètre", "Cette demande enregistre uniquement l’offre", "Aucun mode de transaction n’est choisi et aucune vente n’est automatique.", "Les unités expriment le devis sans remplacer l’examen du prix.", "Aucune installation d’Agent ni vérification n’est lancée.", "Les administrateurs voient organisation, compte, caractéristiques, quantité et notes.", "Une API absente ou en échec ne crée jamais de faux enregistrement."], validation: ["Renseignez le nom et les caractéristiques.", "La quantité doit être un entier de 1 à 100000.", "Renseignez les deux dates ou laissez-les vides.", "La fin doit être postérieure au début."], apiUnavailable: "L’API de publication n’est pas prête. Aucun enregistrement n’a été sauvegardé ou inventé.", submitFailed: "La demande n’a pas abouti. Vérifiez le formulaire et réessayez.", requestId: "ID de requête", supplierLabels: ["Particulier", "Entreprise", "IDC / centre de données", "Fournisseur cloud"], resourceLabels: ["Carte GPU", "Serveur GPU / appliance", "Serveur CPU", "Calcul Mac", "Capacité Token", "Instance de modèle", "Stockage NAS", "Capacité de baie", "Ressource cloud"], unitLabels: ["carte / heure-carte", "nœud / heure-nœud", "serveur / heure-serveur", "million Token/h / heure-capacité", "instance / heure-instance", "TiB / heure-TiB", "baie / mois-baie", "puissance kW / mois-kW", "unité quota / heure-quota"], regionLabels: ["National", "Chine du Nord", "Chine de l’Est", "Chine du Sud", "Sud-Ouest", "Nord-Ouest", "Étranger"], deliveryLabels: ["Compte plateforme", "SSH exclusif", "Accès API", "Ligne privée / VPN", "Autorisation console", "Centre de données sur site", "Autre (voir notes)"], example: "ex.", specPlaceholder: "Indiquez modèle, capacité, performance, logiciel, réseau et limites de livraison" },
+  th: { kicker: "การแจ้งทรัพยากรทั่วไป", title: "ส่งคำขอลงรายการ", lead: "บุคคล บริษัท IDC และผู้ให้บริการคลาวด์สมัครได้ ขั้นตอนนี้เก็บข้อมูลเพื่อให้เจ้าหน้าที่ตรวจสอบ โดยไม่ต้องติดตั้ง Agent หรือตรวจอุปกรณ์", success: ["ผู้ดูแลได้รับคำขอแล้ว", "บันทึกถูกเก็บในเซิร์ฟเวอร์ แต่ยังไม่ใช่รายการสาธารณะหรือการขาย"], labels: ["ประเภทผู้ให้บริการ", "ประเภททรัพยากร", "ชื่อผลิตภัณฑ์ / ทรัพยากร", "ข้อมูลจำเพาะ", "จำนวนที่ให้บริการ", "จำนวน / หลักราคา", "ภูมิภาค", "วิธีส่งมอบ", "เริ่มพร้อมใช้ (ไม่บังคับ)", "สิ้นสุด (ไม่บังคับ)", "หมายเหตุ"], apiValue: "ค่า API", notesPlaceholder: "ระบุขั้นต่ำ ขอบเขตเครือข่าย เวลาบำรุงรักษา หรือคุณสมบัติ ห้ามใส่รหัสผ่านหรือคีย์ส่วนตัว", buttons: ["กำลังส่ง…", "ส่งไปยังเซิร์ฟเวอร์แล้ว", "ส่งคำขอ", "ดูคำขอ"], boundary: ["ขอบเขตการแจ้ง", "ครั้งนี้ลงทะเบียนเฉพาะข้อมูลทรัพยากร", "ยังไม่เลือกวิธีซื้อขายและไม่เกิดรายการอัตโนมัติ", "หน่วยราคาใช้เป็นหลักเสนอราคา ไม่แทนการตรวจราคา", "ไม่ติดตั้ง Agent หรือเริ่มตรวจฮาร์ดแวร์", "ผู้ดูแลดูองค์กร บัญชี สเปก จำนวน และหมายเหตุได้", "หาก API ขาดหรือผิดพลาด จะไม่สร้างข้อมูลปลอม"], validation: ["กรอกชื่อผลิตภัณฑ์และสเปกให้ครบ", "จำนวนต้องเป็นจำนวนเต็ม 1–100000", "กรอกเวลาเริ่มและสิ้นสุดทั้งคู่ หรือเว้นว่างทั้งคู่", "เวลาสิ้นสุดต้องหลังเวลาเริ่ม"], apiUnavailable: "API ลงรายการยังไม่พร้อม ไม่มีการบันทึกหรือสร้างข้อมูลปลอม", submitFailed: "ส่งรายการไม่สำเร็จ โปรดตรวจข้อมูลแล้วลองใหม่", requestId: "รหัสคำขอ", supplierLabels: ["บุคคล", "บริษัท", "IDC / ศูนย์ข้อมูล", "ผู้ให้บริการคลาวด์"], resourceLabels: ["การ์ด GPU", "เซิร์ฟเวอร์ GPU / เครื่อง", "เซิร์ฟเวอร์ CPU", "Mac compute", "ความจุ Token", "อินสแตนซ์โมเดล", "ที่เก็บ NAS", "ความจุแร็ก", "ทรัพยากรคลาวด์"], unitLabels: ["การ์ด / ชั่วโมงการ์ด", "โหนด / ชั่วโมงโหนด", "เซิร์ฟเวอร์ / ชั่วโมงเซิร์ฟเวอร์", "ล้าน Token/ชม. / ชั่วโมงความจุ", "อินสแตนซ์ / ชั่วโมงอินสแตนซ์", "TiB / ชั่วโมง TiB", "แร็ก / เดือน", "กำลัง kW / เดือน", "หน่วยโควตา / ชั่วโมง"], regionLabels: ["ทั่วประเทศ", "จีนเหนือ", "จีนตะวันออก", "จีนใต้", "ตะวันตกเฉียงใต้", "ตะวันตกเฉียงเหนือ", "ต่างประเทศ"], deliveryLabels: ["บัญชีแพลตฟอร์ม", "SSH เฉพาะ", "API", "สายเฉพาะ / VPN", "สิทธิ์คอนโซล", "ส่งมอบที่ศูนย์ข้อมูล", "อื่น ๆ (ดูหมายเหตุ)"], example: "เช่น", specPlaceholder: "ระบุรุ่น ความจุ ประสิทธิภาพ ซอฟต์แวร์ เครือข่าย และขอบเขตส่งมอบ" },
+  vi: { kicker: "Khai báo nguồn cung chung", title: "Gửi đơn đăng nguồn lực", lead: "Cá nhân, doanh nghiệp, IDC và nhà cung cấp cloud đều có thể đăng ký. Giai đoạn này chỉ thu thập thông tin để xét duyệt thủ công, không yêu cầu Agent hay xác minh thiết bị.", success: ["Quản trị viên đã nhận đơn", "Bản ghi đã lưu trên máy chủ; chưa phải đăng công khai hoặc giao dịch."], labels: ["Loại nhà cung cấp", "Loại tài nguyên", "Tên sản phẩm / tài nguyên", "Thông số", "Số lượng cung cấp", "Số lượng / cơ sở tính giá", "Khu vực", "Phương thức bàn giao", "Bắt đầu khả dụng (tùy chọn)", "Kết thúc (tùy chọn)", "Ghi chú"], apiValue: "Giá trị API", notesPlaceholder: "Nêu số lượng tối thiểu, giới hạn mạng, bảo trì hoặc chứng nhận. Không nhập mật khẩu hay khóa riêng.", buttons: ["Đang gửi…", "Đã gửi máy chủ", "Gửi đơn", "Xem đơn"], boundary: ["Phạm vi khai báo", "Lần này chỉ đăng ký nguồn cung", "Chưa chọn phương thức giao dịch và không tự động phát sinh giao dịch.", "Đơn vị giá chỉ thể hiện cơ sở báo giá, không thay thế xét duyệt giá.", "Không cài Agent hoặc tự động xác minh phần cứng.", "Quản trị viên có thể xem tổ chức, tài khoản, thông số, số lượng và ghi chú.", "API thiếu hoặc lỗi không tạo bản ghi giả."], validation: ["Hãy nhập đầy đủ tên sản phẩm và thông số.", "Số lượng phải là số nguyên từ 1 đến 100000.", "Nhập cả hai thời gian hoặc để trống cả hai.", "Thời gian kết thúc phải sau thời gian bắt đầu."], apiUnavailable: "API đăng nguồn lực chưa sẵn sàng. Không có bản ghi nào được lưu hoặc tạo giả.", submitFailed: "Chưa gửi được nguồn lực. Kiểm tra thông tin và thử lại.", requestId: "Mã yêu cầu", supplierLabels: ["Cá nhân", "Doanh nghiệp", "IDC / trung tâm dữ liệu", "Nhà cung cấp cloud"], resourceLabels: ["Card GPU", "Máy chủ GPU / nguyên máy", "Máy chủ CPU", "Năng lực Mac", "Dung lượng Token", "Phiên bản mô hình", "Lưu trữ NAS", "Dung lượng tủ rack", "Tài nguyên cloud"], unitLabels: ["card / giờ-card", "node / giờ-node", "máy chủ / giờ-máy chủ", "triệu Token/giờ / giờ-dung lượng", "phiên bản / giờ-phiên bản", "TiB / giờ-TiB", "tủ / tháng-tủ", "công suất kW / tháng-kW", "đơn vị quota / giờ-quota"], regionLabels: ["Toàn quốc", "Hoa Bắc", "Hoa Đông", "Hoa Nam", "Tây Nam", "Tây Bắc", "Nước ngoài"], deliveryLabels: ["Tài khoản nền tảng", "SSH độc quyền", "Truy cập API", "Đường truyền riêng / VPN", "Ủy quyền console", "Bàn giao tại trung tâm dữ liệu", "Khác (xem ghi chú)"], example: "ví dụ", specPlaceholder: "Nêu model, dung lượng, hiệu năng, phần mềm, mạng và giới hạn bàn giao" },
+  id: { kicker: "Deklarasi pasokan umum", title: "Kirim pengajuan listing", lead: "Individu, perusahaan, IDC, dan vendor cloud dapat mengajukan. Tahap ini hanya mencatat informasi untuk tinjauan manual tanpa instalasi Agent atau verifikasi perangkat.", success: ["Administrator menerima pengajuan", "Catatan tersimpan di server; belum menjadi listing publik atau transaksi."], labels: ["Jenis pemasok", "Jenis sumber daya", "Nama produk / sumber daya", "Spesifikasi", "Jumlah tersedia", "Jumlah / dasar harga", "Wilayah", "Metode pengiriman", "Mulai tersedia (opsional)", "Berakhir (opsional)", "Catatan tambahan"], apiValue: "Nilai API", notesPlaceholder: "Tambahkan jumlah minimum, batas jaringan, jadwal perawatan, atau kualifikasi. Jangan masukkan kata sandi atau kunci privat.", buttons: ["Mengirim…", "Terkirim ke server", "Kirim pengajuan", "Lihat pengajuan"], boundary: ["Batas deklarasi", "Pengajuan ini hanya mendaftarkan pasokan", "Metode transaksi belum dipilih dan tidak ada transaksi otomatis.", "Unit harga hanya menyatakan dasar penawaran, bukan pengganti tinjauan harga.", "Tidak ada instalasi Agent atau verifikasi perangkat otomatis.", "Administrator dapat melihat organisasi, akun, spesifikasi, jumlah, dan catatan.", "API yang gagal tidak membuat catatan palsu."], validation: ["Isi nama produk dan spesifikasi dengan lengkap.", "Jumlah harus bilangan bulat 1–100000.", "Isi kedua waktu atau kosongkan keduanya.", "Waktu akhir harus setelah waktu mulai."], apiUnavailable: "API listing belum siap. Tidak ada catatan yang disimpan atau dibuat palsu.", submitFailed: "Listing belum terkirim. Periksa formulir dan coba lagi.", requestId: "ID permintaan", supplierLabels: ["Individu", "Perusahaan", "IDC / pusat data", "Vendor cloud"], resourceLabels: ["Kartu GPU", "Server GPU / appliance", "Server CPU", "Komputasi Mac", "Kapasitas Token", "Instans model", "Penyimpanan NAS", "Kapasitas rak", "Sumber daya cloud"], unitLabels: ["kartu / jam-kartu", "node / jam-node", "server / jam-server", "juta Token/jam / jam-kapasitas", "instans / jam-instans", "TiB / jam-TiB", "rak / bulan-rak", "daya kW / bulan-kW", "unit kuota / jam-kuota"], regionLabels: ["Nasional", "Tiongkok Utara", "Tiongkok Timur", "Tiongkok Selatan", "Barat Daya", "Barat Laut", "Luar negeri"], deliveryLabels: ["Akun platform", "SSH eksklusif", "Akses API", "Jalur privat / VPN", "Otorisasi konsol", "Pusat data di lokasi", "Lainnya (lihat catatan)"], example: "mis.", specPlaceholder: "Cantumkan model, kapasitas, kinerja, perangkat lunak, jaringan, dan batas pengiriman" },
+  ms: { kicker: "Pengisytiharan bekalan umum", title: "Hantar permohonan penyenaraian", lead: "Individu, syarikat, IDC dan vendor awan boleh memohon. Tahap ini hanya merekod maklumat untuk semakan manual tanpa pemasangan Agent atau pengesahan peranti.", success: ["Pentadbir menerima permohonan", "Rekod disimpan pada pelayan; ia belum disenaraikan atau dijual."], labels: ["Jenis pembekal", "Jenis sumber", "Nama produk / sumber", "Spesifikasi", "Kuantiti tersedia", "Kuantiti / asas harga", "Wilayah", "Kaedah penghantaran", "Mula tersedia (pilihan)", "Tamat (pilihan)", "Nota tambahan"], apiValue: "Nilai API", notesPlaceholder: "Tambah kuantiti minimum, sempadan rangkaian, penyelenggaraan atau kelayakan. Jangan masukkan kata laluan atau kunci peribadi.", buttons: ["Menghantar…", "Dihantar ke pelayan", "Hantar permohonan", "Lihat permohonan"], boundary: ["Sempadan pengisytiharan", "Permohonan ini hanya mendaftarkan bekalan", "Kaedah transaksi belum dipilih dan tiada transaksi automatik.", "Unit harga menyatakan asas sebut harga, bukan menggantikan semakan harga.", "Tiada pemasangan Agent atau pengesahan perkakasan automatik.", "Pentadbir boleh melihat organisasi, akaun, spesifikasi, kuantiti dan nota.", "API yang gagal tidak menghasilkan rekod palsu."], validation: ["Isi nama produk dan spesifikasi dengan lengkap.", "Kuantiti mestilah integer 1–100000.", "Isi kedua-dua masa atau kosongkan kedua-duanya.", "Masa tamat mesti selepas masa mula."], apiUnavailable: "API penyenaraian belum sedia. Tiada rekod disimpan atau direka.", submitFailed: "Penyenaraian belum dihantar. Semak borang dan cuba lagi.", requestId: "ID permintaan", supplierLabels: ["Individu", "Syarikat", "IDC / pusat data", "Vendor awan"], resourceLabels: ["Kad GPU", "Pelayan GPU / perkakas", "Pelayan CPU", "Pengkomputeran Mac", "Kapasiti Token", "Kejadian model", "Storan NAS", "Kapasiti rak", "Sumber awan"], unitLabels: ["kad / jam-kad", "nod / jam-nod", "pelayan / jam-pelayan", "juta Token/jam / jam-kapasiti", "kejadian / jam-kejadian", "TiB / jam-TiB", "rak / bulan-rak", "kuasa kW / bulan-kW", "unit kuota / jam-kuota"], regionLabels: ["Seluruh negara", "China Utara", "China Timur", "China Selatan", "Barat Daya", "Barat Laut", "Luar negara"], deliveryLabels: ["Akaun platform", "SSH eksklusif", "Akses API", "Talian persendirian / VPN", "Kebenaran konsol", "Pusat data di lokasi", "Lain-lain (lihat nota)"], example: "cth.", specPlaceholder: "Nyatakan model, kapasiti, prestasi, perisian, rangkaian dan sempadan penghantaran" },
+};
 
-function optionalIso(value: string) {
-  return value ? new Date(value).toISOString() : undefined;
-}
+function optionalIso(value: string) { return value ? new Date(value).toISOString() : undefined; }
+function unitLabel(copy: FormCopy, pair: UnitPair) { const index = unitKeys.indexOf(`${pair.quantityUnit}:${pair.pricingUnit}` as (typeof unitKeys)[number]); return copy.unitLabels[index] ?? `${pair.quantityUnit} / ${pair.pricingUnit}`; }
 
 export function SupplyOfferForm() {
+  const { locale } = useLocale();
+  const copy = FORM_COPY[locale];
   const [supplierType, setSupplierType] = useState<SupplySupplierType>("COMPANY");
   const [resourceType, setResourceType] = useState<SupplyResourceType>("GPU_SERVER");
-  const [productName, setProductName] = useState("");
-  const [specification, setSpecification] = useState("");
-  const [quantity, setQuantity] = useState("1");
-  const [quantityUnit, setQuantityUnit] = useState<SupplyQuantityUnit>(units.GPU_SERVER[0].quantityUnit);
-  const [pricingUnit, setPricingUnit] = useState<SupplyPricingUnit>(units.GPU_SERVER[0].pricingUnit);
-  const [region, setRegion] = useState("全国");
-  const [deliveryForm, setDeliveryForm] = useState("平台账号交付");
-  const [availabilityStartAt, setAvailabilityStartAt] = useState("");
-  const [availabilityEndAt, setAvailabilityEndAt] = useState("");
-  const [notes, setNotes] = useState("");
-  const [offer, setOffer] = useState<SupplyOffer | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [productName, setProductName] = useState(""); const [specification, setSpecification] = useState(""); const [quantity, setQuantity] = useState("1");
+  const [quantityUnit, setQuantityUnit] = useState<SupplyQuantityUnit>(units.GPU_SERVER[0].quantityUnit); const [pricingUnit, setPricingUnit] = useState<SupplyPricingUnit>(units.GPU_SERVER[0].pricingUnit);
+  const [region, setRegion] = useState("全国"); const [deliveryForm, setDeliveryForm] = useState("平台账号交付"); const [availabilityStartAt, setAvailabilityStartAt] = useState(""); const [availabilityEndAt, setAvailabilityEndAt] = useState(""); const [notes, setNotes] = useState("");
+  const [offer, setOffer] = useState<SupplyOffer | null>(null); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const mutationKey = useRef(createIdempotencyKey("general-offer"));
-
-  function changeResourceType(next: SupplyResourceType) {
-    setResourceType(next);
-    setQuantityUnit(units[next][0].quantityUnit);
-    setPricingUnit(units[next][0].pricingUnit);
-  }
-
-  function changeUnits(value: string) {
-    const pair = units[resourceType].find((item) => `${item.quantityUnit}:${item.pricingUnit}` === value);
-    if (!pair) return;
-    setQuantityUnit(pair.quantityUnit);
-    setPricingUnit(pair.pricingUnit);
-  }
-
+  function changeResourceType(next: SupplyResourceType) { setResourceType(next); setQuantityUnit(units[next][0].quantityUnit); setPricingUnit(units[next][0].pricingUnit); }
+  function changeUnits(value: string) { const pair = units[resourceType].find((item) => `${item.quantityUnit}:${item.pricingUnit}` === value); if (pair) { setQuantityUnit(pair.quantityUnit); setPricingUnit(pair.pricingUnit); } }
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    const parsedQuantity = Number(quantity);
-    if (productName.trim().length < 2 || specification.trim().length < 2) {
-      setError("请完整填写产品名称和规格说明。");
-      return;
-    }
-    if (!Number.isInteger(parsedQuantity) || parsedQuantity < 1 || parsedQuantity > 100_000) {
-      setError("数量必须是 1–100000 之间的整数。");
-      return;
-    }
-    if (Boolean(availabilityStartAt) !== Boolean(availabilityEndAt)) {
-      setError("可用开始时间与结束时间需要同时填写，或同时留空。");
-      return;
-    }
-    if (availabilityStartAt && availabilityEndAt && Date.parse(availabilityEndAt) <= Date.parse(availabilityStartAt)) {
-      setError("可用结束时间必须晚于开始时间。");
-      return;
-    }
-
+    event.preventDefault(); setError(""); const parsedQuantity = Number(quantity);
+    if (productName.trim().length < 2 || specification.trim().length < 2) return setError(copy.validation[0]);
+    if (!Number.isInteger(parsedQuantity) || parsedQuantity < 1 || parsedQuantity > 100_000) return setError(copy.validation[1]);
+    if (Boolean(availabilityStartAt) !== Boolean(availabilityEndAt)) return setError(copy.validation[2]);
+    if (availabilityStartAt && availabilityEndAt && Date.parse(availabilityEndAt) <= Date.parse(availabilityStartAt)) return setError(copy.validation[3]);
     setBusy(true);
-    try {
-      const result = await createSupplyOffer({
-        supplierType,
-        resourceType,
-        productName: productName.trim(),
-        specification: specification.trim(),
-        quantity: parsedQuantity,
-        quantityUnit,
-        pricingUnit,
-        region,
-        deliveryForm,
-        ...(availabilityStartAt ? { availabilityStartAt: optionalIso(availabilityStartAt) } : {}),
-        ...(availabilityEndAt ? { availabilityEndAt: optionalIso(availabilityEndAt) } : {}),
-        notes: notes.trim() || null,
-      }, mutationKey.current);
-      setOffer(result.record);
-    } catch (submitError) {
-      setError(supplyApiUnavailable(submitError)
-        ? "通用上架 API 尚未就绪，本页没有保存或生成任何假记录。"
-        : marketplaceErrorMessage(submitError, "资源上架未完成，请核对填写内容后重试。"));
-    } finally {
-      setBusy(false);
-    }
+    try { const result = await createSupplyOffer({ supplierType, resourceType, productName: productName.trim(), specification: specification.trim(), quantity: parsedQuantity, quantityUnit, pricingUnit, region, deliveryForm, ...(availabilityStartAt ? { availabilityStartAt: optionalIso(availabilityStartAt) } : {}), ...(availabilityEndAt ? { availabilityEndAt: optionalIso(availabilityEndAt) } : {}), notes: notes.trim() || null }, mutationKey.current); setOffer(result.record); }
+    catch (cause) { const requestId = cause instanceof MarketplaceApiError ? cause.requestId : undefined; setError(`${supplyApiUnavailable(cause) ? copy.apiUnavailable : copy.submitFailed}${requestId ? ` ${copy.requestId}: ${requestId}` : ""}`); }
+    finally { setBusy(false); }
   }
 
-  const selected = defaults[resourceType];
-
-  return (
-    <div className="shell py-10 sm:py-14">
-      <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <section className="border-t-4 border-[var(--accent)] bg-[var(--surface)] p-6 ring-1 ring-[var(--border)] sm:p-8" aria-labelledby="offer-form-title">
-          <p className="kicker">General supply offer</p>
-          <h2 className="m-0 text-3xl" id="offer-form-title">提交上架申请</h2>
-          <p className="section-lead text-base">个人、企业、IDC 与云厂商均可申报；本阶段只收集资源信息并进入管理员人工审核，不要求安装 Agent 或完成设备验真。</p>
-
-          {error ? <div className="mt-5 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-4 text-sm text-[var(--error)]" role="alert">{error}</div> : null}
-          {offer ? (
-            <div className="mt-5 border-l-4 border-[var(--success)] bg-[var(--success-bg)] p-5" role="status">
-              <strong className="block text-[var(--ink)]">管理员已收到上架申请</strong>
-              <span className="mt-1 block font-mono text-sm">{offer.id}{offer.status ? ` · ${offer.status}` : ""}</span>
-              <p className="mb-0 mt-2 text-sm">记录已经写入服务端数据库；这不代表已公开挂牌或已成交。</p>
-            </div>
-          ) : null}
-
-          <form className="mt-7 grid gap-5 md:grid-cols-2" noValidate onSubmit={submit}>
-            <label className="field">
-              <span>供应方身份</span>
-              <select onChange={(event) => setSupplierType(event.target.value as SupplySupplierType)} value={supplierType}>
-                {supplierTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-              </select>
-            </label>
-            <label className="field">
-              <span>资源类型</span>
-              <select onChange={(event) => changeResourceType(event.target.value as SupplyResourceType)} value={resourceType}>
-                {resourceTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-              </select>
-            </label>
-            <label className="field md:col-span-2">
-              <span>产品 / 资源名称</span>
-              <input maxLength={120} minLength={2} onChange={(event) => setProductName(event.target.value)} placeholder={selected.product} required value={productName} />
-            </label>
-            <label className="field md:col-span-2">
-              <span>规格说明</span>
-              <textarea maxLength={2000} minLength={4} onChange={(event) => setSpecification(event.target.value)} placeholder={selected.specification} required rows={5} value={specification} />
-            </label>
-            <label className="field">
-              <span>可供数量</span>
-              <input max="100000" min="1" onChange={(event) => setQuantity(event.target.value)} required step="1" type="number" value={quantity} />
-            </label>
-            <label className="field">
-              <span>数量 / 计价口径</span>
-              <select onChange={(event) => changeUnits(event.target.value)} value={`${quantityUnit}:${pricingUnit}`}>
-                {units[resourceType].map((item) => <option key={item.label} value={`${item.quantityUnit}:${item.pricingUnit}`}>{item.label}</option>)}
-              </select>
-              <small className="text-[var(--muted)]">接口值：{quantityUnit} / {pricingUnit}</small>
-            </label>
-            <label className="field">
-              <span>资源地区</span>
-              <select onChange={(event) => setRegion(event.target.value)} value={region}>{regions.map((item) => <option key={item}>{item}</option>)}</select>
-            </label>
-            <label className="field md:col-span-2">
-              <span>交付方式</span>
-              <select onChange={(event) => setDeliveryForm(event.target.value)} value={deliveryForm}>{deliveryForms.map((item) => <option key={item}>{item}</option>)}</select>
-            </label>
-            <label className="field">
-              <span>可用开始时间（可选）</span>
-              <input onChange={(event) => setAvailabilityStartAt(event.target.value)} type="datetime-local" value={availabilityStartAt} />
-            </label>
-            <label className="field">
-              <span>可用结束时间（可选）</span>
-              <input onChange={(event) => setAvailabilityEndAt(event.target.value)} type="datetime-local" value={availabilityEndAt} />
-            </label>
-            <label className="field md:col-span-2">
-              <span>补充说明</span>
-              <textarea maxLength={2000} onChange={(event) => setNotes(event.target.value)} placeholder="例如最低起售量、网络边界、维护窗口或资质说明；不要填写密码、私钥。" rows={4} value={notes} />
-            </label>
-            <div className="md:col-span-2 flex flex-wrap items-center gap-3">
-              <button className="button button-primary" disabled={busy || Boolean(offer)} type="submit">{busy ? "正在提交…" : offer ? "已提交服务端" : "提交上架申请"}</button>
-              <Link className="button button-secondary" href="/supply/applications">查看申请记录</Link>
-            </div>
-          </form>
-        </section>
-
-        <aside className="border-t-4 border-[var(--border-strong)] bg-[var(--info-bg)] p-6 xl:sticky xl:top-28" aria-labelledby="offer-boundary-title">
-          <p className="kicker">Declaration boundary</p>
-          <h2 className="m-0 text-2xl" id="offer-boundary-title">本次只登记供给</h2>
-          <ul className="mt-5 grid gap-3 pl-5 text-sm text-[var(--text)]">
-            <li>交易方式暂不选择，提交后不会自动成交。</li>
-            <li>计价单位用于表达报价口径，不代替后续价格审核。</li>
-            <li>本次提交不要求安装 Agent，也不会自动发起硬件验真。</li>
-            <li>管理员可在后台查看组织、账号、规格、数量和备注。</li>
-            <li>接口缺失或请求失败时不在浏览器生成假记录。</li>
-          </ul>
-        </aside>
-      </div>
-    </div>
-  );
+  const resourceIndex = resourceTypes.indexOf(resourceType);
+  return <div className="shell py-10 sm:py-14"><div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_340px]">
+    <section className="border-t-4 border-[var(--accent)] bg-[var(--surface)] p-6 ring-1 ring-[var(--border)] sm:p-8" aria-labelledby="offer-form-title"><p className="kicker">{copy.kicker}</p><h2 className="m-0 text-3xl" id="offer-form-title">{copy.title}</h2><p className="section-lead text-base">{copy.lead}</p>
+      {error ? <div className="mt-5 border-l-4 border-[var(--error)] bg-[var(--error-bg)] p-4 text-sm text-[var(--error)]" role="alert">{error}</div> : null}
+      {offer ? <div className="mt-5 border-l-4 border-[var(--success)] bg-[var(--success-bg)] p-5" role="status"><strong className="block text-[var(--ink)]">{copy.success[0]}</strong><span className="mt-1 block font-mono text-sm">{offer.id}{offer.status ? ` · ${offer.status}` : ""}</span><p className="mb-0 mt-2 text-sm">{copy.success[1]}</p></div> : null}
+      <form className="mt-7 grid gap-5 md:grid-cols-2" noValidate onSubmit={submit}>
+        <label className="field"><span>{copy.labels[0]}</span><select onChange={(event) => setSupplierType(event.target.value as SupplySupplierType)} value={supplierType}>{supplierTypes.map((value, index) => <option key={value} value={value}>{copy.supplierLabels[index]}</option>)}</select></label>
+        <label className="field"><span>{copy.labels[1]}</span><select onChange={(event) => changeResourceType(event.target.value as SupplyResourceType)} value={resourceType}>{resourceTypes.map((value, index) => <option key={value} value={value}>{copy.resourceLabels[index]}</option>)}</select></label>
+        <label className="field md:col-span-2"><span>{copy.labels[2]}</span><input maxLength={120} minLength={2} onChange={(event) => setProductName(event.target.value)} placeholder={`${copy.example} ${copy.resourceLabels[resourceIndex]}`} required value={productName} /></label>
+        <label className="field md:col-span-2"><span>{copy.labels[3]}</span><textarea maxLength={2000} minLength={4} onChange={(event) => setSpecification(event.target.value)} placeholder={copy.specPlaceholder} required rows={5} value={specification} /></label>
+        <label className="field"><span>{copy.labels[4]}</span><input max="100000" min="1" onChange={(event) => setQuantity(event.target.value)} required step="1" type="number" value={quantity} /></label>
+        <label className="field"><span>{copy.labels[5]}</span><select onChange={(event) => changeUnits(event.target.value)} value={`${quantityUnit}:${pricingUnit}`}>{units[resourceType].map((item) => <option key={`${item.quantityUnit}:${item.pricingUnit}`} value={`${item.quantityUnit}:${item.pricingUnit}`}>{unitLabel(copy, item)}</option>)}</select><small className="text-[var(--muted)]">{copy.apiValue}: {quantityUnit} / {pricingUnit}</small></label>
+        <label className="field"><span>{copy.labels[6]}</span><select onChange={(event) => setRegion(event.target.value)} value={region}>{regions.map((value, index) => <option key={value} value={value}>{copy.regionLabels[index]}</option>)}</select></label>
+        <label className="field md:col-span-2"><span>{copy.labels[7]}</span><select onChange={(event) => setDeliveryForm(event.target.value)} value={deliveryForm}>{deliveryForms.map((value, index) => <option key={value} value={value}>{copy.deliveryLabels[index]}</option>)}</select></label>
+        <label className="field"><span>{copy.labels[8]}</span><input onChange={(event) => setAvailabilityStartAt(event.target.value)} type="datetime-local" value={availabilityStartAt} /></label>
+        <label className="field"><span>{copy.labels[9]}</span><input onChange={(event) => setAvailabilityEndAt(event.target.value)} type="datetime-local" value={availabilityEndAt} /></label>
+        <label className="field md:col-span-2"><span>{copy.labels[10]}</span><textarea maxLength={2000} onChange={(event) => setNotes(event.target.value)} placeholder={copy.notesPlaceholder} rows={4} value={notes} /></label>
+        <div className="md:col-span-2 flex flex-wrap items-center gap-3"><button className="button button-primary" disabled={busy || Boolean(offer)} type="submit">{busy ? copy.buttons[0] : offer ? copy.buttons[1] : copy.buttons[2]}</button><Link className="button button-secondary" href="/supply/applications">{copy.buttons[3]}</Link></div>
+      </form>
+    </section>
+    <aside className="border-t-4 border-[var(--border-strong)] bg-[var(--info-bg)] p-6 xl:sticky xl:top-28" aria-labelledby="offer-boundary-title"><p className="kicker">{copy.boundary[0]}</p><h2 className="m-0 text-2xl" id="offer-boundary-title">{copy.boundary[1]}</h2><ul className="mt-5 grid gap-3 pl-5 text-sm text-[var(--text)]">{copy.boundary.slice(2).map((item) => <li key={item}>{item}</li>)}</ul></aside>
+  </div></div>;
 }
