@@ -9,13 +9,13 @@ const BASELINE = "bb7fd3211fdff28a448af85f53e9f40839ffa843";
 const ROOT = join(import.meta.dirname, "..");
 const EXTRA_FROZEN_FILES = ["data/model-market.snapshot.json", "lib/catalog.mjs"];
 const APPROVED_PUBLIC_FILES = Object.freeze({
-  "app/globals.css": "c2c5e75a9f6d955d8145781557e3bb798cd1dca826544ac6e6ba3d0a62c8c60d",
+  "app/globals.css": "e9685d6c7cce977894660fe782ac1580017b4563ec16d2262553816a041e9056",
   "app/gpu/page.tsx": "c24f5e788d1680e67c91a05ff50d017b871365871948385015ffeb02d16dbf9f",
   "app/guides/guides.module.css": "5e12ca1ab83f648e5ea59508f851f739f6a16bc1734bdc23bf60d83cf8cca88b",
   "app/guides/page.tsx": "777cd2f199fd91e0b722377a782e3a05b4b4141e855951a6373472d3e7cd2c4b",
   "app/hosting/page.tsx": "44102018b40ec1de2c2a983c76c53e80c31d8eac78c5835bf4a72b2ae62e4596",
   "app/hosting/partners/terms/KAI_HOSTING_TERMS_2026_08/page.tsx": "61414d5988494518b096ec8d8e07095851481bc42fad6f62e63a401634ab3b6a",
-  "app/kai-cloud.css": "0b3252e02a8ab8050cb8da87ac0ec407e0fcd51285c7d856f4c3fdc28b63eac8",
+  "app/kai-cloud.css": "59ca9cf3620c5f482fc3cf9d1c1fdde5b5ef0420fc3c797f9bdd16a1c1bd5027",
   "app/layout.tsx": "a91926edead71be3ae680ee4070e0e096aebeadc746482f7666b1c4b7a6e3cee",
   "app/page.tsx": "20f8ad3d1743cadcc163d50982439dbd65d5f6e96c79c87c32307266bbaddb24",
   "app/methodology/page.tsx": "1e941fd3ce4769b65ad208f8e8b6191927cde72fd505c002e6d49b2b50e2af4b",
@@ -54,7 +54,7 @@ const APPROVED_PUBLIC_FILES = Object.freeze({
   "components/resource-explorer.tsx": "fcb894bafb20363694d8ad5dbcd3aeef98d428f5d5e789a63989595f9725eb1e",
   "components/resource-detail-actions.tsx": "1f7898b9a00ed5d09dc44030d69dc325665ea1503406d1f6241ee960be643364",
   "components/resource-purchase.module.css": "6569ca7f4f35c5cd6f731ee97dba34567d002d5bb370aa9b3058c33628bc6669",
-  "components/language-control.tsx": "60ef4529327c666522617a5c61ab1b910b8acb343ee64aeb90261a9680179b18",
+  "components/language-control.tsx": "c5ab567af3f152fde3ccf0ae6cf0ef92113f318ddb486b596297d1d4cd8d1932",
   "components/locale-provider.tsx": "93a5f7ac21cbac8bae2ac9e04a4f9e49124fafe967d4ceed5f3aa171678891a1",
   "components/site-footer-view.tsx": "ead5d5d36fea877831e0d1df33f8f38bc121ffee96d83f61e81f7b9075273a87",
   "components/site-footer.tsx": "48314604150577a62fa8a334c0690be47ff72a48615f9d0ad393c441a44f5e9a",

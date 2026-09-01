@@ -39,24 +39,6 @@
   line-height: 1.1;
 }
 
-.kai-root:not(:has(.mandow-hound-root)) .language-control {
-  min-width: 116px;
-  font-size: 0.6875rem;
-}
-
-.kai-root:not(:has(.mandow-hound-root)) .language-control-label {
-  top: 5px;
-  font-size: 0.625rem;
-  line-height: 1;
-}
-
-.kai-root:not(:has(.mandow-hound-root)) .language-control select {
-  min-width: 116px;
-  padding: 18px 30px 4px 11px;
-  font-size: 0.8125rem;
-  line-height: 1.1;
-}
-
 .kai-root:not(:has(.mandow-hound-root)) .button {
   min-height: 48px;
   padding: 12px 20px;
@@ -583,17 +565,6 @@
   .kai-root:not(:has(.mandow-hound-root)) .theme-control,
   .kai-root:not(:has(.mandow-hound-root)) .theme-control select {
     min-width: 88px;
-  }
-
-  .kai-root:not(:has(.mandow-hound-root)) .language-control,
-  .kai-root:not(:has(.mandow-hound-root)) .language-control select {
-    width: 70px;
-    min-width: 70px;
-  }
-
-  .kai-root:not(:has(.mandow-hound-root)) .language-control select {
-    padding: 4px 24px 4px 8px;
-    font-size: 0.75rem;
   }
 
   .kai-root:not(:has(.mandow-hound-root)) .theme-control select {

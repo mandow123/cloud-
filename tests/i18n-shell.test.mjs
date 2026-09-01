@@ -61,7 +61,14 @@ test("the global shell boots from the server cookie and mounts the language cont
   assert.doesNotMatch(provider, /navigator\.language/u);
   assert.match(serverLocale, /await cookies\(\)/u);
   assert.match(serverLocale, /normalizeLocale/u);
-  assert.match(control, /setLocale\(event\.target\.value as Locale\)/u);
+  assert.match(control, /setLocale\(nextLocale\)/u);
+  assert.match(control, /aria-haspopup="dialog"/u);
+  assert.match(control, /language-market-panel/u);
+  assert.match(control, /type: "currency"/u);
+  assert.match(control, /算力交易统一使用 KAI 标准卡时；法币仅用于充值卡时/u);
+  assert.match(control, /\{ code: "CNY", label: "人民币", enabled: true \}/u);
+  assert.match(control, /\{ code: "USD", label: "美元", enabled: false \}/u);
+  assert.doesNotMatch(control, /setCurrency\(|exchangeRate|convertCurrency/u);
   assert.match(header, /<LanguageControl \/>/);
   assert.match(header, /t\("buy"\)/);
   assert.match(nav, /t\(group\.label\)/);
