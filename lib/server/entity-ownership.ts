@@ -1,5 +1,5 @@
 import type { AccountSessionContext } from "./account-auth.ts";
-import { AccountAuthError, accountAuthDigest, requireAccountSession } from "./account-auth.ts";
+import { AccountAuthError, accountAuthDigest, assertActiveAccountMembership, requireAccountSession } from "./account-auth.ts";
 import { getAdminOperationsStore, type AdminSourceSystem } from "./admin-store.ts";
 
 export async function bindNewEntityToOrganization(input: {
@@ -32,9 +32,7 @@ export async function bindNewEntityToOrganization(input: {
 export async function requireTradingAccountSession(request: Request) {
   if (process.env.KAI_ALLOW_LEGACY_ANON_WRITES === "TEST_ONLY_UNSAFE") return null;
   const account = await requireAccountSession(request);
-  if (account.membership.status !== "ACTIVE") {
-    throw new AccountAuthError("TRADING_SUBJECT_INACTIVE", 403, "当前交易主体尚未启用，不能创建购买、供应或订单记录。 ");
-  }
+  assertActiveAccountMembership(account, { code: "TRADING_SUBJECT_INACTIVE", message: "当前交易主体尚未启用，不能创建购买、供应或订单记录。 " });
   if (account.membership.roles.some((role) => role === "ROOT" || role === "FINANCE_APPROVER")) {
     throw new AccountAuthError(
       "TRADING_ADMIN_ROLE_FORBIDDEN",

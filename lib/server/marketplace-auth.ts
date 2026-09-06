@@ -1,5 +1,5 @@
 import { hashText, resolveMarketplaceActor, type MarketplaceActor } from "@/lib/server/marketplace-actor";
-import { readAccountSessionToken, resolveAccountSession } from "@/lib/server/account-auth";
+import { assertActiveAccountMembership, readAccountSessionToken, resolveAccountSession } from "@/lib/server/account-auth";
 import { getMarketplaceStore, type MarketplaceStore } from "@/lib/server/marketplace-store";
 
 export type MarketplaceAuthorization = {
@@ -10,10 +10,11 @@ export type MarketplaceAuthorization = {
 
 /** Establishes or validates a server-side anonymous session and transparently
  * rotates expired/unknown cookies. */
-export async function authorizeMarketplaceRequest(request: Request): Promise<MarketplaceAuthorization> {
+export async function authorizeMarketplaceRequest(request: Request, options: { allowPending?: boolean } = {}): Promise<MarketplaceAuthorization> {
   const store = await getMarketplaceStore();
   const browserActor = await resolveMarketplaceActor(request);
   const account = readAccountSessionToken(request) ? await resolveAccountSession(request) : null;
+  if (account && !options.allowPending) assertActiveAccountMembership(account);
   const actor: MarketplaceActor = account
     ? {
         ...browserActor,
