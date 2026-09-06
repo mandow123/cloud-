@@ -5,6 +5,7 @@ import {
   KAI_IDENTITY_DISCOVERY,
   KAI_IDENTITY_ISSUER,
   KAI_IDENTITY_MODERN_ISSUER,
+  KAI_IDENTITY_MODERN_API_BASE,
   validateKaiIdentityUpstream,
 } from "../scripts/ops/validate-kai-identity-upstream.mjs";
 
@@ -38,10 +39,10 @@ test("Identity upstream validator accepts the modern confidential KAI account pr
       assert.equal(String(url), discovery);
       return Response.json({
         issuer: KAI_IDENTITY_MODERN_ISSUER,
-        authorization_endpoint: `${KAI_IDENTITY_MODERN_ISSUER}/oauth2/authorize`,
-        token_endpoint: `${KAI_IDENTITY_MODERN_ISSUER}/oauth2/token`,
-        jwks_uri: `${KAI_IDENTITY_MODERN_ISSUER}/jwks`,
-        userinfo_endpoint: `${KAI_IDENTITY_MODERN_ISSUER}/oauth2/userinfo`,
+        authorization_endpoint: `${KAI_IDENTITY_MODERN_API_BASE}/oauth2/authorize`,
+        token_endpoint: `${KAI_IDENTITY_MODERN_API_BASE}/oauth2/token`,
+        jwks_uri: `${KAI_IDENTITY_MODERN_API_BASE}/jwks`,
+        userinfo_endpoint: `${KAI_IDENTITY_MODERN_API_BASE}/oauth2/userinfo`,
         token_endpoint_auth_methods_supported: ["client_secret_basic"],
         id_token_signing_alg_values_supported: ["EdDSA"],
       });
@@ -70,4 +71,12 @@ test("Identity upstream validator reports exact mismatched fields without creden
   assert.equal(result.status, "error");
   assert.equal(result.code, "OIDC_DISCOVERY_METADATA_MISMATCH");
   assert.deepEqual(result.mismatches.map((item) => item.field), ["issuer", "token_endpoint"]);
+});
+
+test("old misconfigured modern issuer is rejected before any network request", async () => {
+  let calls = 0;
+  const result = await validateKaiIdentityUpstream({ environment: { KAI_ACCOUNT_OIDC_ISSUER: "https://auth.kai.com/api/auth" },
+    fetcher: async () => { calls += 1; return Response.json(metadata()); } });
+  assert.equal(result.code, "OIDC_ISSUER_NOT_ALLOWED");
+  assert.equal(calls, 0);
 });

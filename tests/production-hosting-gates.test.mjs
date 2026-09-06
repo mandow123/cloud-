@@ -57,7 +57,7 @@ test("Qixiang Pay defaults closed and opens only with approved rotated credentia
     KAI_QIXIANG_PAY_GATEWAY: "https://api.payqixiang.cn/mapi.php",
     KAI_ACCOUNT_OIDC_CLIENT_ID: "kai-cloud-qixiang-production",
     KAI_ACCOUNT_OIDC_CLIENT_SECRET: "qixiang-oidc-client-secret-v1",
-    KAI_ACCOUNT_OIDC_ISSUER: "https://auth.kai.com/api/auth",
+    KAI_ACCOUNT_OIDC_ISSUER: "https://auth.kai.com",
     KAI_ACCOUNT_OIDC_SCOPES: "openid profile email",
     KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: "67fc59de0a8d976f89aa95f61e7c0d8944e9e5ad39f0cbdf5316aa8c3e4ab0fa",
   };
@@ -66,6 +66,7 @@ test("Qixiang Pay defaults closed and opens only with approved rotated credentia
   rejection({ ...enabled, KAI_ACCOUNT_OIDC_CLIENT_SECRET: "" }, "KAI_ACCOUNT_OIDC_CLIENT_SECRET");
   rejection({ ...enabled, KAI_ACCOUNT_OIDC_CLIENT_SECRET: "replace-with-production-secret" }, "KAI_ACCOUNT_OIDC_CLIENT_SECRET");
   rejection({ ...enabled, KAI_ACCOUNT_OIDC_ISSUER: "https://account.kai.com/connect" }, "KAI_ACCOUNT_OIDC_ISSUER");
+  rejection({ ...enabled, KAI_ACCOUNT_OIDC_ISSUER: "https://auth.kai.com/api/auth" }, "KAI_ACCOUNT_OIDC_ISSUER");
   rejection({ ...enabled, KAI_PUBLIC_ORIGIN: "https://staging.cloud.kai.com" }, "KAI_PUBLIC_ORIGIN");
   rejection({ ...enabled, KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: "" }, "KAI_ACCOUNT_OIDC_TRANSACTION_SECRET");
   rejection({ ...enabled, KAI_QIXIANG_PAY_ENABLED: "2" }, "KAI_QIXIANG_PAY_ENABLED");
