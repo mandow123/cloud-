@@ -11,6 +11,7 @@ import {
   parseReleaseEnvironment,
   selectRepositoryDigest,
   validateImageInspection,
+  validatePromotionEvidence,
 } from "../scripts/ops/release-tooling.mjs";
 import { validateLocalImage } from "../scripts/ops/validate-local-image.mjs";
 
@@ -83,9 +84,26 @@ test("promotion artifacts keep immutable current and previous releases without s
     previous,
     createdAt: "2026-08-03T06:00:00.000Z",
   });
-  assert.equal(record.rollback.available, true);
+  assert.equal(record.rollback.available, false);
+  assert.match(record.rollback.reason, /have not been verified/);
   assert.equal(record.rollback.imageReference, previousReference);
   assert.equal(record.current.imageReference, imageReference);
+  const evidence = { releaseSha, schemaSha256: "c".repeat(64), configurationSha256: "d".repeat(64), restoreManifestSha256: "e".repeat(64), testReportSha256: "f".repeat(64) };
+  const rollbackEvidence = {
+      ...evidence, candidateReleaseSha: releaseSha,
+      ...previous, currentDatabaseCompatible: true, suspendedMembershipDenied: true,
+      originPrivate: true, newPaymentsDisabled: true, testedAt: "2026-09-06T05:00:00Z",
+  };
+  const input = { imageReference, releaseSha, platform: "linux/amd64", sourceTag: `127.0.0.1:5443/kai-cloud-market:${releaseSha}`, previous,
+    createdAt: "2026-09-06T06:00:00Z", validationEvidence: evidence, rollbackEvidence };
+  const validated = buildReleaseRecord(input);
+  assert.equal(validated.rollback.available, true);
+  for (const change of [{ candidateReleaseSha: previousSha }, { schemaSha256: "a".repeat(64) }, { configurationSha256: "a".repeat(64) }, { restoreManifestSha256: "a".repeat(64) }, { testedAt: "2026-09-07T06:00:00Z" }, { testedAt: "2026-09-04T06:00:00Z" }]) {
+    assert.equal(buildReleaseRecord({ ...input, rollbackEvidence: { ...rollbackEvidence, ...change } }).rollback.available, false);
+  }
+  assert.equal(validatePromotionEvidence(evidence, releaseSha), evidence);
+  assert.throws(() => validatePromotionEvidence({ ...evidence, releaseSha: previousSha }, releaseSha));
+  assert.throws(() => validatePromotionEvidence({ ...evidence, schemaSha256: "" }, releaseSha));
 });
 
 test("local image verification binds RepoDigest, revision and OS/architecture", () => {

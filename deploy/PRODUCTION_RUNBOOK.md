@@ -40,6 +40,8 @@ Compose 会把 `KAI_IMAGE` 以 `KAI_IMAGE_REFERENCE` 传入应用容器，供启
 ```bash
 # 后续发布必须传当前 release env；首次发布方式见下文。
 npm run ops:image:promote -- \
+  --release-id cloud-pc/YYYY.MM.DD.N \
+  --validation-evidence /path/to/verified-candidate-evidence.json \
   --repository 127.0.0.1:5443/kai-cloud-market \
   --platform linux/amd64 \
   --output-dir /var/lib/kai-cloud-releases \

@@ -184,8 +184,8 @@ async function main() {
       dockerBinary: process.env.KAI_DOCKER_BIN ?? "docker",
     });
   }
-  const compose = spawnSync("docker", [
-    "compose",
+  const compose = spawnSync(process.env.KAI_COMPOSE_BIN || "docker", [
+    ...(process.env.KAI_COMPOSE_BIN ? [] : ["compose"]),
     "--profile",
     "ops",
     "-f",

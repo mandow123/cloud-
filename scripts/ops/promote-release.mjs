@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { link, lstat, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
+import { assertUnpublishedRelease, validateReleaseId } from "./release-publication-guard.mjs";
 
 import {
   assertCleanGitStatus,
@@ -15,6 +16,7 @@ import {
   validatePlatform,
   validateReleaseSha,
   validateRepository,
+  validatePromotionEvidence,
 } from "./release-tooling.mjs";
 
 function parseArguments(argv) {
@@ -25,7 +27,7 @@ function parseArguments(argv) {
       options.initialRelease = true;
       continue;
     }
-    if (!["--repository", "--platform", "--output-dir", "--previous-env", "--docker"].includes(argument)) {
+    if (!["--repository", "--platform", "--output-dir", "--previous-env", "--docker", "--release-id", "--rollback-evidence", "--validation-evidence"].includes(argument)) {
       throw new Error(`unknown argument: ${argument}`);
     }
     const value = argv[index + 1];
@@ -37,6 +39,9 @@ function parseArguments(argv) {
     throw new Error("choose exactly one of --initial-release or --previous-env <current release env>");
   }
   return {
+    validationEvidencePath: options.validationEvidence ? resolve(options.validationEvidence) : null,
+    releaseId: validateReleaseId(options.releaseId),
+    rollbackEvidencePath: options.rollbackEvidence ? resolve(options.rollbackEvidence) : null,
     repository: validateRepository(options.repository ?? process.env.KAI_RELEASE_REPOSITORY ?? "127.0.0.1:5443/kai-cloud-market"),
     platform: validatePlatform(options.platform ?? process.env.KAI_IMAGE_PLATFORM ?? "linux/amd64"),
     outputDirectory: resolve(options.outputDir ?? ".market-cache/release-artifacts"),
@@ -97,16 +102,25 @@ function inspectImage(dockerBinary, reference, cwd) {
   return inspections[0];
 }
 
-async function main() {
-  const options = parseArguments(process.argv.slice(2));
+async function promote(options) {
   const projectRoot = runCaptured("git", ["rev-parse", "--show-toplevel"]).trim();
   const gitStatus = runCaptured("git", ["status", "--porcelain=v1", "--untracked-files=all"], { cwd: projectRoot });
   assertCleanGitStatus(gitStatus);
   const releaseSha = validateReleaseSha(runCaptured("git", ["rev-parse", "HEAD"], { cwd: projectRoot }).trim());
+  if (!options.validationEvidencePath) throw new Error("--validation-evidence is required before publication");
+  const validationEvidence = validatePromotionEvidence(JSON.parse(await readFile(options.validationEvidencePath, "utf8")), releaseSha);
+  const rollbackEvidence = options.rollbackEvidencePath ? JSON.parse(await readFile(options.rollbackEvidencePath, "utf8")) : null;
   const previous = options.initialRelease
     ? null
     : parseReleaseEnvironment(await readFile(options.previousEnvironmentPath, "utf8"));
   const sourceTag = `${options.repository}:${releaseSha}`;
+  await safeOutputDirectory(options.outputDirectory);
+  await assertUnpublishedRelease({
+    outputDirectory: options.outputDirectory, releaseSha, sourceTag,
+    inspectManifest: (reference) => spawnSync(options.dockerBinary, ["manifest", "inspect", reference], {
+      cwd: projectRoot, encoding: "utf8", timeout: 30000,
+    }),
+  });
 
   // A Git archive, rather than the working directory, makes the Docker build
   // context byte-for-byte tied to HEAD even when ignored local files exist.
@@ -142,6 +156,9 @@ async function main() {
   await safeOutputDirectory(options.outputDirectory);
   const environment = buildReleaseEnvironment({ imageReference, releaseSha, platform: options.platform });
   const record = buildReleaseRecord({
+    releaseId: options.releaseId,
+    rollbackEvidence,
+    validationEvidence,
     imageReference,
     releaseSha,
     platform: options.platform,
@@ -163,6 +180,18 @@ async function main() {
     environmentPath,
     rollbackRecordPath: recordPath,
   })}\n`);
+}
+
+async function main() {
+  const options = parseArguments(process.argv.slice(2));
+  await safeOutputDirectory(options.outputDirectory);
+  const lockPath = resolve(options.outputDirectory, ".publisher.lock");
+  await mkdir(lockPath, { mode: 0o700 });
+  try {
+    await promote(options);
+  } finally {
+    await rm(lockPath, { recursive: true });
+  }
 }
 
 main().catch((error) => {
