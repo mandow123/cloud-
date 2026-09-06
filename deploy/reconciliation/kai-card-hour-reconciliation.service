@@ -1,0 +1,13 @@
+[Unit]
+Description=KAI Cloud bounded existing-payment reconciliation
+After=network-online.target
+[Service]
+Type=oneshot
+User=kai-ops
+EnvironmentFile=/etc/kai-cloud/reconciliation-worker.env
+ExecStart=/usr/bin/node /opt/kai-cloud-ops/scripts/ops/run-card-hour-reconciliation.mjs
+TimeoutStartSec=65
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
