@@ -22,7 +22,7 @@ test("new demands, supply offers and orders require the formal trading account g
   }
   const guard = readFileSync("lib/server/entity-ownership.ts", "utf8");
   assert.match(guard, /await requireAccountSession\(request\)/u);
-  assert.match(guard, /membership\.status !== "ACTIVE"/u);
+  assert.match(guard, /assertActiveAccountMembership\(account/u);
   assert.doesNotMatch(guard, /x-kai-workspace-role/u);
 });
 

@@ -1,4 +1,4 @@
-import { AccountAuthError, accountAuthDigest, createAccountSession } from "./account-auth.ts";
+import { AccountAuthError, accountAuthDigest, assertAccountMembershipNotSuspended, createAccountSession } from "./account-auth.ts";
 import { getAccountAuthStore, type AccountAuthStore } from "./account-auth-store.ts";
 
 type Env = Record<string, string | undefined>;
@@ -106,8 +106,13 @@ export async function createAdminPasswordSession(
     createdAt: now.toISOString(),
   });
   try {
+    assertAccountMembershipNotSuspended(identity.membership);
     await store.activateMembership(identity.membership.id, [role], now.toISOString());
-  } catch {
+  } catch (error) {
+    if (error instanceof AccountAuthError) {
+      await store.recordPasswordAttempt({ usernameHash, requestFingerprint: fingerprint, outcome: "DENIED", occurredAt: now.toISOString() });
+      throw error;
+    }
     const code = role === "ROOT" ? "ADMIN_ROOT_CONFLICT" : role === "FINANCE_APPROVER" ? "ADMIN_APPROVER_CONFLICT" : "ADMIN_FULFILLMENT_CONFLICT";
     const message = role === "ROOT" ? "系统已经绑定了另一位 Root，不能创建第二个管理员。 " : role === "FINANCE_APPROVER" ? "审批管理员配置与现有身份冲突。 " : "交付管理员配置与现有身份冲突。 ";
     throw new AccountAuthError(code, 409, message);
