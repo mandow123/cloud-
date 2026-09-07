@@ -1,11 +1,9 @@
 import { AccountAuthError, createAccountSession, type IssuedAccountSession } from "./account-auth.ts";
 import { getAccountAuthStore, type AccountAuthStore } from "./account-auth-store.ts";
+import { kaiIdentityProviderProfile, readIdentityDiscoveryJson, KAI_IDENTITY_ISSUER, KAI_IDENTITY_MODERN_ISSUER } from "../../scripts/ops/kai-identity-provider-profile.mjs";
 
-export const KAI_IDENTITY_ISSUER = "https://account.kai.com/connect";
-export const KAI_IDENTITY_DISCOVERY = `${KAI_IDENTITY_ISSUER}/.well-known/openid-configuration`;
+export { KAI_IDENTITY_ISSUER, KAI_IDENTITY_DISCOVERY, KAI_IDENTITY_MODERN_ISSUER, KAI_IDENTITY_MODERN_DISCOVERY, KAI_IDENTITY_MODERN_API_BASE } from "../../scripts/ops/kai-identity-provider-profile.mjs";
 export const KAI_IDENTITY_SCOPES = "openid kai:name email";
-export const KAI_IDENTITY_MODERN_ISSUER = "https://auth.kai.com/api/auth";
-export const KAI_IDENTITY_MODERN_DISCOVERY = `${KAI_IDENTITY_MODERN_ISSUER}/.well-known/openid-configuration`;
 export const KAI_IDENTITY_MODERN_SCOPES = "openid profile email";
 const TRANSACTION_MAX_AGE_SECONDS = 10 * 60;
 const SECURE_TRANSACTION_COOKIE = "__Host-kai_oidc_transaction";
@@ -113,10 +111,11 @@ export function clearKaiIdentityTransactionCookie(request: Request, env?: Enviro
 
 function providerConfiguration(env: Environment): OidcProviderConfiguration {
   const issuer = env.KAI_ACCOUNT_OIDC_ISSUER?.trim() || KAI_IDENTITY_ISSUER;
-  if (issuer !== KAI_IDENTITY_ISSUER && issuer !== KAI_IDENTITY_MODERN_ISSUER) {
+  const profile = kaiIdentityProviderProfile(issuer);
+  if (!profile) {
     throw new AccountAuthError("KAI_IDENTITY_NOT_CONFIGURED", 503, "KAI 统一账户签发方不在允许列表中。");
   }
-  const defaultScopes = issuer === KAI_IDENTITY_MODERN_ISSUER ? KAI_IDENTITY_MODERN_SCOPES : KAI_IDENTITY_SCOPES;
+  const defaultScopes = profile.scopes;
   const scopes = env.KAI_ACCOUNT_OIDC_SCOPES?.trim().replace(/\s+/gu, " ") || defaultScopes;
   const scopeList = scopes.split(" ");
   if (!/^[A-Za-z0-9:._-]+(?: [A-Za-z0-9:._-]+)*$/u.test(scopes)
@@ -127,12 +126,12 @@ function providerConfiguration(env: Environment): OidcProviderConfiguration {
     throw new AccountAuthError("KAI_IDENTITY_NOT_CONFIGURED", 503, "KAI 统一账户授权范围配置无效。");
   }
   const clientSecret = env.KAI_ACCOUNT_OIDC_CLIENT_SECRET?.trim();
-  if (clientSecret && (new TextEncoder().encode(clientSecret).byteLength < 16 || new TextEncoder().encode(clientSecret).byteLength > 2048)) {
+  if ((profile.modern && !clientSecret) || (clientSecret && (new TextEncoder().encode(clientSecret).byteLength < 16 || new TextEncoder().encode(clientSecret).byteLength > 2048))) {
     throw new AccountAuthError("KAI_IDENTITY_NOT_CONFIGURED", 503, "KAI 统一账户客户端密钥配置无效。");
   }
   return {
     issuer,
-    discovery: `${issuer}/.well-known/openid-configuration`,
+    discovery: profile.discovery,
     scopes,
     ...(clientSecret ? { clientSecret } : {}),
   };
@@ -257,19 +256,9 @@ function optionalStringArray(value: unknown) {
 }
 
 function expectedProviderEndpoints(issuer: string) {
-  return issuer === KAI_IDENTITY_MODERN_ISSUER
-    ? {
-        authorization_endpoint: `${issuer}/oauth2/authorize`,
-        token_endpoint: `${issuer}/oauth2/token`,
-        jwks_uri: `${issuer}/jwks`,
-        userinfo_endpoint: `${issuer}/oauth2/userinfo`,
-      }
-    : {
-        authorization_endpoint: `${issuer}/auth`,
-        token_endpoint: `${issuer}/token`,
-        jwks_uri: `${issuer}/jwks`,
-        userinfo_endpoint: `${issuer}/me`,
-      };
+  const profile = kaiIdentityProviderProfile(issuer);
+  if (!profile) throw new AccountAuthError("OIDC_DISCOVERY_INVALID", 503, "KAI 统一账户元数据校验失败。");
+  return profile.endpoints;
 }
 
 async function readMetadata(fetcher: typeof fetch, provider: OidcProviderConfiguration, timeoutMs = 4_000): Promise<OidcMetadata> {
@@ -287,7 +276,7 @@ async function readMetadata(fetcher: typeof fetch, provider: OidcProviderConfigu
   if (response.status >= 300 && response.status < 400) {
     throw new AccountAuthError("OIDC_DISCOVERY_REDIRECT", 503, "KAI 统一账户发现地址配置异常。");
   }
-  const payload = await response.json().catch(() => null);
+  const payload = await readIdentityDiscoveryJson(response).catch(() => null);
   if (!response.ok || !payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new AccountAuthError("OIDC_DISCOVERY_INVALID", 503, "KAI 统一账户元数据校验失败。");
   }
@@ -306,7 +295,7 @@ async function readMetadata(fetcher: typeof fetch, provider: OidcProviderConfigu
   }
   const expectedEndpoints = expectedProviderEndpoints(provider.issuer);
   for (const [field, expected] of Object.entries(expectedEndpoints)) {
-    if (metadataEndpoint(object[field], provider.issuer) !== expected) throw new AccountAuthError("OIDC_DISCOVERY_INVALID", 503, "KAI 统一账户元数据校验失败。");
+    if (object[field] !== expected || metadataEndpoint(object[field], provider.issuer) !== expected) throw new AccountAuthError("OIDC_DISCOVERY_INVALID", 503, "KAI 统一账户元数据校验失败。");
   }
   return {
     issuer: provider.issuer,
