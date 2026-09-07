@@ -2,6 +2,7 @@
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { devNull } from "node:os";
 import { spawnSync } from "node:child_process";
 
 import {
@@ -171,7 +172,12 @@ async function main() {
       KAI_ADMIN_FULFILLMENT_USERNAME: process.env.KAI_ADMIN_FULFILLMENT_USERNAME,
       KAI_ADMIN_FULFILLMENT_PASSWORD_HASH: process.env.KAI_ADMIN_FULFILLMENT_PASSWORD_HASH,
     })
-    : productionEnvironment();
+    : productionEnvironment({
+      // Compose requires a root identity even with Hosting disabled. These
+      // format-only values belong exclusively to offline configuration checks.
+      KAI_ADMIN_USERNAME: "kai-compose-validation-only",
+      KAI_ADMIN_PASSWORD_HASH: `pbkdf2-sha256:310000:AAAAAAAAAAAAAAAAAAAAAA==:${"A".repeat(43)}=`,
+    });
   validateProductionEnvironment(candidateEnvironment);
   const stateRoot = validateCurrentEnvironment
     ? validateStateRoot(process.env.KAI_STATE_ROOT ?? "/opt/kai-cloud-3051", { checkFilesystem: true })
@@ -186,6 +192,8 @@ async function main() {
   }
   const compose = spawnSync(process.env.KAI_COMPOSE_BIN || "docker", [
     ...(process.env.KAI_COMPOSE_BIN ? [] : ["compose"]),
+    // Offline checks must not pick up ignored local credentials from .env.
+    ...(!validateCurrentEnvironment ? ["--env-file", devNull] : []),
     "--profile",
     "ops",
     "-f",
@@ -197,7 +205,9 @@ async function main() {
     cwd: projectRoot,
     encoding: "utf8",
     env: {
-      ...process.env,
+      ...(validateCurrentEnvironment ? process.env : Object.fromEntries(
+        Object.entries(process.env).filter(([name]) => !name.startsWith("KAI_")),
+      )),
       KAI_IMAGE: candidateEnvironment.KAI_IMAGE_REFERENCE,
       KAI_RELEASE_SHA: candidateEnvironment.KAI_RELEASE_SHA,
       KAI_PUBLIC_ORIGIN: candidateEnvironment.KAI_PUBLIC_ORIGIN,
@@ -244,10 +254,10 @@ async function main() {
       KAI_ADMIN_PASSWORD_HASH: candidateEnvironment.KAI_ADMIN_PASSWORD_HASH,
       KAI_ADMIN_APPROVER_USERNAME: candidateEnvironment.KAI_ADMIN_APPROVER_USERNAME,
       KAI_ADMIN_APPROVER_PASSWORD_HASH: candidateEnvironment.KAI_ADMIN_APPROVER_PASSWORD_HASH,
-      KAI_ADMIN_APPROVER_DISPLAY_NAME: process.env.KAI_ADMIN_APPROVER_DISPLAY_NAME,
+      KAI_ADMIN_APPROVER_DISPLAY_NAME: validateCurrentEnvironment ? process.env.KAI_ADMIN_APPROVER_DISPLAY_NAME : undefined,
       KAI_ADMIN_FULFILLMENT_USERNAME: candidateEnvironment.KAI_ADMIN_FULFILLMENT_USERNAME,
       KAI_ADMIN_FULFILLMENT_PASSWORD_HASH: candidateEnvironment.KAI_ADMIN_FULFILLMENT_PASSWORD_HASH,
-      KAI_ADMIN_FULFILLMENT_DISPLAY_NAME: process.env.KAI_ADMIN_FULFILLMENT_DISPLAY_NAME,
+      KAI_ADMIN_FULFILLMENT_DISPLAY_NAME: validateCurrentEnvironment ? process.env.KAI_ADMIN_FULFILLMENT_DISPLAY_NAME : undefined,
       KAI_APP_PORT: validateCurrentEnvironment ? (process.env.KAI_APP_PORT ?? "3051") : "3051",
       KAI_STATE_ROOT: stateRoot,
     },
