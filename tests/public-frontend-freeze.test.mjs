@@ -9,6 +9,8 @@ const BASELINE = "bb7fd3211fdff28a448af85f53e9f40839ffa843";
 const ROOT = join(import.meta.dirname, "..");
 const EXTRA_FROZEN_FILES = ["data/model-market.snapshot.json", "lib/catalog.mjs"];
 const APPROVED_PUBLIC_FILES = Object.freeze({
+  // S2 reviewed data refresh; see docs/MARKET_PRICE_REVIEW_2026-09-06.md.
+  "data/model-market.snapshot.json": "d30533c9b60c5f746dc02434406bc80f8c2304c3b0d74755a52d122fbc959c5a",
   "app/globals.css": "e9685d6c7cce977894660fe782ac1580017b4563ec16d2262553816a041e9056",
   "app/gpu/page.tsx": "c24f5e788d1680e67c91a05ff50d017b871365871948385015ffeb02d16dbf9f",
   "app/guides/guides.module.css": "5e12ca1ab83f648e5ea59508f851f739f6a16bc1734bdc23bf60d83cf8cca88b",
