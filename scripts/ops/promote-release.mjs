@@ -116,7 +116,20 @@ async function promote(options) {
   const sourceTag = `${options.repository}:${releaseSha}`;
   await safeOutputDirectory(options.outputDirectory);
   await assertUnpublishedRelease({
-    outputDirectory: options.outputDirectory, releaseSha, sourceTag,
+    outputDirectory: options.outputDirectory, releaseId: options.releaseId, releaseSha, sourceTag,
+    inspectGitTag: (releaseId) => {
+      const localTag = spawnSync("git", ["rev-parse", "--verify", `refs/tags/${releaseId}^{commit}`], {
+        cwd: projectRoot, encoding: "utf8", timeout: 30000,
+      });
+      return {
+        localTag,
+        remoteTag: localTag.status === 0 && !localTag.error && localTag.stdout.trim() === releaseSha
+          ? spawnSync("git", ["ls-remote", "--exit-code", "origin", `refs/tags/${releaseId}`, `refs/tags/${releaseId}^{}`], {
+            cwd: projectRoot, encoding: "utf8", timeout: 30000,
+          })
+          : null,
+      };
+    },
     inspectManifest: (reference) => spawnSync(options.dockerBinary, ["manifest", "inspect", reference], {
       cwd: projectRoot, encoding: "utf8", timeout: 30000,
     }),

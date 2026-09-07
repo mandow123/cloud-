@@ -425,7 +425,7 @@ async function main() {
   assert(runbook.includes("POST /api/*") && runbook.includes("每分钟 20 次、突发 5 次"), "runbook must require a concrete reverse-proxy rate limit for API writes");
   assert(runbook.includes("API 守卫会为 API 请求输出结构化日志") && runbook.includes("不记录表单正文、Cookie、会话令牌、CSRF 值或供应商原始报价"), "runbook must accurately describe structured API logs and their redaction boundary");
   assert(runbook.includes("首次安装时数据库尚不存在") && runbook.indexOf("请求 `/api/ready`") < runbook.indexOf("第一次备份"), "runbook must initialize the database before the first-install backup");
-  assert(runbook.includes("升级已有实例时顺序相反") && runbook.includes("替换应用前创建并异地同步一致性备份"), "runbook must back up existing production data before an upgrade");
+  assert(runbook.includes("替换应用前创建一致性备份、验证恢复包") && runbook.includes("发生新业务写入后禁止以发布前恢复包覆盖现库"), "runbook must require a verified pre-upgrade backup without overwriting later business writes");
   assert(
     runbook.includes("0032 预部署门禁")
       && runbook.includes("--allow-uninitialized")

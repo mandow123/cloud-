@@ -2,6 +2,7 @@ const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const RELEASE_SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const REPOSITORY_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$/;
 const SUPPORTED_PLATFORMS = new Set(["linux/amd64", "linux/arm64"]);
+const EVIDENCE_HASH_KEYS = ["schemaSha256", "configurationSha256", "restoreManifestSha256", "testReportSha256"];
 const RELEASE_ENVIRONMENT_KEYS = new Set([
   "KAI_IMAGE",
   "KAI_RELEASE_SHA",
@@ -119,10 +120,14 @@ export function buildReleaseEnvironment({ imageReference, releaseSha, platform }
 
 export function validatePromotionEvidence(evidence, releaseSha) {
   invariant(evidence && evidence.releaseSha === releaseSha, "validation evidence must name the exact candidate SHA");
-  for (const key of ["schemaSha256", "configurationSha256", "restoreManifestSha256", "testReportSha256"]) {
+  const publicEvidence = { releaseSha };
+  for (const key of EVIDENCE_HASH_KEYS) {
     invariant(typeof evidence[key] === "string" && /^[a-f0-9]{64}$/.test(evidence[key]) && !/^0+$/.test(evidence[key]), `validation evidence requires ${key}`);
+    publicEvidence[key] = evidence[key];
   }
-  return evidence;
+  // Input files may carry private rehearsal context. Publish only validated
+  // identifiers and hashes, never arbitrary properties from those files.
+  return Object.freeze(publicEvidence);
 }
 
 export function buildReleaseRecord({ imageReference, releaseSha, platform, sourceTag, previous, createdAt, releaseId = null, rollbackEvidence = null, validationEvidence = null }) {
@@ -141,22 +146,35 @@ export function buildReleaseRecord({ imageReference, releaseSha, platform, sourc
   };
   const timestamp = new Date(createdAt);
   invariant(Number.isFinite(timestamp.valueOf()), "release record timestamp is invalid");
+  const publicValidationEvidence = validationEvidence == null
+    ? null
+    : validatePromotionEvidence(validationEvidence, current.releaseSha);
   const testedAt = Date.parse(rollbackEvidence?.testedAt);
   const eligible = prior != null && rollbackEvidence?.releaseSha === prior.releaseSha
-    && validationEvidence?.releaseSha === current.releaseSha
+    && publicValidationEvidence?.releaseSha === current.releaseSha
     && rollbackEvidence?.candidateReleaseSha === current.releaseSha
-    && ["schemaSha256", "configurationSha256", "restoreManifestSha256", "testReportSha256"].every(key =>
-      /^[a-f0-9]{64}$/.test(validationEvidence?.[key] ?? "") && rollbackEvidence?.[key] === validationEvidence[key])
+    && EVIDENCE_HASH_KEYS.every(key => rollbackEvidence?.[key] === publicValidationEvidence[key])
     && rollbackEvidence?.imageReference === prior.imageReference
     && rollbackEvidence?.currentDatabaseCompatible === true
     && rollbackEvidence?.suspendedMembershipDenied === true
     && rollbackEvidence?.originPrivate === true
     && rollbackEvidence?.newPaymentsDisabled === true
     && Number.isFinite(testedAt) && testedAt <= timestamp.valueOf() && timestamp.valueOf() - testedAt <= 24 * 60 * 60 * 1000;
+  const publicRollbackEvidence = eligible ? Object.freeze({
+    ...publicValidationEvidence,
+    releaseSha: prior.releaseSha,
+    candidateReleaseSha: current.releaseSha,
+    imageReference: prior.imageReference,
+    testedAt: new Date(testedAt).toISOString(),
+    currentDatabaseCompatible: true,
+    suspendedMembershipDenied: true,
+    originPrivate: true,
+    newPaymentsDisabled: true,
+  }) : null;
   return Object.freeze({
     schemaVersion: "kai-cloud-release-record/2",
     releaseId,
-    validationEvidence,
+    validationEvidence: publicValidationEvidence,
     createdAt: timestamp.toISOString(),
     current,
     previous: prior,
@@ -164,6 +182,6 @@ export function buildReleaseRecord({ imageReference, releaseSha, platform, sourc
       ? { available: false, reason: "initial release has no previous immutable image" }
       : { available: eligible, imageReference: prior.imageReference, releaseSha: prior.releaseSha, platform: prior.platform,
           reason: eligible ? "verified with current database and stabilization security controls" : "previous image exists; compatibility and security recovery have not been verified",
-          evidence: eligible ? rollbackEvidence : null },
+          evidence: publicRollbackEvidence },
   });
 }

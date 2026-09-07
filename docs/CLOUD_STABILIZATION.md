@@ -6,9 +6,15 @@ GitHub `codex/cloud-stable` is the release source. GitLab mirrors the same SHA; 
 
 The sequence is S1 (membership and origin security), S2 (identity and market), S3 (payment candidate only). A merged PR is not deployment evidence. Keep release/acceptance status in each immutable release's separate append-only observation records. The initial baseline predates these fixes and is not an eligible unrestricted rollback target.
 
+Operate the user's designated self-hosted server. Do not introduce Alibaba managed services or make an Alibaba console login a prerequisite. Verify the actual existing reverse proxy and ingress dependencies before changing listeners or DNS; historical edge templates are not evidence of the installed configuration.
+
+Before S2 identity deployment, obtain trusted evidence linking historical issuer/subject identities to the root issuer. The identity developer console can provide that evidence when it exposes stable subject identifiers and application records; identity-server access is not inherently required. Preserve account, organization and membership IDs; ambiguous mappings block deployment and must never be resolved by email-based automatic merging.
+
 ## Immutable publication
 
 Use `cloud-pc/YYYY.MM.DD.N` as the release identifier and Git tag. Pass it with `--release-id` to `ops:image:promote`. Publish only through the single production publisher with its fixed release-record directory. Never run concurrent publishers using alternate directories. Publication checks both existing local records and the remote SHA tag before building; an existing tag, uncertain registry response or publisher lock stops publication. A crashed publisher lock must be investigated before removal.
+
+Create and push the unique protected Git release tag for the reviewed CI-passing commit before promotion. The local tag must resolve to HEAD and its release identifier must not already appear in a preserved release record. Verify the remote tag matches the same SHA; never move an existing tag to reuse its identifier.
 
 Record the issue/PR, complete SHA, immutable image digest, configuration revision, schema markers, test evidence, backup manifest hash and verified rollback target. Real config stays outside Git; public records contain identifiers and booleans only. Environment and release records are write-once. Additional observations use new timestamped records, never overwrite old evidence.
 

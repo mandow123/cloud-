@@ -101,9 +101,43 @@ test("promotion artifacts keep immutable current and previous releases without s
   for (const change of [{ candidateReleaseSha: previousSha }, { schemaSha256: "a".repeat(64) }, { configurationSha256: "a".repeat(64) }, { restoreManifestSha256: "a".repeat(64) }, { testedAt: "2026-09-07T06:00:00Z" }, { testedAt: "2026-09-04T06:00:00Z" }]) {
     assert.equal(buildReleaseRecord({ ...input, rollbackEvidence: { ...rollbackEvidence, ...change } }).rollback.available, false);
   }
-  assert.equal(validatePromotionEvidence(evidence, releaseSha), evidence);
+  assert.deepEqual(validatePromotionEvidence(evidence, releaseSha), evidence);
   assert.throws(() => validatePromotionEvidence({ ...evidence, releaseSha: previousSha }, releaseSha));
   assert.throws(() => validatePromotionEvidence({ ...evidence, schemaSha256: "" }, releaseSha));
+});
+
+test("public release evidence excludes private input fields and keeps verified proofs immutable", () => {
+  const hashes = { schemaSha256: "c".repeat(64), configurationSha256: "d".repeat(64), restoreManifestSha256: "e".repeat(64), testReportSha256: "f".repeat(64) };
+  const expectedValidation = { releaseSha, ...hashes };
+  const validationEvidence = { ...expectedValidation, clientSecret: "synthetic-validation-secret", privateConfiguration: { password: "synthetic-nested-secret" } };
+  const previous = { imageReference: `127.0.0.1:5443/kai-cloud-market@sha256:${"b".repeat(64)}`, releaseSha: "b".repeat(40), platform: "linux/amd64" };
+  const expectedRollback = {
+    ...hashes,
+    releaseSha: previous.releaseSha,
+    candidateReleaseSha: releaseSha,
+    imageReference: previous.imageReference,
+    testedAt: "2026-09-06T05:00:00.000Z",
+    currentDatabaseCompatible: true,
+    suspendedMembershipDenied: true,
+    originPrivate: true,
+    newPaymentsDisabled: true,
+  };
+  const rollbackEvidence = { ...expectedRollback, password: "synthetic-rollback-secret", rawResponse: { token: "synthetic-response-secret" } };
+  const sanitized = validatePromotionEvidence(validationEvidence, releaseSha);
+  assert.deepEqual(sanitized, expectedValidation);
+  assert.equal(Object.isFrozen(sanitized), true);
+  const record = buildReleaseRecord({ imageReference, releaseSha, platform: "linux/amd64", sourceTag: `127.0.0.1:5443/kai-cloud-market:${releaseSha}`, previous,
+    createdAt: "2026-09-06T06:00:00.000Z", validationEvidence, rollbackEvidence });
+  assert.equal(record.rollback.available, true);
+  assert.deepEqual(record.validationEvidence, expectedValidation);
+  assert.deepEqual(record.rollback.evidence, expectedRollback);
+  assert.doesNotMatch(JSON.stringify(record), /synthetic-|clientSecret|privateConfiguration|password|rawResponse|token/);
+  validationEvidence.schemaSha256 = "a".repeat(64);
+  rollbackEvidence.currentDatabaseCompatible = false;
+  assert.deepEqual(record.validationEvidence, expectedValidation);
+  assert.deepEqual(record.rollback.evidence, expectedRollback);
+  assert.equal(Object.isFrozen(record.validationEvidence), true);
+  assert.equal(Object.isFrozen(record.rollback.evidence), true);
 });
 
 test("local image verification binds RepoDigest, revision and OS/architecture", () => {
