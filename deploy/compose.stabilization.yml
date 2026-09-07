@@ -1,0 +1,10 @@
+# Mandatory overlay for both deployment and rollback during Git-only recovery.
+# It is independent of the historical release environment.
+services:
+  app:
+    environment:
+      KAI_QIXIANG_PAY_ENABLED: "0"
+      KAI_ALIPAY_ENABLED: "0"
+    # The base compose binds the application to 127.0.0.1 only.
+    deploy:
+      replicas: 1

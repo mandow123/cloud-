@@ -1,0 +1,17 @@
+[Unit]
+Description=Cloud redacted health and incident journal
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/kai-cloud/stabilization-health.py
+TimeoutStartSec=40
+StateDirectory=kai-cloud-health
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/kai-cloud-health
+ReadOnlyPaths=/opt/kai-cloud-3051
+PrivateTmp=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

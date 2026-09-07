@@ -84,7 +84,7 @@ function purchaseRequest(session, key, sshPublicKey, resourceId = "gpu-honghuan-
       "x-kai-csrf": session.csrf,
       "Idempotency-Key": key,
     },
-    body: JSON.stringify({ resourceId, quantity: 1, durationHours: 3, deliveryDate: "2026-09-01", note: "人工开通测试", sshPublicKey }),
+    body: JSON.stringify({ resourceId, quantity: 1, durationHours: 3, deliveryDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10), note: "人工开通测试", sshPublicKey }),
   });
 }
 
