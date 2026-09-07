@@ -24,7 +24,8 @@ function reversalProven(facts: SupplyPaymentFacts) {
 export function classifySupplyPayment(facts: SupplyPaymentFacts, now: string): SupplyRecoveryDecision {
   const { order, payment, debit, delivery, allocation, events, rewards } = facts;
   if (!order) return "MANUAL_REVIEW";
-  if (!debit && !facts.batches.length && !events.length && !rewards.length && (!payment || payment.status === "PENDING")) return "UNPAID";
+  if (payment?.provider_transaction_ref != null && payment.provider_transaction_ref !== `KCH_${order.id}`) return "MANUAL_REVIEW";
+  if (!debit && !facts.batches.length && !events.length && !rewards.length && (!payment || (payment.status === "PENDING" && payment.provider_transaction_ref == null))) return "UNPAID";
   if (supplyCaptureComplete(facts)) return "COMPLETE";
   if (reversalProven(facts)) return "REVERSED";
   if (!supplyReservationCoherent(facts) || !supplyDebitProven(facts) || !debit || debit.status !== "CAPTURED" || !delivery || !allocation || facts.batches.length !== 1) return "MANUAL_REVIEW";

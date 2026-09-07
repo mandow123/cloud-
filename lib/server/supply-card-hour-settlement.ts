@@ -74,6 +74,9 @@ export function supplyCaptureComplete(facts: SupplyPaymentFacts) {
 export function supplyCaptureStatements(facts: SupplyPaymentFacts, now: string, payloadDigest: string): CardHourSql[] {
   const order = facts.order!;
   const orderId = String(order.id);
+  // A historical reference is reusable only with proof of the existing debit.
+  // New captures still require an empty reference before they can move value.
+  const provenTransaction = supplyDebitProven(facts) ? `KCH_${orderId}` : null;
   return [
     paymentInvariant("EXISTS(SELECT 1 FROM supply_trial_orders WHERE id=? AND version=? AND status='PAYMENT_PENDING' AND expires_at>?)", [orderId, order.version, now]),
     paymentInvariant(`EXISTS(SELECT 1 FROM supply_allocation_bindings a JOIN supply_trial_orders o ON o.id=a.trial_order_id
@@ -81,7 +84,7 @@ export function supplyCaptureStatements(facts: SupplyPaymentFacts, now: string, 
       AND a.member_id=o.member_id AND a.promotion_id=o.promotion_id AND a.start_at=o.start_at AND a.end_at=o.end_at AND a.node_hours=o.duration_hours)`, [orderId]),
     paymentInvariant("EXISTS(SELECT 1 FROM supply_trial_deliveries WHERE order_id=? AND status='AWAITING_PAYMENT' AND secure_endpoint_ref IS NULL AND buyer_public_key_fingerprint IS NULL AND host_key_fingerprint IS NULL AND credential_expires_at IS NULL AND cleanup_evidence_digest IS NULL)", [orderId]),
     { sql: "INSERT OR IGNORE INTO supply_trial_payments(order_id,status,provider,provider_order_ref,provider_transaction_ref,version,created_at,updated_at) VALUES(?,'PENDING','KAI_CARD_HOUR',?,NULL,1,?,?)", values: [orderId, orderId, now, now] },
-    paymentInvariant("EXISTS(SELECT 1 FROM supply_trial_payments WHERE order_id=? AND provider='KAI_CARD_HOUR' AND provider_order_ref=? AND status='PENDING' AND provider_transaction_ref IS NULL)", [orderId, orderId]),
+    paymentInvariant("EXISTS(SELECT 1 FROM supply_trial_payments WHERE order_id=? AND provider='KAI_CARD_HOUR' AND provider_order_ref=? AND status='PENDING' AND (provider_transaction_ref IS NULL OR provider_transaction_ref=?))", [orderId, orderId, provenTransaction]),
     { sql: "INSERT INTO supply_trial_payment_events(id,order_id,provider,provider_event_ref,provider_transaction_ref,event_type,operation,amount_cents,payload_digest,outcome,resulting_status,occurred_at,received_at) VALUES(?,?,'KAI_CARD_HOUR',?,?,'CAPTURED','CAPTURE',?,?,'APPLIED','CAPTURED',?,?)", values: [`KAI-SPE-${crypto.randomUUID()}`, orderId, `capture:${orderId}`, `KCH_${orderId}`, order.amount_cents, payloadDigest, now, now] },
     { sql: "UPDATE supply_trial_payments SET status='CAPTURED',provider_transaction_ref=?,version=version+1,updated_at=? WHERE order_id=?", values: [`KCH_${orderId}`, now, orderId] },
     { sql: "UPDATE supply_trial_orders SET status='PAID',version=version+1,updated_at=? WHERE id=?", values: [now, orderId] },
@@ -117,7 +120,7 @@ export async function settleSupplyCardHours(db: CardHourDatabaseAdapter, input: 
     return { record: supplyPaymentRecord(payment!), amountMicros, cnyReferenceCents: Number(order.amount_cents), replayed: true };
   }
   if (!supplyReservationCoherent(facts)) throw review();
-  if (facts.batches.length || facts.events.length || facts.rewards.length || (payment && (payment.status !== "PENDING" || payment.provider !== "KAI_CARD_HOUR" || payment.provider_order_ref !== input.orderId))) throw review();
+  if (facts.batches.length || facts.events.length || facts.rewards.length || (payment && (payment.status !== "PENDING" || payment.provider !== "KAI_CARD_HOUR" || payment.provider_order_ref !== input.orderId || payment.provider_transaction_ref != null))) throw review();
   if (Date.parse(String(order.expires_at)) <= Date.parse(input.now)) throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 410, "容量锁和支付时限已经过期。 ");
   if (order.status !== "PAYMENT_PENDING") throw new ExchangeDomainError("EXCHANGE_STATE_CONFLICT", 409, "订单当前不能创建支付。 ");
   const wallet = await db.first<PaymentRow>("SELECT available_micros FROM card_hour_wallets WHERE organization_id=?", [organizationId]);

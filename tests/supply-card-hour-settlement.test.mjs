@@ -96,6 +96,67 @@ test("changed facts, delivered state or vested commission cannot be automaticall
   } finally { f.db.close(); }
 });
 
+test("conflicting historical transaction references require manual review without rewriting payment facts", async () => {
+  for (const status of ["PENDING", "REFUND_PENDING"]) {
+    for (const expired of [false, true]) {
+      const f = await paymentFixture();
+      try {
+        await f.legacyDebit();
+        f.db.prepare("INSERT INTO supply_trial_payments(order_id,status,provider,provider_order_ref,provider_transaction_ref,version,created_at,updated_at) VALUES(?,?,'KAI_CARD_HOUR',?,'CONFLICTING_TRANSACTION',1,?,?)")
+          .run(f.order.id, status, f.order.id, f.input.now, f.input.now);
+        const now = expired ? "2099-01-01T00:00:00.000Z" : f.input.now;
+        const before = balance(f);
+        const originalPayment = f.db.prepare("SELECT * FROM supply_trial_payments WHERE order_id=?").get(f.order.id);
+        const originalDebit = f.db.prepare("SELECT * FROM card_hour_order_payments WHERE order_id=?").get(f.order.id);
+        const scan = await scanSupplyPaymentRecovery(f.adapter, { now });
+        assert.equal(scan.records[0].decision, "MANUAL_REVIEW", `${status}, expired=${expired}`);
+        const input = { orderId: f.order.id, expectedFingerprint: scan.records[0].fingerprint, now, operatorId: "fixture-operator" };
+        await recoverSupplyPayment(f.adapter, input);
+        await recoverSupplyPayment(f.adapter, input);
+        assert.equal(balance(f), before);
+        assert.deepEqual(f.db.prepare("SELECT * FROM supply_trial_payments WHERE order_id=?").get(f.order.id), originalPayment);
+        assert.deepEqual(f.db.prepare("SELECT * FROM card_hour_order_payments WHERE order_id=?").get(f.order.id), originalDebit);
+        assert.equal(count(f, "card_hour_ledger_batches"), 1);
+        assert.equal(count(f, "card_hour_ledger_entries"), 2);
+        assert.equal(count(f, "supply_trial_payment_events"), 0);
+        assert.equal(count(f, "admin_work_items"), 1);
+        assert.equal(count(f, "admin_audit_events"), 1);
+      } finally { f.db.close(); }
+    }
+  }
+});
+
+test("a matching historical transaction reference remains eligible for evidence-based recovery", async () => {
+  for (const expired of [false, true]) {
+    const f = await paymentFixture();
+    try {
+      await f.legacyDebit();
+      f.db.prepare("INSERT INTO supply_trial_payments(order_id,status,provider,provider_order_ref,provider_transaction_ref,version,created_at,updated_at) VALUES(?,'PENDING','KAI_CARD_HOUR',?,?,1,?,?)")
+        .run(f.order.id, f.order.id, `KCH_${f.order.id}`, f.input.now, f.input.now);
+      const now = expired ? "2099-01-01T00:00:00.000Z" : f.input.now;
+      const scan = await scanSupplyPaymentRecovery(f.adapter, { now });
+      assert.equal(scan.records[0].decision, expired ? "REVERSE_UNDELIVERED" : "COMPLETE_CAPTURE");
+      await recoverSupplyPayment(f.adapter, { orderId: f.order.id, expectedFingerprint: scan.records[0].fingerprint, now, operatorId: "fixture-operator" });
+      assert.equal(f.db.prepare("SELECT provider_transaction_ref FROM supply_trial_payments WHERE order_id=?").get(f.order.id).provider_transaction_ref, `KCH_${f.order.id}`);
+      assert.equal(count(f, "admin_work_items"), 0);
+    } finally { f.db.close(); }
+  }
+});
+
+test("a recorded transaction without a proven debit cannot be treated as unpaid or charged again", async () => {
+  const f = await paymentFixture();
+  try {
+    f.db.prepare("INSERT INTO supply_trial_payments(order_id,status,provider,provider_order_ref,provider_transaction_ref,version,created_at,updated_at) VALUES(?,'PENDING','KAI_CARD_HOUR',?,?,1,?,?)")
+      .run(f.order.id, f.order.id, `KCH_${f.order.id}`, f.input.now, f.input.now);
+    const scan = await scanSupplyPaymentRecovery(f.adapter, { now: f.input.now });
+    assert.equal(scan.records[0].decision, "MANUAL_REVIEW");
+    await assert.rejects(f.card.settleSupplyOrder(f.input), error => error.code === "EXCHANGE_PAYMENT_REVIEW_REQUIRED" && error.status === 409);
+    assert.equal(balance(f), 100000000);
+    assert.equal(count(f, "card_hour_ledger_batches"), 0);
+    assert.equal(count(f, "card_hour_order_payments"), 0);
+  } finally { f.db.close(); }
+});
+
 test("vested or contradictory commission evidence always enters manual review without moving value",async()=>{
   for(const scenario of ["VESTED","PENDING_WITH_VEST_DATE","PENDING_WITH_POSTED_LEDGER"]) {
     const f=await paymentFixture();
