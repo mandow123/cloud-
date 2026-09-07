@@ -4,7 +4,9 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import test from "node:test";
+import test, { beforeEach } from "node:test";
+import { createQixiangQueryExecutor } from "../lib/server/qixiang-query-executor.ts";
+beforeEach(() => { globalThis.__kaiQixiangQueryExecutor = createQixiangQueryExecutor({ bootAt: Date.now() - 60_000 }); });
 
 import { createD1CardHourStore } from "../lib/server/card-hour-store-d1.ts";
 import { createSqliteCardHourStore } from "../lib/server/card-hour-store-sqlite.ts";
