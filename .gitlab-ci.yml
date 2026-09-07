@@ -5,13 +5,19 @@ workflow:
 
 stages:
   - validate
+variables:
+  GIT_DEPTH: "0"
+  KAI_COMPOSE_BIN: ".market-cache/tools/docker-compose"
 
 validate:cloud-source:
-  image: alpine:3.20
+  image: node:24.18.0-bookworm-slim
   stage: validate
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends python3 git ca-certificates
+    - node scripts/ops/install-compose-checker.mjs
   script:
-    - test -f package.json
-    - test -d app
-    - test -d lib
-    - echo "Cloud PC source contract is present."
-
+    - npm ci
+    - npm run lint
+    - npm test
+    - npm run ops:self-test
+    - npm run ops:deploy:validate

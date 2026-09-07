@@ -1,6 +1,18 @@
 # KAI Cloud 生产运维基线
 
-本目录提供可复现的单机生产基线，不会自行修改服务器。当前业务仍未接入真实供应商库存与正式身份体系；真实资料上线前还必须完成身份认证、授权和数据合规审查。
+本目录提供自有服务器上的单机生产操作基线，不会自行修改服务器。认证、卡时账本、受控充值和人工交付已有实现，是否生产启用或完成验收必须以实际部署记录为准。
+
+## 当前稳定化阶段：优先执行
+
+本节与 [稳定化发布规则](../docs/CLOUD_STABILIZATION.md) 优先于下方历史安装及迁移说明。
+
+- 在用户指定的自有主机运行应用、数据库、镜像仓库、备份和定时任务；不新增阿里云托管服务，不以登录阿里云控制台作为前提。
+- 每次应用启动、配置切换和回退都必须在基础 Compose 后加载同一受审版本的 `deploy/compose.stabilization.yml`，强制关闭七象和支付宝新收银，保留独立的存量核单配置。不得只改网页按钮，也不得因恢复旧环境文件而重新开启新单。
+- 源站仅监听回环；对当前实际自建反向代理、TLS 终止、健康检查、同机旁路和 IPv6 逐项核验。历史 3054 入口/socket 模板不是当前服务器事实，不得据此启用新入口或恢复公网旁路。
+- 本轮不新增数据库迁移或异地存储；使用已有一致性备份及隔离恢复演练，不宣称完整灾备。发生新业务写入后保留当前数据库，只切换已验证兼容且包含安全修复的镜像；没有合格版本时关闭受影响操作并前向修复。
+- 维护最多 10 分钟，第 7 分钟决定继续或回退。进入窗口前完成候选、恢复、回调补偿和回退演练；发布后观察 30 分钟及至少 24 小时。
+- 身份登录需先核对旧 issuer 与新 issuer 的可信用户标识映射，保留原账号/组织/成员 ID，冲突阻断；可以通过身份开发者控制台取得证据，无需默认要求身份服务器权限。禁止按邮箱自动合并。
+- 下方开启真实收银的历史步骤本轮不执行；S3 只交付隔离候选，真实支付等待用户选定数据库恢复方案并完成演练。
 
 ## 服务目标
 
@@ -35,11 +47,13 @@ Compose 会把 `KAI_IMAGE` 以 `KAI_IMAGE_REFERENCE` 传入应用容器，供启
 5. 从仓库根目录运行 `docker compose --env-file /etc/kai-cloud/kai-cloud-registry.env -f deploy/compose.registry.yml config --quiet`，人工核对只出现 loopback 端口和专用数据目录，再运行 `up -d --wait`。通过 `curl --cacert ... --user <账号> https://127.0.0.1:5443/v2/` 验证未认证为 `401`、正确认证为 `200`。
 6. 使用 `docker login 127.0.0.1:5443 --username <账号> --password-stdin`，密码仅从受控密码管理器经标准输入传入；晋级脚本从不接收或输出仓库凭据。
 
-构建晋级必须在干净 Git 提交上执行。脚本用 `git archive HEAD` 作为构建上下文、把完整提交 SHA 写入 OCI revision label、推送唯一的完整 SHA tag，然后重新拉取并核对 RepoDigest、revision label 与 `linux/amd64` 或 `linux/arm64`：
+构建晋级必须在干净 Git 提交上执行。先为已通过 CI 和独立审查的完整提交创建唯一的 `cloud-pc/YYYY.MM.DD.N` Git 标签并推送到受保护的 GitHub 源码仓库，再从该提交发布。发布脚本要求本地同名标签准确指向 HEAD，拒绝已使用的发布编号；不得移动或删除既有标签。脚本用 `git archive HEAD` 作为构建上下文、把完整提交 SHA 写入 OCI revision label、推送唯一的完整 SHA 镜像 tag，然后重新拉取并核对 RepoDigest、revision label 与平台：
 
 ```bash
 # 后续发布必须传当前 release env；首次发布方式见下文。
 npm run ops:image:promote -- \
+  --release-id cloud-pc/YYYY.MM.DD.N \
+  --validation-evidence /path/to/verified-candidate-evidence.json \
   --repository 127.0.0.1:5443/kai-cloud-market \
   --platform linux/amd64 \
   --output-dir /var/lib/kai-cloud-releases \
@@ -92,28 +106,34 @@ npm run ops:image:promote -- \
 
 ```bash
 (
+  set -eu
   set -a
   . /etc/kai-cloud/kai-cloud-release.env
   . /etc/kai-cloud/kai-cloud-app.env
   set +a
 
+  # Final stabilization policy applies to validation as well as the container.
+  export KAI_QIXIANG_PAY_ENABLED=0 KAI_ALIPAY_ENABLED=0
+
   npm run ops:deploy:validate -- --current-env
   docker compose \
     --env-file /etc/kai-cloud/kai-cloud-release.env \
     --env-file /etc/kai-cloud/kai-cloud-app.env \
-    -f deploy/compose.production.yml config --quiet
+    -f deploy/compose.production.yml \
+    -f deploy/compose.stabilization.yml config --quiet
   docker compose \
     --env-file /etc/kai-cloud/kai-cloud-release.env \
     --env-file /etc/kai-cloud/kai-cloud-app.env \
-    -f deploy/compose.production.yml up -d --wait app
+    -f deploy/compose.production.yml \
+    -f deploy/compose.stabilization.yml up -d --wait app
 )
 ```
 
 门禁会拒绝：不足 32 UTF-8 字节或已知占位值的 `KAI_CURSOR_SECRET`、非规范 HTTPS 公网 origin、非完整 40/64 位小写十六进制发布 SHA、可变 tag 或占位 digest、关闭的 HTTPS/代理标志、非 `0`/`1` 的 HSTS 标志，以及不安全或不存在的状态目录。镜像自己的 entrypoint 会在 `server.js` 之前重复相同校验；任一条件不满足时容器以非零状态退出，`up --wait` 不会报告成功。不要把跳过 `ops:deploy:validate -- --current-env`、删除 entrypoint 或不等待健康检查的命令当作受支持的发布路径。
 
-应用端口只绑定 `127.0.0.1:3051`。私网 3054 必须运行 `kai-cloud-edge-http-3054.service`，由它覆盖而不是继承请求中的 `Host`、`Forwarded` 与 `X-Forwarded-*`，并向应用固定签发 `X-Forwarded-Proto: https`。因此生产配置固定启用 `KAI_TRUST_PROXY=1`，并同时设置 `KAI_REQUIRE_HTTPS_WRITES=1`；任何绕过反向代理的明文写请求都会被拒绝。不得在公网边界继续使用旧的 `kai-cloud-edge-3054.socket` 原始 TCP 转发，否则应用无法确认 TLS 已在上游终止，安全 Cookie 和会员写入会保持关闭。容器内业务数据库和行情目录固定分别挂载到 `/app/db` 与 `/app/market`，不得合并或改成应用根目录。容器还具有 1 CPU、512MB 内存、256 PIDs、只读根文件系统、日志轮转和 `/api/live` 存活检查。`/api/ready` 用于发布和反向代理就绪判断，不应替代存活检查。
+应用端口只绑定 `127.0.0.1:3051`，必须核对实际容器绑定及外网访问结果。当前自建反向代理应覆盖客户端提供的 `Host`、`Forwarded` 与 `X-Forwarded-*`，仅在可信 TLS 终止链路已验证后固定转发 HTTPS 信息；所有公网虚拟主机拒绝 `/api/internal/`。生产固定启用 `KAI_TRUST_PROXY=1` 和 `KAI_REQUIRE_HTTPS_WRITES=1`，不得用原始 TCP socket 或公开应用端口绕过代理。容器内业务数据库和行情目录分别挂载到 `/app/db` 与 `/app/market`，不得合并。保留资源限制、只读根文件系统、日志轮转和 `/api/live` 存活检查；`/api/ready` 另用于发布就绪判断。
 
-切换前必须用同一份 Nginx 配置在临时回环端口演练 `/api/live` 与 `/api/session`，确认会话响应设置 `__Host-` 安全 Cookie。正式切换时停止并禁用 `kai-cloud-edge-3054.socket`，再启用 `kai-cloud-edge-http-3054.service`。若公网健康检查、登录回调或会员写入任一失败，立即停止新服务并重新启用原 socket；应用容器、数据库与审计数据无需回滚。人工询价的未完成需求只写入旧版会忽略的 `marketplace_request_staging_v1` 侧表，公开市场主表继续保持 v4 约束和 v4 迁移元数据；因此旧应用可以直接启动，且不会看见尚未完成侧车记录的需求。发布前必须运行对应的 SQLite/D1 v4 回退兼容测试，禁止再次通过提升市场主版本来实现私有暂存。
+切换前用同一份受审 Nginx 配置在临时回环端口演练 `/api/live` 与 `/api/session`，确认 `__Host-` 安全 Cookie。公网健康检查、登录回调或会员写入失败时使用已验证的安全回退配置，继续保持回环监听、成员停用检查和新收银关闭，不能恢复原始 socket 旁路。S1 首次发布若没有合格安全旧镜像，只提供公开只读路由并阻断私有业务。市场主表保持既有 v4 约束；数据库兼容性仍需在恢复副本上验证，不能据旧版可启动就断言它满足安全回退要求。
 
 Hosting V2 试运营固定使用管理员双人审批发放卡时，`KAI_ALIPAY_ENABLED` 必须保持 `0`；即使主机残留完整商户凭据也不能创建付款单。申请账号使用唯一 Root，审批账号使用独立的 `KAI_ADMIN_APPROVER_USERNAME` 与 `KAI_ADMIN_APPROVER_PASSWORD_HASH`，两个用户名、密码和实际操作者都必须不同；审批账号只获得卡时审批和只读审计权限。先设置 `KAI_HOSTING_V2_SETUP=1`、`KAI_HOSTING_V2=0` 进入预上线配置模式，仅完成供应商审核、费率、Agent 配对、设备验真和挂牌草稿；公开市场、租用、开通、启动、扣减和结算仍由服务端拒绝。设备退场接口使用独立开关 `KAI_HOSTING_DEVICE_RETIREMENT`，默认必须保持 `0`，完成 Root 应急撤权和受控退场演练后才可在 Setup 或交易模式下开启。配置模式只允许 Agent 执行验真，以及既有实例的停止与清理收尾，不能领取新的开通或启动命令。启用 `KAI_HOSTING_V2=1` 前必须配置 KAI Identity、不可变交付镜像和供应协议版本，并在隔离入口完成供应商审批、有效费率、在线 Host Agent、三分钟计量及清理演练。`/api/ready` 会逐项报告供应身份、Agent、费率、卡时账本、镜像、协议、计量、清理和支付宝关闭状态，任一关键项失败时新版本不得接入流量。
 
@@ -153,14 +173,14 @@ KAI Identity 上游修复后，在 Cloud 源码目录运行 `npm run ops:identit
 5. 此时才人工执行第一次备份，再把恢复包还原到全新的隔离目录并完成 `quick_check`、外键、迁移版本和业务冒烟验证。
 6. 只有恢复演练成功后，才启用 backup/update timers，并把 HTTPS 反向代理流量切入应用。
 
-升级已有实例时顺序相反：必须在替换应用前创建并异地同步一致性备份、验证恢复包，再用隔离数据库副本启动新 digest 的 canary。迁移、`/api/ready` 和业务冒烟通过后才允许短暂停写、替换应用并切换流量。不得用首次安装的“启动后首次备份”顺序处理已有生产数据。
+升级已有实例时必须在替换应用前创建一致性备份、验证恢复包，再用隔离数据库副本启动新 digest 的 canary。当前稳定化不新增异地存储，不能据本地恢复演练宣称整机灾备完成。`/api/ready` 和业务冒烟通过后才进入最多 10 分钟的停写窗口；不得用首次安装的“启动后首次备份”顺序处理已有数据。
 
 ### 0032 预部署门禁
 
 包含 Telemetry-only Agent 数据投影的新镜像无论 `KAI_AGENT_TELEMETRY_V1` 是 `0` 还是 `1`，都依赖 `0032_hosting_agent_capability_modes.sql` 新增的列和索引。必须先用候选 digest 对真实持久化数据库做只读分类，不能无条件执行迁移：
 
 ```bash
-docker compose -f deploy/compose.production.yml run --rm app \
+docker compose -f deploy/compose.production.yml -f deploy/compose.stabilization.yml run --rm app \
   node scripts/ops/verify-hosting-agent-capability-schema.mjs \
   --allow-uninitialized
 ```
@@ -177,7 +197,7 @@ docker compose -f deploy/compose.production.yml run --rm app \
 3. 使用候选 digest 和真实持久化数据库挂载执行受控迁移：
 
 ```bash
-docker compose -f deploy/compose.production.yml run --rm app \
+docker compose -f deploy/compose.production.yml -f deploy/compose.stabilization.yml run --rm app \
   node scripts/ops/verify-hosting-agent-capability-schema.mjs \
   --apply --confirm APPLY_0032_HOSTING_AGENT_CAPABILITY_MODES
 ```
@@ -185,7 +205,7 @@ docker compose -f deploy/compose.production.yml run --rm app \
 4. 再以只读模式执行同一门禁；它必须确认 schema marker 仍为 v14、两个表的 `application_id` / `capability_mode` 列以及两个查询索引全部存在：
 
 ```bash
-docker compose -f deploy/compose.production.yml run --rm app \
+docker compose -f deploy/compose.production.yml -f deploy/compose.stabilization.yml run --rm app \
   node scripts/ops/verify-hosting-agent-capability-schema.mjs
 ```
 
@@ -335,7 +355,7 @@ docker compose -f deploy/compose.production.yml run --rm app \
 
 - 七相旧版协议的查单接口要求把商户密钥放入查询参数，因此只有 `KAI_QIXIANG_PAY_RECONCILIATION_ENABLED=1` 且全部门禁就绪时，专用服务端客户端才可调用固定的 `https://api.payqixiang.cn/api.php`：禁止重定向、代理、浏览器调用、完整 URL 日志和错误原文回显。签名通知本身不得直接入账；必须主动查单确认 `status=1`，并逐项核对 PID、商户订单号、七相订单号、通道、商品名、金额和扩展参数。浏览器回跳页只调用本平台鉴权接口，由服务端抢占持久化租约后查单；浏览器不接触密钥，也不读取回跳参数作为成功依据。退款保持人工待处理，未取得可验证退款协议前不得宣称退款成功。
 
-启用七相新订单必须按顺序执行，任何一步失败都保持 `KAI_QIXIANG_PAY_ENABLED=0`：
+以下是未来真实收银的历史配置说明，当前稳定化阶段禁止执行开启新订单的步骤；新单始终保持 `KAI_QIXIANG_PAY_ENABLED=0`。未来必须先解除本文件开头的恢复/真实支付门禁并另行更新受审发布策略，不能直接删除当前 overlay：
 
 生产配置必须使用 `scripts/ops/configure-qixiang-pay-env.mjs`，禁止用文本编辑器或 Shell 替换密钥。默认必须在七相后台轮换并作废曾进入聊天、日志或工单的旧密钥。仅当商户责任人明确书面批准继续使用某一已识别密钥时，才允许例外复用：审批必须同时绑定该密钥的 SHA-256 摘要、`RISK-` 参考号和真实批准时间；配置器、生产校验器与运行时会逐项核对，不能用该例外放行其他密钥。将以下精确 JSON 字段写入 `/root/kai-qixiang-production.json`，文件必须是 `0600 root:root`，父目录不能由非 root 写入：`pid`、`key`、`approvalReference`、`credentialVersion`、`credentialRotatedAt`、`keyReuseApprovalReference`、`keyReuseApprovedAt`、`keyReuseDigest`、`riskReference`、`queryCredentialId`、`queryCredentialVersion`、`queryCredentialRotatedAt`、`channel`、`organizations`。未发生轮换时，两个 `RotatedAt` 字段必须为空字符串并通过版本字段登记生命周期，禁止用部署时间冒充轮换时间；复用批准时间写入 `keyReuseApprovedAt`。新密钥的三个复用字段必须为空字符串。`channel` 固定为 `ALIPAY`，`organizations` 必须逐项等于本次获批且仍为 `ACTIVE` 的组织 ID。当前首批必须核对工具输出 `organizationCount=7`。
 
@@ -349,6 +369,7 @@ sudo node /opt/kai-cloud-release-sources/<受审完整提交>/scripts/ops/config
   --confirm CONFIGURE_QIXIANG_PRODUCTION_PAYMENT
 sudo docker compose -p kai-cloud-3051 \
   -f /opt/kai-cloud-release-sources/<受审完整提交>/deploy/compose.production.yml \
+  -f /opt/kai-cloud-release-sources/<受审完整提交>/deploy/compose.stabilization.yml \
   --env-file /etc/kai-cloud/kai-cloud-app.env \
   --env-file /etc/kai-cloud/kai-cloud-release.env up -d --wait app
 curl -fsS https://cloud.kai.com/api/ready | jq -e \
@@ -365,6 +386,7 @@ sudo node /opt/kai-cloud-release-sources/<受审完整提交>/scripts/ops/config
   --confirm CONFIGURE_QIXIANG_PRODUCTION_PAYMENT
 sudo docker compose -p kai-cloud-3051 \
   -f /opt/kai-cloud-release-sources/<受审完整提交>/deploy/compose.production.yml \
+  -f /opt/kai-cloud-release-sources/<受审完整提交>/deploy/compose.stabilization.yml \
   --env-file /etc/kai-cloud/kai-cloud-app.env \
   --env-file /etc/kai-cloud/kai-cloud-release.env up -d --wait app
 curl -fsS https://cloud.kai.com/api/ready | jq -e \
@@ -388,7 +410,7 @@ trap - EXIT
 ' sh <backupFile> /etc/kai-cloud/kai-cloud-app.env
 ```
 
-恢复后验证支付开关、`/api/ready` 和存量订单核对状态。全部上线记录完成后删除 `/root/kai-qixiang-production.json`，不得把凭据文件加入常规备份、源码或工单。
+恢复环境文件后仍须通过“声明式应用启动”的完整命令重建应用，继续加载受审 overlay。验证七象和支付宝新单开关均为 0、`/api/ready` 和存量订单核对状态。全部上线记录完成后删除 `/root/kai-qixiang-production.json`，不得把凭据文件加入常规备份、源码或工单。
 
 1. 将经审批的变更单号写入 `KAI_QIXIANG_PAY_APPROVAL_REFERENCE`；用 `KAI_QIXIANG_PAY_CREDENTIAL_VERSION` 或 UTC ISO 8601 的 `KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT` 登记当前商户凭据生命周期。密钥只允许写入服务器密钥配置，不得输出到日志、就绪接口或工单正文。
 2. 七相旧查单协议会把密钥放入 GET URL，必须由责任人书面接受该残余风险：设置 `KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED=1`、`KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE=RISK-...`，以非密钥的 `KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID=QRY-...` 登记查单凭据，并用查单凭据版本或轮换时间登记生命周期。未完成这些字段时生产校验器与应用就绪门禁都保持关闭。
@@ -489,15 +511,15 @@ systemd 失败会调用 `kai-cloud-ops-alert@.service`。默认写入 journal；
 
 发布顺序：
 
-1. 完成异地备份并验证恢复包。
-2. 在数据库副本上执行迁移和自动化测试。
+1. 创建现有一致性备份并验证恢复包；本轮不新增异地存储，不宣称完整灾备。
+2. 在隔离数据库副本上验证结构兼容性和自动化测试；本轮不引入新迁移。
 3. 用新 digest、新端口和隔离数据启动 canary。
 4. 通过 `/api/ready`、业务冒烟和资源观察。
-5. 短暂停写后切换反向代理；单个 SQLite 文件不得同时存在两个写实例。
+5. 证明在途回调可补偿后暂停写入、排空请求，生成最终一致性恢复点并停止旧写实例，再启动候选；第 7 分钟决定继续或回退，总维护不超过 10 分钟。单个 SQLite 文件不得同时存在两个写实例。
 6. 更新 `/etc/kai-cloud/kai-cloud-release.env`，确保应用和两个定时任务使用同一 digest 与 release SHA；应用环境另由 `kai-cloud-app.env` 提供，不能复制到运维 unit。
 7. 保留上一个已验证 digest、完整 SHA tag、晋级 JSON 记录和对应恢复包，观察期结束后再按保留策略清理；Registry GC 前必须再次确认 current/previous 都可按 digest 拉取。
 
-只有数据库迁移明确向后兼容时，才允许只回退应用 digest。若 schema 不兼容，必须恢复发布前恢复包或使用经过验证的前向修复迁移。回滚也要在隔离端口完成就绪和业务冒烟，不能依赖一个未挂载持久化目录的停止容器。
+回退必须复用“声明式应用启动”的完整命令和 `compose.stabilization.yml`，使用当前数据库和已验证兼容、含成员停用修复的镜像。发生新业务写入后禁止以发布前恢复包覆盖现库。没有合格安全镜像时关闭受影响操作并前向修复。回退也必须提前在隔离端口完成就绪与业务演练；不能依赖未挂载持久化目录的停止容器。发布后观察 30 分钟及至少 24 小时，覆盖行情更新和备份任务。
 
 ## 验收命令
 
@@ -516,7 +538,7 @@ npm run ops:deploy:validate
 npm run lint
 npx tsc --noEmit
 npm test
-docker compose -f deploy/compose.production.yml config
+docker compose -f deploy/compose.production.yml -f deploy/compose.stabilization.yml config --quiet
 systemd-analyze verify deploy/*.service deploy/*.timer
 ```
 
