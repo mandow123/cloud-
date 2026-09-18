@@ -403,7 +403,13 @@ export async function createAdminOperationsStore(db: AdminDatabaseAdapter): Prom
       const status=input.status;if(status!=="ACTIVE"&&status!=="SUSPENDED")throw new ExchangeInputError("status must be ACTIVE or SUSPENDED.","status");
       const why=reason(input.reason),at=now();await ensureRootContinuity(db,String(found.row.membership_id),status);
       const record={...found.record,status,version:expected+1,updatedAt:at};const response={record};
-      try{await db.batch([...managementVersionWrite(found.row,context,at),...guardedMembershipStatusWrite(String(found.row.membership_id),status,at),auditSql(context.principalId,"ADMIN","ADMIN_PRINCIPAL",accountId,`ADMIN_PRINCIPAL_${status}`,why,context.payloadHash,at),receiptSql(context,command,response,at)]);}catch(error){return translateContinuityFailure(db,String(found.row.membership_id),status,error);}
+      const revokeSessions:AdminSql[]=status==="SUSPENDED"
+        ? ["admin_password_sessions","kai_identity_oidc_sessions","admin_account_sessions"].map(table=>({
+          sql:`UPDATE ${table} SET revoked_at=? WHERE account_id=? AND organization_id=? AND revoked_at IS NULL`,
+          values:[at,accountId,organizationId],
+        }))
+        : [];
+      try{await db.batch([...managementVersionWrite(found.row,context,at),...guardedMembershipStatusWrite(String(found.row.membership_id),status,at),...revokeSessions,auditSql(context.principalId,"ADMIN","ADMIN_PRINCIPAL",accountId,`ADMIN_PRINCIPAL_${status}`,why,context.payloadHash,at),receiptSql(context,command,response,at)]);}catch(error){return translateContinuityFailure(db,String(found.row.membership_id),status,error);}
       return{...response,replayed:false};
     },
     async assignPrincipalRoles(accountIdValue,context,input) {
