@@ -334,7 +334,7 @@ async function main() {
   assert(volumeByTarget(backup, "/app/market")?.read_only === true, "backup market mount must be read-only");
   assert(volumeByTarget(backup, "/app/backups") && !volumeByTarget(backup, "/app/backups").read_only, "backup output mount must be writable");
 
-  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, capabilitySchemaGate, qixiangSchemaGate, appealSchemaGate, appealReadSchemaGate, reconciliationSchemaGate, runbook, appEnvironmentExample, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator, schemaGateRunner] = await Promise.all([
+  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, capabilitySchemaGate, qixiangSchemaGate, appealSchemaGate, appealReadSchemaGate, reconciliationSchemaGate, refundSchemaGate, runbook, appEnvironmentExample, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator, schemaGateRunner] = await Promise.all([
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.timer"), "utf8"),
@@ -348,6 +348,7 @@ async function main() {
     readFile(resolve(projectRoot, "scripts/ops/verify-card-hour-topup-appeals-schema.mjs"), "utf8"),
     readFile(resolve(projectRoot, "scripts/ops/verify-card-hour-topup-appeal-reads-schema.mjs"), "utf8"),
     readFile(resolve(projectRoot, "scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs"), "utf8"),
+    readFile(resolve(projectRoot, "scripts/ops/verify-card-hour-topup-refund-schema.mjs"), "utf8"),
     readFile(resolve(projectRoot, "deploy/PRODUCTION_RUNBOOK.md"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-app.env.example"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-release.env.example"), "utf8"),
@@ -421,6 +422,8 @@ async function main() {
   assert(appealReadSchemaGate.includes("MIGRATION_MIRROR_MISMATCH") && appealReadSchemaGate.includes("APPLY_0037_CARD_HOUR_TOPUP_APPEAL_READS") && appealReadSchemaGate.includes("card_hour_topup_appeal_member_reads_org_idx"), "the 0037 gate must verify SQLite/D1 mirrors, organization read receipts, and explicit application confirmation");
   assert(productionEntrypoint.includes("verify-card-hour-topup-reconciliation-schema.mjs --allow-uninitialized") && productionEntrypoint.indexOf("verify-card-hour-topup-reconciliation-schema.mjs --allow-uninitialized") < productionEntrypoint.lastIndexOf('exec "$@"'), "production entrypoint must enforce the 0038 durable reconciliation gate before the default server command");
   assert(reconciliationSchemaGate.includes("MIGRATION_MIRROR_MISMATCH") && reconciliationSchemaGate.includes("APPLY_0038_CARD_HOUR_TOPUP_RECONCILIATION") && reconciliationSchemaGate.includes("card_hour_topup_reconciliation_due_idx"), "the 0038 gate must verify SQLite/D1 mirrors, the due index, and explicit application confirmation");
+  assert(productionEntrypoint.includes("verify-card-hour-topup-refund-schema.mjs --allow-uninitialized") && productionEntrypoint.indexOf("verify-card-hour-topup-refund-schema.mjs --allow-uninitialized") < productionEntrypoint.lastIndexOf('exec "$@"'), "production entrypoint must enforce the 0042 topup-refund gate before the default server command");
+  assert(refundSchemaGate.includes("MIGRATION_MIRROR_MISMATCH") && refundSchemaGate.includes("APPLY_0042_CARD_HOUR_TOPUP_REFUNDS") && refundSchemaGate.includes("card_hour_topup_refunds_status_idx"), "the 0042 gate must verify SQLite/D1 mirrors, refund invariants, and explicit application confirmation");
   assert(runbook.includes("/api/session") && runbook.includes("每分钟 30 次、突发 10 次"), "runbook must require a concrete reverse-proxy rate limit for /api/session");
   assert(runbook.includes("POST /api/*") && runbook.includes("每分钟 20 次、突发 5 次"), "runbook must require a concrete reverse-proxy rate limit for API writes");
   assert(runbook.includes("API 守卫会为 API 请求输出结构化日志") && runbook.includes("不记录表单正文、Cookie、会话令牌、CSRF 值或供应商原始报价"), "runbook must accurately describe structured API logs and their redaction boundary");
@@ -462,7 +465,7 @@ async function main() {
   );
   assert(!paymentMigrationRunbook.includes("docker run --rm"), "payment migrations must not bypass Compose env rendering with raw docker env-file parsing");
   const paymentMigrationCommands = [...paymentMigrationRunbook.matchAll(/sudo \/usr\/local\/lib\/kai-cloud\/run-production-schema-gate\.sh[\s\S]*?(?=\n(?:\s{2})?sudo \/usr\/local\/lib\/kai-cloud\/run-production-schema-gate\.sh|\n\))/gu)].map((match) => match[0]);
-  assert(paymentMigrationCommands.length === 9, "payment migration runbook must contain all nine preflight, apply, and verification commands");
+    assert(paymentMigrationCommands.length === 12, "payment migration runbook must contain all twelve preflight, apply, and verification commands");
   for (const command of paymentMigrationCommands) {
     assert(
       command.includes('"$KAI_CANDIDATE_RELEASE_ENV"') && command.includes("node scripts/ops/verify-"),
@@ -478,6 +481,7 @@ async function main() {
   assert(runbook.includes("0036 充值申诉侧车预部署门禁") && runbook.includes("APPLY_0036_CARD_HOUR_TOPUP_APPEALS") && runbook.includes("D1") && runbook.includes("禁止手工删表或改 marker"), "runbook must gate 0036, enforce migration mirrors, and document non-destructive rollback");
   assert(runbook.includes("0037 申诉站内通知预部署门禁") && runbook.includes("APPLY_0037_CARD_HOUR_TOPUP_APPEAL_READS") && runbook.includes("marker v5"), "runbook must provide an executable 0037 migration path before 0038");
   assert(runbook.includes("0038 支付核单租约预部署门禁") && runbook.includes("APPLY_0038_CARD_HOUR_TOPUP_RECONCILIATION") && runbook.includes("KAI_QIXIANG_PAY_RECONCILIATION_ENABLED"), "runbook must gate durable payment reconciliation separately from new checkout creation");
+  assert(runbook.includes("0042 卡时充值退款预部署门禁") && runbook.includes("APPLY_0042_CARD_HOUR_TOPUP_REFUNDS") && runbook.includes("MANUAL_REQUIRED"), "runbook must gate dual-control topup refunds and manual-provider evidence before checkout");
   assert(runbook.includes(".kai-cloud-backup.lock") && runbook.includes("只有一个 timer 指向该 `KAI_STATE_ROOT`"), "runbook must prevent differently named timers from racing on one backup root");
   assert(runbook.includes("127.0.0.1:3051") && runbook.includes("KAI_ENABLE_HSTS=1"), "runbook must document the new loopback port and the gated HSTS enablement step");
   assert(runbook.includes("任何恢复包都不得超过 30 天") && runbook.includes("异地存储也必须配置不超过 30 天的生命周期"), "runbook must align local and off-host backups with the 30-day data boundary");

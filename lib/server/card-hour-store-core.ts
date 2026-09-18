@@ -4,7 +4,7 @@ import { CARD_HOUR_ASSET_CODE } from "../card-hours.ts";
 import { hostingCnyReferenceCents, hostingFeeBreakdown } from "../hosting-v2.ts";
 import { CARD_HOUR_SCHEMA_VERSION, cardHourSchemaStatements } from "../../db/card-hour-schema.ts";
 import { AccountAuthError, accountAuthDigest } from "./account-auth.ts";
-import type { CardHourDashboard, CardHourStore, CardHourTopupAppealReason, CardHourTopupAppealRecord, CardHourTopupAppealStatus } from "./card-hour-store.ts";
+import type { CardHourDashboard, CardHourStore, CardHourTopupAppealReason, CardHourTopupAppealRecord, CardHourTopupAppealStatus, CardHourTopupRefundRecord, CardHourTopupRefundStatus } from "./card-hour-store.ts";
 
 export type CardHourSql = Readonly<{ sql: string; values?: readonly unknown[] }>;
 export interface CardHourDatabaseAdapter {
@@ -37,6 +37,7 @@ function topupRecord(row: Row, now = new Date().toISOString()) {
     id: text(row, "id"), cardHourMicros: number(row, "card_hour_micros"), amountCents: number(row, "amount_cents"),
     currency: "CNY", provider, channel: paymentType === "alipay" ? "ALIPAY" : paymentType === "wxpay" ? "WXPAY" : null,
     status: text(row, "status"), credited: text(row, "status") === "CAPTURED",
+    refundStatus: row.refund_status == null ? null : String(row.refund_status),
     expiresAt: text(row, "expires_at"), createdAt: text(row, "created_at"), updatedAt: text(row, "updated_at"),
     appealEligibility: topupAppealEligibility(row, now),
   };
@@ -64,6 +65,31 @@ function topupAppealRecord(row: Row): CardHourTopupAppealRecord {
     cardHourMicros: number(row, "card_hour_micros"), amountCents: number(row, "amount_cents"),
     topupStatus: text(row, "topup_status"), channel: paymentType === "alipay" ? "ALIPAY" : paymentType === "wxpay" ? "WXPAY" : null,
     createdAt: text(row, "created_at"), updatedAt: text(row, "updated_at"),
+  };
+}
+
+function topupRefundRecord(row: Row): CardHourTopupRefundRecord {
+  return {
+    id: text(row, "id"),
+    topupOrderId: text(row, "topup_order_id"),
+    organizationId: text(row, "organization_id"),
+    provider: text(row, "provider") as CardHourTopupRefundRecord["provider"],
+    amountCents: number(row, "amount_cents"),
+    cardHourMicros: number(row, "card_hour_micros"),
+    status: text(row, "status") as CardHourTopupRefundStatus,
+    requestedBy: text(row, "requested_by"),
+    approvedBy: row.approved_by == null ? null : text(row, "approved_by"),
+    requestReason: text(row, "request_reason"),
+    decisionReason: row.decision_reason == null ? null : text(row, "decision_reason"),
+    providerRefundRequestId: text(row, "provider_refund_request_id"),
+    providerTransactionId: row.provider_transaction_id == null ? null : text(row, "provider_transaction_id"),
+    attemptCount: number(row, "attempt_count"),
+    errorCode: row.error_code == null ? null : text(row, "error_code"),
+    errorMessage: row.error_message == null ? null : text(row, "error_message"),
+    manualEvidenceDigest: row.manual_evidence_digest == null ? null : text(row, "manual_evidence_digest"),
+    version: number(row, "version"),
+    createdAt: text(row, "created_at"),
+    updatedAt: text(row, "updated_at"),
   };
 }
 
@@ -110,7 +136,7 @@ function trialGrantRecord(row: Row) {
 
 export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<CardHourStore> {
   await db.ensureSchema(cardHourSchemaStatements, CARD_HOUR_SCHEMA_VERSION);
-  return {
+  const store: CardHourStore = {
     async health() {
       const migration = await db.first<{ version: number | null }>("SELECT MAX(version) AS version FROM card_hour_schema_migrations");
       if (Number(migration?.version ?? 0) !== CARD_HOUR_SCHEMA_VERSION) throw new Error("CARD_HOUR_SCHEMA_MISMATCH");
@@ -123,6 +149,7 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       await db.first("SELECT appeal_id FROM card_hour_topup_appeal_member_reads LIMIT 1");
       await db.first("SELECT topup_order_id FROM card_hour_topup_reconciliation_claims LIMIT 1");
       await db.first("SELECT topup_order_id FROM card_hour_topup_reconciliation_requests LIMIT 1");
+      await db.first("SELECT id FROM card_hour_topup_refunds LIMIT 1");
       const schema = await db.first<{ sql: string }>("SELECT sql FROM sqlite_master WHERE type='table' AND name='card_hour_topup_orders'");
       if (!schema?.sql.includes("QIXIANG_PAY") || !schema.sql.includes("provider_merchant_ref") || !schema.sql.includes("provider_payment_type") || !schema.sql.includes("checkout_url") || !schema.sql.includes("RECONCILIATION_REQUIRED")) throw new Error("CARD_HOUR_QIXIANG_SCHEMA_MISSING");
       return { schemaVersion: CARD_HOUR_SCHEMA_VERSION, integrity: "ok" as const };
@@ -134,7 +161,9 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
         { sql: "INSERT OR IGNORE INTO card_hour_referral_codes(organization_id,code,created_at) VALUES(?,?,?)", values: [organizationId, code, now] },
       ]);
       const wallet = await db.first<Row>("SELECT * FROM card_hour_wallets WHERE organization_id=?", [organizationId]);
-      const topups = await db.all<Row>("SELECT * FROM card_hour_topup_orders WHERE organization_id=? ORDER BY created_at DESC LIMIT 20", [organizationId]);
+      const topups = await db.all<Row>(`SELECT t.*,r.status AS refund_status FROM card_hour_topup_orders t
+        LEFT JOIN card_hour_topup_refunds r ON r.topup_order_id=t.id
+        WHERE t.organization_id=? ORDER BY t.created_at DESC LIMIT 20`, [organizationId]);
       const appealNotifications = await db.all<Row>(`${TOPUP_APPEAL_SELECT} WHERE a.organization_id=? ORDER BY a.updated_at DESC,a.id DESC LIMIT 20`, [organizationId]);
       const unreadAppeals = await db.first<Row>(`SELECT COUNT(*) AS count FROM card_hour_topup_appeals a
         LEFT JOIN card_hour_topup_appeal_member_reads r ON r.appeal_id=a.id AND r.organization_id=a.organization_id
@@ -357,6 +386,139 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       const updated = await db.first<Row>(`${TOPUP_APPEAL_SELECT} WHERE a.id=?`, [input.appealId]);
       if (!updated) throw new Error("CARD_HOUR_TOPUP_APPEAL_UPDATE_FAILED");
       return { record: topupAppealRecord(updated), replayed: false };
+    },
+    async requestTopupRefund(input) {
+      const reason = input.reason.trim();
+      if (reason.length < 10 || reason.length > 1_000) throw new AccountAuthError("CARD_HOUR_TOPUP_REFUND_INVALID", 400, "退款原因需为 10 至 1000 字。 ");
+      const topup = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=?", [input.orderId]);
+      if (!topup) throw new AccountAuthError("CARD_HOUR_TOPUP_NOT_FOUND", 404, "充值记录不存在。 ");
+      if (text(topup, "status") !== "CAPTURED" || !topup.provider_transaction_id) throw new AccountAuthError("CARD_HOUR_TOPUP_REFUND_STATE_INVALID", 409, "只有已确认到账的充值可以申请退款。 ");
+      const existing = await db.first<Row>("SELECT * FROM card_hour_topup_refunds WHERE topup_order_id=?", [input.orderId]);
+      if (existing) {
+        if (text(existing, "payload_hash") !== input.payloadHash) throw new AccountAuthError("IDEMPOTENCY_CONFLICT", 409, "该充值已绑定不同的退款申请。 ");
+        return { record: topupRefundRecord(existing), replayed: true };
+      }
+      const id = `chtr_${crypto.randomUUID()}`;
+      const providerRefundRequestId = `KAI_RF_${crypto.randomUUID().replaceAll("-", "")}`;
+      await db.batch([{ sql: `INSERT INTO card_hour_topup_refunds(id,topup_order_id,organization_id,provider,amount_cents,card_hour_micros,status,requested_by,approved_by,request_reason,decision_reason,provider_refund_request_id,provider_transaction_id,claim_token,claimed_at,attempt_count,error_code,error_message,manual_evidence_digest,payload_hash,version,created_at,updated_at)
+        VALUES(?,?,?,?,?,?,'PENDING',?,NULL,?,NULL,?,NULL,NULL,NULL,0,NULL,NULL,NULL,?,1,?,?)`, values: [id, input.orderId, text(topup, "organization_id"), text(topup, "provider"), number(topup, "amount_cents"), number(topup, "card_hour_micros"), input.requestedBy, reason, providerRefundRequestId, input.payloadHash, input.now, input.now] }]);
+      const created = await db.first<Row>("SELECT * FROM card_hour_topup_refunds WHERE id=?", [id]);
+      if (!created) throw new Error("CARD_HOUR_TOPUP_REFUND_CREATE_FAILED");
+      return { record: topupRefundRecord(created), replayed: false };
+    },
+    async decideTopupRefund(input) {
+      const reason = input.reason.trim();
+      if (reason.length < 10 || reason.length > 1_000 || !Number.isSafeInteger(input.expectedVersion)) throw new AccountAuthError("CARD_HOUR_TOPUP_REFUND_INVALID", 400, "退款审批参数无效。 ");
+      const current = await db.first<Row>("SELECT * FROM card_hour_topup_refunds WHERE id=?", [input.refundId]);
+      if (!current) throw new AccountAuthError("CARD_HOUR_TOPUP_REFUND_NOT_FOUND", 404, "退款申请不存在。 ");
+      const status = input.decision === "APPROVE" ? "APPROVED" : "REJECTED";
+      if (text(current, "status") === status && current.approved_by === input.approvedBy && current.decision_reason === reason) return topupRefundRecord(current);
+      if (text(current, "status") !== "PENDING" || number(current, "version") !== input.expectedVersion) throw new AccountAuthError("CARD_HOUR_TOPUP_REFUND_VERSION_CONFLICT", 409, "退款申请状态或版本已变化。 ");
+      if (text(current, "requested_by") === input.approvedBy) throw new AccountAuthError("CARD_HOUR_TOPUP_REFUND_DUAL_CONTROL", 403, "退款申请人与审批人必须不同。 ");
+      await db.batch([
+        { sql: "UPDATE card_hour_topup_refunds SET status=?,approved_by=?,decision_reason=?,version=version+1,updated_at=? WHERE id=? AND status='PENDING' AND version=?", values: [status, input.approvedBy, reason, input.now, input.refundId, input.expectedVersion] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+      ]);
+      const updated = await db.first<Row>("SELECT * FROM card_hour_topup_refunds WHERE id=?", [input.refundId]);
+      if (!updated) throw new Error("CARD_HOUR_TOPUP_REFUND_DECISION_FAILED");
+      return topupRefundRecord(updated);
+    },
+    async beginTopupRefund(input) {
+      const current = await db.first<Row>("SELECT * FROM card_hour_topup_refunds WHERE id=?", [input.refundId]);
+      if (!current) throw new AccountAuthError("CARD_HOUR_TOPUP_REFUND_NOT_FOUND", 404, "退款申请不存在。 ");
+      if (text(current, "status") === "SUCCEEDED") return { record: topupRefundRecord(current), claimed: false, claimToken: null };
+      const staleProcessing = text(current, "status") === "PROCESSING" && Date.parse(text(current, "claimed_at")) <= Date.parse(input.staleBefore);
+      if ((!(["APPROVED", "FAILED"] as const).includes(text(current, "status") as "APPROVED" | "FAILED") && !staleProcessing) || !current.approved_by) {
+        throw new AccountAuthError("CARD_HOUR_TOPUP_REFUND_STATE_INVALID", 409, "退款申请尚未完成独立审批或不能执行。 ");
+      }
+      const holdBusinessKey = `topup-refund-hold:${input.refundId}`;
+      const hold = await db.first<Row>("SELECT id FROM card_hour_ledger_batches WHERE business_key=?", [holdBusinessKey]);
+      const claimToken = crypto.randomUUID();
+      const holdBatchId = `chb_${crypto.randomUUID()}`;
+      const statements: CardHourSql[] = [
+        { sql: "UPDATE card_hour_topup_refunds SET status='PROCESSING',claim_token=?,claimed_at=?,attempt_count=attempt_count+1,error_code=NULL,error_message=NULL,version=version+1,updated_at=? WHERE id=? AND ((status IN ('APPROVED','FAILED') AND claim_token IS NULL) OR (status='PROCESSING' AND claimed_at<=?))", values: [claimToken, input.now, input.now, input.refundId, input.staleBefore] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+      ];
+      if (!hold) statements.push(
+        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros-?,held_micros=held_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND available_micros>=?", values: [number(current, "card_hour_micros"), number(current, "card_hour_micros"), input.now, text(current, "organization_id"), number(current, "card_hour_micros")] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) VALUES(?,?, 'BUYBACK_HOLD',?,?,'POSTED',?,?)", values: [holdBatchId, text(current, "organization_id"), holdBusinessKey, number(current, "card_hour_micros"), JSON.stringify({ kind: "TOPUP_REFUND_HOLD", refundId: input.refundId, topupOrderId: text(current, "topup_order_id") }), input.now] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','DEBIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, holdBatchId, text(current, "organization_id"), number(current, "card_hour_micros"), input.now, text(current, "organization_id")] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_HELD','CREDIT',?,held_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, holdBatchId, text(current, "organization_id"), number(current, "card_hour_micros"), input.now, text(current, "organization_id")] },
+      );
+      await db.batch(statements);
+      const updated = await db.first<Row>("SELECT * FROM card_hour_topup_refunds WHERE id=?", [input.refundId]);
+      if (!updated) throw new Error("CARD_HOUR_TOPUP_REFUND_CLAIM_FAILED");
+      return { record: topupRefundRecord(updated), claimed: true, claimToken };
+    },
+    async finishTopupRefund(input) {
+      const current = await db.first<Row>("SELECT * FROM card_hour_topup_refunds WHERE id=?", [input.refundId]);
+      if (!current) throw new AccountAuthError("CARD_HOUR_TOPUP_REFUND_NOT_FOUND", 404, "退款申请不存在。 ");
+      if (text(current, "status") === "SUCCEEDED") return topupRefundRecord(current);
+      if (text(current, "status") !== "PROCESSING" || text(current, "claim_token") !== input.claimToken) throw new AccountAuthError("CARD_HOUR_TOPUP_REFUND_CLAIM_INVALID", 409, "退款执行权已失效。 ");
+      if (input.status !== "SUCCEEDED") {
+        await db.batch([
+          { sql: "UPDATE card_hour_topup_refunds SET status=?,claim_token=NULL,claimed_at=NULL,provider_transaction_id=COALESCE(?,provider_transaction_id),error_code=?,error_message=?,version=version+1,updated_at=? WHERE id=? AND status='PROCESSING' AND claim_token=?", values: [input.status, input.providerTransactionId ?? null, input.errorCode ?? null, input.errorMessage?.slice(0, 1_000) ?? null, input.now, input.refundId, input.claimToken] },
+          { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        ]);
+      } else {
+        const providerTransactionId = input.providerTransactionId?.trim() ?? "";
+        if (!providerTransactionId || providerTransactionId.length > 128) throw new AccountAuthError("CARD_HOUR_TOPUP_REFUND_PROVIDER_INVALID", 409, "退款交易凭据无效。 ");
+        const batchId = `chb_${crypto.randomUUID()}`;
+        await db.batch([
+          { sql: "UPDATE card_hour_wallets SET held_micros=held_micros-?,version=version+1,updated_at=? WHERE organization_id=? AND held_micros>=?", values: [number(current, "card_hour_micros"), input.now, text(current, "organization_id"), number(current, "card_hour_micros")] },
+          { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+          { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) VALUES(?,?, 'ORDER_CAPTURE',?,?,'POSTED',?,?)", values: [batchId, text(current, "organization_id"), `topup-refund-settle:${input.refundId}`, number(current, "card_hour_micros"), JSON.stringify({ kind: "TOPUP_REFUND", refundId: input.refundId, topupOrderId: text(current, "topup_order_id"), providerTransactionId }), input.now] },
+          { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_HELD','DEBIT',?,held_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, batchId, text(current, "organization_id"), number(current, "card_hour_micros"), input.now, text(current, "organization_id")] },
+          { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) VALUES(?,?,NULL,'PLATFORM_ISSUANCE','CREDIT',?,NULL,?)", values: [`che_${crypto.randomUUID()}`, batchId, number(current, "card_hour_micros"), input.now] },
+          { sql: "UPDATE card_hour_topup_orders SET status='CLOSED',updated_at=? WHERE id=? AND status='CAPTURED'", values: [input.now, text(current, "topup_order_id")] },
+          { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+          { sql: "UPDATE card_hour_topup_refunds SET status='SUCCEEDED',claim_token=NULL,claimed_at=NULL,provider_transaction_id=?,error_code=NULL,error_message=NULL,version=version+1,updated_at=? WHERE id=? AND status='PROCESSING' AND claim_token=?", values: [providerTransactionId, input.now, input.refundId, input.claimToken] },
+          { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        ]);
+      }
+      const updated = await db.first<Row>("SELECT * FROM card_hour_topup_refunds WHERE id=?", [input.refundId]);
+      if (!updated) throw new Error("CARD_HOUR_TOPUP_REFUND_FINISH_FAILED");
+      return topupRefundRecord(updated);
+    },
+    async confirmManualTopupRefund(input) {
+      const current = await db.first<Row>("SELECT * FROM card_hour_topup_refunds WHERE id=?", [input.refundId]);
+      if (!current) throw new AccountAuthError("CARD_HOUR_TOPUP_REFUND_NOT_FOUND", 404, "退款申请不存在。 ");
+      const providerTransactionId = input.providerTransactionId.trim();
+      if (text(current, "status") === "SUCCEEDED") {
+        if (text(current, "approved_by") === input.approvedBy
+          && text(current, "provider_transaction_id") === providerTransactionId
+          && text(current, "manual_evidence_digest") === input.evidenceDigest) return topupRefundRecord(current);
+        throw new AccountAuthError("CARD_HOUR_TOPUP_REFUND_MANUAL_CONFLICT", 409, "退款凭证与已确认记录不一致。 ");
+      }
+      if (text(current, "status") !== "MANUAL_REQUIRED" || text(current, "approved_by") !== input.approvedBy
+        || !providerTransactionId || providerTransactionId.length > 128
+        || !/^[a-f0-9]{64}$/u.test(input.evidenceDigest)) throw new AccountAuthError("CARD_HOUR_TOPUP_REFUND_MANUAL_INVALID", 409, "人工退款证据或审批身份无效。 ");
+      const batchId = `chb_${crypto.randomUUID()}`;
+      await db.batch([
+        { sql: "UPDATE card_hour_wallets SET held_micros=held_micros-?,version=version+1,updated_at=? WHERE organization_id=? AND held_micros>=?", values: [number(current, "card_hour_micros"), input.now, text(current, "organization_id"), number(current, "card_hour_micros")] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) VALUES(?,?, 'ORDER_CAPTURE',?,?,'POSTED',?,?)", values: [batchId, text(current, "organization_id"), `topup-refund-settle:${input.refundId}`, number(current, "card_hour_micros"), JSON.stringify({ kind: "TOPUP_REFUND", refundId: input.refundId, topupOrderId: text(current, "topup_order_id"), providerTransactionId }), input.now] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_HELD','DEBIT',?,held_micros,? FROM card_hour_wallets WHERE organization_id=?", values: [`che_${crypto.randomUUID()}`, batchId, text(current, "organization_id"), number(current, "card_hour_micros"), input.now, text(current, "organization_id")] },
+        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) VALUES(?,?,NULL,'PLATFORM_ISSUANCE','CREDIT',?,NULL,?)", values: [`che_${crypto.randomUUID()}`, batchId, number(current, "card_hour_micros"), input.now] },
+        { sql: "UPDATE card_hour_topup_orders SET status='CLOSED',updated_at=? WHERE id=? AND status='CAPTURED'", values: [input.now, text(current, "topup_order_id")] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+        { sql: "UPDATE card_hour_topup_refunds SET status='SUCCEEDED',provider_transaction_id=?,manual_evidence_digest=?,error_code=NULL,error_message=NULL,version=version+1,updated_at=? WHERE id=? AND status='MANUAL_REQUIRED' AND claim_token IS NULL", values: [providerTransactionId, input.evidenceDigest, input.now, input.refundId] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
+      ]);
+      const updated = await db.first<Row>("SELECT * FROM card_hour_topup_refunds WHERE id=?", [input.refundId]);
+      if (!updated) throw new Error("CARD_HOUR_TOPUP_REFUND_MANUAL_CONFIRM_FAILED");
+      return topupRefundRecord(updated);
+    },
+    async getTopupRefund(refundId) {
+      const row = await db.first<Row>("SELECT * FROM card_hour_topup_refunds WHERE id=?", [refundId]);
+      return row ? topupRefundRecord(row) : null;
+    },
+    async listTopupRefunds(status) {
+      const rows = status
+        ? await db.all<Row>("SELECT * FROM card_hour_topup_refunds WHERE status=? ORDER BY updated_at DESC LIMIT 100", [status])
+        : await db.all<Row>("SELECT * FROM card_hour_topup_refunds ORDER BY updated_at DESC LIMIT 100");
+      return rows.map(topupRefundRecord);
     },
     async applyTopupEvent(input) {
       const provider = input.provider ?? "ALIPAY";
@@ -737,4 +899,5 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       }
     },
   };
+  return store;
 }

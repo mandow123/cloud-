@@ -117,6 +117,9 @@ case "$*" in
   "node scripts/ops/verify-card-hour-topup-appeal-reads-schema.mjs --apply --confirm APPLY_0037_CARD_HOUR_TOPUP_APPEAL_READS"|\
   "node scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs"|\
   "node scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs --apply --confirm APPLY_0038_CARD_HOUR_TOPUP_RECONCILIATION") ;;
+  "node scripts/ops/verify-card-hour-topup-refund-schema.mjs"|\
+  "node scripts/ops/verify-card-hour-topup-refund-schema.mjs --allow-uninitialized"|\
+  "node scripts/ops/verify-card-hour-topup-refund-schema.mjs --apply --confirm APPLY_0042_CARD_HOUR_TOPUP_REFUNDS") ;;
   *)
     printf '%s\n' "schema gate command is not allowlisted" >&2
     exit 64
