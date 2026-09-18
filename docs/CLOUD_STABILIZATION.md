@@ -36,7 +36,7 @@ Pre-pull images and complete long checks before the window. Stop new writes, dra
 
 After any business write, retain the current database. Roll back only to a compatible security-fixed image with the mandatory overlay and origin restrictions. Otherwise close affected operations and fix forward. S1's initial fallback can serve only public read-only routes while private business routes are blocked. Never restore an older database over payments, ledger, orders, revoked access or audit records.
 
-Observe each deployment for thirty minutes and at least twenty-four hours covering daily market updates and hourly backups. New payment remains disabled. S3 stays an isolated candidate until a separately selected database disaster-recovery design has been implemented and rehearsed; only then perform the existing controlled 5.01 CNY / 5 card-hour real-payment acceptance.
+Observe each deployment for thirty minutes and at least twenty-four hours covering daily market updates and hourly backups. Payment checkout remains disabled in the base and stabilization Compose layers. A payment-recovery release may append the reviewed payment-pilot overlay only after the user separately selects the current-database recovery plan, the compatible recovery image is rehearsed, identity continuity is proven, and merchant credentials pass provider-specific validation. Checkout and reconciliation are separate for both providers: emergency stop closes new orders while signed callbacks, bounded queries and approved refunds continue against the current database. Run the existing controlled 5.01 CNY / 5 card-hour acceptance one provider at a time before enabling both or widening any allowlist.
 
 ## Monitoring
 

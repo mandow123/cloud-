@@ -2,6 +2,7 @@ import { apiErrorResponse, beginApiRequest, jsonResponse } from "@/lib/server/ap
 import { requireTradingAccountSession } from "@/lib/server/entity-ownership";
 import { getCardHourStore } from "@/lib/server/card-hour-store";
 import { AccountAuthError } from "@/lib/server/account-auth";
+import { alipayPilotAccess } from "@/lib/server/alipay-payment-pilot";
 import { isKaiIdentityConfigured, probeKaiIdentityDiscovery } from "@/lib/server/kai-identity-oidc";
 import { qixiangPayPilotAccess } from "@/lib/server/qixiang-pay";
 
@@ -13,37 +14,52 @@ export async function GET(request: Request) {
     const account = await requireTradingAccountSession(request);
     if (!account) throw new AccountAuthError("ACCOUNT_AUTH_REQUIRED", 401, "请先登录账户。 ");
     const dashboard = await (await getCardHourStore()).dashboard(account.activeOrganization.id, new Date().toISOString());
-    const pilot = qixiangPayPilotAccess(account.activeOrganization.id);
+    const qixiangPilot = qixiangPayPilotAccess(account.activeOrganization.id);
+    const alipayPilot = alipayPilotAccess(account.activeOrganization.id);
     const identitySession = account.authMethod === "KAI_IDENTITY_OIDC";
     const identityConfigured = isKaiIdentityConfigured();
-    const identity = pilot.ready && identitySession && identityConfigured
+    const identity = (qixiangPilot.ready || alipayPilot.ready) && identitySession && identityConfigured
       ? await probeKaiIdentityDiscovery()
       : null;
-    const paymentReady = pilot.ready && identitySession && identity?.available === true;
-    const unavailableReason = !pilot.ready
-      ? pilot.reason
-      : !identitySession
-        ? "请使用 KAI 统一账户重新登录后再充值；已有付款单仍可查询。"
+    const identityReason = !identitySession
+      ? "请使用 KAI 统一账户重新登录后再充值；已有付款单仍可查询。"
       : !identityConfigured
         ? "统一账户配置未完成，新充值保持关闭；已有付款单仍可查询。"
         : identity?.available
           ? null
           : "统一账户暂时不可用，新充值保持关闭；已有付款单仍可查询。";
+    const identityReady = identitySession && identity?.available === true;
+    const methods = [
+      {
+        provider: "QIXIANG_PAY" as const,
+        channel: qixiangPilot.channel ?? "ALIPAY" as const,
+        ready: qixiangPilot.ready && identityReady,
+        reason: qixiangPilot.ready ? identityReason : qixiangPilot.reason,
+      },
+      {
+        provider: "ALIPAY" as const,
+        channel: "ALIPAY" as const,
+        ready: alipayPilot.ready && identityReady,
+        reason: alipayPilot.ready ? identityReason : alipayPilot.reason,
+      },
+    ];
+    const paymentReady = methods.some((method) => method.ready);
     const channels = (["ALIPAY", "WXPAY"] as const).map((channel) => ({
       channel,
-      ready: paymentReady && pilot.channel === channel,
-      reason: paymentReady && pilot.channel === channel ? null : unavailableReason ?? "该充值渠道尚未开放。",
+      ready: methods.some((method) => method.ready && method.channel === channel),
+      reason: methods.find((method) => method.channel === channel)?.reason ?? "该充值渠道尚未开放。",
     }));
     return jsonResponse({
       ...dashboard,
       topupAvailability: {
         ready: paymentReady,
         mode: paymentReady ? "PILOT" : "CATALOG",
-        reason: unavailableReason,
+        reason: paymentReady ? null : identityReason ?? "支付渠道正在完成生产验收。",
         minCardHours: 5,
         maxCardHours: paymentReady ? 5 : null,
         stepCardHours: 5,
         channels,
+        methods,
         packages: paymentReady
           ? [{ code: "PRODUCTION_ACCEPTANCE", name: "生产验收充值", cardHours: 5, amountCents: 501, description: "当前仅支持小额生产验收" }]
           : [

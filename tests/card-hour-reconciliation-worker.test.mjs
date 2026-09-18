@@ -6,6 +6,9 @@ import { createCardHourReconciliationWorker } from "../lib/server/card-hour-reco
 async function topup(f,index=0) {
   return (await f.card.createTopup({account:f.account,provider:"QIXIANG_PAY",providerMerchantRef:"10086",providerPaymentType:"alipay",cardHourMicros:5000000,amountCents:501,idempotencyKey:`topup-fixture-${index}`,payloadHash:`hash-${index}`,now:f.input.now,expiresAt:new Date(Date.parse(f.input.now)+900000).toISOString()})).record;
 }
+async function alipayTopup(f,index=0) {
+  return (await f.card.createTopup({account:f.account,provider:"ALIPAY",providerMerchantRef:null,providerPaymentType:null,cardHourMicros:5000000,amountCents:501,idempotencyKey:`alipay-topup-fixture-${index}`,payloadHash:`alipay-hash-${index}`,now:f.input.now,expiresAt:new Date(Date.parse(f.input.now)+900000).toISOString()})).record;
+}
 const confirmed=(expected)=>({providerOrderId:expected.orderId,providerEventId:`query:trade_${expected.orderId}:TRADE_SUCCESS`,providerTransactionId:`trade_${expected.orderId}`,eventType:"CAPTURED",amountCents:501,rawPayloadDigest:"f".repeat(64),occurredAt:new Date().toISOString(),verifiedAt:new Date().toISOString()});
 
 test("worker recovers a topup after browser closure, competes safely with a callback, and never double credits",async()=>{
@@ -20,6 +23,34 @@ test("worker recovers a topup after browser closure, competes safely with a call
     assert.equal(f.db.prepare("SELECT available_micros FROM card_hour_wallets").get().available_micros,before+5000000);
     now+=60000;await worker.tick();assert.equal(queries,1);
     assert.equal(f.db.prepare("SELECT COUNT(*) n FROM card_hour_ledger_batches WHERE operation='TOPUP'").get().n,1);
+  } finally { f.db.close(); }
+});
+
+test("worker reconciles direct Alipay topups and leaves pending orders uncredited",async()=>{
+  const f=await paymentFixture();
+  try {
+    const order=await alipayTopup(f);
+    let now=Date.parse(f.input.now),status="PENDING",queries=0;
+    const worker=createCardHourReconciliationWorker({
+      store:f.card,
+      now:()=>now,
+      environment:{KAI_ALIPAY_SELLER_ID:"2088000000000001"},
+      alipayQuery:async(expected)=>{
+        queries++;
+        return {provider:"ALIPAY",environment:"LIVE",providerOrderId:expected.orderId,providerEventId:`query:20260918220000000001:${status}`,providerTransactionId:"20260918220000000001",eventType:status,amountCents:expected.amountCents,currency:"CNY",rawPayloadDigest:"b".repeat(64),occurredAt:new Date(now).toISOString(),verifiedAt:new Date(now).toISOString(),verificationMethod:"ALIPAY_RSA2_ORDER_QUERY",fundsMoved:status==="CAPTURED"};
+      },
+    });
+    const before=f.db.prepare("SELECT available_micros FROM card_hour_wallets").get().available_micros;
+    const pending=await worker.tick();
+    assert.equal(pending.deferred,1);
+    assert.equal((await f.card.getTopup(order.id)).status,"PENDING");
+    assert.equal(f.db.prepare("SELECT available_micros FROM card_hour_wallets").get().available_micros,before);
+    now+=60000;status="CAPTURED";
+    const captured=await worker.tick();
+    assert.equal(captured.captured,1);
+    assert.equal((await f.card.getTopup(order.id)).status,"CAPTURED");
+    assert.equal(f.db.prepare("SELECT available_micros FROM card_hour_wallets").get().available_micros,before+5000000);
+    assert.equal(queries,2);
   } finally { f.db.close(); }
 });
 

@@ -1,13 +1,13 @@
-# Payment reconciliation candidate (not deployed)
+# Payment reconciliation worker
 
-This directory belongs to S3. New Qixiang checkout remains disabled (`KAI_QIXIANG_PAY_ENABLED=0`). Reconciliation uses existing merchant orders and the v6 / `0038` schema. It does not enable real-payment acceptance.
+The worker reconciles existing Qixiang and direct Alipay card-hour orders on the v6 / `0038` schema. It never enables checkout. Each provider has an independent reconciliation gate, so a disabled or unavailable rail is deferred without preventing the other rail from recovering missed callbacks.
 
 Before enabling the timer, require all of the following:
 
 - Exactly one application process uses the production query credential; no other worker, canary, or predecessor process may query with it.
 - Application port is bound to loopback. Every public proxy must reject `/api/internal/` before forwarding, including alternate origin hosts and IPv6. Request Host checks cannot prove socket peer identity.
 - A dedicated random URL-safe 32–128 character `KAI_INTERNAL_RECONCILIATION_TOKEN` is supplied to the application and the external `0600` worker environment file; never put a real value in Git or command arguments.
-- `KAI_QIXIANG_PAY_RECONCILIATION_ENABLED=1` and existing credential checks pass. This is independent of new-checkout enablement.
+- At least one of `KAI_QIXIANG_PAY_RECONCILIATION_ENABLED=1` or `KAI_ALIPAY_RECONCILIATION_ENABLED=1` passes its credential checks. Both are independent of new-checkout enablement.
 - Install the client and systemd files under the deployment's operations directory and explicitly verify the actual paths, service user, Node 24 runtime and permissions. Do not start this candidate timer during S1/S2.
 
 The application scans at most 50 due rows per rolling minute. Each order is durably claimed before network access; claims can be taken over after 120 seconds. All active-query entrances share FIFO admission, at most 12 starts per credential in any 60 seconds, one concurrent query, a 10-second total queue-and-query deadline and 60-second process boot cooldown. Queue depth is six to keep wait below claim expiry. Every attempted transport consumes budget. Retries back off from 30 seconds to five minutes. Twelve unsuccessful claims create one existing-admin work item and audit event; the order remains unresolved and subsequent bounded reconciliation can still discover payment.

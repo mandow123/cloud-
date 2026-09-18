@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createQixiangQueryExecutor } from "../lib/server/qixiang-query-executor.ts";
 import { isInternalReconciliationRequest } from "../lib/server/internal-reconciliation-auth.ts";
@@ -52,4 +53,11 @@ test("internal worker authentication rejects public, forwarded and unauthenticat
     ["http://127.0.0.1:3051/api/internal/card-hour-reconciliation",{authorization:"Bearer wrong"}],
   ]) assert.equal(isInternalReconciliationRequest(request(url,headers),token),false);
   assert.equal((await POST(request("https://cloud.kai.com/api/internal/card-hour-reconciliation"))).status,404);
+});
+
+test("internal worker runs when either provider reconciliation rail is ready", () => {
+  const source = readFileSync(new URL("../app/api/internal/card-hour-reconciliation/route.ts", import.meta.url), "utf8");
+  assert.match(source, /!qixiangPayReconciliationReadiness\(\)\.canReconcilePayment[\s\S]*&& !alipayReconciliationReadiness\(\)\.canReconcilePayment/u);
+  const worker = readFileSync(new URL("../lib/server/card-hour-reconciliation-worker.ts", import.meta.url), "utf8");
+  assert.match(worker, /topup\.provider === "QIXIANG_PAY"[\s\S]*qixiangPayReconciliationReadiness\(env\)[\s\S]*alipayReconciliationReadiness\(env\)/u);
 });

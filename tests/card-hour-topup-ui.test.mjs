@@ -26,18 +26,22 @@ test("legacy member mode can only hand off topup to the channel-aware asset page
   assert.doesNotMatch(legacyPanel, /buyCardHours|card-hour-topup|createIdempotencyKey\("card-hour-topup"\)/u);
 });
 
-test("topup UI only offers backend-approved Alipay and WeChat channels", () => {
+test("topup UI distinguishes backend-approved providers from their payment channels", () => {
   const source = readFileSync("components/member-card-hour-assets.tsx", "utf8");
 
   assert.match(source, /type PaymentChannel = "ALIPAY" \| "WXPAY"/u);
-  assert.match(source, /topupAvailability\.channels\.filter\(\(item\) => item\.ready\)/u);
-  assert.match(source, /topupAvailability\.channels\.map\(\(item\)/u);
+  assert.match(source, /type PaymentProvider = "QIXIANG_PAY" \| "ALIPAY"/u);
+  assert.match(source, /topupAvailability\.methods/u);
+  assert.match(source, /methods\.filter\(\(item\) => item\.ready\)/u);
+  assert.match(source, /provider: selectedMethod\.provider, channel: selectedMethod\.channel/u);
   assert.match(source, /disabled=\{submitting \|\| !item\.ready\}/u);
   assert.match(source, /topupAvailability\.packages\.map/u);
   assert.match(source, /套餐充值/u);
   assert.match(source, /自定义充值/u);
   assert.match(source, /当前为小额生产验收，仅支持充值 5\.00 卡时/u);
-  assert.match(source, /\{ cardHours, channel \}/u);
+  assert.match(source, /\{ cardHours, provider: selectedMethod\.provider, channel: selectedMethod\.channel \}/u);
+  assert.match(source, /Alipay Direct/u);
+  assert.match(source, /Alipay · Qixiang/u);
   assert.match(source, /确认并前往支付/u);
   assert.match(source, /创建付款单或从收银台返回，都不代表支付成功/u);
   assert.match(source, /url\.protocol !== "https:"/u);
@@ -56,20 +60,26 @@ test("topup catalog and checkout enforce the same five-card-hour production pilo
   const checkoutRoute = readFileSync("app/api/v1/member/card-hours/topups/route.ts", "utf8");
 
   assert.match(catalogRoute, /qixiangPayPilotAccess\(account\.activeOrganization\.id\)/u);
+  assert.match(catalogRoute, /alipayPilotAccess\(account\.activeOrganization\.id\)/u);
+  assert.match(catalogRoute, /provider: "QIXIANG_PAY"/u);
+  assert.match(catalogRoute, /provider: "ALIPAY"/u);
   assert.match(catalogRoute, /await probeKaiIdentityDiscovery\(\)/u);
   assert.match(catalogRoute, /const identitySession = account\.authMethod === "KAI_IDENTITY_OIDC"/u);
-  assert.match(catalogRoute, /const identity = pilot\.ready && identitySession && identityConfigured[\s\S]*const paymentReady = pilot\.ready && identitySession && identity\?\.available === true/u);
+  assert.match(catalogRoute, /const identity = \(qixiangPilot\.ready \|\| alipayPilot\.ready\) && identitySession && identityConfigured/u);
+  assert.match(catalogRoute, /const paymentReady = methods\.some\(\(method\) => method\.ready\)/u);
   assert.match(catalogRoute, /paymentReady\s*\? \[\{ code: "PRODUCTION_ACCEPTANCE"[\s\S]*cardHours: 5, amountCents: 501/u);
   assert.match(catalogRoute, /code: "STARTER"[\s\S]*cardHours: 100, amountCents: 10_020/u);
   assert.match(catalogRoute, /code: "STANDARD"[\s\S]*cardHours: 500, amountCents: 50_100/u);
   assert.match(catalogRoute, /code: "TEAM"[\s\S]*cardHours: 1_000, amountCents: 100_200/u);
   assert.match(checkoutRoute, /qixiangPayPilotAccess\(account\.activeOrganization\.id\)/u);
+  assert.match(checkoutRoute, /alipayPilotAccess\(account\.activeOrganization\.id\)/u);
+  assert.match(checkoutRoute, /createAlipayCheckoutUrl\(commonCheckoutInput\)/u);
+  assert.match(checkoutRoute, /body\.provider !== "QIXIANG_PAY" && body\.provider !== "ALIPAY"/u);
   assert.match(checkoutRoute, /await probeKaiIdentityDiscovery\(\)/u);
   assert.match(checkoutRoute, /isKaiIdentityConfigured\(\)/u);
   assert.match(checkoutRoute, /account\.authMethod !== "KAI_IDENTITY_OIDC"/u);
   assert.match(checkoutRoute, /KAI_IDENTITY_REAUTH_REQUIRED/u);
   assert.match(checkoutRoute, /KAI_IDENTITY_UNAVAILABLE/u);
-  assert.ok(checkoutRoute.indexOf("qixiangPayReadiness()") < checkoutRoute.indexOf("await probeKaiIdentityDiscovery()"));
   assert.ok(checkoutRoute.indexOf("qixiangPayPilotAccess(account.activeOrganization.id)") < checkoutRoute.indexOf("await probeKaiIdentityDiscovery()"));
   assert.ok(checkoutRoute.indexOf("await probeKaiIdentityDiscovery()") < checkoutRoute.indexOf("store.createTopup"));
   assert.ok(checkoutRoute.indexOf("await probeKaiIdentityDiscovery()") < checkoutRoute.indexOf("await createQixiangPayCheckout"));
@@ -105,16 +115,17 @@ test("payment return trusts only the service-side order state", () => {
   assert.doesNotMatch(source, /useSearchParams|location\.search|trade_status|return_url|success=/u);
 });
 
-test("disabled payment blocks both member reconciliation and callback-side provider queries", () => {
+test("disabled provider reconciliation blocks member and callback-side provider queries independently", () => {
   const memberRoute = readFileSync("app/api/v1/member/card-hours/topups/[orderId]/route.ts", "utf8");
   const notifyRoute = readFileSync("app/api/v1/payments/qixiang-pay/notify/route.ts", "utf8");
   const provider = readFileSync("lib/server/qixiang-pay.ts", "utf8");
 
-  assert.match(memberRoute, /if \(!qixiangPayReconciliationReadiness\(\)\.canReconcilePayment\)/u);
+  assert.match(memberRoute, /topup\.provider === "QIXIANG_PAY"[\s\S]*qixiangPayReconciliationReadiness\(\)\.canReconcilePayment[\s\S]*alipayReconciliationReadiness\(\)\.canReconcilePayment/u);
   assert.match(memberRoute, /CARD_HOUR_TOPUP_RECONCILIATION_DISABLED/u);
   assert.match(memberRoute, /registerTopupReconciliationRequest/u);
   assert.match(memberRoute, /requireIdempotencyKey\(request\)/u);
-  assert.match(memberRoute, /mutationHash\(\{ action: "RECONCILE_QIXIANG_TOPUP", orderId \}\)/u);
+  assert.match(memberRoute, /mutationHash\(\{ action: "RECONCILE_CARD_HOUR_TOPUP", provider: topup\.provider, orderId \}\)/u);
+  assert.match(memberRoute, /queryVerifiedAlipayTrade/u);
   assert.match(notifyRoute, /if \(!qixiangPayReconciliationReadiness\(\)\.canReconcilePayment\) return notifyResponse\("failure", 503\)/u);
   assert.match(provider, /const config = activeOrderQueryConfiguration\(environment\)/u);
 });

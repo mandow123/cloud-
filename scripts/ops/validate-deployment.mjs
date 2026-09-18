@@ -41,7 +41,9 @@ function productionEnvironment(overrides = {}) {
     KAI_TRUST_PROXY: "1",
     KAI_REQUIRE_HTTPS_WRITES: "1",
     KAI_ENABLE_HSTS: "0",
+    KAI_PAYMENT_PILOT_ENABLED: "0",
     KAI_ALIPAY_ENABLED: "0",
+    KAI_ALIPAY_RECONCILIATION_ENABLED: "0",
     KAI_QIXIANG_PAY_ENABLED: "0",
     KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "0",
     KAI_BUY_CATALOG_V2: "0",
@@ -91,11 +93,11 @@ function validateNegativeEnvironmentCases() {
   assertEnvironmentRejected({ KAI_TRUST_PROXY: "0" }, "KAI_TRUST_PROXY");
   assertEnvironmentRejected({ KAI_REQUIRE_HTTPS_WRITES: "0" }, "KAI_REQUIRE_HTTPS_WRITES");
   assertEnvironmentRejected({ KAI_ENABLE_HSTS: "2" }, "KAI_ENABLE_HSTS");
-  assertEnvironmentRejected({ KAI_ALIPAY_ENABLED: "1" }, "KAI_ALIPAY_ENABLED");
+  assertEnvironmentRejected({ KAI_ALIPAY_ENABLED: "1" }, "KAI_PAYMENT_PILOT_ENABLED");
   assertEnvironmentRejected({ KAI_QIXIANG_PAY_ENABLED: "2" }, "KAI_QIXIANG_PAY_ENABLED");
   assertEnvironmentRejected({ KAI_QIXIANG_PAY_ENABLED: "1", KAI_QIXIANG_PAY_PID: "10086", KAI_QIXIANG_PAY_KEY: "approved-looking-secret-1234", KAI_QIXIANG_PAY_CHANNELS: "ALIPAY" }, "KAI_QIXIANG_PAY_APPROVAL_REFERENCE");
   assertEnvironmentRejected({ KAI_QIXIANG_PAY_ENABLED: "1", KAI_QIXIANG_PAY_PID: "10086", KAI_QIXIANG_PAY_KEY: "approved-looking-secret-1234", KAI_QIXIANG_PAY_CHANNELS: "ALIPAY", KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS: "org-pilot", KAI_QIXIANG_PAY_PILOT_CHANNEL: "ALIPAY", KAI_QIXIANG_PAY_APPROVAL_REFERENCE: "KAI-PAY-APPROVAL-20260822", KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED: "1", KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE: "RISK-KAI-PAY-20260822", KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID: "QRY-KAI-PAY-20260822", KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION: "query-v1" }, "KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT");
-  validateProductionEnvironment(productionEnvironment({ KAI_QIXIANG_PAY_ENABLED: "1", KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "1", KAI_QIXIANG_PAY_PID: "10086", KAI_QIXIANG_PAY_KEY: "rotated-production-secret-1234", KAI_QIXIANG_PAY_CHANNELS: "ALIPAY", KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS: "org-pilot", KAI_QIXIANG_PAY_PILOT_CHANNEL: "ALIPAY", KAI_QIXIANG_PAY_APPROVAL_REFERENCE: "KAI-PAY-APPROVAL-20260822", KAI_QIXIANG_PAY_CREDENTIAL_VERSION: "merchant-v1", KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED: "1", KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE: "RISK-KAI-PAY-20260822", KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID: "QRY-KAI-PAY-20260822", KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION: "query-v1", KAI_ACCOUNT_OIDC_CLIENT_ID: "kai-cloud-qixiang-production", KAI_ACCOUNT_OIDC_CLIENT_SECRET: "qixiang-oidc-client-secret-v1", KAI_ACCOUNT_OIDC_ISSUER: "https://auth.kai.com/api/auth", KAI_ACCOUNT_OIDC_SCOPES: "openid profile email", KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: "67fc59de0a8d976f89aa95f61e7c0d8944e9e5ad39f0cbdf5316aa8c3e4ab0fa" }));
+  validateProductionEnvironment(productionEnvironment({ KAI_PAYMENT_PILOT_ENABLED: "1", KAI_QIXIANG_PAY_ENABLED: "1", KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "1", KAI_QIXIANG_PAY_PID: "10086", KAI_QIXIANG_PAY_KEY: "rotated-production-secret-1234", KAI_QIXIANG_PAY_CHANNELS: "ALIPAY", KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS: "org-pilot", KAI_QIXIANG_PAY_PILOT_CHANNEL: "ALIPAY", KAI_QIXIANG_PAY_APPROVAL_REFERENCE: "KAI-PAY-APPROVAL-20260822", KAI_QIXIANG_PAY_CREDENTIAL_VERSION: "merchant-v1", KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED: "1", KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE: "RISK-KAI-PAY-20260822", KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID: "QRY-KAI-PAY-20260822", KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION: "query-v1", KAI_ACCOUNT_OIDC_CLIENT_ID: "kai-cloud-qixiang-production", KAI_ACCOUNT_OIDC_CLIENT_SECRET: "qixiang-oidc-client-secret-v1", KAI_ACCOUNT_OIDC_ISSUER: "https://auth.kai.com/api/auth", KAI_ACCOUNT_OIDC_SCOPES: "openid profile email", KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: "67fc59de0a8d976f89aa95f61e7c0d8944e9e5ad39f0cbdf5316aa8c3e4ab0fa" }));
   assertEnvironmentRejected({ KAI_BUY_CATALOG_V2: "2" }, "KAI_BUY_CATALOG_V2");
   assertEnvironmentRejected({ KAI_ACCOUNT_CONSOLE_V2: "2" }, "KAI_ACCOUNT_CONSOLE_V2");
   assertEnvironmentRejected({ KAI_HOSTING_V2: "2" }, "KAI_HOSTING_V2");
@@ -113,9 +115,12 @@ function validateNegativeEnvironmentCases() {
 async function main() {
   const projectRoot = resolve(import.meta.dirname, "../..");
   const composePath = resolve(projectRoot, "deploy/compose.production.yml");
+  const stabilizationComposePath = resolve(projectRoot, "deploy/compose.stabilization.yml");
+  const paymentPilotComposePath = resolve(projectRoot, "deploy/compose.payment-pilot.yml");
   validateNegativeEnvironmentCases();
 
   const validateCurrentEnvironment = process.argv.includes("--current-env");
+  const validatePaymentPilot = process.argv.includes("--payment-pilot");
   if (validateCurrentEnvironment
     && process.env.KAI_IMAGE_REFERENCE
     && process.env.KAI_IMAGE_REFERENCE !== process.env.KAI_IMAGE) {
@@ -130,7 +135,19 @@ async function main() {
       KAI_TRUST_PROXY: process.env.KAI_TRUST_PROXY,
       KAI_REQUIRE_HTTPS_WRITES: process.env.KAI_REQUIRE_HTTPS_WRITES,
       KAI_ENABLE_HSTS: process.env.KAI_ENABLE_HSTS ?? "0",
+      KAI_PAYMENT_PILOT_ENABLED: process.env.KAI_PAYMENT_PILOT_ENABLED ?? "0",
       KAI_ALIPAY_ENABLED: process.env.KAI_ALIPAY_ENABLED ?? "0",
+      KAI_ALIPAY_RECONCILIATION_ENABLED: process.env.KAI_ALIPAY_RECONCILIATION_ENABLED ?? "0",
+      KAI_ALIPAY_APP_ID: process.env.KAI_ALIPAY_APP_ID,
+      KAI_ALIPAY_PRIVATE_KEY: process.env.KAI_ALIPAY_PRIVATE_KEY,
+      KAI_ALIPAY_PRIVATE_KEY_TYPE: process.env.KAI_ALIPAY_PRIVATE_KEY_TYPE,
+      KAI_ALIPAY_PUBLIC_KEY: process.env.KAI_ALIPAY_PUBLIC_KEY,
+      KAI_ALIPAY_SELLER_ID: process.env.KAI_ALIPAY_SELLER_ID,
+      KAI_ALIPAY_GATEWAY: process.env.KAI_ALIPAY_GATEWAY,
+      KAI_ALIPAY_APPROVAL_REFERENCE: process.env.KAI_ALIPAY_APPROVAL_REFERENCE,
+      KAI_ALIPAY_CREDENTIAL_ROTATED_AT: process.env.KAI_ALIPAY_CREDENTIAL_ROTATED_AT,
+      KAI_ALIPAY_CREDENTIAL_VERSION: process.env.KAI_ALIPAY_CREDENTIAL_VERSION,
+      KAI_ALIPAY_PILOT_ORGANIZATIONS: process.env.KAI_ALIPAY_PILOT_ORGANIZATIONS,
       KAI_QIXIANG_PAY_ENABLED: process.env.KAI_QIXIANG_PAY_ENABLED ?? "0",
       KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: process.env.KAI_QIXIANG_PAY_RECONCILIATION_ENABLED ?? "0",
       KAI_QIXIANG_PAY_PID: process.env.KAI_QIXIANG_PAY_PID,
@@ -179,6 +196,9 @@ async function main() {
       KAI_ADMIN_PASSWORD_HASH: `pbkdf2-sha256:310000:AAAAAAAAAAAAAAAAAAAAAA==:${"A".repeat(43)}=`,
     });
   validateProductionEnvironment(candidateEnvironment);
+  if (validatePaymentPilot && candidateEnvironment.KAI_PAYMENT_PILOT_ENABLED !== "1") {
+    throw new ProductionEnvironmentError(["--payment-pilot requires KAI_PAYMENT_PILOT_ENABLED=1"]);
+  }
   const stateRoot = validateCurrentEnvironment
     ? validateStateRoot(process.env.KAI_STATE_ROOT ?? "/opt/kai-cloud-3051", { checkFilesystem: true })
     : validateStateRoot("/opt/kai-cloud-validation");
@@ -198,6 +218,9 @@ async function main() {
     "ops",
     "-f",
     composePath,
+    "-f",
+    stabilizationComposePath,
+    ...(validatePaymentPilot ? ["-f", paymentPilotComposePath] : []),
     "config",
     "--format",
     "json",
@@ -215,7 +238,19 @@ async function main() {
       KAI_TRUST_PROXY: candidateEnvironment.KAI_TRUST_PROXY,
       KAI_REQUIRE_HTTPS_WRITES: candidateEnvironment.KAI_REQUIRE_HTTPS_WRITES,
       KAI_ENABLE_HSTS: candidateEnvironment.KAI_ENABLE_HSTS,
+      KAI_PAYMENT_PILOT_ENABLED: candidateEnvironment.KAI_PAYMENT_PILOT_ENABLED,
       KAI_ALIPAY_ENABLED: candidateEnvironment.KAI_ALIPAY_ENABLED,
+      KAI_ALIPAY_RECONCILIATION_ENABLED: candidateEnvironment.KAI_ALIPAY_RECONCILIATION_ENABLED,
+      KAI_ALIPAY_APP_ID: candidateEnvironment.KAI_ALIPAY_APP_ID,
+      KAI_ALIPAY_PRIVATE_KEY: candidateEnvironment.KAI_ALIPAY_PRIVATE_KEY,
+      KAI_ALIPAY_PRIVATE_KEY_TYPE: candidateEnvironment.KAI_ALIPAY_PRIVATE_KEY_TYPE,
+      KAI_ALIPAY_PUBLIC_KEY: candidateEnvironment.KAI_ALIPAY_PUBLIC_KEY,
+      KAI_ALIPAY_SELLER_ID: candidateEnvironment.KAI_ALIPAY_SELLER_ID,
+      KAI_ALIPAY_GATEWAY: candidateEnvironment.KAI_ALIPAY_GATEWAY,
+      KAI_ALIPAY_APPROVAL_REFERENCE: candidateEnvironment.KAI_ALIPAY_APPROVAL_REFERENCE,
+      KAI_ALIPAY_CREDENTIAL_ROTATED_AT: candidateEnvironment.KAI_ALIPAY_CREDENTIAL_ROTATED_AT,
+      KAI_ALIPAY_CREDENTIAL_VERSION: candidateEnvironment.KAI_ALIPAY_CREDENTIAL_VERSION,
+      KAI_ALIPAY_PILOT_ORGANIZATIONS: candidateEnvironment.KAI_ALIPAY_PILOT_ORGANIZATIONS,
       KAI_QIXIANG_PAY_ENABLED: candidateEnvironment.KAI_QIXIANG_PAY_ENABLED,
       KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: candidateEnvironment.KAI_QIXIANG_PAY_RECONCILIATION_ENABLED,
       KAI_QIXIANG_PAY_PID: candidateEnvironment.KAI_QIXIANG_PAY_PID,
@@ -270,6 +305,8 @@ async function main() {
       candidateEnvironment.KAI_ADMIN_PASSWORD_HASH,
       candidateEnvironment.KAI_ADMIN_APPROVER_PASSWORD_HASH,
       candidateEnvironment.KAI_ADMIN_FULFILLMENT_PASSWORD_HASH,
+      candidateEnvironment.KAI_ALIPAY_PRIVATE_KEY,
+      candidateEnvironment.KAI_ALIPAY_PUBLIC_KEY,
       candidateEnvironment.KAI_QIXIANG_PAY_KEY,
     ])}`);
   }
@@ -297,14 +334,19 @@ async function main() {
   assert(app.environment.KAI_PUBLIC_ORIGIN === candidateEnvironment.KAI_PUBLIC_ORIGIN, "app must receive the canonical HTTPS origin");
   assert(app.environment.KAI_CURSOR_SECRET === candidateEnvironment.KAI_CURSOR_SECRET, "app must receive the validated cursor secret");
   assert(app.environment.KAI_ADMIN_LOCAL_AUTH === "0", "production Compose must keep LOCAL administrator login disabled");
-  assert(app.environment.KAI_ALIPAY_ENABLED === "0", "production Compose must keep Alipay disabled during the trial rollout");
+  const expectedPaymentPilot = validatePaymentPilot ? "1" : "0";
+  assert(app.environment.KAI_PAYMENT_PILOT_ENABLED === expectedPaymentPilot, "Compose must expose the explicitly selected payment-pilot mode");
+  assert(app.environment.KAI_ALIPAY_ENABLED === (validatePaymentPilot ? candidateEnvironment.KAI_ALIPAY_ENABLED : "0"), "Compose must preserve the reviewed Alipay checkout gate");
+  assert(app.environment.KAI_QIXIANG_PAY_ENABLED === (validatePaymentPilot ? candidateEnvironment.KAI_QIXIANG_PAY_ENABLED : "0"), "Compose must preserve the reviewed Qixiang checkout gate");
+  assert(app.environment.KAI_ALIPAY_RECONCILIATION_ENABLED === candidateEnvironment.KAI_ALIPAY_RECONCILIATION_ENABLED, "Compose must preserve Alipay reconciliation independently of checkout");
+  assert(app.environment.KAI_QIXIANG_PAY_RECONCILIATION_ENABLED === candidateEnvironment.KAI_QIXIANG_PAY_RECONCILIATION_ENABLED, "Compose must preserve Qixiang reconciliation independently of checkout");
   for (const name of [
     "KAI_ADMIN_USERNAME", "KAI_ADMIN_PASSWORD_HASH", "KAI_ADMIN_DISPLAY_NAME",
     "KAI_ADMIN_APPROVER_USERNAME", "KAI_ADMIN_APPROVER_PASSWORD_HASH", "KAI_ADMIN_APPROVER_DISPLAY_NAME",
     "KAI_ADMIN_FULFILLMENT_USERNAME", "KAI_ADMIN_FULFILLMENT_PASSWORD_HASH", "KAI_ADMIN_FULFILLMENT_DISPLAY_NAME",
     "KAI_ACCOUNT_OIDC_CLIENT_ID", "KAI_ACCOUNT_OIDC_CLIENT_SECRET", "KAI_ACCOUNT_OIDC_ISSUER", "KAI_ACCOUNT_OIDC_SCOPES", "KAI_ACCOUNT_OIDC_TRANSACTION_SECRET",
-    "KAI_BUY_CATALOG_V2", "KAI_ACCOUNT_CONSOLE_V2", "KAI_HOSTING_V2", "KAI_HOSTING_V2_SETUP", "KAI_AGENT_TELEMETRY_V1", "KAI_HOSTING_DEVICE_RETIREMENT", "KAI_HOSTING_APPROVED_IMAGES", "KAI_HOSTING_TERMS_VERSION", "KAI_ALIPAY_ENABLED",
-    "KAI_ALIPAY_APP_ID", "KAI_ALIPAY_PRIVATE_KEY", "KAI_ALIPAY_PUBLIC_KEY", "KAI_ALIPAY_SELLER_ID",
+    "KAI_BUY_CATALOG_V2", "KAI_ACCOUNT_CONSOLE_V2", "KAI_HOSTING_V2", "KAI_HOSTING_V2_SETUP", "KAI_AGENT_TELEMETRY_V1", "KAI_HOSTING_DEVICE_RETIREMENT", "KAI_HOSTING_APPROVED_IMAGES", "KAI_HOSTING_TERMS_VERSION", "KAI_PAYMENT_PILOT_ENABLED", "KAI_ALIPAY_ENABLED", "KAI_ALIPAY_RECONCILIATION_ENABLED",
+    "KAI_ALIPAY_APP_ID", "KAI_ALIPAY_PRIVATE_KEY", "KAI_ALIPAY_PRIVATE_KEY_TYPE", "KAI_ALIPAY_PUBLIC_KEY", "KAI_ALIPAY_SELLER_ID", "KAI_ALIPAY_GATEWAY", "KAI_ALIPAY_APPROVAL_REFERENCE", "KAI_ALIPAY_CREDENTIAL_ROTATED_AT", "KAI_ALIPAY_CREDENTIAL_VERSION", "KAI_ALIPAY_PILOT_ORGANIZATIONS",
     "KAI_QIXIANG_PAY_ENABLED", "KAI_QIXIANG_PAY_RECONCILIATION_ENABLED", "KAI_QIXIANG_PAY_PID", "KAI_QIXIANG_PAY_KEY", "KAI_QIXIANG_PAY_APPROVAL_REFERENCE", "KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT", "KAI_QIXIANG_PAY_CREDENTIAL_VERSION", "KAI_QIXIANG_PAY_KEY_REUSE_APPROVED", "KAI_QIXIANG_PAY_KEY_REUSE_APPROVAL_REFERENCE", "KAI_QIXIANG_PAY_KEY_REUSE_APPROVED_AT", "KAI_QIXIANG_PAY_KEY_REUSE_DIGEST", "KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_ACCEPTED", "KAI_QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE", "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ID", "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_ROTATED_AT", "KAI_QIXIANG_PAY_QUERY_CREDENTIAL_VERSION", "KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS", "KAI_QIXIANG_PAY_PILOT_CHANNEL", "KAI_QIXIANG_PAY_CHANNELS", "KAI_QIXIANG_PAY_GATEWAY", "KAI_QIXIANG_PAY_QUERY_ENDPOINT",
     "KAI_SSH_PROVISIONER_URL", "KAI_SSH_PROVISIONER_TOKEN",
   ]) {
@@ -334,7 +376,7 @@ async function main() {
   assert(volumeByTarget(backup, "/app/market")?.read_only === true, "backup market mount must be read-only");
   assert(volumeByTarget(backup, "/app/backups") && !volumeByTarget(backup, "/app/backups").read_only, "backup output mount must be writable");
 
-  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, capabilitySchemaGate, qixiangSchemaGate, appealSchemaGate, appealReadSchemaGate, reconciliationSchemaGate, runbook, appEnvironmentExample, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator, schemaGateRunner] = await Promise.all([
+  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, capabilitySchemaGate, qixiangSchemaGate, appealSchemaGate, appealReadSchemaGate, reconciliationSchemaGate, runbook, appEnvironmentExample, paymentPilotCompose, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator, schemaGateRunner] = await Promise.all([
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.timer"), "utf8"),
@@ -350,6 +392,7 @@ async function main() {
     readFile(resolve(projectRoot, "scripts/ops/verify-card-hour-topup-reconciliation-schema.mjs"), "utf8"),
     readFile(resolve(projectRoot, "deploy/PRODUCTION_RUNBOOK.md"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-app.env.example"), "utf8"),
+    readFile(resolve(projectRoot, "deploy/compose.payment-pilot.yml"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-release.env.example"), "utf8"),
     readFile(resolve(projectRoot, "deploy/compose.registry.yml"), "utf8"),
     readFile(resolve(projectRoot, "deploy/registry/config.yml"), "utf8"),
@@ -377,6 +420,7 @@ async function main() {
   assert(backupRunner.includes("KAI_BACKUP_RETENTION_MAX_AGE_DAYS"), "backup runner must pass the hard maximum backup age");
   assert(backupRunner.includes('KAI_BACKUP_SHARED_LOCK="$KAI_STATE_ROOT/backups/.kai-cloud-backup.lock"') && backupRunner.includes("/usr/bin/flock --nonblock 9"), "backup runner must serialize every unit that targets the same state root");
   assert(appEnvironmentExample.includes("KAI_APP_PORT=3051") && appEnvironmentExample.includes("KAI_ENABLE_HSTS=0"), "application environment example must use port 3051 and keep HSTS off by default");
+  assert(paymentPilotCompose.includes("KAI_PAYMENT_PILOT_ENABLED") && paymentPilotCompose.includes("KAI_ALIPAY_RECONCILIATION_ENABLED") && paymentPilotCompose.includes("KAI_QIXIANG_PAY_RECONCILIATION_ENABLED"), "payment-pilot overlay must explicitly gate checkout while preserving both reconciliation channels");
   assert(releaseEnvironmentExample.includes("KAI_STATE_ROOT=/opt/kai-cloud-3051") && releaseEnvironmentExample.includes("KAI_BACKUP_RETENTION_MAX_AGE_DAYS=30") && releaseEnvironmentExample.includes("KAI_IMAGE_PLATFORM=linux/amd64"), "release environment example must use the 3051 state root, validated platform, and 30-day backup limit");
   assert(registryCompose.includes("registry:3.1.1@sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33"), "private registry must use the verified Docker Official Image digest");
   assert(registryCompose.includes("127.0.0.1:${KAI_REGISTRY_PORT:-5443}:5000") && registryCompose.includes("/opt/kai-cloud-registry"), "private registry must bind loopback and persist under its dedicated state root");

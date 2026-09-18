@@ -1,12 +1,18 @@
 import { formatCardHourDisplayMicros } from "../card-hours.ts";
 import type { CardHourStore } from "./card-hour-store.ts";
-import { queryQixiangPayOrder, type QixiangPayEnvironment } from "./qixiang-pay.ts";
+import { alipayReconciliationReadiness, queryVerifiedAlipayTrade, type AlipayEnvironment } from "./alipay-live.ts";
+import { qixiangPayReconciliationReadiness, queryQixiangPayOrder, type QixiangPayEnvironment } from "./qixiang-pay.ts";
 
 export function createCardHourReconciliationWorker(dependencies: {
-  store: CardHourStore; now?: () => number; query?: typeof queryQixiangPayOrder; environment?: QixiangPayEnvironment;
+  store: CardHourStore;
+  now?: () => number;
+  query?: typeof queryQixiangPayOrder;
+  alipayQuery?: typeof queryVerifiedAlipayTrade;
+  environment?: QixiangPayEnvironment & AlipayEnvironment;
 }) {
   const now = dependencies.now ?? Date.now;
-  const query = dependencies.query ?? queryQixiangPayOrder;
+  const qixiangQuery = dependencies.query ?? queryQixiangPayOrder;
+  const alipayQuery = dependencies.alipayQuery ?? queryVerifiedAlipayTrade;
   let nextScanAt = 0;
   let running = false;
   return {
@@ -29,10 +35,33 @@ export function createCardHourReconciliationWorker(dependencies: {
           try {
             const topup = await dependencies.store.getTopup(row.orderId);
             const env = dependencies.environment ?? process.env;
-            if (!topup || topup.organizationId !== row.organizationId || topup.provider !== "QIXIANG_PAY" || topup.providerMerchantRef !== env.KAI_QIXIANG_PAY_PID
-              || (topup.providerPaymentType !== "alipay" && topup.providerPaymentType !== "wxpay") || !Number.isSafeInteger(topup.amountCents) || !Number.isSafeInteger(topup.cardHourMicros)) throw new Error("TOPUP_RECONCILIATION_SNAPSHOT_INVALID");
-            const event = await query({ orderId: row.orderId, amountCents: Number(topup.amountCents), subject: `KAI Cloud 充值 ${formatCardHourDisplayMicros(Number(topup.cardHourMicros))} KAI 标准卡时`, paymentType: topup.providerPaymentType, merchantParam: row.orderId }, env);
-            const applied = await dependencies.store.applyTopupEvent({ orderId: event.providerOrderId, provider: "QIXIANG_PAY", providerEventId: event.providerEventId, providerTransactionId: event.providerTransactionId, eventType: event.eventType, amountCents: event.amountCents, payloadDigest: event.rawPayloadDigest, occurredAt: event.occurredAt, receivedAt: event.verifiedAt });
+            if (!topup || topup.organizationId !== row.organizationId || !["QIXIANG_PAY", "ALIPAY"].includes(String(topup.provider))
+              || !Number.isSafeInteger(topup.amountCents) || !Number.isSafeInteger(topup.cardHourMicros)) throw new Error("TOPUP_RECONCILIATION_SNAPSHOT_INVALID");
+            if (topup.provider === "QIXIANG_PAY" && (topup.providerMerchantRef !== env.KAI_QIXIANG_PAY_PID
+              || (topup.providerPaymentType !== "alipay" && topup.providerPaymentType !== "wxpay"))) throw new Error("TOPUP_RECONCILIATION_SNAPSHOT_INVALID");
+            if (topup.provider === "ALIPAY" && (topup.providerMerchantRef !== null
+              || topup.providerPaymentType !== null)) throw new Error("TOPUP_RECONCILIATION_SNAPSHOT_INVALID");
+            const providerReady = topup.provider === "QIXIANG_PAY"
+              ? Boolean(dependencies.query) || qixiangPayReconciliationReadiness(env).canReconcilePayment
+              : Boolean(dependencies.alipayQuery) || alipayReconciliationReadiness(env).canReconcilePayment;
+            if (!providerReady) {
+              result.deferred += 1;
+              continue;
+            }
+            const event = topup.provider === "QIXIANG_PAY"
+              ? await qixiangQuery({
+                  orderId: row.orderId,
+                  amountCents: Number(topup.amountCents),
+                  subject: `KAI Cloud 充值 ${formatCardHourDisplayMicros(Number(topup.cardHourMicros))} KAI 标准卡时`,
+                  paymentType: topup.providerPaymentType as "alipay" | "wxpay",
+                  merchantParam: row.orderId,
+                }, env)
+              : await alipayQuery({ orderId: row.orderId, amountCents: Number(topup.amountCents) }, env);
+            if (event.eventType === "PENDING") {
+              result.deferred += 1;
+              continue;
+            }
+            const applied = await dependencies.store.applyTopupEvent({ orderId: event.providerOrderId, provider: topup.provider as "QIXIANG_PAY" | "ALIPAY", providerEventId: event.providerEventId, providerTransactionId: event.providerTransactionId, eventType: event.eventType, amountCents: event.amountCents, payloadDigest: event.rawPayloadDigest, occurredAt: event.occurredAt, receivedAt: event.verifiedAt });
             if (applied.applied) result.captured += 1;
           } catch {
             result.deferred += 1;

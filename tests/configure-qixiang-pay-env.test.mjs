@@ -53,6 +53,7 @@ test("reconciliation mode configures the complete gate without enabling checkout
   const rendered = renderQixiangProductionEnvironment("KAI_PUBLIC_ORIGIN=https://cloud.kai.com\nKAI_QIXIANG_PAY_ENABLED=0\n", credentials, "reconciliation");
   assert.match(rendered, /^KAI_QIXIANG_PAY_ENABLED=0$/mu);
   assert.match(rendered, /^KAI_QIXIANG_PAY_RECONCILIATION_ENABLED=1$/mu);
+  assert.match(rendered, /^KAI_PAYMENT_PILOT_ENABLED=0$/mu);
   assert.match(rendered, /^KAI_QIXIANG_PAY_PID=4611$/mu);
   assert.match(rendered, /^KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS=org_primary,org_supplier$/mu);
   assert.match(rendered, /^KAI_QIXIANG_PAY_GATEWAY=https:\/\/api\.payqixiang\.cn\/mapi\.php$/mu);
@@ -68,6 +69,7 @@ test("payment mode requires an identical verified reconciliation configuration",
   const reconciled = renderQixiangProductionEnvironment(disabled, credentials, "reconciliation");
   const payment = renderQixiangProductionEnvironment(reconciled, credentials, "payment");
   assert.match(payment, /^KAI_QIXIANG_PAY_ENABLED=1$/mu);
+  assert.match(payment, /^KAI_PAYMENT_PILOT_ENABLED=1$/mu);
   assert.equal(payment.match(/^KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT=.*$/mu)?.[0], reconciled.match(/^KAI_QIXIANG_PAY_CREDENTIAL_ROTATED_AT=.*$/mu)?.[0]);
   assert.throws(() => renderQixiangProductionEnvironment(reconciled.replace("KAI_QIXIANG_PAY_PID=4611", "KAI_QIXIANG_PAY_PID=9999"), credentials, "payment"), /configuration drift/u);
 });

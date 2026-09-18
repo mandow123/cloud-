@@ -16,6 +16,7 @@ import { assertQixiangCardHourSchemaReady, verifyQixiangCardHourDatabase } from 
 
 const KEY = "fixture-secret-key-1234567890";
 const environment = {
+  KAI_PAYMENT_PILOT_ENABLED: "1",
   KAI_QIXIANG_PAY_ENABLED: "1", KAI_QIXIANG_PAY_PID: "10086", KAI_QIXIANG_PAY_KEY: KEY,
   KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "1",
   KAI_QIXIANG_PAY_APPROVAL_REFERENCE: "KAI-PAY-APPROVAL-20260822",
@@ -28,6 +29,10 @@ const environment = {
   KAI_QIXIANG_PAY_CHANNELS: "ALIPAY", KAI_PUBLIC_ORIGIN: "https://cloud.kai.com",
   KAI_QIXIANG_PAY_GATEWAY: "https://api.payqixiang.cn/mapi.php", KAI_TRUST_PROXY: "1",
 };
+
+test("runtime pilot gate closes Qixiang checkout even when the provider switch is one", () => {
+  assert.equal(qixiangPayReadiness({ ...environment, KAI_PAYMENT_PILOT_ENABLED: "0" }).canCreatePayment, false);
+});
 const account = {
   account: { id: "acct-qixiang", displayName: "Buyer", primaryEmail: null, status: "ACTIVE" },
   activeOrganization: { id: "org-qixiang", name: "Buyer Org", externalKey: "BUYER", status: "ACTIVE" },
@@ -157,6 +162,7 @@ test("stored orders remain reconcilable after new checkout creation is disabled"
     param: orderId,
   }), { headers: { "content-type": "application/json" } }));
   assert.equal(result.providerOrderId, orderId);
+  assert.match(result.providerEventId, /^qixiang:query:/u);
   assert.equal(result.fundsMoved, true);
 });
 
@@ -424,7 +430,8 @@ test("0033 preserves ALIPAY rows and event foreign keys while adding Qixiang sna
 
 test("checkout route validates before claiming and never retries an uncertain provider outcome", () => {
   const source = readFileSync(new URL("../app/api/v1/member/card-hours/topups/route.ts", import.meta.url), "utf8");
-  assert.ok(source.indexOf("validateQixiangPayCheckout(providerCheckoutInput)") < source.indexOf("store.claimTopupCheckout"));
+  assert.ok(source.indexOf("validateQixiangPayCheckout(qixiangCheckoutInput)") < source.indexOf("store.claimTopupCheckout"));
+  assert.ok(source.indexOf("createAlipayCheckoutUrl(commonCheckoutInput)") > source.indexOf("store.claimTopupCheckout"));
   assert.match(source, /store\.markTopupReconciliationRequired/u);
   assert.doesNotMatch(source, /releaseTopupCheckoutClaim/u);
 });

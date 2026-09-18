@@ -9,6 +9,8 @@ import type { Locale } from "@/lib/i18n";
 import styles from "./member-card-hour-assets.module.css";
 
 type PaymentChannel = "ALIPAY" | "WXPAY";
+type PaymentProvider = "QIXIANG_PAY" | "ALIPAY";
+type PaymentMethod = { provider: PaymentProvider; channel: PaymentChannel; ready: boolean; reason: string | null };
 
 type TopupRecord = {
   id: string;
@@ -44,6 +46,7 @@ type CardHourDashboard = {
     maxCardHours: number | null;
     stepCardHours: number;
     channels: Array<{ channel: PaymentChannel; ready: boolean; reason: string | null }>;
+    methods: PaymentMethod[];
     packages: Array<{ code: string; name: string; cardHours: number; amountCents: number; description: string; badge?: string }>;
   };
 };
@@ -51,7 +54,7 @@ type CardHourDashboard = {
 type TopupCheckout = {
   record: TopupRecord;
   checkoutUrl: string;
-  provider: "QIXIANG_PAY";
+  provider: PaymentProvider;
   channel: PaymentChannel;
   replayed: boolean;
 };
@@ -107,7 +110,7 @@ export function MemberCardHourAssets() {
   const [loadError, setLoadError] = useState("");
   const [cardHours, setCardHours] = useState("100");
   const [amountMode, setAmountMode] = useState<"PACKAGE" | "CUSTOM">("PACKAGE");
-  const [channel, setChannel] = useState<PaymentChannel | null>(null);
+  const [methodKey, setMethodKey] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const idempotencyKey = useRef<string | null>(null);
@@ -120,8 +123,10 @@ export function MemberCardHourAssets() {
     const firstPackage = payload.topupAvailability.packages[0];
     if (firstPackage) setCardHours(String(payload.topupAvailability.mode === "PILOT" ? firstPackage.cardHours : 500));
     setAmountMode("PACKAGE");
-    const firstReady = payload.topupAvailability.channels.find((item) => item.ready)?.channel ?? null;
-    setChannel((current) => payload.topupAvailability.channels.some((item) => item.ready && item.channel === current) ? current : firstReady);
+    const methods = payload.topupAvailability.methods ?? payload.topupAvailability.channels.map((item) => ({ ...item, provider: "QIXIANG_PAY" as const }));
+    const firstReady = methods.find((item) => item.ready);
+    const firstReadyKey = firstReady ? `${firstReady.provider}:${firstReady.channel}` : null;
+    setMethodKey((current) => methods.some((item) => item.ready && `${item.provider}:${item.channel}` === current) ? current : firstReadyKey);
   }, []);
 
   useEffect(() => {
@@ -143,22 +148,24 @@ export function MemberCardHourAssets() {
     && (constraints?.maxCardHours === null || constraints?.maxCardHours === undefined || amount <= constraints.maxCardHours)
     && amount % (constraints?.stepCardHours ?? 5) === 0;
   const amountCents = validAmount ? Math.round(amount * 100.2) : 0;
-  const readyChannels = useMemo(() => dashboard?.topupAvailability.channels.filter((item) => item.ready) ?? [], [dashboard]);
+  const methods = useMemo(() => dashboard?.topupAvailability.methods ?? [], [dashboard]);
+  const readyMethods = useMemo(() => methods.filter((item) => item.ready), [methods]);
+  const selectedMethod = methods.find((item) => `${item.provider}:${item.channel}` === methodKey) ?? null;
   const appealByTopup = useMemo(() => new Map((dashboard?.appealNotifications ?? []).map((item) => [item.topupOrderId, item])), [dashboard]);
 
   async function createTopup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
-    if (!dashboard?.topupAvailability.ready || !validAmount || !channel || !readyChannels.some((item) => item.channel === channel)) {
+    if (!dashboard?.topupAvailability.ready || !validAmount || !selectedMethod?.ready) {
       setMessage(copy.invalidSelection);
       return;
     }
     setSubmitting(true);
     try {
-      idempotencyKey.current ??= createIdempotencyKey(`card-hour-${channel.toLowerCase()}`);
+      idempotencyKey.current ??= createIdempotencyKey(`card-hour-${selectedMethod.provider.toLowerCase()}-${selectedMethod.channel.toLowerCase()}`);
       const result = await marketplacePost<TopupRecord, TopupCheckout>(
         "/api/v1/member/card-hours/topups",
-        { cardHours, channel },
+        { cardHours, provider: selectedMethod.provider, channel: selectedMethod.channel },
         idempotencyKey.current,
         20_000,
       );
@@ -213,12 +220,16 @@ export function MemberCardHourAssets() {
           {dashboard.topupAvailability.mode === "PILOT" ? <p className={styles.pilot}>{copy.pilot}</p> : null}
           <fieldset className={styles.field}>
             <legend>{copy.chooseChannel}</legend>
-            <div className={styles.channels}>{dashboard.topupAvailability.channels.map((item) => <button aria-pressed={channel === item.channel && item.ready} className={styles.channel} disabled={submitting || !item.ready} key={item.channel} onClick={() => { idempotencyKey.current = null; setChannel(item.channel); }} type="button"><strong>{item.channel === "ALIPAY" ? "Alipay" : "WeChat Pay"}</strong><small>{item.ready ? copy.open : copy.closed}</small></button>)}</div>
-            {!readyChannels.length ? <p className={styles.notice}>{copy.channelPending}</p> : null}
+            <div className={styles.channels}>{methods.map((item) => {
+              const key = `${item.provider}:${item.channel}`;
+              const label = item.provider === "ALIPAY" ? "Alipay Direct" : item.channel === "ALIPAY" ? "Alipay · Qixiang" : "WeChat Pay · Qixiang";
+              return <button aria-pressed={methodKey === key && item.ready} className={styles.channel} disabled={submitting || !item.ready} key={key} onClick={() => { idempotencyKey.current = null; setMethodKey(key); }} type="button"><strong>{label}</strong><small>{item.ready ? copy.open : copy.closed}</small></button>;
+            })}</div>
+            {!readyMethods.length ? <p className={styles.notice}>{copy.channelPending}</p> : null}
           </fieldset>
           <dl className={styles.summary}><div><dt>{copy.fixedRate}</dt><dd>1.00 KAI = ¥1.002</dd></div><div><dt>{copy.credited}</dt><dd>{validAmount ? amount.toFixed(2) : "—"}</dd></div><div><dt>{copy.payable}</dt><dd>{validAmount ? money(amountCents, locale) : "—"}</dd></div></dl>
           {message ? <p className={styles.error} role="alert">{message}</p> : null}
-          <button className={styles.primaryAction} disabled={submitting || !dashboard.topupAvailability.ready || !validAmount || !channel} type="submit">{submitting ? copy.creating : copy.pay}</button>
+          <button className={styles.primaryAction} disabled={submitting || !dashboard.topupAvailability.ready || !validAmount || !selectedMethod?.ready} type="submit">{submitting ? copy.creating : copy.pay}</button>
           <p className={styles.notice}>{copy.paymentNotice}</p>
         </form>
       </div>

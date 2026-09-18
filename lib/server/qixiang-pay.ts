@@ -178,7 +178,8 @@ export function qixiangPayReadiness(environment: QixiangPayEnvironment = runtime
   const reconciliation = qixiangPayReconciliationReadiness(environment);
   if (!reconciliation.configured) missing.push(...reconciliation.missing);
   const uniqueMissing = [...new Set(missing)];
-  const enabled = environment.KAI_QIXIANG_PAY_ENABLED?.trim() === "1";
+  const enabled = environment.KAI_PAYMENT_PILOT_ENABLED?.trim() === "1"
+    && environment.KAI_QIXIANG_PAY_ENABLED?.trim() === "1";
   return {
     enabled,
     configured: uniqueMissing.length === 0,
@@ -405,7 +406,7 @@ export async function verifyQixiangPayNotification(query: URLSearchParams, rawQu
   if ((payload.type !== "alipay" && payload.type !== "wxpay") || payload.trade_status !== "TRADE_SUCCESS") throw new QixiangPayError("QIXIANG_PAY_NOTIFICATION_INVALID", "支付通知状态或通道不匹配。");
   if (!/^[A-Za-z0-9_-]{8,96}$/u.test(payload.trade_no ?? "")) throw new QixiangPayError("QIXIANG_PAY_NOTIFICATION_INVALID", "支付平台订单号无效。");
   const now = new Date().toISOString();
-  return { provider: "QIXIANG_PAY", providerEventId: `notify:${payload.trade_no}:TRADE_SUCCESS`, providerTransactionId: payload.trade_no, providerOrderId: payload.out_trade_no, merchantAccountRef: payload.pid, paymentType: payload.type, productName: payload.name || null, merchantParam: payload.param || null, tradeStatus: "TRADE_SUCCESS", amountCents: parseAmountCents(payload.money), currency: "CNY", receivedAt: now, rawPayloadDigest: await sha256(rawQuery), verificationMethod: "QIXIANG_MD5_NOTIFY" };
+  return { provider: "QIXIANG_PAY", providerEventId: `qixiang:notify:${payload.trade_no}:TRADE_SUCCESS`, providerTransactionId: payload.trade_no, providerOrderId: payload.out_trade_no, merchantAccountRef: payload.pid, paymentType: payload.type, productName: payload.name || null, merchantParam: payload.param || null, tradeStatus: "TRADE_SUCCESS", amountCents: parseAmountCents(payload.money), currency: "CNY", receivedAt: now, rawPayloadDigest: await sha256(rawQuery), verificationMethod: "QIXIANG_MD5_NOTIFY" };
 }
 
 function requiredQueryText(payload: Record<string, unknown>, name: string, maxLength = 1024) {
@@ -477,7 +478,7 @@ export async function queryQixiangPayOrder(expectedInput: QixiangExpectedPayment
   }
   const now = new Date().toISOString();
   return {
-    provider: "QIXIANG_PAY", providerEventId: `query:${tradeNo}:TRADE_SUCCESS`, providerTransactionId: tradeNo,
+    provider: "QIXIANG_PAY", providerEventId: `qixiang:query:${tradeNo}:TRADE_SUCCESS`, providerTransactionId: tradeNo,
     providerOrderId: orderId, merchantAccountRef: pid, paymentType: expected.paymentType, productName: subject,
     merchantParam, eventType: "CAPTURED", amountCents, currency: "CNY", occurredAt: now,
     rawPayloadDigest: await sha256(raw), verificationMethod: "QIXIANG_ORDER_QUERY", verifiedAt: now, fundsMoved: true,

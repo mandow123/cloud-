@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
@@ -15,6 +16,9 @@ const base = {
   KAI_DB_DIR: "/app/db",
   KAI_MARKET_DATA_DIR: "/app/market",
   KAI_ALIPAY_ENABLED: "0",
+  KAI_ALIPAY_RECONCILIATION_ENABLED: "0",
+  KAI_PAYMENT_PILOT_ENABLED: "0",
+  KAI_QIXIANG_PAY_ENABLED: "0",
   KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "0",
   KAI_ACCOUNT_CONSOLE_V2: "0",
   KAI_HOSTING_V2: "0",
@@ -32,15 +36,85 @@ function rejection(environment, expected) {
   );
 }
 
-test("production trial gate keeps Alipay disabled even if credentials are present", () => {
+const ALIPAY_MERCHANT = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: "spki", format: "pem" },
+  privateKeyEncoding: { type: "pkcs8", format: "pem" },
+});
+const ALIPAY_PROVIDER = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: "spki", format: "pem" },
+  privateKeyEncoding: { type: "pkcs8", format: "pem" },
+});
+
+const alipayEnabled = {
+  ...base,
+  KAI_PAYMENT_PILOT_ENABLED: "1",
+  KAI_ALIPAY_ENABLED: "1",
+  KAI_ALIPAY_RECONCILIATION_ENABLED: "1",
+  KAI_ALIPAY_APP_ID: "2026000000000001",
+  KAI_ALIPAY_PRIVATE_KEY: ALIPAY_MERCHANT.privateKey,
+  KAI_ALIPAY_PRIVATE_KEY_TYPE: "PKCS8",
+  KAI_ALIPAY_PUBLIC_KEY: ALIPAY_PROVIDER.publicKey,
+  KAI_ALIPAY_SELLER_ID: "2088000000000001",
+  KAI_ALIPAY_GATEWAY: "https://openapi.alipay.com/gateway.do",
+  KAI_ALIPAY_APPROVAL_REFERENCE: "CHG-2026-09-18-ALIPAY",
+  KAI_ALIPAY_CREDENTIAL_VERSION: "alipay-merchant-v1",
+  KAI_ALIPAY_PILOT_ORGANIZATIONS: "org-production-pilot",
+  KAI_ACCOUNT_OIDC_CLIENT_ID: "kai-cloud-alipay-production",
+  KAI_ACCOUNT_OIDC_CLIENT_SECRET: "alipay-oidc-client-secret-v1",
+  KAI_ACCOUNT_OIDC_ISSUER: "https://auth.kai.com/api/auth",
+  KAI_ACCOUNT_OIDC_SCOPES: "openid profile email",
+  KAI_ACCOUNT_OIDC_TRANSACTION_SECRET: "67fc59de0a8d976f89aa95f61e7c0d8944e9e5ad39f0cbdf5316aa8c3e4ab0fa",
+};
+
+test("payment checkouts stay closed unless the reviewed pilot gate is explicit", () => {
   validateProductionEnvironment({ ...base, KAI_ALIPAY_APP_ID: "configured-but-closed" });
-  rejection({ ...base, KAI_ALIPAY_ENABLED: "1" }, "KAI_ALIPAY_ENABLED");
+  rejection({ ...base, KAI_ALIPAY_ENABLED: "1" }, "KAI_PAYMENT_PILOT_ENABLED");
+  rejection({ ...base, KAI_QIXIANG_PAY_ENABLED: "1" }, "KAI_PAYMENT_PILOT_ENABLED");
+  rejection({ ...base, KAI_PAYMENT_PILOT_ENABLED: "2" }, "KAI_PAYMENT_PILOT_ENABLED");
+});
+
+test("Alipay checkout requires reconciliation, official credentials, approval and a bounded allowlist", () => {
+  const validated = validateProductionEnvironment(alipayEnabled);
+  assert.equal(validated.paymentPilotEnabled, true);
+  assert.equal(validated.alipayEnabled, true);
+  assert.equal(validated.alipayReconciliationEnabled, true);
+  rejection({ ...alipayEnabled, KAI_ALIPAY_RECONCILIATION_ENABLED: "0" }, "KAI_ALIPAY_RECONCILIATION_ENABLED");
+  rejection({ ...alipayEnabled, KAI_ALIPAY_RECONCILIATION_ENABLED: "2" }, "KAI_ALIPAY_RECONCILIATION_ENABLED");
+  rejection({ ...alipayEnabled, KAI_ALIPAY_APP_ID: "sandbox-app" }, "KAI_ALIPAY_APP_ID");
+  rejection({ ...alipayEnabled, KAI_ALIPAY_SELLER_ID: "merchant" }, "KAI_ALIPAY_SELLER_ID");
+  rejection({ ...alipayEnabled, KAI_ALIPAY_PRIVATE_KEY: "replace-with-private-key" }, "KAI_ALIPAY_PRIVATE_KEY");
+  rejection({ ...alipayEnabled, KAI_ALIPAY_PUBLIC_KEY: "replace-with-public-key" }, "KAI_ALIPAY_PUBLIC_KEY");
+  rejection({ ...alipayEnabled, KAI_ALIPAY_PRIVATE_KEY_TYPE: "PEM" }, "KAI_ALIPAY_PRIVATE_KEY_TYPE");
+  rejection({ ...alipayEnabled, KAI_ALIPAY_GATEWAY: "https://openapi-sandbox.dl.alipaydev.com/gateway.do" }, "KAI_ALIPAY_GATEWAY");
+  rejection({ ...alipayEnabled, KAI_ALIPAY_APPROVAL_REFERENCE: "" }, "KAI_ALIPAY_APPROVAL_REFERENCE");
+  rejection({ ...alipayEnabled, KAI_ALIPAY_CREDENTIAL_VERSION: "" }, "KAI_ALIPAY_CREDENTIAL_ROTATED_AT");
+  rejection({ ...alipayEnabled, KAI_ALIPAY_CREDENTIAL_ROTATED_AT: "not-a-date" }, "KAI_ALIPAY_CREDENTIAL_ROTATED_AT");
+  rejection({ ...alipayEnabled, KAI_ALIPAY_APPROVAL_REFERENCE: " CHG-2026-09-18-ALIPAY" }, "KAI_ALIPAY_APPROVAL_REFERENCE");
+  rejection({ ...alipayEnabled, KAI_ALIPAY_CREDENTIAL_VERSION: " alipay-merchant-v1" }, "KAI_ALIPAY_CREDENTIAL_ROTATED_AT");
+  rejection({ ...alipayEnabled, KAI_ALIPAY_PILOT_ORGANIZATIONS: "" }, "KAI_ALIPAY_PILOT_ORGANIZATIONS");
+  rejection({ ...alipayEnabled, KAI_ALIPAY_PILOT_ORGANIZATIONS: "org-one,org-one" }, "KAI_ALIPAY_PILOT_ORGANIZATIONS");
+  rejection({ ...alipayEnabled, KAI_ACCOUNT_OIDC_CLIENT_ID: "" }, "KAI_ACCOUNT_OIDC_CLIENT_ID");
+});
+
+test("Alipay reconciliation remains independently available while checkout is closed", () => {
+  const reconciliationOnly = {
+    ...alipayEnabled,
+    KAI_PAYMENT_PILOT_ENABLED: "0",
+    KAI_ALIPAY_ENABLED: "0",
+    KAI_ALIPAY_PILOT_ORGANIZATIONS: "",
+  };
+  const validated = validateProductionEnvironment(reconciliationOnly);
+  assert.equal(validated.alipayEnabled, false);
+  assert.equal(validated.alipayReconciliationEnabled, true);
 });
 
 test("Qixiang Pay defaults closed and opens only with approved rotated credentials", () => {
   validateProductionEnvironment(base);
   const enabled = {
     ...base,
+    KAI_PAYMENT_PILOT_ENABLED: "1",
     KAI_QIXIANG_PAY_ENABLED: "1",
     KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "1",
     KAI_QIXIANG_PAY_PID: "10086",
@@ -157,6 +231,8 @@ test("Hosting V2 setup validates every production dependency without opening tra
 
 test("production templates carry the rollback and payment gates into the container", () => {
   const compose = readFileSync(new URL("../deploy/compose.production.yml", import.meta.url), "utf8");
+  const stabilization = readFileSync(new URL("../deploy/compose.stabilization.yml", import.meta.url), "utf8");
+  const paymentPilot = readFileSync(new URL("../deploy/compose.payment-pilot.yml", import.meta.url), "utf8");
   const environment = readFileSync(new URL("../deploy/kai-cloud-app.env.example", import.meta.url), "utf8");
   const dockerfile = readFileSync(new URL("../Dockerfile", import.meta.url), "utf8");
   assert.match(dockerfile, /COPY --from=build --chown=node:node \/app\/lib\/server\/qixiang-pay-revoked-policy\.mjs \.\/lib\/server\/qixiang-pay-revoked-policy\.mjs/u);
@@ -174,6 +250,13 @@ test("production templates carry the rollback and payment gates into the contain
   assert.match(compose, /KAI_QIXIANG_PAY_KEY_REUSE_APPROVED/u);
   assert.match(compose, /KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS/u);
   assert.match(compose, /KAI_QIXIANG_PAY_PILOT_CHANNEL/u);
+  assert.match(stabilization, /KAI_ALIPAY_ENABLED: "0"/u);
+  assert.match(stabilization, /KAI_QIXIANG_PAY_ENABLED: "0"/u);
+  assert.match(paymentPilot, /KAI_PAYMENT_PILOT_ENABLED: "\$\{KAI_PAYMENT_PILOT_ENABLED:\?/u);
+  assert.match(paymentPilot, /KAI_ALIPAY_ENABLED: "\$\{KAI_ALIPAY_ENABLED:-0\}"/u);
+  assert.match(paymentPilot, /KAI_ALIPAY_RECONCILIATION_ENABLED: "\$\{KAI_ALIPAY_RECONCILIATION_ENABLED:-0\}"/u);
+  assert.match(paymentPilot, /KAI_QIXIANG_PAY_ENABLED: "\$\{KAI_QIXIANG_PAY_ENABLED:-0\}"/u);
+  assert.match(paymentPilot, /KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "\$\{KAI_QIXIANG_PAY_RECONCILIATION_ENABLED:-0\}"/u);
   assert.match(compose, /KAI_ADMIN_APPROVER_USERNAME/u);
   assert.match(compose, /KAI_ADMIN_APPROVER_PASSWORD_HASH/u);
   assert.match(compose, /KAI_ADMIN_FULFILLMENT_USERNAME/u);
@@ -183,6 +266,12 @@ test("production templates carry the rollback and payment gates into the contain
   assert.match(environment, /^KAI_HOSTING_V2_SETUP=0$/mu);
   assert.match(environment, /^KAI_HOSTING_DEVICE_RETIREMENT=0$/mu);
   assert.match(environment, /^KAI_ALIPAY_ENABLED=0$/mu);
+  assert.match(environment, /^KAI_ALIPAY_RECONCILIATION_ENABLED=0$/mu);
+  assert.match(environment, /^KAI_PAYMENT_PILOT_ENABLED=0$/mu);
+  assert.match(environment, /^KAI_ALIPAY_APPROVAL_REFERENCE=$/mu);
+  assert.match(environment, /^KAI_ALIPAY_CREDENTIAL_ROTATED_AT=$/mu);
+  assert.match(environment, /^KAI_ALIPAY_CREDENTIAL_VERSION=$/mu);
+  assert.match(environment, /^KAI_ALIPAY_PILOT_ORGANIZATIONS=$/mu);
   assert.match(environment, /^KAI_QIXIANG_PAY_ENABLED=0$/mu);
   assert.match(environment, /^KAI_QIXIANG_PAY_RECONCILIATION_ENABLED=0$/mu);
   assert.match(environment, /^KAI_QIXIANG_PAY_APPROVAL_REFERENCE=$/mu);

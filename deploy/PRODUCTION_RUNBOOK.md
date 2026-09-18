@@ -7,12 +7,12 @@
 本节与 [稳定化发布规则](../docs/CLOUD_STABILIZATION.md) 优先于下方历史安装及迁移说明。
 
 - 在用户指定的自有主机运行应用、数据库、镜像仓库、备份和定时任务；不新增阿里云托管服务，不以登录阿里云控制台作为前提。
-- 每次应用启动、配置切换和回退都必须在基础 Compose 后加载同一受审版本的 `deploy/compose.stabilization.yml`，强制关闭七象和支付宝新收银，保留独立的存量核单配置。不得只改网页按钮，也不得因恢复旧环境文件而重新开启新单。
+- 每次应用启动、配置切换和回退都必须在基础 Compose 后加载同一受审版本的 `deploy/compose.stabilization.yml`，默认关闭七象和支付宝新收银，保留独立的存量核单配置。受审支付试点仅可再追加同一提交的 `deploy/compose.payment-pilot.yml`；不得只改网页按钮，也不得因恢复旧环境文件而意外开启新单。
 - 源站仅监听回环；对当前实际自建反向代理、TLS 终止、健康检查、同机旁路和 IPv6 逐项核验。历史 3054 入口/socket 模板不是当前服务器事实，不得据此启用新入口或恢复公网旁路。
 - 本轮不新增数据库迁移或异地存储；使用已有一致性备份及隔离恢复演练，不宣称完整灾备。发生新业务写入后保留当前数据库，只切换已验证兼容且包含安全修复的镜像；没有合格版本时关闭受影响操作并前向修复。
 - 维护最多 10 分钟，第 7 分钟决定继续或回退。进入窗口前完成候选、恢复、回调补偿和回退演练；发布后观察 30 分钟及至少 24 小时。
 - 身份登录需先核对旧 issuer 与新 issuer 的可信用户标识映射，保留原账号/组织/成员 ID，冲突阻断；可以通过身份开发者控制台取得证据，无需默认要求身份服务器权限。禁止按邮箱自动合并。
-- 下方开启真实收银的历史步骤本轮不执行；S3 只交付隔离候选，真实支付等待用户选定数据库恢复方案并完成演练。
+- 真实收银只能在用户单独选定数据库恢复方案、完成当前数据库兼容恢复演练、取得商户材料并解除身份连续性门禁后进入小额试点。缺少任一证据时保持 checkout 关闭并继续存量核单。
 
 ## 服务目标
 
@@ -355,7 +355,29 @@ docker compose -f deploy/compose.production.yml -f deploy/compose.stabilization.
 
 - 七相旧版协议的查单接口要求把商户密钥放入查询参数，因此只有 `KAI_QIXIANG_PAY_RECONCILIATION_ENABLED=1` 且全部门禁就绪时，专用服务端客户端才可调用固定的 `https://api.payqixiang.cn/api.php`：禁止重定向、代理、浏览器调用、完整 URL 日志和错误原文回显。签名通知本身不得直接入账；必须主动查单确认 `status=1`，并逐项核对 PID、商户订单号、七相订单号、通道、商品名、金额和扩展参数。浏览器回跳页只调用本平台鉴权接口，由服务端抢占持久化租约后查单；浏览器不接触密钥，也不读取回跳参数作为成功依据。退款保持人工待处理，未取得可验证退款协议前不得宣称退款成功。
 
-以下是未来真实收银的历史配置说明，当前稳定化阶段禁止执行开启新订单的步骤；新单始终保持 `KAI_QIXIANG_PAY_ENABLED=0`。未来必须先解除本文件开头的恢复/真实支付门禁并另行更新受审发布策略，不能直接删除当前 overlay：
+以下步骤属于支付恢复候选。用户已要求开启七象和支付宝，但不能直接删除稳定化 overlay 或只改环境变量。必须先选定并演练“保留当前数据库、停止新单、继续存量回调/查单/退款、以前向修复为主”的恢复方案；身份连续性、商户材料、兼容回退镜像和小额真实验收缺一不可。
+
+基础 Compose 与 `compose.stabilization.yml` 永远形成安全恢复模式：两个新收银开关为 `0`，各自核单开关可保持 `1`。只有受审支付候选才在最后追加 `deploy/compose.payment-pilot.yml`，并显式设置 `KAI_PAYMENT_PILOT_ENABLED=1`。配置及启动门禁都必须使用相同的三层顺序：
+
+```sh
+docker compose \
+  --env-file /etc/kai-cloud/kai-cloud-release.env \
+  --env-file /etc/kai-cloud/kai-cloud-app.env \
+  -f deploy/compose.production.yml \
+  -f deploy/compose.stabilization.yml \
+  -f deploy/compose.payment-pilot.yml config --quiet
+
+npm run ops:deploy:validate -- --current-env --payment-pilot
+
+docker compose \
+  --env-file /etc/kai-cloud/kai-cloud-release.env \
+  --env-file /etc/kai-cloud/kai-cloud-app.env \
+  -f deploy/compose.production.yml \
+  -f deploy/compose.stabilization.yml \
+  -f deploy/compose.payment-pilot.yml up -d --wait app
+```
+
+事故或人工停单时移除最后一层，并把应用 env 中 `KAI_PAYMENT_PILOT_ENABLED`、`KAI_QIXIANG_PAY_ENABLED`、`KAI_ALIPAY_ENABLED` 恢复为 `0`；只要凭据没有安全事件，两个 reconciliation 开关保持 `1`。发生真实资金或账本写入后继续使用当前数据库，禁止恢复旧库覆盖支付事实。
 
 生产配置必须使用 `scripts/ops/configure-qixiang-pay-env.mjs`，禁止用文本编辑器或 Shell 替换密钥。默认必须在七相后台轮换并作废曾进入聊天、日志或工单的旧密钥。仅当商户责任人明确书面批准继续使用某一已识别密钥时，才允许例外复用：审批必须同时绑定该密钥的 SHA-256 摘要、`RISK-` 参考号和真实批准时间；配置器、生产校验器与运行时会逐项核对，不能用该例外放行其他密钥。将以下精确 JSON 字段写入 `/root/kai-qixiang-production.json`，文件必须是 `0600 root:root`，父目录不能由非 root 写入：`pid`、`key`、`approvalReference`、`credentialVersion`、`credentialRotatedAt`、`keyReuseApprovalReference`、`keyReuseApprovedAt`、`keyReuseDigest`、`riskReference`、`queryCredentialId`、`queryCredentialVersion`、`queryCredentialRotatedAt`、`channel`、`organizations`。未发生轮换时，两个 `RotatedAt` 字段必须为空字符串并通过版本字段登记生命周期，禁止用部署时间冒充轮换时间；复用批准时间写入 `keyReuseApprovedAt`。新密钥的三个复用字段必须为空字符串。`channel` 固定为 `ALIPAY`，`organizations` 必须逐项等于本次获批且仍为 `ACTIVE` 的组织 ID。当前首批必须核对工具输出 `organizationCount=7`。
 
@@ -420,6 +442,26 @@ trap - EXIT
 6. 首测账户前后端均固定为 5.00 卡时 / ¥5.01。真实支付属于资金动作，必须由授权人员现场确认后执行；验证成功通知必须再经主动查单后只入账一次，重复通知、重复回跳或重复查单不得重复加卡时。漏回调由回跳页的服务端核单恢复；持续未知或字段不一致才进入管理员申诉核对。完成验收前不得移除组织白名单、单通道和 5.00 卡时限制。
 
 常规停止只把 `KAI_QIXIANG_PAY_ENABLED` 改回 `0`，新单立即停止、存量核单继续。安全事件才同时关闭 `KAI_QIXIANG_PAY_RECONCILIATION_ENABLED`；不得删除存量付款单、租约、账本或申诉数据，待处理订单必须转入管理员队列人工核对。
+
+### 支付宝直连卡时充值
+
+支付宝直连与“七象的 ALIPAY 通道”是两条不同 provider，API、UI、幂等键和核单必须保留 provider 维度。生产材料必须来自已上线且具备电脑网站支付、查单和退款权限的支付宝应用，包括 16 位 App ID、应用私钥、支付宝公钥、16 位 Seller ID、RSA2 密钥绑定、正式网关、审批参考、凭据版本/轮换时间和白名单组织。不得把沙箱密钥或普通收款码当成开放平台生产材料。
+
+凭据 JSON 只允许保存在 `/root/kai-cloud-alipay-production.json`，`0600 root:root`，字段严格为 `appId`、`privateKey`、`privateKeyType`、`alipayPublicKey`、`sellerId`、`approvalReference`、`credentialVersion`、`credentialRotatedAt`、`organizations`。先只开核单：
+
+```sh
+sudo node /opt/kai-cloud-release-sources/<受审完整提交>/scripts/ops/configure-alipay-env.mjs \
+  --env-file /etc/kai-cloud/kai-cloud-app.env \
+  --credential-file /root/kai-cloud-alipay-production.json \
+  --mode reconciliation \
+  --confirm CONFIGURE_ALIPAY_PRODUCTION_PAYMENT
+```
+
+完成官方签名响应查单、伪造/重复通知拒绝、漏回调恢复和退款故障演练后，使用同一凭据文件运行 `--mode payment`。工具拒绝配置漂移并原子备份 app env。生产门禁要求 `KAI_ALIPAY_ENABLED=1` 时 `KAI_ALIPAY_RECONCILIATION_ENABLED=1`，同时要求 payment pilot gate、官方 gateway、有效 RSA 密钥、审批/生命周期记录、1–20 个白名单组织和可用的现代 KAI Identity。
+
+运行 `--mode payment` 后必须重新执行上方 `ops:deploy:validate -- --current-env --payment-pilot` 和三层 Compose `up -d --wait app`；只修改 env 不会开启收银，也不得绕过启动门禁直接重建容器。
+
+支付宝异步通知、主动查单和退款只依赖 reconciliation 开关；关闭 checkout 不得使存量订单失去补偿能力。卡时充值仍固定 5.00 卡时 / ¥5.01。直连首单前还必须完成卡时退款与账本冲正的受审流程；当前只有充值申诉和供应订单退款，不能把它们冒充已完成的卡时退款验收。
 
 ## 备份格式
 

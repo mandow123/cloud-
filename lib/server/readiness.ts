@@ -5,7 +5,7 @@ import { SUPPLY_SCHEMA_VERSION } from "../../db/supply-schema.ts";
 import { STANDARDIZATION_SCHEMA_VERSION } from "../../db/standardization-schema.ts";
 import { CARD_HOUR_SCHEMA_VERSION } from "../../db/card-hour-schema.ts";
 import { HOSTING_V2_SCHEMA_VERSION } from "../../db/hosting-v2-schema.ts";
-import { alipayReadiness } from "./alipay-live.ts";
+import { alipayReadiness, alipayReconciliationReadiness } from "./alipay-live.ts";
 import { getAccountAuthStore } from "./account-auth-store.ts";
 import { getAdminOperationsStore } from "./admin-store.ts";
 import { getExchangeStore } from "./exchange-store.ts";
@@ -60,7 +60,15 @@ function capabilityReadiness(environment:Environment){
     financeApprovalLogin:requiredCapability(["KAI_ADMIN_APPROVER_USERNAME","KAI_ADMIN_APPROVER_PASSWORD_HASH"],environment,
       environment.KAI_ADMIN_APPROVER_PASSWORD_HASH?.startsWith("pbkdf2-sha256:")?[]:["KAI_ADMIN_APPROVER_PASSWORD_HASH(valid PBKDF2 hash)"]),
     kaiIdentityLogin:requiredCapability(["KAI_ACCOUNT_OIDC_CLIENT_ID","KAI_ACCOUNT_OIDC_TRANSACTION_SECRET"],environment,identityExtra),
-    alipayLive:{available:alipay.canCreatePayment,enabled:alipay.enabled,configured:alipay.configured,failClosed:true,missing:alipay.missing},
+    alipayLive:{
+      available:alipay.canCreatePayment,
+      enabled:alipay.enabled,
+      configured:alipay.configured,
+      reconciliationAvailable:alipay.canReconcilePayment,
+      reconciliationEnabled:alipay.reconciliationEnabled,
+      failClosed:true,
+      missing:alipay.missing,
+    },
     qixiangPayCardHourTopup:{
       available:qixiangPay.canCreatePayment,
       enabled:qixiangPay.enabled,
@@ -146,9 +154,14 @@ export async function evaluateReadiness(){
       : {...configuredCapabilities.kaiIdentityLogin,configured:false,probe:"deferred" as const},
   };
   const qixiangPay=qixiangPayReadiness(environment);
+  const alipay=alipayReadiness(environment),alipayReconciliation=alipayReconciliationReadiness(environment);
   capabilities.qixiangPayCardHourTopup={
     ...capabilities.qixiangPayCardHourTopup,
     available:qixiangPay.canCreatePayment&&capabilities.kaiIdentityLogin.available&&kaiIdentityLoginAudited,
+  };
+  capabilities.alipayLive={
+    ...capabilities.alipayLive,
+    available:alipay.canCreatePayment&&capabilities.kaiIdentityLogin.available&&kaiIdentityLoginAudited,
   };
   const hostingV2=evaluateHostingV2Capability({
     environment,
@@ -163,7 +176,9 @@ export async function evaluateReadiness(){
   });
   // Identity unavailability closes only new checkout creation. Keeping the
   // service ready preserves callbacks, reconciliation and existing orders.
-  const paymentGateReady=(!qixiangPay.enabled||qixiangPay.canCreatePayment)
+  const paymentGateReady=(!alipay.enabled||alipay.canCreatePayment)
+    &&(!alipayReconciliation.enabled||alipayReconciliation.canReconcilePayment)
+    &&(!qixiangPay.enabled||qixiangPay.canCreatePayment)
     &&(!qixiangPay.reconciliationEnabled||qixiangPay.canReconcilePayment);
   const ready=market.ready&&Object.values(storage).every((item)=>item.ready)&&hostingV2.ready&&paymentGateReady;
   return{

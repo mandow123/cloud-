@@ -138,9 +138,9 @@ export function renderQixiangProductionEnvironment(source, credentials, mode) {
   if (mode === "payment") {
     if (payment !== "0" || reconciliation !== "1") fail("payment mode requires verified reconciliation to be enabled while checkout remains disabled");
     for (const [key, value] of Object.entries(approved)) if (current.get(key) !== value) fail(`payment mode refuses configuration drift in ${key}`);
-    return setEnvironmentLine(source, "KAI_QIXIANG_PAY_ENABLED", "1");
+    return setEnvironmentLine(setEnvironmentLine(source, "KAI_PAYMENT_PILOT_ENABLED", "1"), "KAI_QIXIANG_PAY_ENABLED", "1");
   }
-  const values = { KAI_QIXIANG_PAY_ENABLED: "0", KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "1", ...approved };
+  const values = { KAI_PAYMENT_PILOT_ENABLED: "0", KAI_QIXIANG_PAY_ENABLED: "0", KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "1", ...approved };
   let result = source;
   for (const [key, value] of Object.entries(values)) result = setEnvironmentLine(result, key, value);
   return result.endsWith("\n") ? result : `${result}\n`;

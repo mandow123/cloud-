@@ -19,7 +19,9 @@ test("readiness probes every storage domain without creating identities or grant
   assert.match(readiness,/failClosed:true/);
   assert.match(readiness,/qixiangPayCardHourTopup:\{[\s\S]*available:qixiangPay\.canCreatePayment,[\s\S]*reconciliationAvailable:qixiangPay\.canReconcilePayment,[\s\S]*reconciliationEnabled:qixiangPay\.reconciliationEnabled,[\s\S]*failClosed:true,[\s\S]*\}/u);
   assert.match(readiness,/capabilities\.qixiangPayCardHourTopup=\{[\s\S]*available:qixiangPay\.canCreatePayment&&capabilities\.kaiIdentityLogin\.available&&kaiIdentityLoginAudited/u);
-  assert.match(readiness,/const paymentGateReady=\(!qixiangPay\.enabled\|\|qixiangPay\.canCreatePayment\)[\s\S]*&&\(!qixiangPay\.reconciliationEnabled\|\|qixiangPay\.canReconcilePayment\)/u);
+  assert.match(readiness,/alipayLive:\{[\s\S]*reconciliationAvailable:alipay\.canReconcilePayment,[\s\S]*reconciliationEnabled:alipay\.reconciliationEnabled/u);
+  assert.match(readiness,/capabilities\.alipayLive=\{[\s\S]*available:alipay\.canCreatePayment&&capabilities\.kaiIdentityLogin\.available&&kaiIdentityLoginAudited/u);
+  assert.match(readiness,/const paymentGateReady=\(!alipay\.enabled\|\|alipay\.canCreatePayment\)[\s\S]*&&\(!alipayReconciliation\.enabled\|\|alipayReconciliation\.canReconcilePayment\)[\s\S]*&&\(!qixiangPay\.enabled\|\|qixiangPay\.canCreatePayment\)/u);
   assert.doesNotMatch(readiness,/qixiangPayCardHourTopup:\{[^\n]*(?:missing|channels|merchantAccountRef)/u);
   assert.match(readiness,/const hostingV2StoragePromise=\(async\(\)=>/);
   assert.doesNotMatch(readiness,/isHostingV2ConfigurationEnabled\(environment\)/);

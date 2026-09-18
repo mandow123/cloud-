@@ -35,7 +35,7 @@ function topupRecord(row: Row, now = new Date().toISOString()) {
   const paymentType = row.provider_payment_type == null ? null : text(row, "provider_payment_type");
   return {
     id: text(row, "id"), cardHourMicros: number(row, "card_hour_micros"), amountCents: number(row, "amount_cents"),
-    currency: "CNY", provider, channel: paymentType === "alipay" ? "ALIPAY" : paymentType === "wxpay" ? "WXPAY" : null,
+    currency: "CNY", provider, channel: provider === "ALIPAY" || paymentType === "alipay" ? "ALIPAY" : paymentType === "wxpay" ? "WXPAY" : null,
     status: text(row, "status"), credited: text(row, "status") === "CAPTURED",
     expiresAt: text(row, "expires_at"), createdAt: text(row, "created_at"), updatedAt: text(row, "updated_at"),
     appealEligibility: topupAppealEligibility(row, now),
@@ -46,12 +46,13 @@ function privateTopupRecord(row: Row) {
   return { ...topupRecord(row), checkoutUrl: row.checkout_url == null ? null : text(row, "checkout_url") };
 }
 
-const TOPUP_APPEAL_SELECT = `SELECT a.*,t.card_hour_micros,t.amount_cents,t.status AS topup_status,t.provider_payment_type,
+const TOPUP_APPEAL_SELECT = `SELECT a.*,t.card_hour_micros,t.amount_cents,t.status AS topup_status,t.provider,t.provider_payment_type,
   COALESCE(r.seen_version,1) AS member_seen_version,CASE WHEN a.version>COALESCE(r.seen_version,1) THEN 1 ELSE 0 END AS unread
   FROM card_hour_topup_appeals a JOIN card_hour_topup_orders t ON t.id=a.topup_order_id
   LEFT JOIN card_hour_topup_appeal_member_reads r ON r.appeal_id=a.id AND r.organization_id=a.organization_id`;
 
 function topupAppealRecord(row: Row): CardHourTopupAppealRecord {
+  const provider = text(row, "provider");
   const paymentType = row.provider_payment_type == null ? null : text(row, "provider_payment_type");
   return {
     id: text(row, "id"), caseNumber: text(row, "case_number"), topupOrderId: text(row, "topup_order_id"),
@@ -62,7 +63,7 @@ function topupAppealRecord(row: Row): CardHourTopupAppealRecord {
     assignedAdminPrincipalId: row.assigned_admin_principal_id == null ? null : text(row, "assigned_admin_principal_id"),
     version: number(row, "version"), memberSeenVersion: number(row, "member_seen_version"), unread: number(row, "unread") === 1,
     cardHourMicros: number(row, "card_hour_micros"), amountCents: number(row, "amount_cents"),
-    topupStatus: text(row, "topup_status"), channel: paymentType === "alipay" ? "ALIPAY" : paymentType === "wxpay" ? "WXPAY" : null,
+    topupStatus: text(row, "topup_status"), channel: provider === "ALIPAY" || paymentType === "alipay" ? "ALIPAY" : paymentType === "wxpay" ? "WXPAY" : null,
     createdAt: text(row, "created_at"), updatedAt: text(row, "updated_at"),
   };
 }
@@ -185,11 +186,11 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       return { record: topupRecord(created), replayed: results[0]?.changes !== 1 };
     },
     async claimTopupCheckout(input) {
-      const results = await db.batch([{ sql: "UPDATE card_hour_topup_orders SET status='PROCESSING',updated_at=? WHERE id=? AND organization_id=? AND provider='QIXIANG_PAY' AND status='PENDING' AND checkout_url IS NULL", values: [input.now, input.orderId, input.organizationId] }]);
+      const results = await db.batch([{ sql: "UPDATE card_hour_topup_orders SET status='PROCESSING',updated_at=? WHERE id=? AND organization_id=? AND provider IN ('ALIPAY','QIXIANG_PAY') AND status='PENDING' AND checkout_url IS NULL", values: [input.now, input.orderId, input.organizationId] }]);
       let row = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=? AND organization_id=?", [input.orderId, input.organizationId]);
       if (!row) throw new AccountAuthError("CARD_HOUR_TOPUP_NOT_FOUND", 404, "充值记录不存在。 ");
       if (results[0]?.changes !== 1 && text(row, "status") === "PROCESSING" && Date.parse(input.now) - Date.parse(text(row, "updated_at")) >= 120_000) {
-        await db.batch([{ sql: "UPDATE card_hour_topup_orders SET status='RECONCILIATION_REQUIRED',updated_at=? WHERE id=? AND organization_id=? AND provider='QIXIANG_PAY' AND status='PROCESSING' AND checkout_url IS NULL AND updated_at=?", values: [input.now, input.orderId, input.organizationId, text(row, "updated_at")] }]);
+        await db.batch([{ sql: "UPDATE card_hour_topup_orders SET status='RECONCILIATION_REQUIRED',updated_at=? WHERE id=? AND organization_id=? AND provider IN ('ALIPAY','QIXIANG_PAY') AND status='PROCESSING' AND checkout_url IS NULL AND updated_at=?", values: [input.now, input.orderId, input.organizationId, text(row, "updated_at")] }]);
         row = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=? AND organization_id=?", [input.orderId, input.organizationId]);
         if (!row) throw new AccountAuthError("CARD_HOUR_TOPUP_NOT_FOUND", 404, "充值记录不存在。 ");
       }
@@ -197,7 +198,7 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
     },
     async registerTopupReconciliationRequest(input) {
       const results = await db.batch([{ sql: `INSERT OR IGNORE INTO card_hour_topup_reconciliation_requests(organization_id,idempotency_key,topup_order_id,payload_hash,created_at)
-        SELECT organization_id,?,?,?,? FROM card_hour_topup_orders WHERE id=? AND organization_id=? AND provider='QIXIANG_PAY'`, values: [input.idempotencyKey, input.orderId, input.payloadHash, input.now, input.orderId, input.organizationId] }]);
+        SELECT organization_id,?,?,?,? FROM card_hour_topup_orders WHERE id=? AND organization_id=? AND provider IN ('ALIPAY','QIXIANG_PAY')`, values: [input.idempotencyKey, input.orderId, input.payloadHash, input.now, input.orderId, input.organizationId] }]);
       const row = await db.first<Row>("SELECT * FROM card_hour_topup_reconciliation_requests WHERE organization_id=? AND idempotency_key=?", [input.organizationId, input.idempotencyKey]);
       if (!row) throw new AccountAuthError("CARD_HOUR_TOPUP_NOT_FOUND", 404, "充值记录不存在。 ");
       if (text(row, "topup_order_id") !== input.orderId || text(row, "payload_hash") !== input.payloadHash) throw new AccountAuthError("IDEMPOTENCY_CONFLICT", 409, "同一提交标识对应了不同的支付核对请求。 ");
@@ -206,7 +207,7 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
     async listDueTopupReconciliations(input) {
       const rows = await db.all<Row>(`SELECT t.id,t.organization_id,COALESCE(c.attempt_count,0) AS attempt_count
         FROM card_hour_topup_orders t LEFT JOIN card_hour_topup_reconciliation_claims c ON c.topup_order_id=t.id
-        WHERE t.provider='QIXIANG_PAY' AND t.status IN ('PENDING','PROCESSING','RECONCILIATION_REQUIRED')
+        WHERE t.provider IN ('ALIPAY','QIXIANG_PAY') AND t.status IN ('PENDING','PROCESSING','RECONCILIATION_REQUIRED')
         AND COALESCE(c.next_query_at,t.created_at)<=? AND (c.claim_token IS NULL OR c.claimed_at<=?)
         ORDER BY COALESCE(c.next_query_at,t.created_at),COALESCE(c.updated_at,t.created_at),t.id LIMIT ?`,
         [input.now, input.staleBefore, Math.min(50, Math.max(1, Math.floor(input.limit)))]);
@@ -228,10 +229,10 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       const claimToken = `chrq_${crypto.randomUUID()}`;
       const results = await db.batch([
         { sql: `INSERT OR IGNORE INTO card_hour_topup_reconciliation_claims(topup_order_id,organization_id,claim_token,claimed_at,next_query_at,attempt_count,updated_at)
-          SELECT id,organization_id,NULL,NULL,?,0,? FROM card_hour_topup_orders WHERE id=? AND organization_id=? AND provider='QIXIANG_PAY'`, values: [input.now, input.now, input.orderId, input.organizationId] },
+          SELECT id,organization_id,NULL,NULL,?,0,? FROM card_hour_topup_orders WHERE id=? AND organization_id=? AND provider IN ('ALIPAY','QIXIANG_PAY')`, values: [input.now, input.now, input.orderId, input.organizationId] },
         { sql: `UPDATE card_hour_topup_reconciliation_claims SET claim_token=?,claimed_at=?,next_query_at=?,attempt_count=attempt_count+1,updated_at=?
           WHERE topup_order_id=? AND organization_id=? AND next_query_at<=? AND (claim_token IS NULL OR claimed_at<=?)
-          AND EXISTS(SELECT 1 FROM card_hour_topup_orders WHERE id=? AND organization_id=? AND provider='QIXIANG_PAY' AND status IN ('PENDING','PROCESSING','RECONCILIATION_REQUIRED'))`, values: [claimToken, input.now, input.nextEligibleAt, input.now, input.orderId, input.organizationId, input.now, input.staleBefore, input.orderId, input.organizationId] },
+          AND EXISTS(SELECT 1 FROM card_hour_topup_orders WHERE id=? AND organization_id=? AND provider IN ('ALIPAY','QIXIANG_PAY') AND status IN ('PENDING','PROCESSING','RECONCILIATION_REQUIRED'))`, values: [claimToken, input.now, input.nextEligibleAt, input.now, input.orderId, input.organizationId, input.now, input.staleBefore, input.orderId, input.organizationId] },
       ]);
       const row = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=? AND organization_id=?", [input.orderId, input.organizationId]);
       if (!row) throw new AccountAuthError("CARD_HOUR_TOPUP_NOT_FOUND", 404, "充值记录不存在。 ");
@@ -256,13 +257,13 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
         return { record: privateTopupRecord(current), replayed: true };
       }
       await db.batch([{ sql: `UPDATE card_hour_topup_orders SET checkout_url=?,checkout_created_at=?,status=CASE WHEN status='PROCESSING' THEN 'PENDING' ELSE status END,updated_at=?
-        WHERE id=? AND organization_id=? AND provider='QIXIANG_PAY' AND checkout_url IS NULL AND status IN ('PROCESSING','CAPTURED')`, values: [input.checkoutUrl, input.now, input.now, input.orderId, input.organizationId] }]);
+        WHERE id=? AND organization_id=? AND provider IN ('ALIPAY','QIXIANG_PAY') AND checkout_url IS NULL AND status IN ('PROCESSING','CAPTURED')`, values: [input.checkoutUrl, input.now, input.now, input.orderId, input.organizationId] }]);
       const row = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=? AND organization_id=?", [input.orderId, input.organizationId]);
       if (!row?.checkout_url || text(row, "checkout_url") !== input.checkoutUrl) throw new AccountAuthError("CARD_HOUR_TOPUP_CHECKOUT_ATTACH_FAILED", 409, "充值收银台未能安全保存，需人工核对。 ");
       return { record: privateTopupRecord(row), replayed: false };
     },
     async markTopupReconciliationRequired(input) {
-      await db.batch([{ sql: "UPDATE card_hour_topup_orders SET status='RECONCILIATION_REQUIRED',updated_at=? WHERE id=? AND organization_id=? AND provider='QIXIANG_PAY' AND status='PROCESSING' AND checkout_url IS NULL", values: [input.now, input.orderId, input.organizationId] }]);
+      await db.batch([{ sql: "UPDATE card_hour_topup_orders SET status='RECONCILIATION_REQUIRED',updated_at=? WHERE id=? AND organization_id=? AND provider IN ('ALIPAY','QIXIANG_PAY') AND status='PROCESSING' AND checkout_url IS NULL", values: [input.now, input.orderId, input.organizationId] }]);
     },
     async getTopup(orderId) {
       const row = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=?", [orderId]);
