@@ -334,7 +334,7 @@ async function main() {
   assert(volumeByTarget(backup, "/app/market")?.read_only === true, "backup market mount must be read-only");
   assert(volumeByTarget(backup, "/app/backups") && !volumeByTarget(backup, "/app/backups").read_only, "backup output mount must be writable");
 
-  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, capabilitySchemaGate, qixiangSchemaGate, appealSchemaGate, appealReadSchemaGate, reconciliationSchemaGate, refundSchemaGate, runbook, appEnvironmentExample, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator, schemaGateRunner] = await Promise.all([
+  const [updateUnit, backupUnit, updateTimer, backupTimer, updateRunner, backupRunner, Dockerfile, productionEntrypoint, capabilitySchemaGate, qixiangSchemaGate, appealSchemaGate, appealReadSchemaGate, reconciliationSchemaGate, refundSchemaGate, runbook, appEnvironmentExample, qixiangPaymentPilotCompose, releaseEnvironmentExample, registryCompose, registryConfig, registryEnvironmentExample, promotionScript, localImageValidator, schemaGateRunner] = await Promise.all([
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-backup.service"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-market-update.timer"), "utf8"),
@@ -351,6 +351,7 @@ async function main() {
     readFile(resolve(projectRoot, "scripts/ops/verify-card-hour-topup-refund-schema.mjs"), "utf8"),
     readFile(resolve(projectRoot, "deploy/PRODUCTION_RUNBOOK.md"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-app.env.example"), "utf8"),
+    readFile(resolve(projectRoot, "deploy/compose.qixiang-payment-pilot.yml"), "utf8"),
     readFile(resolve(projectRoot, "deploy/kai-cloud-release.env.example"), "utf8"),
     readFile(resolve(projectRoot, "deploy/compose.registry.yml"), "utf8"),
     readFile(resolve(projectRoot, "deploy/registry/config.yml"), "utf8"),
@@ -378,6 +379,8 @@ async function main() {
   assert(backupRunner.includes("KAI_BACKUP_RETENTION_MAX_AGE_DAYS"), "backup runner must pass the hard maximum backup age");
   assert(backupRunner.includes('KAI_BACKUP_SHARED_LOCK="$KAI_STATE_ROOT/backups/.kai-cloud-backup.lock"') && backupRunner.includes("/usr/bin/flock --nonblock 9"), "backup runner must serialize every unit that targets the same state root");
   assert(appEnvironmentExample.includes("KAI_APP_PORT=3051") && appEnvironmentExample.includes("KAI_ENABLE_HSTS=0"), "application environment example must use port 3051 and keep HSTS off by default");
+  assert(qixiangPaymentPilotCompose.includes('KAI_QIXIANG_PAY_ENABLED: "1"') && qixiangPaymentPilotCompose.includes('KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "1"'), "Qixiang pilot overlay must explicitly enable checkout and reconciliation");
+  assert(qixiangPaymentPilotCompose.includes('KAI_ALIPAY_ENABLED: "0"') && !qixiangPaymentPilotCompose.includes("KAI_ALIPAY_APP_ID"), "Qixiang pilot overlay must keep direct Alipay disabled and contain no direct merchant integration");
   assert(releaseEnvironmentExample.includes("KAI_STATE_ROOT=/opt/kai-cloud-3051") && releaseEnvironmentExample.includes("KAI_BACKUP_RETENTION_MAX_AGE_DAYS=30") && releaseEnvironmentExample.includes("KAI_IMAGE_PLATFORM=linux/amd64"), "release environment example must use the 3051 state root, validated platform, and 30-day backup limit");
   assert(registryCompose.includes("registry:3.1.1@sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33"), "private registry must use the verified Docker Official Image digest");
   assert(registryCompose.includes("127.0.0.1:${KAI_REGISTRY_PORT:-5443}:5000") && registryCompose.includes("/opt/kai-cloud-registry"), "private registry must bind loopback and persist under its dedicated state root");
@@ -482,6 +485,7 @@ async function main() {
   assert(runbook.includes("0037 申诉站内通知预部署门禁") && runbook.includes("APPLY_0037_CARD_HOUR_TOPUP_APPEAL_READS") && runbook.includes("marker v5"), "runbook must provide an executable 0037 migration path before 0038");
   assert(runbook.includes("0038 支付核单租约预部署门禁") && runbook.includes("APPLY_0038_CARD_HOUR_TOPUP_RECONCILIATION") && runbook.includes("KAI_QIXIANG_PAY_RECONCILIATION_ENABLED"), "runbook must gate durable payment reconciliation separately from new checkout creation");
   assert(runbook.includes("0042 卡时充值退款预部署门禁") && runbook.includes("APPLY_0042_CARD_HOUR_TOPUP_REFUNDS") && runbook.includes("MANUAL_REQUIRED"), "runbook must gate dual-control topup refunds and manual-provider evidence before checkout");
+  assert(runbook.includes("compose.qixiang-payment-pilot.yml") && runbook.includes("七象 ALIPAY 通道") && runbook.includes("保留当前数据库"), "runbook must enable only the Qixiang ALIPAY channel with recovery plan A");
   assert(runbook.includes(".kai-cloud-backup.lock") && runbook.includes("只有一个 timer 指向该 `KAI_STATE_ROOT`"), "runbook must prevent differently named timers from racing on one backup root");
   assert(runbook.includes("127.0.0.1:3051") && runbook.includes("KAI_ENABLE_HSTS=1"), "runbook must document the new loopback port and the gated HSTS enablement step");
   assert(runbook.includes("任何恢复包都不得超过 30 天") && runbook.includes("异地存储也必须配置不超过 30 天的生命周期"), "runbook must align local and off-host backups with the 30-day data boundary");

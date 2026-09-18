@@ -1,0 +1,6 @@
+services:
+  app:
+    environment:
+      KAI_ALIPAY_ENABLED: "0"
+      KAI_QIXIANG_PAY_ENABLED: "1"
+      KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "1"
