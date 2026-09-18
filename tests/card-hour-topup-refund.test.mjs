@@ -122,8 +122,27 @@ test("the same Qixiang merchant refund proof cannot settle two topups", async ()
       providerTransactionId: "unique-qixiang-refund",
       evidenceDigest: "d".repeat(64),
       now: "2026-08-22T00:04:00.000Z",
-    }));
+    }), (error) => error.code === "CARD_HOUR_TOPUP_REFUND_MANUAL_CONFLICT");
     assert.equal((await fixture.card.getTopupRefund(secondRefund.id)).status, "MANUAL_REQUIRED");
+  } finally { fixture.db.close(); }
+});
+
+test("refund request replay is idempotent and changed input conflicts", async () => {
+  const fixture = await paymentFixture();
+  try {
+    const topup = await capturedTopup(fixture, "QIXIANG_PAY", "request-replay");
+    const input = {
+      orderId: topup.id,
+      requestedBy: "finance-requester",
+      reason: "Customer requested a reviewed full top-up refund.",
+      payloadHash: "refund-request-replay",
+      now: fixture.input.now,
+    };
+    const first = await fixture.card.requestTopupRefund(input);
+    const replay = await fixture.card.requestTopupRefund(input);
+    assert.equal(replay.replayed, true);
+    assert.equal(replay.record.id, first.record.id);
+    await assert.rejects(fixture.card.requestTopupRefund({ ...input, payloadHash: "refund-request-changed" }), (error) => error.code === "IDEMPOTENCY_CONFLICT");
   } finally { fixture.db.close(); }
 });
 
