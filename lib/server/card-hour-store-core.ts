@@ -1,3 +1,5 @@
+import { cardHourCaptureStatements } from "./card-hour-capture-statements.ts";
+import { settleSupplyCardHours } from "./supply-card-hour-settlement.ts";
 import { CARD_HOUR_ASSET_CODE } from "../card-hours.ts";
 import { hostingCnyReferenceCents, hostingFeeBreakdown } from "../hosting-v2.ts";
 import { CARD_HOUR_SCHEMA_VERSION, cardHourSchemaStatements } from "../../db/card-hour-schema.ts";
@@ -201,6 +203,27 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       if (text(row, "topup_order_id") !== input.orderId || text(row, "payload_hash") !== input.payloadHash) throw new AccountAuthError("IDEMPOTENCY_CONFLICT", 409, "同一提交标识对应了不同的支付核对请求。 ");
       return { replayed: results[0]?.changes !== 1 };
     },
+    async listDueTopupReconciliations(input) {
+      const rows = await db.all<Row>(`SELECT t.id,t.organization_id,COALESCE(c.attempt_count,0) AS attempt_count
+        FROM card_hour_topup_orders t LEFT JOIN card_hour_topup_reconciliation_claims c ON c.topup_order_id=t.id
+        WHERE t.provider='QIXIANG_PAY' AND t.status IN ('PENDING','PROCESSING','RECONCILIATION_REQUIRED')
+        AND COALESCE(c.next_query_at,t.created_at)<=? AND (c.claim_token IS NULL OR c.claimed_at<=?)
+        ORDER BY COALESCE(c.next_query_at,t.created_at),COALESCE(c.updated_at,t.created_at),t.id LIMIT ?`,
+        [input.now, input.staleBefore, Math.min(50, Math.max(1, Math.floor(input.limit)))]);
+      return rows.map((row) => ({ orderId: text(row,"id"), organizationId: text(row,"organization_id"), attemptCount: number(row,"attempt_count") }));
+    },
+    async escalateTopupReconciliation(input) {
+      const workId = `KAI-AWI-TOPUP-${input.orderId}`;
+      const digest = await accountAuthDigest(`topup-reconciliation:${input.orderId}`);
+      await db.batch([
+        { sql: `INSERT OR IGNORE INTO admin_work_items(id,source_system,entity_type,entity_id,work_type,title,summary,status,priority,assignee_principal_id,due_at,metadata_json,created_by,version,created_at,updated_at)
+          SELECT ?,'MARKETPLACE','CARD_HOUR_TOPUP',t.id,'PAYMENT_RECONCILIATION','充值核单需要人工处理','多次主动核单未能确认结果；保留供应商与本地付款事实，禁止重复入账。','OPEN','HIGH',NULL,?,'{}','system:payment-reconciliation',1,?,?
+          FROM card_hour_topup_orders t JOIN card_hour_topup_reconciliation_claims c ON c.topup_order_id=t.id
+          WHERE t.id=? AND t.organization_id=? AND t.status IN ('PENDING','PROCESSING','RECONCILIATION_REQUIRED') AND c.attempt_count>=12`, values: [workId, input.now, input.now, input.now, input.orderId, input.organizationId] },
+        { sql: `INSERT OR IGNORE INTO admin_audit_events(id,actor_principal_id,source_system,entity_type,entity_id,action,reason,payload_digest,occurred_at)
+          SELECT ?,'system:payment-reconciliation','MARKETPLACE','CARD_HOUR_TOPUP',?,'PAYMENT_RECONCILIATION_ESCALATED','持续核单异常转人工核对',?,? WHERE EXISTS(SELECT 1 FROM admin_work_items WHERE id=?)`, values: [`${workId}:audit`, input.orderId, digest, input.now, workId] },
+      ]);
+    },
     async claimTopupReconciliation(input) {
       const claimToken = `chrq_${crypto.randomUUID()}`;
       const results = await db.batch([
@@ -213,11 +236,16 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
       const row = await db.first<Row>("SELECT * FROM card_hour_topup_orders WHERE id=? AND organization_id=?", [input.orderId, input.organizationId]);
       if (!row) throw new AccountAuthError("CARD_HOUR_TOPUP_NOT_FOUND", 404, "充值记录不存在。 ");
       const claimed = results[1]?.changes === 1;
-      return { claimed, claimToken: claimed ? claimToken : null, record: privateTopupRecord(row) };
+      const lease = await db.first<Row>("SELECT attempt_count FROM card_hour_topup_reconciliation_claims WHERE topup_order_id=?", [input.orderId]);
+      return { claimed, claimToken: claimed ? claimToken : null, attemptCount: number(lease, "attempt_count"), record: privateTopupRecord(row) };
     },
     async releaseTopupReconciliation(input) {
+      const lease = await db.first<Row>("SELECT attempt_count FROM card_hour_topup_reconciliation_claims WHERE topup_order_id=? AND organization_id=? AND claim_token=?", [input.orderId, input.organizationId, input.claimToken]);
+      if (!lease) return;
+      const retryMs = Math.min(300_000, 30_000 * 2 ** Math.min(4, Math.max(0, number(lease,"attempt_count") - 1)));
+      const nextEligibleAt = new Date(Math.max(Date.parse(input.nextEligibleAt), Date.parse(input.now) + retryMs)).toISOString();
       await db.batch([{ sql: `UPDATE card_hour_topup_reconciliation_claims SET claim_token=NULL,claimed_at=NULL,next_query_at=?,updated_at=?
-        WHERE topup_order_id=? AND organization_id=? AND claim_token=?`, values: [input.nextEligibleAt, input.now, input.orderId, input.organizationId, input.claimToken] }]);
+        WHERE topup_order_id=? AND organization_id=? AND claim_token=?`, values: [nextEligibleAt, input.now, input.orderId, input.organizationId, input.claimToken] }]);
     },
     async attachTopupCheckout(input) {
       if (!/^https:\/\//u.test(input.checkoutUrl) || input.checkoutUrl.length > 2_048) throw new AccountAuthError("CARD_HOUR_TOPUP_CHECKOUT_INVALID", 400, "充值收银台地址无效。 ");
@@ -367,6 +395,7 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
         throw error;
       }
     },
+    async settleSupplyOrder(input) { return settleSupplyCardHours(db, input); },
     async captureOrder(input) {
       const organizationId = input.account.activeOrganization.id;
       const existing = await db.first<Row>("SELECT * FROM card_hour_order_payments WHERE source_system=? AND order_id=?", [input.sourceSystem, input.orderId]);
@@ -379,22 +408,8 @@ export async function createCardHourStore(db: CardHourDatabaseAdapter): Promise<
         if (text(idempotent, "payload_hash") !== input.payloadHash) throw new AccountAuthError("IDEMPOTENCY_CONFLICT", 409, "同一提交标识对应了不同的订单支付。 ");
         return { record: paymentRecord(idempotent), replayed: true };
       }
-      const id = `chp_${crypto.randomUUID()}`;
-      const batchId = `chb_${crypto.randomUUID()}`;
-      const businessKey = `order:${input.sourceSystem}:${input.orderId}`;
-      const rewardMicros = Math.floor(input.amountMicros * 3 / 100);
-      await db.batch([
-        { sql: "INSERT OR IGNORE INTO card_hour_wallets(organization_id,available_micros,held_micros,lifetime_topup_micros,lifetime_spent_micros,version,created_at,updated_at) VALUES(?,0,0,0,0,1,?,?)", values: [organizationId, input.now, input.now] },
-        { sql: `INSERT INTO card_hour_order_payments(id,organization_id,account_id,source_system,order_id,amount_micros,cny_reference_cents,rate_numerator,rate_denominator,status,idempotency_key,payload_hash,created_at,updated_at)
-          SELECT ?,?,?,?,?,?,?,501,500,'CAPTURED',?,?,?,? FROM card_hour_wallets WHERE organization_id=? AND available_micros>=?`, values: [id, organizationId, input.account.account.id, input.sourceSystem, input.orderId, input.amountMicros, input.cnyReferenceCents, input.idempotencyKey, input.payloadHash, input.now, input.now, organizationId, input.amountMicros] },
-        { sql: "UPDATE card_hour_wallets SET available_micros=available_micros-?,lifetime_spent_micros=lifetime_spent_micros+?,version=version+1,updated_at=? WHERE organization_id=? AND EXISTS (SELECT 1 FROM card_hour_order_payments WHERE id=?) AND NOT EXISTS (SELECT 1 FROM card_hour_ledger_batches WHERE business_key=?)", values: [input.amountMicros, input.amountMicros, input.now, organizationId, id, businessKey] },
-        { sql: "INSERT INTO card_hour_ledger_batches(id,organization_id,operation,business_key,amount_micros,status,metadata_json,created_at) SELECT ?,?,'ORDER_CAPTURE',?,?,'POSTED',?,? WHERE EXISTS (SELECT 1 FROM card_hour_order_payments WHERE id=?)", values: [batchId, organizationId, businessKey, input.amountMicros, JSON.stringify({ sourceSystem: input.sourceSystem, orderId: input.orderId, cnyReferenceCents: input.cnyReferenceCents }), input.now, id] },
-        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,?, 'USER_AVAILABLE','DEBIT',?,available_micros,? FROM card_hour_wallets WHERE organization_id=? AND EXISTS (SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, batchId, organizationId, input.amountMicros, input.now, organizationId, batchId] },
-        { sql: "INSERT INTO card_hour_ledger_entries(id,batch_id,organization_id,account_code,side,amount_micros,balance_after_micros,created_at) SELECT ?,?,NULL,'PLATFORM_ORDER_CLEARING','CREDIT',?,NULL,? WHERE EXISTS (SELECT 1 FROM card_hour_ledger_batches WHERE id=?)", values: [`che_${crypto.randomUUID()}`, batchId, input.amountMicros, input.now, batchId] },
-        { sql: `INSERT OR IGNORE INTO card_hour_income_accruals(id,organization_id,income_type,source_system,source_id,amount_micros,status,created_at,vested_at)
-          SELECT ?,a.referrer_organization_id,'COMMISSION',?,?,?,'PENDING',?,NULL
-          FROM card_hour_referral_attributions a WHERE a.invitee_organization_id=? AND ?>0 AND EXISTS (SELECT 1 FROM card_hour_order_payments WHERE id=?)`, values: [`chi_${crypto.randomUUID()}`, input.sourceSystem, input.orderId, rewardMicros, input.now, organizationId, rewardMicros, id] },
-      ]);
+      const { id, statements } = cardHourCaptureStatements(input);
+      await db.batch(statements);
       const created = await db.first<Row>("SELECT * FROM card_hour_order_payments WHERE id=?", [id]);
       if (!created) throw new AccountAuthError("CARD_HOUR_BALANCE_INSUFFICIENT", 409, "卡时余额不足，请先购买卡时。 ");
       return { record: paymentRecord(created), replayed: false };
