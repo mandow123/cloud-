@@ -3,8 +3,10 @@
 import { constants, copyFile, open, readFile, rename, stat, unlink } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { KAI_IDENTITY_MODERN_ISSUER } from "./kai-identity-provider-profile.mjs";
+import { validateKaiIdentityUpstream } from "./validate-kai-identity-upstream.mjs";
 
-export const MODERN_IDENTITY_ISSUER = "https://auth.kai.com/api/auth";
+export const MODERN_IDENTITY_ISSUER = KAI_IDENTITY_MODERN_ISSUER;
 export const MODERN_IDENTITY_SCOPES = "openid profile email";
 const CONFIRMATION = "CONFIGURE_KAI_IDENTITY_WEB_CLIENT";
 
@@ -60,25 +62,8 @@ export function renderModernIdentityEnvironment(source, credentials) {
 }
 
 async function validateProvider(fetcher) {
-  const discovery = `${MODERN_IDENTITY_ISSUER}/.well-known/openid-configuration`;
-  let response;
-  try {
-    response = await fetcher(discovery, { redirect: "manual", cache: "no-store", headers: { accept: "application/json" }, signal: AbortSignal.timeout(5_000) });
-  } catch { fail("auth.kai.com Discovery is unreachable"); }
-  if (response.status !== 200 || !response.headers.get("content-type")?.toLowerCase().includes("application/json")) fail("auth.kai.com Discovery is not ready");
-  const metadata = await response.json().catch(() => null);
-  const expected = {
-    issuer: MODERN_IDENTITY_ISSUER,
-    authorization_endpoint: `${MODERN_IDENTITY_ISSUER}/oauth2/authorize`,
-    token_endpoint: `${MODERN_IDENTITY_ISSUER}/oauth2/token`,
-    jwks_uri: `${MODERN_IDENTITY_ISSUER}/jwks`,
-    userinfo_endpoint: `${MODERN_IDENTITY_ISSUER}/oauth2/userinfo`,
-  };
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) fail("auth.kai.com Discovery returned invalid JSON");
-  for (const [field, value] of Object.entries(expected)) if (metadata[field] !== value) fail(`auth.kai.com Discovery has an invalid ${field}`);
-  if (!Array.isArray(metadata.token_endpoint_auth_methods_supported) || !metadata.token_endpoint_auth_methods_supported.includes("client_secret_basic")) {
-    fail("auth.kai.com does not advertise client_secret_basic");
-  }
+  const result = await validateKaiIdentityUpstream({ fetcher, environment: { KAI_ACCOUNT_OIDC_ISSUER: MODERN_IDENTITY_ISSUER } });
+  if (result.status !== "ok") fail(`auth.kai.com Discovery is not ready (${result.code})`);
 }
 
 function backupSuffix(now) {

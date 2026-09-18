@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { AccountAuthError, resolveAccountSession } from "../lib/server/account-auth.ts";
 import { createSqliteAccountAuthStore } from "../lib/server/account-auth-sqlite.ts";
-import { beginKaiIdentityLogin, clearKaiIdentityTransactionCookie, completeKaiIdentityLogin, kaiIdentityTransactionReturnTo, KAI_IDENTITY_DISCOVERY, KAI_IDENTITY_ISSUER, KAI_IDENTITY_MODERN_DISCOVERY, KAI_IDENTITY_MODERN_ISSUER, probeKaiIdentityDiscovery } from "../lib/server/kai-identity-oidc.ts";
+import { beginKaiIdentityLogin, clearKaiIdentityTransactionCookie, completeKaiIdentityLogin, kaiIdentityTransactionReturnTo, KAI_IDENTITY_DISCOVERY, KAI_IDENTITY_ISSUER, KAI_IDENTITY_MODERN_DISCOVERY, KAI_IDENTITY_MODERN_ISSUER, KAI_IDENTITY_MODERN_API_BASE, probeKaiIdentityDiscovery } from "../lib/server/kai-identity-oidc.ts";
 import { readFileSync } from "node:fs";
 
 const encoder = new TextEncoder();
@@ -118,10 +118,10 @@ test("modern KAI Identity exchanges a confidential PKCE code and verifies an EdD
   };
   const metadata = {
     issuer: KAI_IDENTITY_MODERN_ISSUER,
-    authorization_endpoint: `${KAI_IDENTITY_MODERN_ISSUER}/oauth2/authorize`,
-    token_endpoint: `${KAI_IDENTITY_MODERN_ISSUER}/oauth2/token`,
-    jwks_uri: `${KAI_IDENTITY_MODERN_ISSUER}/jwks`,
-    userinfo_endpoint: `${KAI_IDENTITY_MODERN_ISSUER}/oauth2/userinfo`,
+    authorization_endpoint: `${KAI_IDENTITY_MODERN_API_BASE}/oauth2/authorize`,
+    token_endpoint: `${KAI_IDENTITY_MODERN_API_BASE}/oauth2/token`,
+    jwks_uri: `${KAI_IDENTITY_MODERN_API_BASE}/jwks`,
+    userinfo_endpoint: `${KAI_IDENTITY_MODERN_API_BASE}/oauth2/userinfo`,
     id_token_signing_alg_values_supported: ["EdDSA"],
     token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post"],
   };
@@ -301,10 +301,10 @@ test("modern KAI Identity rejects cross-origin Discovery endpoints and unapprove
   };
   const poisoned = {
     issuer: KAI_IDENTITY_MODERN_ISSUER,
-    authorization_endpoint: `${KAI_IDENTITY_MODERN_ISSUER}/oauth2/authorize`,
+    authorization_endpoint: `${KAI_IDENTITY_MODERN_API_BASE}/oauth2/authorize`,
     token_endpoint: "https://attacker.example/token",
-    jwks_uri: `${KAI_IDENTITY_MODERN_ISSUER}/jwks`,
-    userinfo_endpoint: `${KAI_IDENTITY_MODERN_ISSUER}/oauth2/userinfo`,
+    jwks_uri: `${KAI_IDENTITY_MODERN_API_BASE}/jwks`,
+    userinfo_endpoint: `${KAI_IDENTITY_MODERN_API_BASE}/oauth2/userinfo`,
     id_token_signing_alg_values_supported: ["EdDSA"],
     token_endpoint_auth_methods_supported: ["client_secret_basic"],
   };

@@ -38,7 +38,7 @@ test("only an allowed KAI Identity login audit backed by its OIDC session satisf
     assert.equal(await store.hasSuccessfulKaiIdentityLoginAudit(), false, "administrator password login is not Identity evidence");
 
     const identity = await store.resolveOrCreateKaiIdentity({
-      issuer: "https://auth.kai.com/api/auth",
+      issuer: "https://auth.kai.com",
       subject: "cloud-supplier-user",
       displayName: "Cloud Supplier",
       verifiedEmail: "supplier@example.com",

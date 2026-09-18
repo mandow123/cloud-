@@ -5,6 +5,7 @@ import { isIP } from "node:net";
 import { posix } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isRevokedQixiangMerchantKey, qixiangMerchantKeyDigest } from "../../lib/server/qixiang-pay-revoked-policy.mjs";
+import { kaiIdentityProviderProfile, KAI_IDENTITY_ISSUER, KAI_IDENTITY_MODERN_ISSUER } from "./kai-identity-provider-profile.mjs";
 
 const REQUIRED_CONTAINER_STATE_PATHS = Object.freeze({
   KAI_DB_DIR: "/app/db",
@@ -106,13 +107,12 @@ function validateAccountOidc(environment, errors, reason, { modernOnly = false }
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/.test(environment.KAI_ACCOUNT_OIDC_CLIENT_ID ?? "")) {
     errors.push(`KAI_ACCOUNT_OIDC_CLIENT_ID must be a valid Client ID when ${reason}`);
   }
-  const issuer = environment.KAI_ACCOUNT_OIDC_ISSUER?.trim() || "https://account.kai.com/connect";
-  if ((modernOnly && issuer !== "https://auth.kai.com/api/auth")
-    || (!modernOnly && issuer !== "https://account.kai.com/connect" && issuer !== "https://auth.kai.com/api/auth")) {
+  const issuer = environment.KAI_ACCOUNT_OIDC_ISSUER?.trim() || KAI_IDENTITY_ISSUER;
+  if ((modernOnly && issuer !== KAI_IDENTITY_MODERN_ISSUER) || !kaiIdentityProviderProfile(issuer)) {
     errors.push(`KAI_ACCOUNT_OIDC_ISSUER must be an approved KAI Identity issuer when ${reason}`);
   }
   const clientSecret = environment.KAI_ACCOUNT_OIDC_CLIENT_SECRET?.trim() ?? "";
-  if (issuer === "https://auth.kai.com/api/auth" && (environment.KAI_ACCOUNT_OIDC_CLIENT_SECRET !== clientSecret
+  if (issuer === KAI_IDENTITY_MODERN_ISSUER && (environment.KAI_ACCOUNT_OIDC_CLIENT_SECRET !== clientSecret
     || Buffer.byteLength(clientSecret, "utf8") < 16 || Buffer.byteLength(clientSecret, "utf8") > 2048
     || PLACEHOLDER_SECRET_PATTERN.test(clientSecret))) {
     errors.push("KAI_ACCOUNT_OIDC_CLIENT_SECRET must be configured for the auth.kai.com server Web client");
@@ -120,7 +120,7 @@ function validateAccountOidc(environment, errors, reason, { modernOnly = false }
   if (modernOnly && environment.KAI_PUBLIC_ORIGIN !== "https://cloud.kai.com") {
     errors.push("KAI_PUBLIC_ORIGIN must be exactly https://cloud.kai.com when new Qixiang Pay orders are enabled");
   }
-  const scopes = (environment.KAI_ACCOUNT_OIDC_SCOPES?.trim() || (issuer === "https://auth.kai.com/api/auth" ? "openid profile email" : "openid kai:name email")).replace(/\s+/g, " ");
+  const scopes = (environment.KAI_ACCOUNT_OIDC_SCOPES?.trim() || kaiIdentityProviderProfile(issuer)?.scopes || "").replace(/\s+/g, " ");
   const scopeList = scopes.split(" ");
   if (!/^[A-Za-z0-9:._-]+(?: [A-Za-z0-9:._-]+)*$/.test(scopes) || scopeList.length > 12 || new Set(scopeList).size !== scopeList.length || !scopeList.includes("openid") || !scopeList.includes("email")) {
     errors.push("KAI_ACCOUNT_OIDC_SCOPES must contain unique openid and email scopes");

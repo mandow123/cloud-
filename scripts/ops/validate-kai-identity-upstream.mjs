@@ -1,23 +1,13 @@
 #!/usr/bin/env node
 
 import { pathToFileURL } from "node:url";
+import { kaiIdentityProviderProfile, readIdentityDiscoveryJson, KAI_IDENTITY_ISSUER, KAI_IDENTITY_DISCOVERY } from "./kai-identity-provider-profile.mjs";
 
-export const KAI_IDENTITY_ISSUER = "https://account.kai.com/connect";
-export const KAI_IDENTITY_DISCOVERY = `${KAI_IDENTITY_ISSUER}/.well-known/openid-configuration`;
-export const KAI_IDENTITY_MODERN_ISSUER = "https://auth.kai.com/api/auth";
-
-const EXPECTED_METADATA = Object.freeze({
-  issuer: KAI_IDENTITY_ISSUER,
-  authorization_endpoint: `${KAI_IDENTITY_ISSUER}/auth`,
-  token_endpoint: `${KAI_IDENTITY_ISSUER}/token`,
-  jwks_uri: `${KAI_IDENTITY_ISSUER}/jwks`,
-  userinfo_endpoint: `${KAI_IDENTITY_ISSUER}/me`,
-});
+export { KAI_IDENTITY_ISSUER, KAI_IDENTITY_DISCOVERY, KAI_IDENTITY_MODERN_ISSUER, KAI_IDENTITY_MODERN_DISCOVERY, KAI_IDENTITY_MODERN_API_BASE } from "./kai-identity-provider-profile.mjs";
 
 function providerConfiguration(environment = process.env) {
   const issuer = environment.KAI_ACCOUNT_OIDC_ISSUER?.trim() || KAI_IDENTITY_ISSUER;
-  if (issuer !== KAI_IDENTITY_ISSUER && issuer !== KAI_IDENTITY_MODERN_ISSUER) return null;
-  return { issuer, discovery: `${issuer}/.well-known/openid-configuration` };
+  return kaiIdentityProviderProfile(issuer);
 }
 
 function failure(code, message, discovery, details = {}) {
@@ -32,17 +22,6 @@ function validatedEndpoint(value, issuer) {
       ? endpoint.toString()
       : null;
   } catch { return null; }
-}
-
-function expectedEndpoints(issuer) {
-  return issuer === KAI_IDENTITY_MODERN_ISSUER
-    ? {
-        authorization_endpoint: `${issuer}/oauth2/authorize`,
-        token_endpoint: `${issuer}/oauth2/token`,
-        jwks_uri: `${issuer}/jwks`,
-        userinfo_endpoint: `${issuer}/oauth2/userinfo`,
-      }
-    : EXPECTED_METADATA;
 }
 
 export async function validateKaiIdentityUpstream({ fetcher = fetch, timeoutMs = 5_000, environment = process.env } = {}) {
@@ -87,23 +66,27 @@ export async function validateKaiIdentityUpstream({ fetcher = fetch, timeoutMs =
     });
   }
 
-  const metadata = await response.json().catch(() => null);
+  const metadata = await readIdentityDiscoveryJson(response).catch(() => null);
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return failure("OIDC_DISCOVERY_JSON_INVALID", "账户中心 Discovery 返回了无效 JSON。", provider.discovery, { httpStatus: response.status });
   }
 
   const mismatches = [];
   if (metadata.issuer !== provider.issuer) mismatches.push({ field: "issuer", expected: provider.issuer, actual: typeof metadata.issuer === "string" ? metadata.issuer : null });
-  const endpoints = expectedEndpoints(provider.issuer);
+  const endpoints = provider.endpoints;
   for (const field of ["authorization_endpoint", "token_endpoint", "jwks_uri", "userinfo_endpoint"]) {
     const endpoint = validatedEndpoint(metadata[field], provider.issuer);
-    if (!endpoint || endpoint !== endpoints[field]) mismatches.push({ field, expected: endpoints[field], actual: typeof metadata[field] === "string" ? metadata[field] : null });
+    if (!endpoint || endpoint !== endpoints[field] || metadata[field] !== endpoints[field]) mismatches.push({ field, expected: endpoints[field], actual: typeof metadata[field] === "string" ? metadata[field] : null });
   }
-  const expectedAuthMethod = environment.KAI_ACCOUNT_OIDC_CLIENT_SECRET?.trim() ? "client_secret_basic" : "none";
-  if (Array.isArray(metadata.token_endpoint_auth_methods_supported) && !metadata.token_endpoint_auth_methods_supported.includes(expectedAuthMethod)) {
+  const expectedAuthMethod = provider.modern || environment.KAI_ACCOUNT_OIDC_CLIENT_SECRET?.trim() ? "client_secret_basic" : "none";
+  const authMethods = metadata.token_endpoint_auth_methods_supported;
+  const signingAlgorithms = metadata.id_token_signing_alg_values_supported;
+  const validMethods = Array.isArray(authMethods) && authMethods.every((value) => typeof value === "string");
+  const validAlgorithms = Array.isArray(signingAlgorithms) && signingAlgorithms.every((value) => typeof value === "string");
+  if ((provider.modern && !validMethods) || (validMethods && !authMethods.includes(expectedAuthMethod))) {
     mismatches.push({ field: "token_endpoint_auth_methods_supported", expected: expectedAuthMethod, actual: metadata.token_endpoint_auth_methods_supported });
   }
-  if (Array.isArray(metadata.id_token_signing_alg_values_supported) && !metadata.id_token_signing_alg_values_supported.some((value) => value === "ES256" || value === "EdDSA")) {
+  if ((provider.modern && !validAlgorithms) || (validAlgorithms && !signingAlgorithms.some((value) => value === "ES256" || value === "EdDSA"))) {
     mismatches.push({ field: "id_token_signing_alg_values_supported", expected: "ES256 or EdDSA", actual: metadata.id_token_signing_alg_values_supported });
   }
   if (mismatches.length > 0) {
