@@ -442,6 +442,7 @@ sudo node /opt/kai-cloud-release-sources/<受审完整提交>/scripts/ops/config
 sudo docker compose -p kai-cloud-3051 \
   -f /opt/kai-cloud-release-sources/<受审完整提交>/deploy/compose.production.yml \
   -f /opt/kai-cloud-release-sources/<受审完整提交>/deploy/compose.stabilization.yml \
+  -f /opt/kai-cloud-release-sources/<受审完整提交>/deploy/compose.qixiang-payment-pilot.yml \
   --env-file /etc/kai-cloud/kai-cloud-app.env \
   --env-file /etc/kai-cloud/kai-cloud-release.env up -d --wait app
 curl -fsS https://cloud.kai.com/api/ready | jq -e \

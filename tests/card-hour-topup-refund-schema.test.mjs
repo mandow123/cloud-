@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -50,5 +50,33 @@ test("0042 gate rejects partial or wrong-version structures", () => {
       value.database.close();
       rmSync(value.directory, { recursive: true });
     }
+  }
+});
+
+test("0042 gate rejects lookalike tables and same-name non-unique indexes", () => {
+  const value = fixture();
+  try {
+    const migration = readFileSync(new URL("../drizzle/0042_card_hour_topup_refunds.sql", import.meta.url), "utf8");
+    value.database.exec(migration
+      .replace("topup_order_id TEXT NOT NULL UNIQUE", "topup_order_id TEXT NOT NULL")
+      .replace("provider_refund_request_id TEXT NOT NULL UNIQUE", "provider_refund_request_id TEXT NOT NULL")
+      .replace("CREATE UNIQUE INDEX IF NOT EXISTS card_hour_topup_refunds_provider_tx_unique_idx", "CREATE INDEX IF NOT EXISTS card_hour_topup_refunds_provider_tx_unique_idx"));
+    assert.throws(() => assertCardHourTopupRefundSchemaReady(value.database), /CARD_HOUR_TOPUP_REFUND_SCHEMA_NOT_READY/u);
+  } finally {
+    value.database.close();
+    rmSync(value.directory, { recursive: true });
+  }
+});
+
+test("0042 gate verifies the provider transaction index is unique and partial", () => {
+  const value = fixture();
+  try {
+    applyCardHourTopupRefundMigration(value.database);
+    value.database.exec(`DROP INDEX card_hour_topup_refunds_provider_tx_unique_idx;
+      CREATE INDEX card_hour_topup_refunds_provider_tx_unique_idx ON card_hour_topup_refunds(provider,provider_transaction_id);`);
+    assert.throws(() => assertCardHourTopupRefundSchemaReady(value.database), /CARD_HOUR_TOPUP_REFUND_SCHEMA_NOT_READY/u);
+  } finally {
+    value.database.close();
+    rmSync(value.directory, { recursive: true });
   }
 });

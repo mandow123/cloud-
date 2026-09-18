@@ -12,14 +12,14 @@ import { isAllowedLocalQaOrigin } from "../lib/server/local-qa-origin.ts";
 test("Root owns full administration while the independent finance approver receives only dual-control permissions", () => {
   assert.deepEqual(ADMIN_ROLES, ["ROOT","ROLE_ADMIN","INTAKE_OPERATOR","INVENTORY_OPERATOR","VERIFICATION_REVIEWER","MARKET_OPERATOR","FULFILLMENT_OPERATOR","FINANCE_OPERATOR","FINANCE_APPROVER","SUPPORT_READONLY","AUDITOR"]);
   assert.deepEqual(adminPermissionsForRoles(["ROOT"]), ADMIN_PERMISSIONS);
-  assert.deepEqual(adminPermissionsForRoles(["FINANCE_APPROVER"]), ["ADMIN_PANEL_READ", "PAYMENT_READ", "SETTLEMENT_OPERATE", "APPEAL_READ", "OFFLINE_REFUND_VERIFY", "AUDIT_READ"]);
+  assert.deepEqual(adminPermissionsForRoles(["FINANCE_APPROVER"]), ["ADMIN_PANEL_READ", "PAYMENT_READ", "SETTLEMENT_OPERATE", "REFUND_APPROVE", "APPEAL_READ", "OFFLINE_REFUND_VERIFY", "AUDIT_READ"]);
   assert.deepEqual(adminPermissionsForRoles(["FULFILLMENT_OPERATOR"]), ["ADMIN_PANEL_READ", "FULFILLMENT_READ", "FULFILLMENT_OPERATE", "APPEAL_READ", "APPEAL_HANDLE", "AUDIT_READ"]);
-  assert.deepEqual(adminPermissionsForRoles(["FINANCE_OPERATOR"]), ["ADMIN_PANEL_READ", "PAYMENT_READ", "APPEAL_READ", "OFFLINE_REFUND_RECORD", "AUDIT_READ"]);
+  assert.deepEqual(adminPermissionsForRoles(["FINANCE_OPERATOR"]), ["ADMIN_PANEL_READ", "PAYMENT_READ", "REFUND_REQUEST", "APPEAL_READ", "OFFLINE_REFUND_RECORD", "AUDIT_READ"]);
   assert.deepEqual(adminPermissionsForRoles(["SUPPORT_READONLY"]), ["ADMIN_PANEL_READ", "SUPPORT_READ", "APPEAL_READ"]);
   for (const role of ADMIN_ROLES.filter((candidate) => !["ROOT", "FINANCE_APPROVER", "FINANCE_OPERATOR", "FULFILLMENT_OPERATOR", "SUPPORT_READONLY"].includes(candidate))) {
     assert.deepEqual(adminPermissionsForRoles([role]), [], `${role} must not receive admin permissions`);
   }
-  assert.deepEqual(adminPermissionsForRoles(ADMIN_ROLES.filter((role) => role !== "ROOT")), ["ADMIN_PANEL_READ", "FULFILLMENT_READ", "FULFILLMENT_OPERATE", "PAYMENT_READ", "SETTLEMENT_OPERATE", "SUPPORT_READ", "APPEAL_READ", "APPEAL_HANDLE", "OFFLINE_REFUND_RECORD", "OFFLINE_REFUND_VERIFY", "AUDIT_READ"]);
+  assert.deepEqual(adminPermissionsForRoles(ADMIN_ROLES.filter((role) => role !== "ROOT")), ["ADMIN_PANEL_READ", "FULFILLMENT_READ", "FULFILLMENT_OPERATE", "PAYMENT_READ", "SETTLEMENT_OPERATE", "REFUND_REQUEST", "REFUND_APPROVE", "SUPPORT_READ", "APPEAL_READ", "APPEAL_HANDLE", "OFFLINE_REFUND_RECORD", "OFFLINE_REFUND_VERIFY", "AUDIT_READ"]);
 });
 
 test("account sessions enforce a thirty-minute idle and eight-hour absolute limit", async () => {
@@ -85,9 +85,19 @@ test("requireAdminPermission accepts Root and limits the password finance approv
     const activeApprover = await store.resolveOrCreatePasswordAdministrator({ username:"finance-approver-test",displayName:"Finance Approver",createdAt:now.toISOString() });
     const approverIssued = await createAccountSession(new Request("http://localhost/api/auth/admin/password"),activeApprover,"ADMIN_PASSWORD",{store,now});
     const approverRequest = new Request("http://localhost/api/admin/card-hours",{headers:{cookie:approverIssued.cookie.split(";")[0]}});
-    const approverContext = await requireAdminPermission(approverRequest,["PAYMENT_READ", "SETTLEMENT_OPERATE"]);
+    const approverContext = await requireAdminPermission(approverRequest,["PAYMENT_READ", "SETTLEMENT_OPERATE", "REFUND_APPROVE"]);
     assert.deepEqual(approverContext.principal.roles,["FINANCE_APPROVER"]);
+    await assert.rejects(requireAdminPermission(approverRequest,["REFUND_REQUEST"]),(error)=>error instanceof AccountAuthError&&error.status===403);
     await assert.rejects(requireAdminPermission(approverRequest,["SUPPLY_INTAKE_REVIEW"]),(error)=>error instanceof AccountAuthError&&error.status===403);
+
+    const operator = await store.resolveOrCreatePasswordAdministrator({ username:"finance-operator-test",displayName:"Finance Operator",createdAt:now.toISOString() });
+    await store.activateMembership(operator.membership.id,["FINANCE_OPERATOR"],now.toISOString());
+    const activeOperator = await store.resolveOrCreatePasswordAdministrator({ username:"finance-operator-test",displayName:"Finance Operator",createdAt:now.toISOString() });
+    const operatorIssued = await createAccountSession(new Request("http://localhost/api/auth/admin/password"),activeOperator,"ADMIN_PASSWORD",{store,now});
+    const operatorRequest = new Request("http://localhost/api/admin/card-hour-topup-refunds",{headers:{cookie:operatorIssued.cookie.split(";")[0]}});
+    const operatorContext = await requireAdminPermission(operatorRequest,["PAYMENT_READ", "REFUND_REQUEST"]);
+    assert.deepEqual(operatorContext.principal.roles,["FINANCE_OPERATOR"]);
+    await assert.rejects(requireAdminPermission(operatorRequest,["REFUND_APPROVE"]),(error)=>error instanceof AccountAuthError&&error.status===403);
   } finally {
     globalThis.__kaiAccountAuthStorePromise = previous;
   }

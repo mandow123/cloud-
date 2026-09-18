@@ -486,6 +486,9 @@ async function main() {
   assert(runbook.includes("0038 支付核单租约预部署门禁") && runbook.includes("APPLY_0038_CARD_HOUR_TOPUP_RECONCILIATION") && runbook.includes("KAI_QIXIANG_PAY_RECONCILIATION_ENABLED"), "runbook must gate durable payment reconciliation separately from new checkout creation");
   assert(runbook.includes("0042 卡时充值退款预部署门禁") && runbook.includes("APPLY_0042_CARD_HOUR_TOPUP_REFUNDS") && runbook.includes("MANUAL_REQUIRED"), "runbook must gate dual-control topup refunds and manual-provider evidence before checkout");
   assert(runbook.includes("compose.qixiang-payment-pilot.yml") && runbook.includes("七象 ALIPAY 通道") && runbook.includes("保留当前数据库"), "runbook must enable only the Qixiang ALIPAY channel with recovery plan A");
+  const qixiangReconciliationStage = runbook.slice(runbook.indexOf("第一阶段只启用主动查单"), runbook.indexOf("产品、发布与财务复核第一阶段"));
+  const qixiangCheckoutStage = runbook.slice(runbook.indexOf("第二阶段只能从"), runbook.indexOf("每次配置都会输出"));
+  assert(!qixiangReconciliationStage.includes("compose.qixiang-payment-pilot.yml") && qixiangCheckoutStage.includes("compose.qixiang-payment-pilot.yml"), "runbook must keep reconciliation checkout closed and add the Qixiang pilot overlay only when enabling new orders");
   assert(runbook.includes(".kai-cloud-backup.lock") && runbook.includes("只有一个 timer 指向该 `KAI_STATE_ROOT`"), "runbook must prevent differently named timers from racing on one backup root");
   assert(runbook.includes("127.0.0.1:3051") && runbook.includes("KAI_ENABLE_HSTS=1"), "runbook must document the new loopback port and the gated HSTS enablement step");
   assert(runbook.includes("任何恢复包都不得超过 30 天") && runbook.includes("异地存储也必须配置不超过 30 天的生命周期"), "runbook must align local and off-host backups with the 30-day data boundary");

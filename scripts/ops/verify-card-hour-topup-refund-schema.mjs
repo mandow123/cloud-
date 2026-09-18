@@ -15,6 +15,8 @@ const REQUIRED_COLUMNS = [
   "provider_transaction_id", "claim_token", "claimed_at", "attempt_count", "error_code", "error_message", "manual_evidence_digest", "payload_hash",
   "version", "created_at", "updated_at",
 ];
+const MIGRATION_SQL = readFileSync(SQLITE_MIGRATION_URL, "utf8");
+const EXPECTED_TABLE_SQL = MIGRATION_SQL.match(/CREATE TABLE IF NOT EXISTS card_hour_topup_refunds\s*\([\s\S]*?\n\);/u)?.[0] ?? "";
 
 function fail(message) { throw new Error(message); }
 
@@ -27,6 +29,16 @@ function tableExists(database, name) {
   return Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
 }
 
+function normalizeTableSql(sql) {
+  return sql.toLowerCase().replace(/create\s+table\s+if\s+not\s+exists/u, "create table").replace(/\s+/gu, "").replace(/;$/u, "");
+}
+
+function indexColumns(database, name) {
+  return database.prepare(`PRAGMA index_info(${JSON.stringify(name)})`).all()
+    .sort((left, right) => Number(left.seqno) - Number(right.seqno))
+    .map((row) => String(row.name));
+}
+
 export function inspectCardHourTopupRefundSchema(database) {
   const initialized = tableExists(database, "card_hour_schema_migrations");
   const marker = initialized ? Number(database.prepare("SELECT COALESCE(MAX(version),0) version FROM card_hour_schema_migrations").get().version) : 0;
@@ -34,21 +46,32 @@ export function inspectCardHourTopupRefundSchema(database) {
   const columns = tableReady ? database.prepare(`PRAGMA table_info(${TABLE})`).all().map((row) => String(row.name)) : [];
   const foreignKeys = tableReady ? database.prepare(`PRAGMA foreign_key_list(${TABLE})`).all() : [];
   const sql = tableReady ? String(database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(TABLE)?.sql ?? "") : "";
+  const indexes = tableReady ? database.prepare(`PRAGMA index_list(${TABLE})`).all() : [];
+  const hasIndex = (name, unique, partial, expectedColumns) => indexes.some((row) => String(row.name) === name
+    && Number(row.unique) === unique && Number(row.partial) === partial
+    && JSON.stringify(indexColumns(database, name)) === JSON.stringify(expectedColumns));
+  const hasUniqueColumns = (expectedColumns) => indexes.some((row) => Number(row.unique) === 1
+    && JSON.stringify(indexColumns(database, String(row.name))) === JSON.stringify(expectedColumns));
   return Object.freeze({
     initialized,
     marker,
     tableReady,
-    missingIndexes: INDEXES.filter((name) => !database.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name=?").get(name)),
+    missingIndexes: INDEXES.filter((name) => !indexes.some((row) => String(row.name) === name)),
     missingColumns: REQUIRED_COLUMNS.filter((name) => !columns.includes(name)),
     topupForeignKeyReady: foreignKeys.some((row) => row.table === "card_hour_topup_orders" && row.from === "topup_order_id" && row.to === "id"),
-    statusInvariantReady: sql.includes("MANUAL_REQUIRED") && sql.includes("status = 'PROCESSING' AND claim_token IS NOT NULL AND claimed_at IS NOT NULL"),
+    tableDefinitionReady: normalizeTableSql(sql) === normalizeTableSql(EXPECTED_TABLE_SQL),
+    topupOrderUniqueReady: hasUniqueColumns(["topup_order_id"]),
+    providerRefundRequestUniqueReady: hasUniqueColumns(["provider_refund_request_id"]),
+    statusIndexReady: hasIndex("card_hour_topup_refunds_status_idx", 0, 0, ["status", "updated_at"]),
+    providerTransactionIndexReady: hasIndex("card_hour_topup_refunds_provider_tx_unique_idx", 1, 1, ["provider", "provider_transaction_id"]),
   });
 }
 
 export function assertCardHourTopupRefundSchemaReady(database) {
   const state = inspectCardHourTopupRefundSchema(database);
   if (state.marker !== 7 || !state.tableReady || state.missingIndexes.length || state.missingColumns.length
-    || !state.topupForeignKeyReady || !state.statusInvariantReady) fail(`CARD_HOUR_TOPUP_REFUND_SCHEMA_NOT_READY:${JSON.stringify(state)}`);
+    || !state.topupForeignKeyReady || !state.tableDefinitionReady || !state.topupOrderUniqueReady
+    || !state.providerRefundRequestUniqueReady || !state.statusIndexReady || !state.providerTransactionIndexReady) fail(`CARD_HOUR_TOPUP_REFUND_SCHEMA_NOT_READY:${JSON.stringify(state)}`);
   if (database.prepare("PRAGMA foreign_key_check").all().length) fail("CARD_HOUR_TOPUP_REFUND_FOREIGN_KEY_FAILED");
   return Object.freeze({ ready: true, schemaMarker: state.marker, migration: "0042_card_hour_topup_refunds" });
 }
