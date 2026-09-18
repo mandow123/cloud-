@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const context = beginApiRequest(request);
   let actor: MarketplaceActor | undefined;
   try {
-    const authorization = await authorizeMarketplaceRequest(request);
+    const authorization = await authorizeMarketplaceRequest(request, { allowPending: true });
     actor = authorization.actor;
     return jsonResponse({
       session: {
