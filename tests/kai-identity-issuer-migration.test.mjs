@@ -162,7 +162,7 @@ test("any mutation of a pre-existing identity row rolls the whole migration back
 test("unplanned identities and mutations of planned modern rows roll the whole migration back", () => {
   for (const trigger of [
     `CREATE TRIGGER insert_unplanned_identity AFTER INSERT ON kai_identity_oidc_identities
-      WHEN NEW.issuer='${MODERN}' BEGIN
+      WHEN NEW.issuer='${MODERN}' AND NEW.subject='new-sensitive-00' BEGIN
         INSERT INTO kai_identity_oidc_identities VALUES('unexpected-id',NEW.account_id,NEW.organization_id,
           'https://unexpected.example','extra-sub','extra@example.test',NEW.verified_at,NEW.created_at);
       END`,
