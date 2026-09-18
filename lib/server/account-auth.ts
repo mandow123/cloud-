@@ -33,6 +33,22 @@ export type IssuedAccountSession = Readonly<{
   idleExpiresAt: string;
 }>;
 
+export function assertAccountMembershipNotSuspended(membership: Membership) {
+  if (membership.status === "SUSPENDED") {
+    throw new AccountAuthError("ORGANIZATION_MEMBERSHIP_SUSPENDED", 403, "当前组织成员资格已停用。 ");
+  }
+}
+
+export function assertActiveAccountMembership(
+  context: AccountSessionContext,
+  error = { code: "ORGANIZATION_MEMBERSHIP_INACTIVE", message: "当前组织成员资格尚未启用。 " },
+) {
+  assertAccountMembershipNotSuspended(context.membership);
+  if (context.membership.status !== "ACTIVE") {
+    throw new AccountAuthError(error.code, 403, error.message);
+  }
+}
+
 function randomToken(bytesLength = 32) {
   const bytes = new Uint8Array(bytesLength); crypto.getRandomValues(bytes);
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -93,6 +109,7 @@ export async function createAccountSession(
   authMethod: AdminAuthMethod,
   options: { store?: AccountAuthStore; now?: Date } = {},
 ): Promise<IssuedAccountSession> {
+  assertAccountMembershipNotSuspended(identity.membership);
   if (identity.account.status !== "ACTIVE" || identity.organization.status !== "ACTIVE") {
     throw new AccountAuthError("ACCOUNT_ACCESS_FORBIDDEN", 403, "账户或组织当前不可登录。 ");
   }
@@ -119,6 +136,7 @@ export async function resolveAccountSession(
   const resolved = await store.resolveSession(await accountAuthDigest(token)); if (!resolved) return null;
   const now = options.now ?? new Date(); const nowMs = now.getTime();
   if (Date.parse(resolved.session.idleExpiresAt) <= nowMs || Date.parse(resolved.session.absoluteExpiresAt) <= nowMs) return null;
+  assertAccountMembershipNotSuspended(resolved.membership);
   if (resolved.account.status !== "ACTIVE" || resolved.organization.status !== "ACTIVE") {
     throw new AccountAuthError("ACCOUNT_ACCESS_FORBIDDEN", 403, "账户或组织已停用。 ");
   }
@@ -136,13 +154,22 @@ export async function requireAccountSession(request: Request, options: { store?:
   return context;
 }
 
+/** Pending sessions remain valid for onboarding, but cannot read organization business data. */
+export async function requireActiveAccountSession(request: Request, options: { store?: AccountAuthStore; now?: Date } = {}) {
+  const context = await requireAccountSession(request, options);
+  assertActiveAccountMembership(context);
+  return context;
+}
+
 export async function logoutAccountSession(request: Request, options: { store?: AccountAuthStore; now?: Date } = {}) {
   const store = options.store ?? await getAccountAuthStore();
-  const context = await resolveAccountSession(request, { ...options, store, touch: false });
-  if (context) {
+  // Logout must also clear a suspended or expired session without authorizing it.
+  const token = readAccountSessionToken(request);
+  const resolved = token ? await store.resolveSession(await accountAuthDigest(token)) : null;
+  if (resolved) {
     const now = (options.now ?? new Date()).toISOString();
-    await store.revokeSession(context.sessionId, now);
-    await store.recordAudit({ accountId: context.account.id, organizationId: context.activeOrganization.id, sessionId: context.sessionId, eventType: "LOGOUT", outcome: "ALLOWED", occurredAt: now });
+    await store.revokeSession(resolved.session.id, now);
+    await store.recordAudit({ accountId: resolved.account.id, organizationId: resolved.organization.id, sessionId: resolved.session.id, eventType: "LOGOUT", outcome: "ALLOWED", occurredAt: now });
   }
   return clearAccountSessionCookie(request);
 }

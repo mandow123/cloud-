@@ -20,9 +20,9 @@ export async function GET(request: Request) {
   const context = beginApiRequest(request);
   let actor: MarketplaceActor | undefined;
   try {
-    const authorization = await authorizeMarketplaceRequest(request);
-    actor = authorization.actor;
     const query = readPageQuery(request, ["mine", "market"] as const, "mine");
+    const authorization = await authorizeMarketplaceRequest(request, { allowPending: query.view === "market" });
+    actor = authorization.actor;
     const page = query.view === "market"
       ? await authorization.store.listPublicRequests(query)
       : await authorization.store.listOwnedRequests(actor.id, query);

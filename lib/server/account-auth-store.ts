@@ -1,5 +1,6 @@
 import { ADMIN_IDENTITY_SCHEMA_VERSION, adminIdentitySchemaStatements } from "../../db/admin-identity-schema.ts";
 import { ADMIN_ROLES, type AdminAuthMethod, type AdminRole, type Membership, type Organization, type UserAccount } from "../admin-auth-types.ts";
+import { AccountAuthError } from "./account-auth.ts";
 
 export type AuthSql = Readonly<{ sql: string; values?: readonly unknown[] }>;
 export type AuthRunResult = Readonly<{ changes: number }>;
@@ -288,7 +289,10 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
       const normalized = validRoles(roles);
       const persisted = normalized.filter((role) => role !== "ROOT");
       const statements: AuthSql[] = [
-        { sql: "UPDATE admin_memberships SET status='ACTIVE',updated_at=? WHERE id=?", values: [updatedAt, membershipId] },
+        { sql: `UPDATE admin_memberships SET status='ACTIVE',updated_at=? WHERE id=? AND status IN ('PENDING','ACTIVE')
+          AND EXISTS (SELECT 1 FROM admin_user_accounts a WHERE a.id=admin_memberships.account_id AND a.status='ACTIVE')
+          AND EXISTS (SELECT 1 FROM admin_organizations o WHERE o.id=admin_memberships.organization_id AND o.status='ACTIVE')`, values: [updatedAt, membershipId] },
+        { sql: "SELECT CASE WHEN changes()=1 THEN 1 ELSE abs(-9223372036854775808) END" },
         { sql: "DELETE FROM admin_membership_roles WHERE membership_id=?", values: [membershipId] },
         ...persisted.map((role) => ({ sql: "INSERT INTO admin_membership_roles(membership_id,role,granted_at,granted_by) VALUES(?,?,?,NULL)", values: [membershipId, role, updatedAt] })),
       ];
@@ -299,8 +303,17 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
           { sql: "SELECT CASE WHEN EXISTS (SELECT 1 FROM admin_root_membership WHERE singleton=1 AND membership_id=?) THEN 1 ELSE abs(-9223372036854775808) END", values: [membershipId] },
         );
       }
-      const results = await db.batch(statements);
-      if (results[0]?.changes !== 1) throw new Error("ADMIN_MEMBERSHIP_NOT_FOUND");
+      try {
+        await db.batch(statements);
+      } catch (error) {
+        const membership = await db.first<Row>(`SELECT m.status,a.status AS account_status,o.status AS organization_status
+          FROM admin_memberships m JOIN admin_user_accounts a ON a.id=m.account_id
+          JOIN admin_organizations o ON o.id=m.organization_id WHERE m.id=?`, [membershipId]);
+        if (membership?.status === "SUSPENDED") throw new AccountAuthError("ORGANIZATION_MEMBERSHIP_SUSPENDED", 403, "当前组织成员资格已停用。 ");
+        if (membership && (membership.account_status !== "ACTIVE" || membership.organization_status !== "ACTIVE")) throw new AccountAuthError("ACCOUNT_ACCESS_FORBIDDEN", 403, "账户或组织当前不可登录。 ");
+        if (!membership) throw new Error("ADMIN_MEMBERSHIP_NOT_FOUND");
+        throw error;
+      }
     },
     async isAdminBootstrapClosed() {
       const row = await db.first<{ closed: number }>(`SELECT 1 AS closed FROM admin_bootstrap_claim
@@ -329,15 +342,28 @@ export async function createAccountAuthStore(db: AccountAuthDatabaseAdapter): Pr
     },
     async createSession(input) {
       const id = `as_${crypto.randomUUID()}`;
+      // Test membership at the write itself: a suspension may win after the
+      // caller resolved its identity but before the session is inserted.
+      const eligible = ` FROM admin_memberships m
+        JOIN admin_user_accounts a ON a.id=m.account_id
+        JOIN admin_organizations o ON o.id=m.organization_id
+        WHERE m.account_id=? AND m.organization_id=? AND m.status IN ('PENDING','ACTIVE')
+          AND a.status='ACTIVE' AND o.status='ACTIVE'`;
+      let result: AuthRunResult;
       if (input.authMethod === "ADMIN_PASSWORD") {
-        await db.run(`INSERT INTO admin_password_sessions(id,account_id,organization_id,token_hash,created_at,last_seen_at,idle_expires_at,absolute_expires_at,revoked_at)
-          VALUES(?,?,?,?,?,?,?,?,NULL)`, [id, input.accountId, input.organizationId, input.tokenHash, input.now, input.now, input.idleExpiresAt, input.absoluteExpiresAt]);
+        result = await db.run(`INSERT INTO admin_password_sessions(id,account_id,organization_id,token_hash,created_at,last_seen_at,idle_expires_at,absolute_expires_at,revoked_at)
+          SELECT ?,?,?,?,?,?,?,?,NULL${eligible}`, [id, input.accountId, input.organizationId, input.tokenHash, input.now, input.now, input.idleExpiresAt, input.absoluteExpiresAt, input.accountId, input.organizationId]);
       } else if (input.authMethod === "KAI_IDENTITY_OIDC") {
-        await db.run(`INSERT INTO kai_identity_oidc_sessions(id,account_id,organization_id,token_hash,created_at,last_seen_at,idle_expires_at,absolute_expires_at,revoked_at)
-          VALUES(?,?,?,?,?,?,?,?,NULL)`, [id, input.accountId, input.organizationId, input.tokenHash, input.now, input.now, input.idleExpiresAt, input.absoluteExpiresAt]);
+        result = await db.run(`INSERT INTO kai_identity_oidc_sessions(id,account_id,organization_id,token_hash,created_at,last_seen_at,idle_expires_at,absolute_expires_at,revoked_at)
+          SELECT ?,?,?,?,?,?,?,?,NULL${eligible}`, [id, input.accountId, input.organizationId, input.tokenHash, input.now, input.now, input.idleExpiresAt, input.absoluteExpiresAt, input.accountId, input.organizationId]);
       } else {
-        await db.run(`INSERT INTO admin_account_sessions(id,account_id,organization_id,token_hash,auth_method,created_at,last_seen_at,idle_expires_at,absolute_expires_at,revoked_at)
-          VALUES(?,?,?,?,?,?,?,?,?,NULL)`, [id, input.accountId, input.organizationId, input.tokenHash, input.authMethod, input.now, input.now, input.idleExpiresAt, input.absoluteExpiresAt]);
+        result = await db.run(`INSERT INTO admin_account_sessions(id,account_id,organization_id,token_hash,auth_method,created_at,last_seen_at,idle_expires_at,absolute_expires_at,revoked_at)
+          SELECT ?,?,?,?,?,?,?,?,?,NULL${eligible}`, [id, input.accountId, input.organizationId, input.tokenHash, input.authMethod, input.now, input.now, input.idleExpiresAt, input.absoluteExpiresAt, input.accountId, input.organizationId]);
+      }
+      if (result.changes !== 1) {
+        const membership = await db.first<Row>("SELECT status FROM admin_memberships WHERE account_id=? AND organization_id=?", [input.accountId, input.organizationId]);
+        if (membership?.status === "SUSPENDED") throw new AccountAuthError("ORGANIZATION_MEMBERSHIP_SUSPENDED", 403, "当前组织成员资格已停用。 ");
+        throw new AccountAuthError("ACCOUNT_ACCESS_FORBIDDEN", 403, "账户或组织当前不可登录。 ");
       }
       return { id, accountId: input.accountId, organizationId: input.organizationId, authMethod: input.authMethod, createdAt: input.now, lastSeenAt: input.now, idleExpiresAt: input.idleExpiresAt, absoluteExpiresAt: input.absoluteExpiresAt };
     },
