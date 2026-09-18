@@ -1,3 +1,4 @@
+import { QixiangQueryDeferredError, sharedQixiangQueryExecutor } from "./qixiang-query-executor.ts";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
 import { isRevokedQixiangMerchantKey, qixiangMerchantKeyDigest } from "./qixiang-pay-revoked-policy.mjs";
@@ -18,8 +19,6 @@ const QIXIANG_PAY_CREDENTIAL_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,63
 const QIXIANG_PAY_LEGACY_QUERY_RISK_REFERENCE_PATTERN = /^RISK-[A-Za-z0-9][A-Za-z0-9._:/-]{7,119}$/u;
 const QIXIANG_PAY_QUERY_CREDENTIAL_ID_PATTERN = /^QRY-[A-Za-z0-9][A-Za-z0-9._:-]{7,95}$/u;
 const QIXIANG_PAY_PLACEHOLDER_SECRET_PATTERN = /(?:change[-_ ]?me|dummy|example|insert|placeholder|replace|secret[-_ ]?here|test[-_ ]?secret|your[-_ ])/iu;
-const QIXIANG_PAY_QUERY_WINDOW_MS = 60_000;
-const QIXIANG_PAY_QUERY_MAX_REQUESTS_PER_WINDOW = 12;
 const QIXIANG_PAY_QUERY_CIRCUIT_FAILURE_THRESHOLD = 3;
 const QIXIANG_PAY_QUERY_CIRCUIT_OPEN_MS = 60_000;
 
@@ -274,12 +273,7 @@ function queryProtectionState(credentialId: string, now: number) {
 function consumeQueryBudget(credentialId: string, now = Date.now()) {
   const state = queryProtectionState(credentialId, now);
   if (state.circuitOpenUntil > now) throw new QixiangPayError("QIXIANG_PAY_OUTCOME_UNKNOWN", "支付服务主动核对暂时熔断，请转人工核对。");
-  if (now - state.windowStartedAt >= QIXIANG_PAY_QUERY_WINDOW_MS) {
-    state.windowStartedAt = now;
-    state.requestCount = 0;
-  }
-  if (state.requestCount >= QIXIANG_PAY_QUERY_MAX_REQUESTS_PER_WINDOW) throw new QixiangPayError("QIXIANG_PAY_OUTCOME_UNKNOWN", "支付服务主动核对请求过于频繁，请转人工核对。");
-  state.requestCount += 1;
+
 }
 
 function recordQueryTransportFailure(credentialId: string, now = Date.now()) {
@@ -439,12 +433,14 @@ function validateExpectedPayment(expected: QixiangExpectedPayment) {
 export async function queryQixiangPayOrder(expectedInput: QixiangExpectedPayment, environment: QixiangPayEnvironment = runtimeEnvironment(), fetcher: typeof fetch = fetch): Promise<QixiangVerifiedPayment> {
   const expected = validateExpectedPayment(expectedInput);
   const config = activeOrderQueryConfiguration(environment);
+  try {
+    return await sharedQixiangQueryExecutor().run(config.credentialId, async (signal) => {
   consumeQueryBudget(config.credentialId);
   const queryUrl = new URL(config.orderQuery);
   queryUrl.search = new URLSearchParams({ act: "order", pid: config.pid, key: config.key, out_trade_no: expected.orderId }).toString();
   let response: Response;
   try {
-    response = await fetcher(queryUrl, { method: "GET", headers: { accept: "application/json" }, redirect: "error", signal: AbortSignal.timeout(8_000) });
+    response = await fetcher(queryUrl, { method: "GET", headers: { accept: "application/json" }, redirect: "error", signal });
   } catch {
     recordQueryTransportFailure(config.credentialId);
     throw new QixiangPayError("QIXIANG_PAY_OUTCOME_UNKNOWN", "支付服务查单结果需要人工核对。");
@@ -486,6 +482,12 @@ export async function queryQixiangPayOrder(expectedInput: QixiangExpectedPayment
     merchantParam, eventType: "CAPTURED", amountCents, currency: "CNY", occurredAt: now,
     rawPayloadDigest: await sha256(raw), verificationMethod: "QIXIANG_ORDER_QUERY", verifiedAt: now, fundsMoved: true,
   };
+    });
+  } catch (error) {
+    if (error instanceof QixiangQueryDeferredError) throw new QixiangPayError("QIXIANG_PAY_OUTCOME_UNKNOWN", error.message);
+    throw error;
+  }
+
 }
 
 export async function confirmQixiangPayNotification(notification: QixiangSignedPaymentNotification, expected: QixiangExpectedPayment, environment: QixiangPayEnvironment = runtimeEnvironment(), fetcher: typeof fetch = fetch): Promise<QixiangVerifiedPayment> {
