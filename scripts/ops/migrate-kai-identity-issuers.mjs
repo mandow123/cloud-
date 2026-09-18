@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 
@@ -26,6 +26,13 @@ function validateRegularAbsolutePath(path, code) {
 
 function protectedMappingFile(path, requireRootOwner) {
   validateRegularAbsolutePath(path, "OIDC_MAPPING_PATH_INVALID");
+  const parent = lstatSync(dirname(path));
+  if (!parent.isDirectory() || parent.isSymbolicLink() || (parent.mode & 0o022) !== 0
+    || (requireRootOwner && (parent.uid !== 0 || parent.gid !== 0))) fail("OIDC_MAPPING_DIRECTORY_UNPROTECTED");
+  if (requireRootOwner) {
+    if (realpathSync(dirname(path)) !== resolve(dirname(path)) || realpathSync(path) !== resolve(path)
+      || !resolve(path).startsWith("/root/kai-cloud-identity-mappings/")) fail("OIDC_MAPPING_PATH_OUTSIDE_PROTECTED_ROOT");
+  }
   let descriptor;
   try {
     descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -98,21 +105,42 @@ function tableExists(database, name) {
   return Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
 }
 
-function ids(database, table) {
-  return database.prepare(`SELECT id FROM ${table} ORDER BY id`).all().map((row) => String(row.id));
+function canonicalRows(database, table, orderBy) {
+  return database.prepare(`SELECT * FROM ${table} ORDER BY ${orderBy}`).all()
+    .map((row) => Object.fromEntries(Object.entries(row).sort(([left], [right]) => left.localeCompare(right))));
 }
 
 function invariantSnapshot(database) {
-  for (const table of ["admin_user_accounts", "admin_organizations", "admin_memberships", TABLE]) {
+  for (const table of ["admin_user_accounts", "admin_organizations", "admin_memberships", "admin_membership_roles", TABLE]) {
     if (!tableExists(database, table)) fail("OIDC_MIGRATION_SCHEMA_MISSING");
   }
-  const values = {
-    accounts: ids(database, "admin_user_accounts"),
-    organizations: ids(database, "admin_organizations"),
-    memberships: database.prepare("SELECT id,account_id,organization_id FROM admin_memberships ORDER BY id").all()
-      .map((row) => [String(row.id), String(row.account_id), String(row.organization_id)]),
+  const protectedValues = {
+    accounts: canonicalRows(database, "admin_user_accounts", "id"),
+    organizations: canonicalRows(database, "admin_organizations", "id"),
+    memberships: canonicalRows(database, "admin_memberships", "id"),
+    membershipRoles: canonicalRows(database, "admin_membership_roles", "membership_id,role"),
   };
-  return Object.freeze({ ...values, hash: sha256(JSON.stringify(values)) });
+  const identities = canonicalRows(database, TABLE, "id");
+  return Object.freeze({
+    ...protectedValues,
+    identities: Object.freeze(identities),
+    protectedHash: sha256(JSON.stringify(protectedValues)),
+    hash: sha256(JSON.stringify({ ...protectedValues, identities })),
+  });
+}
+
+function expectedIdentityRows(before, entries) {
+  const additions = entries.map((entry) => ({
+    id: entry.id,
+    account_id: entry.accountId,
+    organization_id: entry.organizationId,
+    issuer: NEW_ISSUER,
+    subject: entry.subject,
+    verified_email: entry.verifiedEmail,
+    verified_at: entry.verifiedAt,
+    created_at: entry.createdAt,
+  })).map((row) => Object.fromEntries(Object.entries(row).sort(([left], [right]) => left.localeCompare(right))));
+  return [...before.identities, ...additions].sort((left, right) => String(left.id).localeCompare(String(right.id)));
 }
 
 function quickCheck(database) {
@@ -171,15 +199,19 @@ function result(mode, mappingHash, approvalHash, invariantHash, plan, insertedCo
     insertCount: mode === "apply" ? insertedCount : plan.entries.length,
     mappingSha256: mappingHash,
     approvalSha256: approvalHash,
-    invariantIdsSha256: invariantHash,
+    invariantSha256: invariantHash,
   });
 }
 
-export function migrateKaiIdentityIssuerDatabase({ databasePath, mappingPath, apply = false, confirm, requireRootOwner = true }) {
+export function migrateKaiIdentityIssuerDatabase({ databasePath, mappingPath, apply = false, confirm, approvedMappingSha256, requireRootOwner = true }) {
   validateRegularAbsolutePath(databasePath, "OIDC_MIGRATION_DATABASE_PATH_INVALID");
   if (apply && confirm !== CONFIRMATION) fail("OIDC_MIGRATION_CONFIRMATION_REQUIRED");
   if (!apply && confirm !== undefined) fail("OIDC_MIGRATION_ARGUMENTS_INVALID");
   const protectedFile = protectedMappingFile(mappingPath, requireRootOwner);
+  if (apply && (!/^[a-f0-9]{64}$/u.test(approvedMappingSha256 ?? "") || approvedMappingSha256 !== protectedFile.hash)) {
+    fail("OIDC_MAPPING_APPROVAL_HASH_MISMATCH");
+  }
+  if (!apply && approvedMappingSha256 !== undefined) fail("OIDC_MIGRATION_ARGUMENTS_INVALID");
   const mapping = parseKaiIdentityIssuerMapping(protectedFile.contents);
   const approvalHash = sha256(JSON.stringify({ approvedBy: mapping.approvedBy, approvedAt: mapping.approvedAt, reference: mapping.reference }));
   const database = new DatabaseSync(databasePath, { readOnly: !apply });
@@ -207,7 +239,10 @@ export function migrateKaiIdentityIssuerDatabase({ databasePath, mappingPath, ap
     }
     quickCheck(database);
     const after = invariantSnapshot(database);
-    if (after.hash !== before.hash) fail("OIDC_MIGRATION_INVARIANT_CHANGED");
+    if (after.protectedHash !== before.protectedHash
+      || JSON.stringify(after.identities) !== JSON.stringify(expectedIdentityRows(before, plan.entries))) {
+      fail("OIDC_MIGRATION_INVARIANT_CHANGED");
+    }
     const afterPlan = planMigration(database, mapping);
     if (afterPlan.entries.length !== 0 || afterPlan.existingCount !== afterPlan.legacyCount) fail("OIDC_MIGRATION_POSTCONDITION_FAILED");
     database.exec("COMMIT");
@@ -223,17 +258,18 @@ export function migrateKaiIdentityIssuerDatabase({ databasePath, mappingPath, ap
 }
 
 function argumentsFrom(argv) {
-  let databasePath, mappingPath, apply = false, confirm;
+  let databasePath, mappingPath, apply = false, confirm, approvedMappingSha256;
   for (let index = 0; index < argv.length; index += 1) {
     const option = argv[index];
     if (option === "--db" && databasePath === undefined) databasePath = argv[++index];
     else if (option === "--mapping" && mappingPath === undefined) mappingPath = argv[++index];
     else if (option === "--apply" && !apply) apply = true;
     else if (option === "--confirm" && confirm === undefined) confirm = argv[++index];
+    else if (option === "--approved-mapping-sha256" && approvedMappingSha256 === undefined) approvedMappingSha256 = argv[++index];
     else fail("OIDC_MIGRATION_ARGUMENTS_INVALID");
   }
-  if (!databasePath || !mappingPath || (apply !== (confirm !== undefined))) fail("OIDC_MIGRATION_ARGUMENTS_INVALID");
-  return { databasePath, mappingPath, apply, confirm };
+  if (!databasePath || !mappingPath || (apply !== (confirm !== undefined)) || (apply !== (approvedMappingSha256 !== undefined))) fail("OIDC_MIGRATION_ARGUMENTS_INVALID");
+  return { databasePath, mappingPath, apply, confirm, approvedMappingSha256 };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

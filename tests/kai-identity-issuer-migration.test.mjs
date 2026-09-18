@@ -16,22 +16,28 @@ function fixture(count = 10) {
   const mappingPath = join(directory, "mapping.json");
   const db = new DatabaseSync(databasePath);
   db.exec(`PRAGMA foreign_keys=ON;
-    CREATE TABLE admin_user_accounts(id TEXT PRIMARY KEY);
-    CREATE TABLE admin_organizations(id TEXT PRIMARY KEY);
-    CREATE TABLE admin_memberships(id TEXT PRIMARY KEY,account_id TEXT NOT NULL,organization_id TEXT NOT NULL,
+    CREATE TABLE admin_user_accounts(id TEXT PRIMARY KEY,display_name TEXT NOT NULL,status TEXT NOT NULL,updated_at TEXT NOT NULL);
+    CREATE TABLE admin_organizations(id TEXT PRIMARY KEY,name TEXT NOT NULL,status TEXT NOT NULL,updated_at TEXT NOT NULL);
+    CREATE TABLE admin_memberships(id TEXT PRIMARY KEY,account_id TEXT NOT NULL,organization_id TEXT NOT NULL,status TEXT NOT NULL,updated_at TEXT NOT NULL,
       FOREIGN KEY(account_id) REFERENCES admin_user_accounts(id),FOREIGN KEY(organization_id) REFERENCES admin_organizations(id));
+    CREATE TABLE admin_membership_roles(membership_id TEXT NOT NULL,role TEXT NOT NULL,created_at TEXT NOT NULL,
+      PRIMARY KEY(membership_id,role),FOREIGN KEY(membership_id) REFERENCES admin_memberships(id));
     CREATE TABLE kai_identity_oidc_identities(
       id TEXT PRIMARY KEY,account_id TEXT NOT NULL,organization_id TEXT NOT NULL,issuer TEXT NOT NULL,subject TEXT NOT NULL,
       verified_email TEXT NOT NULL,verified_at TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(issuer,subject),
       FOREIGN KEY(account_id) REFERENCES admin_user_accounts(id),FOREIGN KEY(organization_id) REFERENCES admin_organizations(id));`);
-  const accounts = db.prepare("INSERT INTO admin_user_accounts VALUES(?)");
-  const organizations = db.prepare("INSERT INTO admin_organizations VALUES(?)");
-  const memberships = db.prepare("INSERT INTO admin_memberships VALUES(?,?,?)");
+  const accounts = db.prepare("INSERT INTO admin_user_accounts VALUES(?,?,?,?)");
+  const organizations = db.prepare("INSERT INTO admin_organizations VALUES(?,?,?,?)");
+  const memberships = db.prepare("INSERT INTO admin_memberships VALUES(?,?,?,?,?)");
+  const roles = db.prepare("INSERT INTO admin_membership_roles VALUES(?,?,?)");
   const identities = db.prepare("INSERT INTO kai_identity_oidc_identities VALUES(?,?,?,?,?,?,?,?)");
   const mappings = [];
   for (let index = 0; index < count; index += 1) {
     const suffix = String(index).padStart(2, "0"), account = `account-${suffix}`, organization = `organization-${suffix}`;
-    accounts.run(account); organizations.run(organization); memberships.run(`membership-${suffix}`, account, organization);
+    accounts.run(account, `Person ${suffix}`, "ACTIVE", "2026-01-02T03:04:05.000Z");
+    organizations.run(organization, `Organization ${suffix}`, "ACTIVE", "2026-01-02T03:04:05.000Z");
+    memberships.run(`membership-${suffix}`, account, organization, "ACTIVE", "2026-01-02T03:04:05.000Z");
+    roles.run(`membership-${suffix}`, "BUYER", "2026-01-02T03:04:05.000Z");
     identities.run(`old-id-${suffix}`, account, organization, OLD, `old-sensitive-${suffix}`, `private-${suffix}@example.test`, "2026-01-02T03:04:05.000Z", "2025-01-02T03:04:05.000Z");
     mappings.push({ oldSubject: `old-sensitive-${suffix}`, newSubject: `new-sensitive-${suffix}` });
   }
@@ -43,7 +49,14 @@ function fixture(count = 10) {
 }
 
 function open(path) { return new DatabaseSync(path); }
-function run(options) { return migrateKaiIdentityIssuerDatabase({ ...options, requireRootOwner: false }); }
+function mappingHash(path) { return createHash("sha256").update(readFileSync(path)).digest("hex"); }
+function run(options) {
+  return migrateKaiIdentityIssuerDatabase({
+    ...options,
+    ...(options.apply && options.approvedMappingSha256 === undefined ? { approvedMappingSha256: mappingHash(options.mappingPath) } : {}),
+    requireRootOwner: false,
+  });
+}
 
 test("dry-run validates a complete mapping without changing the database or leaking identity values", () => {
   const f = fixture(10), before = readFileSync(f.databasePath);
@@ -90,6 +103,84 @@ test("conflicting target rolls the whole migration back", () => {
     try { assert.equal(check.prepare("SELECT COUNT(*) AS n FROM kai_identity_oidc_identities WHERE issuer=?").get(MODERN).n, 1); }
     finally { check.close(); }
   } finally { rmSync(f.directory, { recursive: true }); }
+});
+
+test("apply is bound to the independently reviewed mapping digest", () => {
+  const f = fixture(2);
+  try {
+    const reviewed = run({ databasePath: f.databasePath, mappingPath: f.mappingPath });
+    const changed = { ...f.mapping, mappings: [...f.mapping.mappings].reverse() };
+    writeFileSync(f.mappingPath, `${JSON.stringify(changed)}\n`, { mode: 0o600 });
+    assert.throws(() => run({
+      databasePath: f.databasePath,
+      mappingPath: f.mappingPath,
+      apply: true,
+      confirm: "APPLY_KAI_IDENTITY_ISSUER_MAPPING",
+      approvedMappingSha256: reviewed.mappingSha256,
+    }), /OIDC_MAPPING_APPROVAL_HASH_MISMATCH/u);
+    const check = open(f.databasePath);
+    try { assert.equal(check.prepare("SELECT COUNT(*) AS n FROM kai_identity_oidc_identities WHERE issuer=?").get(MODERN).n, 0); }
+    finally { check.close(); }
+  } finally { rmSync(f.directory, { recursive: true }); }
+});
+
+test("any account, organization, membership, or role mutation rolls the migration back", () => {
+  const f = fixture(2), db = open(f.databasePath);
+  db.exec(`CREATE TRIGGER mutate_membership_after_mapping AFTER INSERT ON kai_identity_oidc_identities
+    WHEN NEW.issuer='${MODERN}' BEGIN
+      UPDATE admin_memberships SET status='SUSPENDED' WHERE account_id=NEW.account_id;
+    END`);
+  db.close();
+  try {
+    assert.throws(() => run({ databasePath: f.databasePath, mappingPath: f.mappingPath, apply: true, confirm: "APPLY_KAI_IDENTITY_ISSUER_MAPPING" }), /OIDC_MIGRATION_INVARIANT_CHANGED/u);
+    const check = open(f.databasePath);
+    try {
+      assert.equal(check.prepare("SELECT COUNT(*) AS n FROM admin_memberships WHERE status='SUSPENDED'").get().n, 0);
+      assert.equal(check.prepare("SELECT COUNT(*) AS n FROM kai_identity_oidc_identities WHERE issuer=?").get(MODERN).n, 0);
+    } finally { check.close(); }
+  } finally { rmSync(f.directory, { recursive: true }); }
+});
+
+test("any mutation of a pre-existing identity row rolls the whole migration back", () => {
+  const f = fixture(2), db = open(f.databasePath);
+  db.exec(`CREATE TRIGGER mutate_old_identity_after_mapping AFTER INSERT ON kai_identity_oidc_identities
+    WHEN NEW.issuer='${MODERN}' BEGIN
+      UPDATE kai_identity_oidc_identities SET verified_email='rewritten@example.test'
+      WHERE issuer='${OLD}' AND subject='old-sensitive-00';
+    END`);
+  db.close();
+  try {
+    assert.throws(() => run({ databasePath: f.databasePath, mappingPath: f.mappingPath, apply: true, confirm: "APPLY_KAI_IDENTITY_ISSUER_MAPPING" }), /OIDC_MIGRATION_INVARIANT_CHANGED/u);
+    const check = open(f.databasePath);
+    try {
+      assert.equal(check.prepare("SELECT verified_email FROM kai_identity_oidc_identities WHERE issuer=? AND subject='old-sensitive-00'").get(OLD).verified_email, "private-00@example.test");
+      assert.equal(check.prepare("SELECT COUNT(*) AS n FROM kai_identity_oidc_identities WHERE issuer=?").get(MODERN).n, 0);
+    } finally { check.close(); }
+  } finally { rmSync(f.directory, { recursive: true }); }
+});
+
+test("unplanned identities and mutations of planned modern rows roll the whole migration back", () => {
+  for (const trigger of [
+    `CREATE TRIGGER insert_unplanned_identity AFTER INSERT ON kai_identity_oidc_identities
+      WHEN NEW.issuer='${MODERN}' BEGIN
+        INSERT INTO kai_identity_oidc_identities VALUES('unexpected-id',NEW.account_id,NEW.organization_id,
+          'https://unexpected.example','extra-sub','extra@example.test',NEW.verified_at,NEW.created_at);
+      END`,
+    `CREATE TRIGGER rewrite_planned_identity AFTER INSERT ON kai_identity_oidc_identities
+      WHEN NEW.issuer='${MODERN}' BEGIN
+        UPDATE kai_identity_oidc_identities SET verified_email='rewritten-modern@example.test' WHERE id=NEW.id;
+      END`,
+  ]) {
+    const f = fixture(2), db = open(f.databasePath); db.exec(trigger); db.close();
+    try {
+      assert.throws(() => run({ databasePath: f.databasePath, mappingPath: f.mappingPath, apply: true, confirm: "APPLY_KAI_IDENTITY_ISSUER_MAPPING" }), /OIDC_MIGRATION_INVARIANT_CHANGED/u);
+      const check = open(f.databasePath);
+      try {
+        assert.equal(check.prepare("SELECT COUNT(*) AS n FROM kai_identity_oidc_identities WHERE issuer<>?").get(OLD).n, 0);
+        assert.equal(check.prepare("SELECT COUNT(*) AS n FROM kai_identity_oidc_identities WHERE issuer=?").get(MODERN).n, 0);
+      } finally { check.close(); }
+    } finally { rmSync(f.directory, { recursive: true }); }
+  }
 });
 
 test("an identity ID collision and an insertion failure cannot leave a partial migration", () => {
@@ -159,6 +250,6 @@ test("mapping schema, confirmation, permissions, symlinks, and relative paths fa
     const link = join(f.directory, "mapping-link.json"); symlinkSync(f.mappingPath, link);
     assert.throws(() => run({ databasePath: f.databasePath, mappingPath: link }), /OIDC_MAPPING_PATH_INVALID/u);
     assert.throws(() => run({ databasePath: "relative.sqlite", mappingPath: f.mappingPath }), /OIDC_MIGRATION_DATABASE_PATH_INVALID/u);
-    assert.throws(() => migrateKaiIdentityIssuerDatabase({ databasePath: f.databasePath, mappingPath: f.mappingPath }), /OIDC_MAPPING_FILE_UNPROTECTED/u);
+    assert.throws(() => migrateKaiIdentityIssuerDatabase({ databasePath: f.databasePath, mappingPath: f.mappingPath }), /OIDC_MAPPING_(?:DIRECTORY_UNPROTECTED|PATH_OUTSIDE_PROTECTED_ROOT|FILE_UNPROTECTED)/u);
   } finally { rmSync(f.directory, { recursive: true }); }
 });
