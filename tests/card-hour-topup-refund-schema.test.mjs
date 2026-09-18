@@ -80,3 +80,17 @@ test("0042 gate verifies the provider transaction index is unique and partial", 
     rmSync(value.directory, { recursive: true });
   }
 });
+
+test("0042 gate rejects a partial provider transaction index with the wrong predicate", () => {
+  const value = fixture();
+  try {
+    applyCardHourTopupRefundMigration(value.database);
+    value.database.exec(`DROP INDEX card_hour_topup_refunds_provider_tx_unique_idx;
+      CREATE UNIQUE INDEX card_hour_topup_refunds_provider_tx_unique_idx
+      ON card_hour_topup_refunds(provider,provider_transaction_id) WHERE provider='QIXIANG_PAY';`);
+    assert.throws(() => assertCardHourTopupRefundSchemaReady(value.database), /CARD_HOUR_TOPUP_REFUND_SCHEMA_NOT_READY/u);
+  } finally {
+    value.database.close();
+    rmSync(value.directory, { recursive: true });
+  }
+});
