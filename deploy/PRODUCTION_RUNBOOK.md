@@ -355,7 +355,62 @@ docker compose -f deploy/compose.production.yml -f deploy/compose.stabilization.
 
 - 七相旧版协议的查单接口要求把商户密钥放入查询参数，因此只有 `KAI_QIXIANG_PAY_RECONCILIATION_ENABLED=1` 且全部门禁就绪时，专用服务端客户端才可调用固定的 `https://api.payqixiang.cn/api.php`：禁止重定向、代理、浏览器调用、完整 URL 日志和错误原文回显。签名通知本身不得直接入账；必须主动查单确认 `status=1`，并逐项核对 PID、商户订单号、七相订单号、通道、商品名、金额和扩展参数。浏览器回跳页只调用本平台鉴权接口，由服务端抢占持久化租约后查单；浏览器不接触密钥，也不读取回跳参数作为成功依据。退款保持人工待处理，未取得可验证退款协议前不得宣称退款成功。
 
-以下是未来真实收银的历史配置说明，当前稳定化阶段禁止执行开启新订单的步骤；新单始终保持 `KAI_QIXIANG_PAY_ENABLED=0`。未来必须先解除本文件开头的恢复/真实支付门禁并另行更新受审发布策略，不能直接删除当前 overlay：
+### 0042 卡时充值退款预部署门禁
+
+0042 在现有 marker v6 上新增卡时充值退款审批表和状态索引，不修改原充值、事件或账本事实。先使用相同的候选 release env 和固定 root-owned runner 只读分类：
+
+```sh
+(
+  set -eu
+  sudo /usr/local/lib/kai-cloud/run-production-schema-gate.sh "$KAI_CANDIDATE_RELEASE_ENV" \
+    node scripts/ops/verify-card-hour-topup-refund-schema.mjs --allow-uninitialized
+)
+```
+
+只有完整 marker v6 且退款表、索引都不存在时，才在已经完成本节前述一致性备份及隔离副本演练后显式迁移：
+
+```sh
+(
+  set -eu
+  sudo /usr/local/lib/kai-cloud/run-production-schema-gate.sh "$KAI_CANDIDATE_RELEASE_ENV" \
+    node scripts/ops/verify-card-hour-topup-refund-schema.mjs \
+    --apply --confirm APPLY_0042_CARD_HOUR_TOPUP_REFUNDS
+  sudo /usr/local/lib/kai-cloud/run-production-schema-gate.sh "$KAI_CANDIDATE_RELEASE_ENV" \
+    node scripts/ops/verify-card-hour-topup-refund-schema.mjs
+)
+```
+
+退款固定为全额、双人审批。审批后先原子把对应未消费卡时从 `USER_AVAILABLE` 转入 `USER_HELD`，余额不足时在任何商户后台操作前阻断。七象没有已验证的自动退款协议，统一进入 `MANUAL_REQUIRED`；操作员在七象商户后台退款后，由同一独立审批人记录支付方交易号和 SHA-256 证据，系统才从 held 销毁卡时。成功后原充值关闭，退款和两笔不可变账本批次保留；重复执行不得再次扣卡时，同一支付方退款交易号不得用于两笔退款。发生真实资金或账本写入后禁止恢复旧库。
+
+### 七象 ALIPAY 通道试点
+
+本次只启用七象提供的 `ALIPAY` 通道，不接入支付宝开放平台直连。基础 Compose 与 `compose.stabilization.yml` 始终是安全恢复模式，保持七象新单关闭、存量核单开启；只有受审候选在最后追加 `compose.qixiang-payment-pilot.yml` 才能开启七象新单。启用前必须完成 0042 恢复副本演练、可信 KAI Identity 映射、七象确认入口地址 `172.21.106.229` 可作为 `clientip`，以及七象商户后台人工退款路径和操作员责任确认。
+
+恢复方案固定为 A：发生事故先移除试点 overlay 并停止新单，继续验签回调、有界查单和已批准退款，始终保留当前数据库；使用兼容安全镜像或前向修复。只有首笔业务写入前且能证明完全零新增记录时，才允许使用演练恢复包。
+
+候选配置和启动必须使用相同的三层顺序：
+
+```sh
+docker compose \
+  --env-file /etc/kai-cloud/kai-cloud-release.env \
+  --env-file /etc/kai-cloud/kai-cloud-app.env \
+  -f deploy/compose.production.yml \
+  -f deploy/compose.stabilization.yml \
+  -f deploy/compose.qixiang-payment-pilot.yml config --quiet
+
+npm run ops:deploy:validate -- --current-env
+
+docker compose \
+  --env-file /etc/kai-cloud/kai-cloud-release.env \
+  --env-file /etc/kai-cloud/kai-cloud-app.env \
+  -f deploy/compose.production.yml \
+  -f deploy/compose.stabilization.yml \
+  -f deploy/compose.qixiang-payment-pilot.yml up -d --wait app
+```
+
+人工停单或事故处理时移除最后一层，保持 `compose.stabilization.yml`，并把应用 env 的 `KAI_QIXIANG_PAY_ENABLED` 改回 `0`；只要凭据没有安全事件，`KAI_QIXIANG_PAY_RECONCILIATION_ENABLED=1`。直接支付宝的 `KAI_ALIPAY_ENABLED` 始终为 `0`。
+
+以下配置步骤只用于七象第三方支付：
 
 生产配置必须使用 `scripts/ops/configure-qixiang-pay-env.mjs`，禁止用文本编辑器或 Shell 替换密钥。默认必须在七相后台轮换并作废曾进入聊天、日志或工单的旧密钥。仅当商户责任人明确书面批准继续使用某一已识别密钥时，才允许例外复用：审批必须同时绑定该密钥的 SHA-256 摘要、`RISK-` 参考号和真实批准时间；配置器、生产校验器与运行时会逐项核对，不能用该例外放行其他密钥。将以下精确 JSON 字段写入 `/root/kai-qixiang-production.json`，文件必须是 `0600 root:root`，父目录不能由非 root 写入：`pid`、`key`、`approvalReference`、`credentialVersion`、`credentialRotatedAt`、`keyReuseApprovalReference`、`keyReuseApprovedAt`、`keyReuseDigest`、`riskReference`、`queryCredentialId`、`queryCredentialVersion`、`queryCredentialRotatedAt`、`channel`、`organizations`。未发生轮换时，两个 `RotatedAt` 字段必须为空字符串并通过版本字段登记生命周期，禁止用部署时间冒充轮换时间；复用批准时间写入 `keyReuseApprovedAt`。新密钥的三个复用字段必须为空字符串。`channel` 固定为 `ALIPAY`，`organizations` 必须逐项等于本次获批且仍为 `ACTIVE` 的组织 ID。当前首批必须核对工具输出 `organizationCount=7`。
 
@@ -387,6 +442,7 @@ sudo node /opt/kai-cloud-release-sources/<受审完整提交>/scripts/ops/config
 sudo docker compose -p kai-cloud-3051 \
   -f /opt/kai-cloud-release-sources/<受审完整提交>/deploy/compose.production.yml \
   -f /opt/kai-cloud-release-sources/<受审完整提交>/deploy/compose.stabilization.yml \
+  -f /opt/kai-cloud-release-sources/<受审完整提交>/deploy/compose.qixiang-payment-pilot.yml \
   --env-file /etc/kai-cloud/kai-cloud-app.env \
   --env-file /etc/kai-cloud/kai-cloud-release.env up -d --wait app
 curl -fsS https://cloud.kai.com/api/ready | jq -e \

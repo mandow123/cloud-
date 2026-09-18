@@ -16,6 +16,7 @@ type TopupRecord = {
   cardHourMicros: number;
   amountCents: number;
   status: "PROCESSING" | "PENDING" | "CAPTURED" | "CLOSED" | "RECONCILIATION_REQUIRED";
+  refundStatus?: "PENDING" | "APPROVED" | "PROCESSING" | "MANUAL_REQUIRED" | "SUCCEEDED" | "FAILED" | "REJECTED" | null;
   createdAt: string;
   appealEligibility: { canAppeal: boolean; retryAt: string | null };
 };
@@ -227,7 +228,8 @@ export function MemberCardHourAssets() {
         <p className={styles.eyebrow}>TOP-UP HISTORY</p><h2 id="topup-history-title">{copy.history}</h2>
         {dashboard.topups.length ? <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{copy.order}</th><th>{copy.method}</th><th>{copy.cardHours}</th><th>{copy.money}</th><th>{copy.status}</th><th>{copy.created}</th><th>{copy.action}</th></tr></thead><tbody>{dashboard.topups.map((record) => {
           const appeal = appealByTopup.get(record.id);
-          return <tr key={record.id}><td data-label={copy.order}><Link href={`/member/card-hours/topups/${encodeURIComponent(record.id)}/return`}>{record.id}</Link></td><td data-label={copy.method}>{record.channel ?? copy.historical}</td><td data-label={copy.cardHours}>{formatCardHourDisplayMicros(record.cardHourMicros)}</td><td data-label={copy.money}>{money(record.amountCents, locale)}</td><td data-label={copy.status}>{copy.statusLabels[record.status] ?? copy.processing}</td><td data-label={copy.created}>{dateTime(record.createdAt, locale)}</td><td data-label={copy.action}>{appeal ? <Link href={`/member/card-hours/topups/${encodeURIComponent(record.id)}/appeal`}>{appeal.unread ? copy.appealUpdated : `${copy.viewAppeal} · ${copy.appealLabels[appeal.status]}`}</Link> : record.appealEligibility.canAppeal ? <Link href={`/member/card-hours/topups/${encodeURIComponent(record.id)}/appeal`}>{copy.topupProblem}</Link> : record.appealEligibility.retryAt ? <small>{copy.appealAfter}: {dateTime(record.appealEligibility.retryAt, locale)}</small> : "—"}</td></tr>;
+          const status = record.refundStatus === "SUCCEEDED" ? (locale === "zh-CN" ? "已退款" : "Refunded") : copy.statusLabels[record.status] ?? copy.processing;
+          return <tr key={record.id}><td data-label={copy.order}><Link href={`/member/card-hours/topups/${encodeURIComponent(record.id)}/return`}>{record.id}</Link></td><td data-label={copy.method}>{record.channel ?? copy.historical}</td><td data-label={copy.cardHours}>{formatCardHourDisplayMicros(record.cardHourMicros)}</td><td data-label={copy.money}>{money(record.amountCents, locale)}</td><td data-label={copy.status}>{status}</td><td data-label={copy.created}>{dateTime(record.createdAt, locale)}</td><td data-label={copy.action}>{appeal ? <Link href={`/member/card-hours/topups/${encodeURIComponent(record.id)}/appeal`}>{appeal.unread ? copy.appealUpdated : `${copy.viewAppeal} · ${copy.appealLabels[appeal.status]}`}</Link> : record.appealEligibility.canAppeal ? <Link href={`/member/card-hours/topups/${encodeURIComponent(record.id)}/appeal`}>{copy.topupProblem}</Link> : record.appealEligibility.retryAt ? <small>{copy.appealAfter}: {dateTime(record.appealEligibility.retryAt, locale)}</small> : "—"}</td></tr>;
         })}</tbody></table></div> : <p>{copy.noHistory}</p>}
       </section>
     </div>

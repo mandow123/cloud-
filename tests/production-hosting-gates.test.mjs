@@ -158,6 +158,7 @@ test("Hosting V2 setup validates every production dependency without opening tra
 
 test("production templates carry the rollback and payment gates into the container", () => {
   const compose = readFileSync(new URL("../deploy/compose.production.yml", import.meta.url), "utf8");
+  const qixiangPilot = readFileSync(new URL("../deploy/compose.qixiang-payment-pilot.yml", import.meta.url), "utf8");
   const environment = readFileSync(new URL("../deploy/kai-cloud-app.env.example", import.meta.url), "utf8");
   const dockerfile = readFileSync(new URL("../Dockerfile", import.meta.url), "utf8");
   assert.match(dockerfile, /COPY --from=build --chown=node:node \/app\/lib\/server\/qixiang-pay-revoked-policy\.mjs \.\/lib\/server\/qixiang-pay-revoked-policy\.mjs/u);
@@ -175,6 +176,10 @@ test("production templates carry the rollback and payment gates into the contain
   assert.match(compose, /KAI_QIXIANG_PAY_KEY_REUSE_APPROVED/u);
   assert.match(compose, /KAI_QIXIANG_PAY_PILOT_ORGANIZATIONS/u);
   assert.match(compose, /KAI_QIXIANG_PAY_PILOT_CHANNEL/u);
+  assert.match(qixiangPilot, /KAI_QIXIANG_PAY_ENABLED: "1"/u);
+  assert.match(qixiangPilot, /KAI_QIXIANG_PAY_RECONCILIATION_ENABLED: "1"/u);
+  assert.match(qixiangPilot, /KAI_ALIPAY_ENABLED: "0"/u);
+  assert.doesNotMatch(qixiangPilot, /KAI_ALIPAY_(?:APP_ID|PRIVATE_KEY|PUBLIC_KEY|SELLER_ID)/u);
   assert.match(compose, /KAI_ADMIN_APPROVER_USERNAME/u);
   assert.match(compose, /KAI_ADMIN_APPROVER_PASSWORD_HASH/u);
   assert.match(compose, /KAI_ADMIN_FULFILLMENT_USERNAME/u);
